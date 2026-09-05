@@ -59,7 +59,18 @@ export function createGitCommand(files: FilesTable, options: GitOptions) {
     },
 
     async clone(args, cwd) {
-      const positional = args.filter((arg) => !arg.startsWith("-"));
+      // `--depth N` consumes the following token as its value; `--depth=N` carries it inline.
+      // Track the consumed value index so it is not mistaken for the url or directory positional.
+      const depthIndex = args.indexOf("--depth");
+      const inlineDepth = args.find((arg) => arg.startsWith("--depth="));
+      const depthValueIndex = depthIndex >= 0 ? depthIndex + 1 : -1;
+      const depthRaw = inlineDepth !== undefined ? inlineDepth.slice("--depth=".length) : depthIndex >= 0 ? args[depthValueIndex] : undefined;
+      const depthRequested = depthIndex >= 0 || inlineDepth !== undefined;
+      if (depthRequested && (depthRaw === undefined || !/^\d+$/.test(depthRaw) || Number(depthRaw) < 1)) {
+        return fail(`fatal: --depth expects a positive integer`, 128);
+      }
+      const depth = depthRaw === undefined ? undefined : Number(depthRaw);
+      const positional = args.filter((arg, index) => !arg.startsWith("-") && index !== depthValueIndex);
       const url = positional[0];
       if (url === undefined) return fail("usage: git clone <url> [<directory>]");
       const name = positional[1] ?? posix.basename(url).replace(/\.git$/, "");
@@ -67,8 +78,6 @@ export function createGitCommand(files: FilesTable, options: GitOptions) {
       if (files.get(dir) !== undefined && files.readdir(dir).length > 0) {
         return fail(`fatal: destination path '${name}' already exists and is not an empty directory.`, 128);
       }
-      const depthIndex = args.indexOf("--depth");
-      const depth = depthIndex >= 0 ? Number(args[depthIndex + 1]) : undefined;
       try {
         await git.clone({ fs, http, dir, url, onAuth, ...(depth === undefined ? {} : { depth }), singleBranch: depth !== undefined });
       } catch (error) {
@@ -165,7 +174,15 @@ export function createGitCommand(files: FilesTable, options: GitOptions) {
         const before = cached ? headText : stagedText;
         const after = cached ? stagedText : worktreeText;
         if (before === after) continue;
-        patches.push(createTwoFilesPatch(`a/${file}`, `b/${file}`, before, after, undefined, undefined, { context: 3 }).replace(/^Index:.*\n=+\n/m, `diff --git a/${file} b/${file}\n`));
+        // Shape the hunks like git: a `diff --git` header, a mode line for adds and deletes,
+        // and `/dev/null` on the absent side. `createTwoFilesPatch` emits an `===` separator
+        // and the `---`/`+++` lines; keep those (with /dev/null where a side is empty) and drop
+        // the separator, then prepend git's own header.
+        const oldName = before === "" ? "/dev/null" : `a/${file}`;
+        const newName = after === "" ? "/dev/null" : `b/${file}`;
+        const body = createTwoFilesPatch(oldName, newName, before, after, undefined, undefined, { context: 3 }).replace(/^={3,}\n/m, "");
+        const modeLine = before === "" ? "new file mode 100644\n" : after === "" ? "deleted file mode 100644\n" : "";
+        patches.push(`diff --git a/${file} b/${file}\n${modeLine}${body}`);
       }
       return ok(patches.join(""));
     },

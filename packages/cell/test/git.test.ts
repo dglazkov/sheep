@@ -39,6 +39,7 @@ describe("journey 5: a repository in, the work out", { timeout: 60_000 }, () => 
       expect(status).toContain(`On branch ${branch}`);
       expect(status).toContain("modified:   README.md");
       const diff = await bash(cell, "cd fixture && git diff");
+      expect(diff).toContain("diff --git a/README.md b/README.md");
       expect(diff).toContain("-This repositry has a typo.");
       expect(diff).toContain("+This repository has a typo.");
 
@@ -86,6 +87,39 @@ describe("journey 5: a repository in, the work out", { timeout: 60_000 }, () => 
       expect(back.byteLength).toBe(large.byteLength);
       expect(back[large.byteLength - 1]).toBe(large[large.byteLength - 1]);
       expect((await bash(cell, "wc -c < large.bin")).trim()).toBe(String(large.byteLength));
+    });
+  });
+
+  it("clones with --depth, taking the url and not the depth value as the remote", async () => {
+    await inCell("shallow", async (cell) => {
+      // `--depth 1` (space form): the `1` must not be mistaken for the clone url.
+      expect(await bash(cell, `git clone --depth 1 ${REMOTE}`)).toContain("Cloning into 'fixture'");
+      expect(await bash(cell, "cd fixture && git log --oneline")).toMatch(/^[0-9a-f]{7} seed/);
+    });
+    await inCell("shallow-inline", async (cell) => {
+      // `--depth=1` (inline form) and an explicit directory.
+      expect(await bash(cell, `git clone --depth=1 ${REMOTE} shallow`)).toContain("Cloning into 'shallow'");
+      expect(await bash(cell, "cd shallow && git log --oneline")).toMatch(/^[0-9a-f]{7} seed/);
+    });
+    await inCell("shallow-bad", async (cell) => {
+      await expect(bash(cell, `git clone --depth foo ${REMOTE}`)).rejects.toThrow("--depth expects a positive integer");
+    });
+  });
+
+  it("shows a staged new file under git diff --cached, repeatably", async () => {
+    await inCell("staged-new", async (cell) => {
+      await bash(cell, `git clone ${REMOTE}`);
+      await bash(cell, "cd fixture && git checkout -b probe");
+      getOrThrow(await cell.writeFile("fixture/added.txt", new TextEncoder().encode("a line from the cell\n"), context));
+      await bash(cell, "cd fixture && git add added.txt");
+      // Twice: the staged-vs-HEAD patch must be produced every time, not just on a warm read.
+      for (let i = 0; i < 2; i++) {
+        const diff = await bash(cell, "cd fixture && git diff --cached");
+        expect(diff).toContain("diff --git a/added.txt b/added.txt");
+        expect(diff).toContain("new file mode 100644");
+        expect(diff).toContain("--- /dev/null");
+        expect(diff).toContain("+a line from the cell");
+      }
     });
   });
 });
