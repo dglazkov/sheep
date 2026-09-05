@@ -2,7 +2,7 @@
 status: designed
 since: 2026-09-05
 see: lamb
-note: journeys, design and seven phases written 5 Sep 2026; nothing built. The first leg of a longer walk — pi's harness in a Durable Object with a workspace in rows, an in-isolate shell, pi's own client attached over a WebSocket, and the same bundle on celld. Execution tiers, sub-agents as cells, and multi-user are named as later legs and not addressed here.
+note: journeys, design and seven phases written 5 Sep 2026; phase 0 (the scaffold) part-done the same day, its deploy half waiting on a Cloudflare token. The first leg of a longer walk — pi's harness in a Durable Object with a workspace in rows, an in-isolate shell, pi's own client attached over a WebSocket, and the same bundle on celld. Execution tiers, sub-agents as cells, and multi-user are named as later legs and not addressed here.
 ---
 
 # Lamb — the journeys

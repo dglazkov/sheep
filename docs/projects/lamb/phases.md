@@ -30,8 +30,9 @@ roster of them.
 
 ---
 
-**Where we are: NOT STARTED.** Journeys, design and phases written 5 Sep
-2026. The next thing to do is phase 0.
+**Where we are: PHASE 0 PART-DONE 5 Sep 2026.** The scaffold builds and its
+proof runs in workerd; the deploy half waits on a Cloudflare token. The
+next thing to do is phase 1.
 
 The order is dependency order and it is also risk order: phase 1 is the
 gate, because if pi's storage does not run over the cell's SQL nothing
@@ -71,7 +72,12 @@ instead of improvising mid-task:
 
 ## Phase 0 — The scaffold
 
-**Status: NOT STARTED.**
+**Status: PART-DONE** 5 Sep 2026. Built and proved locally: `pnpm test`
+runs the cell's two tests in workerd and the CLI's two in Node, all
+passing; `lamb --version` prints; typecheck clean. Missing: `pnpm deploy`
+and the `curl` against the scratch home, because no `CLOUDFLARE_API_TOKEN`
+was in the environment. Closes when the token arrives and the deploy
+answers.
 
 **Closes no journey.** It makes every later phase possible to prove.
 
@@ -99,7 +105,20 @@ from it. `lamb --version` prints.
 
 **Findings:**
 
-- None yet.
+- **2026-09-05 — Open: the deploy half of the proof is not run.** No
+  Cloudflare token in the environment. Everything else in the phase is
+  proved locally.
+- **2026-09-05 — `@cloudflare/vitest-pool-workers` 0.22 needs vitest 4**
+  and is a Vite plugin, `cloudflareTest(...)`, not `defineWorkersConfig`.
+  Types come from its `./types` subpath.
+- **2026-09-05 — The pool's workerd trails wrangler's**: 2026-08-22
+  against 2026-09-03. `compatibility_date` is pinned to the pool's, and
+  moves when the pool does.
+- **2026-09-05 — `@cloudflare/workers-types` 5 has no dated entry
+  points.** `types: ["@cloudflare/workers-types"]` and nothing else.
+- **2026-09-05 — pi is pinned at `9841914`** (5 Sep, "keep list selection
+  unchanged on mouse hover"), as a shallow submodule. The patch set is
+  empty.
 
 ## Phase 1 — pi's storage over the cell's SQL
 
