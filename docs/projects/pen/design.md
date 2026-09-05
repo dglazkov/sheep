@@ -121,11 +121,13 @@ authenticated WebSocket to the cell, using a token the cell minted for
 that container's lifetime, and everything else is messages on it:
 
 - `manifest` from the cell; `need [hashes]` from the container; `blob`
-  frames from the cell, the bytes as binary messages.
+  frames from the cell, the bytes as binary messages; `checkout` from
+  the container once the tree is on its disk.
 - `run {command, cwd, env, timeout}` from the cell; `stdout`, `stderr`
   frames from the container as they happen; `exit {code}` or `killed
   {reason}` at the end.
-- `changed {manifest diff}` from the container after a run; `need
+- `changed {manifest diff}` from the container after a run, or on
+  `sync` from the cell when there was none; `need
   [hashes]` from the cell, which asks only for what it will accept;
   `blob` frames up; `synced {refused}` from the cell. The dance is the
   same in both directions: whoever holds the newer tree describes it,

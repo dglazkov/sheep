@@ -6,7 +6,8 @@
  * Exits when the socket closes, so a container that loses its cell is a
  * container that is gone.
  */
-import { mkdir, readdir, readFile, rm, writeFile, chmod, lstat } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { chmod, lstat, mkdir, readdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, join, posix, relative } from "node:path";
 import { type AgentSocket, type Disk, type DiskEntry, serveAgent } from "./agent.ts";
 import { CELL_URL_ENV, TOKEN_ENV, TOKEN_PARAM } from "./protocol.ts";
@@ -20,12 +21,14 @@ export const DEFAULT_WORKSPACE = "/workspace";
  * serves every package), so the constructor is read off `globalThis`.
  */
 interface NodeWebSocket extends AgentSocket {
+  binaryType: "blob" | "arraybuffer";
   addEventListener(type: "message", listener: (event: { data: unknown }) => void): void;
   addEventListener(type: "close", listener: (event: unknown) => void): void;
   addEventListener(type: "open" | "error", listener: (event: unknown) => void, options?: { once?: boolean }): void;
 }
 const NodeWebSocket = (globalThis as unknown as { WebSocket: new (url: string) => NodeWebSocket }).WebSocket;
 
+/** A disk over `node:fs` rooted at `root`. Modes are set explicitly so the umask never has a say. */
 export function nodeDisk(root: string): Disk {
   const at = (path: string) => join(root, path);
   return {
@@ -36,6 +39,21 @@ export function nodeDisk(root: string): Disk {
       await mkdir(dirname(at(path)), { recursive: true });
       await writeFile(at(path), bytes);
       if (options?.mode !== undefined) await chmod(at(path), options.mode);
+    },
+    async mkdir(path, mode) {
+      await mkdir(at(path), { recursive: true });
+      await chmod(at(path), mode);
+    },
+    async symlink(target, path) {
+      await mkdir(dirname(at(path)), { recursive: true });
+      await rm(at(path), { recursive: true, force: true });
+      await symlink(target, at(path));
+    },
+    async readlink(path) {
+      return readlink(at(path));
+    },
+    async chmod(path, mode) {
+      await chmod(at(path), mode);
     },
     async list() {
       const entries: DiskEntry[] = [];
@@ -50,6 +68,9 @@ export function nodeDisk(root: string): Disk {
     },
     async remove(path) {
       await rm(at(path), { recursive: true, force: true });
+    },
+    async digest(bytes) {
+      return createHash("sha256").update(bytes).digest("hex");
     },
   };
 }
@@ -69,6 +90,7 @@ export async function main(env: NodeJS.ProcessEnv = process.env): Promise<number
     return 2;
   }
   const socket = new NodeWebSocket(cellAddress(cellUrl, token));
+  socket.binaryType = "arraybuffer";
   const opened = new Promise<void>((resolve, reject) => {
     socket.addEventListener("open", () => resolve(), { once: true });
     socket.addEventListener("error", () => reject(new Error(`pen-agent: could not connect to ${cellUrl}`)), { once: true });

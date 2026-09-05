@@ -8,7 +8,11 @@ RUN apt-get update \
   && corepack enable \
   && corepack prepare pnpm@10.33.0 --activate
 
+# The agent's one runtime dependency, `ignore`, pinned exactly in package.json;
+# npm resolves it there, so the image never sees the workspace's devDependencies.
 COPY package.json /opt/pen/package.json
+RUN cd /opt/pen && npm install --omit=dev --no-audit --no-fund --no-package-lock \
+  && rm -rf /root/.npm
 COPY bin /opt/pen/bin
 COPY src /opt/pen/src
 

@@ -11,12 +11,13 @@ never a bare "phase 2".
 
 ---
 
-**Where we are: pen phase 0 CLOSED, phases 1 to 7 NOT STARTED.** Planned
-5 Sep 2026; the scaffold built the same day. The next thing to do is pen
-phase 1, the checkout. Pen phases 1 and 2 prove against the fake and need
-nothing from lamb; pen phase 3, the first real walk, uses `--detach`,
-`wait`, and `log` and so waits on lamb phase 5, the sheepdog's surface,
-and on the Workers Paid plan, a ⚑ step asked when phase 3 begins.
+**Where we are: pen phases 0 and 1 CLOSED, phases 2 to 7 NOT STARTED.**
+Planned 5 Sep 2026; the scaffold and the checkout built the same day.
+The next thing to do is pen phase 2, the router and the sentence. Pen
+phase 2 proves against the fake and needs nothing from lamb; pen phase
+3, the first real walk, uses `--detach`, `wait`, and `log` and so waits
+on lamb phase 5, the sheepdog's surface, and on the Workers Paid plan, a
+⚑ step asked when phase 3 begins.
 
 The order is dependency order and risk order. Phase 1 is the gate: if a
 checkout cannot be synced by hash both ways with the atomicity journey 3
@@ -92,8 +93,8 @@ test.
   `accept()` first.
 - **2026-09-05 — The image is 425 MB**, `python3-pip` most of it; the
   Worker bundle 3.9 MB raw, from 3.6. Cost: 25 minutes, 10 the builder's.
-- **2026-09-05 — Open: `blob` frames are base64 text**, 1.37× plus a copy
-  each way. Binary messages are pen phase 1's call, when blobs first flow.
+- **2026-09-05 — `blob` frames were base64 text**, 1.37× plus a copy each
+  way. Paid in pen phase 1: the bytes are one binary message each.
 - **2026-09-05 — Open: `serveAgent` answers frames on one chain**, so a
   long `run` would queue `killed` behind it. Pen phase 2 owns streaming
   and interruption, and gives runs their own lane.
@@ -103,7 +104,9 @@ test.
 
 ## Phase 1 — The checkout
 
-**Status: NOT STARTED.** The gate.
+**Status: CLOSED.** 5 Sep 2026. The gate held: a hundred files round-trip
+through the fake and the rows are whole at all 246 points the container
+can die. Pen phase 3 walks it for real.
 
 **Proves journey 3's atomicity claim and journey 1 step 3 against the
 fake.** Closes nothing; pen phase 3 walks them.
@@ -123,6 +126,37 @@ fake.** Closes nothing; pen phase 3 walks them.
 **Proof:** A test in workerd round-trips a workspace of a hundred files
 through the fake with edits, adds, deletes, and one over-cap file, and
 the rows and the transcript match a fixture at every kill point.
+
+**Findings:**
+
+- **2026-09-05 — The gate held.** A hundred files, two symlinks, a
+  two-chunk file and an over-cap one round-trip in 246 frames: sync-in
+  9 ms, sync-out 14 ms in workerd. Killed at every one of the 246
+  positions, each row was byte-for-byte before or after; the walk took
+  4.8 s.
+- **2026-09-05 — Two frames the design lacked.** `checkout {id}` from the
+  container: the agent verifies every blob, and a mismatch needs a frame
+  to fail on. `sync {id}` from the cell asks for `changed` when there was
+  no run, which is how the process test drives the real agent.
+- **2026-09-05 — `ignore@7.0.8` is pen's one runtime dependency**,
+  CommonJS, bundled by the vitest pool into workerd unasked and installed
+  in the image by `npm install --omit=dev`; the agent imports inside the
+  image. An almost-gitignore was not written.
+- **2026-09-05 — The container hears `synced` last, so it can die
+  complete.** Killed after its last blob, the rows are whole and
+  `syncOut()` resolves; only the agent's memory is stale. Rows are the
+  truth.
+- **2026-09-05 — Sending on a closed pair does not throw in workerd**;
+  the close event is the only signal. A symlink's mode differs by OS, so
+  the agent says 0o777. `toEqual` on megabyte arrays cost 244 s; a byte
+  loop, 5 s. Cost: 35 minutes, 25 the builder's.
+- **2026-09-05 — Open: a refused over-cap file is deleted by the next
+  sync-in**, since the rows never had it. A big packfile would break the
+  clone on the second command; pen phase 4 decides whether the agent
+  keeps refused paths as cache.
+- **2026-09-05 — Open: the agent hashes the whole checkout every sync**,
+  walks `node_modules` before the rule drops it, and reads only the root
+  `.gitignore`. Pen phase 3's real `pnpm install` measures the cost.
 
 ## Phase 2 — The router and the sentence
 

@@ -1,58 +1,157 @@
 /**
  * The process test: the real `pen-agent` entry, spawned with plain node,
  * against a WebSocket server this test opens. Node on purpose: the agent
- * runs in Node inside the container, so Node is where it is proved.
+ * runs in Node inside the container, so Node is where it is proved. The
+ * test acts as the cell: a manifest in, blobs down, an edit to the
+ * directory, a sync out.
  */
 import { type ChildProcess, spawn } from "node:child_process";
-import { mkdtemp } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { chmod, lstat, mkdir, mkdtemp, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type WebSocket, WebSocketServer } from "ws";
-import { CELL_URL_ENV, decodeFrame, encodeFrame, type Frame, TOKEN_ENV, TOKEN_PARAM } from "../src/protocol.ts";
+import { CELL_URL_ENV, decodeFrame, encodeFrame, type Frame, type ManifestEntry, TOKEN_ENV, TOKEN_PARAM } from "../src/protocol.ts";
 
 const entry = new URL("../bin/pen-agent.mjs", import.meta.url).pathname;
+const encoder = new TextEncoder();
 
 function exited(child: ChildProcess): Promise<number | null> {
   return new Promise((resolve) => child.once("exit", (code) => resolve(code)));
 }
 
+function sha256(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+/** Messages from the agent, in order: frames decoded, bytes as they are. */
+function inbox(socket: WebSocket): () => Promise<Frame | Uint8Array> {
+  const queue: Array<Frame | Uint8Array> = [];
+  const waiting: Array<(message: Frame | Uint8Array) => void> = [];
+  socket.on("message", (data: Buffer, isBinary: boolean) => {
+    const message = isBinary ? new Uint8Array(data) : decodeFrame(data.toString());
+    const next = waiting.shift();
+    if (next) next(message);
+    else queue.push(message);
+  });
+  return () =>
+    new Promise((resolve) => {
+      const queued = queue.shift();
+      if (queued !== undefined) resolve(queued);
+      else waiting.push(resolve);
+    });
+}
+
 describe("pen-agent, the process", () => {
-  it("connects to PEN_CELL_URL with the token, answers ping, and exits when the socket closes", async () => {
+  it("connects with the token, checks out a manifest, reports an edit, and exits when the socket closes", async () => {
     const server = new WebSocketServer({ port: 0 });
     const connection = new Promise<{ socket: WebSocket; url: string }>((resolve) => {
       server.once("connection", (socket, request) => resolve({ socket, url: request.url ?? "" }));
     });
     const port = (server.address() as { port: number }).port;
+    const workspace = await mkdtemp(join(tmpdir(), "pen-"));
     const stderr: string[] = [];
     const child = spawn(process.execPath, [entry], {
       env: {
         ...process.env,
         [CELL_URL_ENV]: `ws://127.0.0.1:${port}/pen`,
         [TOKEN_ENV]: "minted-for-this-container",
-        PEN_WORKSPACE: await mkdtemp(join(tmpdir(), "pen-")),
+        PEN_WORKSPACE: workspace,
       },
       stdio: ["ignore", "ignore", "pipe"],
     });
     child.stderr!.on("data", (chunk: Buffer) => stderr.push(chunk.toString()));
 
     const { socket, url } = await connection;
+    const next = inbox(socket);
     const address = new URL(url, "ws://127.0.0.1");
     expect(address.pathname).toBe("/pen");
     expect(address.searchParams.get(TOKEN_PARAM)).toBe("minted-for-this-container");
 
-    const answer = new Promise<Frame>((resolve) => socket.once("message", (data) => resolve(decodeFrame(data.toString()))));
     socket.send(encodeFrame({ type: "ping", id: "1" }));
-    expect(await answer).toEqual({ type: "pong", id: "1" });
+    expect(await next()).toEqual({ type: "pong", id: "1" });
 
-    const notYet = new Promise<Frame>((resolve) => socket.once("message", (data) => resolve(decodeFrame(data.toString()))));
-    socket.send(encodeFrame({ type: "synced", id: "1" }));
-    expect(await notYet).toMatchObject({ type: "error", code: "unsupported", of: "synced" });
+    socket.send(encodeFrame({ type: "run", id: "1", command: "true", cwd: "/workspace", env: {}, timeout: 1 }));
+    expect(await next()).toMatchObject({ type: "error", code: "unsupported", of: "run" });
+
+    // Sync in: two files, one executable, and a symlink, under a directory.
+    const hello = encoder.encode("hello from the rows\n");
+    const script = encoder.encode("#!/bin/sh\necho ok\n");
+    const target = encoder.encode("hello.txt");
+    const manifest: ManifestEntry[] = [
+      { path: "src", kind: "directory", mode: 0o755, hash: null },
+      { path: "src/hello.txt", kind: "file", mode: 0o644, hash: sha256(hello) },
+      { path: "src/link", kind: "symlink", mode: 0o777, hash: sha256(target) },
+      { path: "src/run.sh", kind: "file", mode: 0o755, hash: sha256(script) },
+    ];
+    socket.send(encodeFrame({ type: "manifest", id: "in-1", entries: manifest }));
+    const need = await next();
+    expect(need).toEqual({ type: "need", id: "in-1", hashes: [sha256(hello), sha256(target), sha256(script)] });
+    for (const bytes of [hello, target, script]) {
+      socket.send(encodeFrame({ type: "blob", hash: sha256(bytes), size: bytes.byteLength }));
+      socket.send(bytes);
+    }
+    expect(await next()).toEqual({ type: "checkout", id: "in-1" });
+    expect(await readFile(join(workspace, "src/hello.txt"), "utf8")).toBe("hello from the rows\n");
+    expect(await readlink(join(workspace, "src/link"))).toBe("hello.txt");
+    expect((await lstat(join(workspace, "src/run.sh"))).mode & 0o777).toBe(0o755);
+    expect((await lstat(join(workspace, "src/hello.txt"))).mode & 0o777).toBe(0o644);
+
+    // The command's work: an edit, an add, a delete, a mode, and a cache the rule keeps.
+    await writeFile(join(workspace, "src/hello.txt"), "edited in the container\n");
+    await writeFile(join(workspace, "src/new.txt"), "new\n");
+    await rm(join(workspace, "src/run.sh"));
+    await chmod(join(workspace, "src/hello.txt"), 0o600);
+    await writeFile(join(workspace, ".gitignore"), "*.log\n");
+    await writeFile(join(workspace, "debug.log"), "noise\n");
+    await mkdir(join(workspace, "node_modules/pkg"), { recursive: true });
+    await writeFile(join(workspace, "node_modules/pkg/index.js"), "cached\n");
+    await rm(join(workspace, "src/link"));
+    await symlink("new.txt", join(workspace, "src/link"));
+
+    socket.send(encodeFrame({ type: "sync", id: "out-1" }));
+    const edited = encoder.encode("edited in the container\n");
+    const added = encoder.encode("new\n");
+    const gitignore = encoder.encode("*.log\n");
+    const retarget = encoder.encode("new.txt");
+    expect(await next()).toEqual({
+      type: "changed",
+      id: "out-1",
+      entries: [
+        { path: ".gitignore", kind: "file", mode: 0o644, hash: sha256(gitignore), size: gitignore.byteLength },
+        { path: "src/hello.txt", kind: "file", mode: 0o600, hash: sha256(edited), size: edited.byteLength },
+        { path: "src/link", kind: "symlink", mode: 0o777, hash: sha256(retarget), size: retarget.byteLength },
+        { path: "src/new.txt", kind: "file", mode: 0o644, hash: sha256(added), size: added.byteLength },
+      ],
+      deleted: ["src/run.sh"],
+    });
+    socket.send(encodeFrame({ type: "need", id: "out-1", hashes: [sha256(edited), sha256(retarget)] }));
+    expect(await next()).toEqual({ type: "blob", hash: sha256(edited), size: edited.byteLength });
+    expect(await next()).toEqual(edited);
+    expect(await next()).toEqual({ type: "blob", hash: sha256(retarget), size: retarget.byteLength });
+    expect(await next()).toEqual(retarget);
+    socket.send(encodeFrame({ type: "synced", id: "out-1", refused: [] }));
+
+    // A second manifest that drops the new file and keeps the rest: the agent needs nothing and deletes it, not the cache.
+    const second: ManifestEntry[] = [
+      { path: ".gitignore", kind: "file", mode: 0o644, hash: sha256(gitignore) },
+      { path: "src", kind: "directory", mode: 0o755, hash: null },
+      { path: "src/hello.txt", kind: "file", mode: 0o600, hash: sha256(edited) },
+      { path: "src/link", kind: "symlink", mode: 0o777, hash: sha256(retarget) },
+    ];
+    socket.send(encodeFrame({ type: "manifest", id: "in-2", entries: second }));
+    expect(await next()).toEqual({ type: "need", id: "in-2", hashes: [] });
+    expect(await next()).toEqual({ type: "checkout", id: "in-2" });
+    await expect(lstat(join(workspace, "src/new.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(join(workspace, "debug.log"), "utf8")).toBe("noise\n");
+    expect(await readFile(join(workspace, "node_modules/pkg/index.js"), "utf8")).toBe("cached\n");
 
     socket.close(1000, "cell done");
     expect(await exited(child)).toBe(0);
     expect(stderr.join("")).toBe("");
     await new Promise<void>((resolve) => server.close(() => resolve()));
+    await rm(workspace, { recursive: true, force: true });
   });
 
   it("refuses to start without its environment", async () => {

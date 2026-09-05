@@ -1,76 +1,195 @@
 /**
- * The fake container every pen test talks to: the real agent handler from
+ * The fake container every pen test talks to: the real agent from
  * `@lamb/pen/agent`, served over one end of a `WebSocketPair` in workerd,
  * with its checkout in a `Map`. Not a second agent; the agent over a
  * different disk. The test holds the other end, which is what the cell
- * will hold, and `stop()` is the shepherd's hand: the container going away
+ * holds, and `stop()` is the shepherd's hand: the container going away
  * mid-anything.
+ *
+ * The fake keeps a transcript, every frame in both directions in the
+ * order the agent saw them, and can be told to die after the n-th, so a
+ * kill test can walk every point of a sync.
  */
 import { type Disk, type DiskEntry, serveAgent } from "@lamb/pen/agent";
-import { type CellFrame, type ContainerFrame, decodeFrame, encodeFrame } from "@lamb/pen/protocol";
+import { type CellFrame, type ContainerFrame, decodeFrame, encodeFrame, type EntryKind, type Frame, messageBytes, type Refused } from "@lamb/pen/protocol";
+import { hashBytes } from "../src/workspace/files.ts";
 
+export type MemoryEntry =
+  | { kind: "file"; bytes: Uint8Array; mode: number }
+  | { kind: "directory"; mode: number }
+  | { kind: "symlink"; target: string; mode: number };
+
+/** A disk in a `Map`, every kind of entry first-class. Parents are created on write, as `node:fs` does for the agent. */
 export interface MemoryDisk extends Disk {
-  readonly files: Map<string, Uint8Array>;
-  readonly modes: Map<string, number>;
+  readonly entries: Map<string, MemoryEntry>;
+  /** Writes a file, creating parents. A string is UTF-8. */
+  putFile(path: string, content: string | Uint8Array, mode?: number): void;
+  putDirectory(path: string, mode?: number): void;
+  putSymlink(path: string, target: string): void;
+  /** Removes an entry and everything under it. */
+  delete(path: string): void;
+}
+
+const encoder = new TextEncoder();
+
+async function webCryptoSha256(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", bytes as Uint8Array<ArrayBuffer>);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 export function memoryDisk(): MemoryDisk {
-  const files = new Map<string, Uint8Array>();
-  const modes = new Map<string, number>();
-  return {
-    files,
-    modes,
+  const entries = new Map<string, MemoryEntry>();
+  const ensureParents = (path: string) => {
+    const parts = path.split("/");
+    for (let depth = 1; depth < parts.length; depth++) {
+      const dir = parts.slice(0, depth).join("/");
+      if (entries.get(dir)?.kind !== "directory") entries.set(dir, { kind: "directory", mode: 0o755 });
+    }
+  };
+  const removeTree = (path: string) => {
+    entries.delete(path);
+    for (const key of [...entries.keys()]) if (key.startsWith(`${path}/`)) entries.delete(key);
+  };
+  const disk: MemoryDisk = {
+    entries,
+    putFile(path, content, mode = 0o644) {
+      ensureParents(path);
+      entries.set(path, { kind: "file", bytes: typeof content === "string" ? encoder.encode(content) : content, mode });
+    },
+    putDirectory(path, mode = 0o755) {
+      ensureParents(path);
+      entries.set(path, { kind: "directory", mode });
+    },
+    putSymlink(path, target) {
+      ensureParents(path);
+      entries.set(path, { kind: "symlink", target, mode: 0o777 });
+    },
+    delete: removeTree,
     async read(path) {
-      const bytes = files.get(path);
-      if (bytes === undefined) throw new Error(`ENOENT: ${path}`);
-      return bytes;
+      const entry = entries.get(path);
+      if (entry?.kind !== "file") throw new Error(`ENOENT: ${path}`);
+      return entry.bytes;
     },
     async write(path, bytes, options) {
-      files.set(path, bytes);
-      if (options?.mode !== undefined) modes.set(path, options.mode);
+      const existing = entries.get(path);
+      disk.putFile(path, bytes, options?.mode ?? (existing?.kind === "file" ? existing.mode : 0o644));
+    },
+    async mkdir(path, mode) {
+      const existing = entries.get(path);
+      if (existing?.kind === "directory") existing.mode = mode;
+      else disk.putDirectory(path, mode);
+    },
+    async symlink(target, path) {
+      removeTree(path);
+      disk.putSymlink(path, target);
+    },
+    async readlink(path) {
+      const entry = entries.get(path);
+      if (entry?.kind !== "symlink") throw new Error(`EINVAL: ${path}`);
+      return entry.target;
+    },
+    async chmod(path, mode) {
+      const entry = entries.get(path);
+      if (entry === undefined) throw new Error(`ENOENT: ${path}`);
+      entry.mode = mode;
     },
     async list() {
-      const seen = new Map<string, DiskEntry>();
-      for (const path of files.keys()) {
-        const parts = path.split("/");
-        for (let depth = 1; depth < parts.length; depth++) {
-          const dir = parts.slice(0, depth).join("/");
-          seen.set(dir, { path: dir, kind: "directory", mode: 0o755 });
-        }
-        seen.set(path, { path, kind: "file", mode: modes.get(path) ?? 0o644 });
-      }
-      return [...seen.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+      const listed: DiskEntry[] = [...entries].map(([path, entry]) => ({ path, kind: entry.kind as EntryKind, mode: entry.mode }));
+      return listed.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
     },
     async remove(path) {
-      files.delete(path);
-      modes.delete(path);
-      for (const key of [...files.keys()]) if (key.startsWith(`${path}/`)) files.delete(key);
+      removeTree(path);
     },
+    digest: webCryptoSha256,
   };
+  return disk;
 }
+
+/** One line of the transcript: a frame, or the bytes of a blob by their hash. */
+export type TranscriptEntry =
+  | { from: "cell" | "container"; frame: Frame }
+  | { from: "cell" | "container"; binary: string; size: number };
 
 export interface FakeContainer {
   /** The cell's end of the socket. */
   socket: WebSocket;
   disk: MemoryDisk;
+  /** Every frame the agent received or sent, in order, as it saw them. */
+  transcript: TranscriptEntry[];
+  /** The agent's sync-out, in place of the `run` a later phase ends with one. */
+  syncOut(id: string): Promise<Refused[]>;
   /** The container dies: its end closes with `reason`, and nothing more is answered. */
   stop(reason?: string): void;
   /** Resolves once the agent has seen its socket close. */
   closed: Promise<void>;
 }
 
-export function startFakeContainer(disk: MemoryDisk = memoryDisk()): FakeContainer {
+export interface FakeContainerOptions {
+  disk?: MemoryDisk;
+  /** Die right after the n-th transcript entry, sent or received. */
+  stopAfter?: number;
+}
+
+export function startFakeContainer(options: FakeContainerOptions = {}): FakeContainer {
+  const disk = options.disk ?? memoryDisk();
+  const transcript: TranscriptEntry[] = [];
   const pair = new WebSocketPair();
   const cellEnd = pair[0];
   const agentEnd = pair[1];
   cellEnd.accept();
   agentEnd.accept();
-  const served = serveAgent(agentEnd, disk);
+
+  let stopped = false;
+  const closeListeners: Array<(event: unknown) => void> = [];
+  const stop = (reason: string) => {
+    if (stopped) return;
+    stopped = true;
+    agentEnd.close(1012, reason);
+    for (const listener of closeListeners) listener({ code: 1012, reason });
+  };
+  const record = (entry: TranscriptEntry) => {
+    transcript.push(entry);
+    if (options.stopAfter !== undefined && transcript.length === options.stopAfter) stop("stopped by the test");
+  };
+
+  // The agent's socket: the pair's far end, seen through the transcript and the stop.
+  let tail = Promise.resolve();
+  const wrapped = {
+    send(data: string | Uint8Array) {
+      if (stopped) return;
+      agentEnd.send(data);
+      if (typeof data === "string") record({ from: "container", frame: decodeFrame(data) });
+      else record({ from: "container", binary: hashBytes(data), size: data.byteLength });
+    },
+    addEventListener(type: "message" | "close", listener: (event: { data: unknown }) => void) {
+      if (type === "close") {
+        closeListeners.push(listener as (event: unknown) => void);
+        return;
+      }
+      agentEnd.addEventListener("message", (event) => {
+        // Record in arrival order even when the bytes come as a Blob.
+        tail = tail.then(async () => {
+          if (stopped) return;
+          const data = event.data;
+          if (typeof data === "string") record({ from: "cell", frame: decodeFrame(data) });
+          else {
+            const bytes = await messageBytes(data);
+            record({ from: "cell", binary: bytes === undefined ? "?" : hashBytes(bytes), size: bytes?.byteLength ?? 0 });
+          }
+          listener({ data });
+        });
+      });
+    },
+  };
+  agentEnd.addEventListener("close", (event) => stop(event.reason));
+  const served = serveAgent(wrapped, disk);
   return {
     socket: cellEnd,
     disk,
+    transcript,
+    syncOut: (id) => served.syncOut(id),
     stop(reason = "container stopped") {
-      agentEnd.close(1012, reason);
+      stop(reason);
     },
     closed: served.closed,
   };
