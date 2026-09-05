@@ -125,7 +125,9 @@ that container's lifetime, and everything else is messages on it:
   the container once the tree is on its disk.
 - `run {command, cwd, env, timeout}` from the cell; `stdout`, `stderr`
   frames from the container as they happen; `exit {code}` or `killed
-  {reason}` at the end.
+  {reason}` at the end. `kill {reason}` from the cell ends a run early,
+  when pi's timeout fires or the turn is aborted, and `killed` answers
+  it.
 - `changed {manifest diff}` from the container after a run, or on
   `sync` from the cell when there was none; `need
   [hashes]` from the cell, which asks only for what it will accept;
