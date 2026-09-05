@@ -2,7 +2,7 @@
 // Runs this project on a local celld node: the Wrangler config plus .dev.vars as string vars,
 // written to .celld/wrangler.dev.json, with esbuild located for celld.
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,9 +16,9 @@ if (existsSync(join(here, ".dev.vars"))) {
     if (match) vars[match[1]] = match[2];
   }
 }
-mkdirSync(join(here, ".celld"), { recursive: true });
-const out = join(here, ".celld", "wrangler.dev.json");
-writeFileSync(out, JSON.stringify({ ...config, main: join(here, config.main), vars }, null, 2));
+// celld wants `main` inside the project, so the generated config sits beside wrangler.jsonc (gitignored).
+const out = join(here, "wrangler.celld.dev.json");
+writeFileSync(out, JSON.stringify({ ...config, vars }, null, 2));
 const require = createRequire(import.meta.url);
 const esbuild = join(dirname(require.resolve("esbuild/package.json")), "bin", "esbuild");
 const celld = process.env.CELLD ?? "celld";
