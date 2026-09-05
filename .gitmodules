@@ -2,3 +2,4 @@
 	path = vendor/pi
 	url = https://github.com/earendil-works/pi.git
 	shallow = true
+	ignore = dirty
