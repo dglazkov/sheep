@@ -9,6 +9,19 @@ importers:
   .: {}
 
   packages/cell:
+    dependencies:
+      '@earendil-works/chord':
+        specifier: link:../../vendor/pi/packages/chord
+        version: link:../../vendor/pi/packages/chord
+      '@earendil-works/pi-agent-core':
+        specifier: link:../../vendor/pi/packages/agent
+        version: link:../../vendor/pi/packages/agent
+      '@earendil-works/pi-ai':
+        specifier: link:../../vendor/pi/packages/ai
+        version: link:../../vendor/pi/packages/ai
+      '@earendil-works/pi-session-backend-sqlite-node':
+        specifier: link:../../vendor/pi/packages/session-backends/sqlite-node
+        version: link:../../vendor/pi/packages/session-backends/sqlite-node
     devDependencies:
       '@cloudflare/vitest-pool-workers':
         specifier: ^0.22.0

@@ -194,15 +194,20 @@ before anything else in this project is written. **If the suites do not
 pass, this project stops at phase 1** and the design is rewritten around
 whatever failed.
 
-Two Node imports in the backend are worked around, not patched. The
-per-session file layout in `repo.ts` is meaningless in a cell, where the
-database *is* the cell, so the cell's `SessionRepo` is a wrapper that opens
-the one session the cell holds and delegates `list` to the Directory.
-`migrations.ts` reads `.sql` files off disk, so the migration text is
-bundled as strings at build time by the same script that copies them for
-the Node package. Both are recorded as upstream candidates: a
-`SqliteSessionRepo` that takes an opened database instead of a directory,
-and migrations exported as strings, would remove the wrapper and the copy.
+**What phase 1 found** (5 Sep): pi's `SqliteSessionRepo` runs in the cell
+unmodified. Its schema scopes every row by session id and its
+shared-container mode wants a single path, which workerd's in-memory
+`node:fs` can satisfy with a marker file the factory touches on every
+wake. So there is no `CellSessionRepo`; the cell constructs pi's repo over
+`CellSqliteDatabaseFactory` with `databasePath` set to the marker. Two
+patches were needed and live in `vendor/patches`: the schema inlined as a
+string beside the `.sql` file with a `./sqlite` export that avoids
+`node:sqlite`, and entry lookups chunked because the cell's SQLite binds
+at most 100 variables. The adapter also drops the journal-mode and
+busy-timeout pragmas and the explicit `BEGIN`/`COMMIT` around the fork
+snapshot, which the platform owns or a single-threaded object does not
+need, and reads `changes()` after each statement because the cursor's
+`rowsWritten` counts index rows.
 
 The session id is the Durable Object's name. `SessionMetadata.cwd` is
 `/workspace`, always, because the cwd is a fact about the cell and not

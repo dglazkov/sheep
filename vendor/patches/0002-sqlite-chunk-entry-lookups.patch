@@ -1,0 +1,40 @@
+diff --git a/packages/session-backends/sqlite-node/src/sqlite/session/entries.ts b/packages/session-backends/sqlite-node/src/sqlite/session/entries.ts
+index ead7e56..dc2c024 100644
+--- a/packages/session-backends/sqlite-node/src/sqlite/session/entries.ts
++++ b/packages/session-backends/sqlite-node/src/sqlite/session/entries.ts
+@@ -131,15 +131,28 @@ export function entryStructureFromRow(row: EntryRow): EntryStructure {
+ 	};
+ }
+ 
++/**
++ * Ids per `IN (...)` lookup. SQLite builds cap bound variables (100 on
++ * Cloudflare's, 999 on older stock builds), so lookups are chunked rather than
++ * assuming one query can name every id.
++ */
++const ENTRY_LOOKUP_CHUNK = 64;
++
+ export function readEntryRows(db: SqliteDatabase, sessionId: string, ids: readonly string[]): EntryRow[] {
+ 	if (ids.length === 0) return [];
+-	const placeholders = joinSqlFragments(
+-		ids.map((id) => sql`${id}`),
+-		", ",
+-	);
+-	return sql`SELECT id, parent_id, seq, type, custom_type, timestamp, payload
+-		FROM entries
+-		WHERE session_id = ${sessionId} AND id IN (${placeholders})`.all<EntryRow>(db);
++	const rows: EntryRow[] = [];
++	for (let start = 0; start < ids.length; start += ENTRY_LOOKUP_CHUNK) {
++		const placeholders = joinSqlFragments(
++			ids.slice(start, start + ENTRY_LOOKUP_CHUNK).map((id) => sql`${id}`),
++			", ",
++		);
++		rows.push(
++			...sql`SELECT id, parent_id, seq, type, custom_type, timestamp, payload
++			FROM entries
++			WHERE session_id = ${sessionId} AND id IN (${placeholders})`.all<EntryRow>(db),
++		);
++	}
++	return rows;
+ }
+ 
+ export function readAllEntryRows(db: SqliteDatabase, sessionId: string): EntryRow[] {

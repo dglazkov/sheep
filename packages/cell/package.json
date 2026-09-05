@@ -16,5 +16,11 @@
     "typescript": "^5.9.0",
     "vitest": "^4.1.0",
     "wrangler": "^4.0.0"
+  },
+  "dependencies": {
+    "@earendil-works/chord": "link:../../vendor/pi/packages/chord",
+    "@earendil-works/pi-agent-core": "link:../../vendor/pi/packages/agent",
+    "@earendil-works/pi-ai": "link:../../vendor/pi/packages/ai",
+    "@earendil-works/pi-session-backend-sqlite-node": "link:../../vendor/pi/packages/session-backends/sqlite-node"
   }
 }

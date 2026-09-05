@@ -16,7 +16,9 @@ what the next phase is.
   argument goes in the commit message.
 
 ```
-git submodule update --init && pnpm install && pnpm patches:apply
+git submodule update --init && pnpm patches:apply
+(cd vendor/pi && npm ci --ignore-scripts && for p in chord telemetry ai agent session-backends/sqlite-node; do (cd packages/$p && npm run build); done)
+pnpm install
 pnpm test          # every package's suite; the cell's runs in workerd
 pnpm deploy        # wrangler deploy, needs CLOUDFLARE_API_TOKEN
 pnpm deploy:celld  # celld deploy against a fleet

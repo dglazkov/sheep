@@ -30,9 +30,11 @@ roster of them.
 
 ---
 
-**Where we are: PHASE 0 PART-DONE 5 Sep 2026.** The scaffold builds and its
-proof runs in workerd; the deploy half waits on a Cloudflare token. The
-next thing to do is phase 1.
+**Where we are: PHASE 1 CLOSED 5 Sep 2026; phase 0 PART-DONE** on its
+deploy half, waiting on a Cloudflare token. The gate held: every case in
+pi's storage and repo conformance suites passes in workerd over the cell's
+SQLite, and pi's own repo runs there unmodified. The next thing to do is
+phase 2.
 
 The order is dependency order and it is also risk order: phase 1 is the
 gate, because if pi's storage does not run over the cell's SQL nothing
@@ -122,7 +124,12 @@ from it. `lamb --version` prints.
 
 ## Phase 1 — pi's storage over the cell's SQL
 
-**Status: NOT STARTED.**
+**Status: CLOSED** 5 Sep 2026. All 21 storage conformance cases and all 17
+session-repo conformance cases pass in workerd against
+`CellSqliteDatabase`, with no case excluded: pi's own `SqliteSessionRepo`
+runs in the cell in shared-container mode, so the `CellSessionRepo` wrapper
+the design planned was not needed. pi's backend suite passes at the pinned
+commit with lamb's two patches applied (105 tests). Typecheck clean.
 
 **Closes nothing by itself; journeys 1 and 7 depend on it.** This is the
 gate. If the conformance suites cannot be made to pass, the conductor
@@ -157,7 +164,45 @@ still passes at the pinned commit with lamb's patches applied.
 
 **Findings:**
 
-- None yet.
+- **2026-09-05 — pi's `SqliteSessionRepo` runs in the cell unmodified.**
+  Its schema already scopes every row by session id, its shared-container
+  mode wants one path, and workerd's `node:fs` under `/tmp` satisfies the
+  `mkdir`, `realpath`, and `open("wx")` calls it makes. The cell touches a
+  marker file at `/tmp/lamb/sessions.sqlite` and hands the repo its one
+  database for any path. No `CellSessionRepo`.
+- **2026-09-05 — The marker file dies with the isolate.** In-memory
+  `node:fs` is per isolate, so `CellSqliteDatabaseFactory.prepare()` must
+  run again after every wake, before the repo's first `realpath`.
+- **2026-09-05 — Patch 0001, `sqlite-backend-runtime-neutral`:** the
+  initial schema inlined as `INITIAL_SCHEMA_SQL` beside the `.sql` file,
+  `migrations.ts` re-exported from `sqlite/index.ts`, and a `./sqlite`
+  export so the runtime-neutral core is reachable without `node:sqlite`.
+  Upstream: not yet proposed.
+- **2026-09-05 — The cell's SQLite binds at most 100 variables.** pi's
+  `getEntries` named every id in one `IN (...)`, so 100 ids plus the
+  session id failed. **Patch 0002, `sqlite-chunk-entry-lookups`:** lookups
+  in chunks of 64. Upstream: not yet proposed. Found by the timing pass,
+  not the conformance suites, which never look up that many.
+- **2026-09-05 — `rowsWritten` on a cursor counts index rows.** pi's
+  `run()` wants SQLite's `changes()`; the adapter selects it after each
+  statement. Before the fix, 8 of 21 storage cases failed on "updated 2".
+- **2026-09-05 — The cell's SQLite refuses `PRAGMA journal_mode`,
+  `PRAGMA busy_timeout`, and explicit `BEGIN`/`COMMIT`/`ROLLBACK`.** The
+  adapter drops them: the first two are the platform's business, and the
+  fork snapshot's explicit transaction wraps synchronous reads that nothing
+  can interleave in a single-threaded object.
+- **2026-09-05 — Cursors are materialized.** `iterate` returns an array; a
+  cursor held open across another `exec` is not a contract the cell's
+  SQLite offers, and pi's scans are bounded.
+- **2026-09-05 — One timed pass, 1k entries, 256-byte payloads, cell
+  against `node:sqlite` in memory:** seed 59 / 56 ms; get 100 entries 1.0 /
+  1.2; scan latest 50 1.0 / 0.6; full branch structure 3.0 / 3.0; commit
+  one 0 / 0.2; commit 100 6.0 / 5.3; mixed append 2.0 / 0.6. workerd's
+  timer is 1 ms coarse. Same order of magnitude everywhere.
+- **2026-09-05 — pi's packages come from the pinned checkout, not npm.**
+  `npm ci` and a build of chord, telemetry, ai, agent, and the backend
+  take about fifteen seconds; the cell depends on them by `link:`. npm has
+  0.85.0 too, but it cannot carry patches.
 
 ## Phase 2 — The workspace and the shell
 
