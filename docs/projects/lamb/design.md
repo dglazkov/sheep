@@ -294,9 +294,14 @@ framing is length-prefixed CBOR inside a binary message, unchanged from the
 Unix transport. `RoutedServerServiceHost` and `RoutedSessionHandle` are
 pi's; the cell provides the `ServerHost` with a resolver that knows one
 session and an `openSession` that returns the harness the cell already
-holds. Hibernation is safe because the protocol's attachment state is
-small and is written to the cell's storage beside the socket's tags, so a
-wake can rebuild the router's map from the sockets it still has.
+holds. **What phase 4 found** (5 Sep): the sockets are standard, not
+hibernating. pi-server keeps a connection's handshake stage and attachments
+in memory and pi's client never reconnects on its own, so a wake would end
+in a reconnect either way; a cell with a terminal attached stays in memory
+and hibernates when the last one leaves. The session-scoped services are
+pi's own `createSessionWorkerServices` run in-process over the cell's lane,
+and the server-scoped ones are pi's `createExperimentalServerServices` over
+the Directory.
 
 **Client side.** A `ByteTransportFactory` over a WebSocket: `send` is
 `socket.send(bytes)`, inbound messages are `handlers.onData(chunk)`, close
@@ -304,24 +309,21 @@ and error map to their handlers. That is the whole transport. The Radius
 relay's transport in `pi-coding-agent` already does the same over undici's
 WebSocket, minus the relay's header, and is the reference.
 
-**The terminal.** `lamb` is pi's experimental client TUI with a WebSocket
-route beside its Unix and Radius routes. Today that TUI lives in
-`pi-coding-agent/src/experimental/` and is not exported from the package,
-and `pi client` accepts no server URL. So `lamb` is built from a pinned pi
-checkout as a workspace dependency, and adding a `--server wss://…` route to
-`pi client` is the patch this project carries against pi until it is
-upstreamed. **The terminal is the least settled seam in the design**, and
-phase 4's first finding is whether the patch is one file, as it appears, or
-whether the client's route selection assumes a local coordinator in ways
-the reading missed.
+**The terminal.** `lamb` runs `pi client` from the pinned checkout with a
+WebSocket route beside its Unix and Radius routes: patch 0004 adds a
+transport to `pi-client` and a `--connect wss://…?serverId=<uuid>` address
+to the client, and `lamb` only chooses the route. The server's logical id
+rides in the URL because pi's client verifies it at the handshake, and
+`GET /home` answers it. With a prompt after `--` the reply streams and
+lamb exits, as pi does when stdout is not a terminal.
 
 ```
-lamb new [--name <name>]          # mint a session at the Directory, attach, open the TUI
-lamb -c | --continue              # attach to the newest session
-lamb attach <sessionId>           # attach to a named one; a second terminal on the same cell
-lamb ls                           # the Directory's list
-lamb export <sessionId> [file]   # the cell's SQLite file, which pi's Node SQLite backend opens
-lamb --home <url>                 # which deployment; default from ~/.lamb/config
+lamb new [--name <name>] [-- <prompt>]   # mint a session at the Directory, attach, open pi's TUI
+lamb -c | --continue [-- <prompt>]       # attach to the newest session
+lamb attach <sessionId> [-- <prompt>]    # attach to a named one; a second terminal on the same cell
+lamb ls                                  # the Directory's list
+lamb export <sessionId> [file]           # pi's rows rebuilt into a SQLite file pi's Node backend opens
+lamb --home <url>                        # which deployment; default from ~/.lamb/config
 ```
 
 Auth in this leg is one bearer token per deployment, a Worker secret, sent

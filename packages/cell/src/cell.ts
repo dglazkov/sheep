@@ -23,12 +23,15 @@ import {
   type Session,
   withCancel,
 } from "@earendil-works/pi-agent-core";
+import { Server } from "@earendil-works/pi-server";
 import type { SqliteSessionRepo } from "@earendil-works/pi-session-backend-sqlite-node/sqlite";
 import { DurableObject } from "cloudflare:workers";
 import { CellExecutionEnv } from "./env/execution-env.ts";
 import { SHELL_SYSTEM_PROMPT_LINE } from "./env/shell-notice.ts";
 import { type CellModels, createCellModels } from "./models.ts";
 import { createCellSessionRepo } from "./storage/sqlite.ts";
+import { createCellHost } from "./wire/host.ts";
+import { WebSocketListener } from "./wire/listener.ts";
 import { TEMP_ROOT } from "./workspace/files.ts";
 
 /** How far ahead the heartbeat is armed while an operation is open. */
@@ -43,6 +46,10 @@ interface Runtime {
   lane: AgentLane;
   /** Cancels every detached drive this incarnation started. */
   drives: Set<() => void>;
+  /** pi's protocol server over this cell's WebSockets. */
+  server: Server;
+  listener: WebSocketListener;
+  serverId: string;
 }
 
 export interface CellState {
@@ -50,6 +57,7 @@ export interface CellState {
   tipId: string | null;
   operation: LaneSnapshot["operation"];
   model: { provider: string; modelId: string };
+  serverId: string;
 }
 
 export interface TranscriptView extends CellState {
@@ -114,6 +122,25 @@ export class SessionCell extends DurableObject<Env> {
     );
     runtime.harness = harness;
     runtime.lane = await harness.lane("main", context);
+    const directory = this.env.DIRECTORY.getByName("home");
+    const serverId = await directory.serverId();
+    const { host } = await createCellHost({
+      serverId,
+      sessionId: this.sessionId,
+      metadata: session.metadata,
+      lane: runtime.lane,
+      directory: { list: () => directory.list(), create: (name) => directory.create(name) },
+    });
+    const listener = new WebSocketListener();
+    const server = new Server(host, {
+      listeners: [listener],
+      serverId,
+      onError: (error) => console.error(`[cell ${this.sessionId}] protocol server error:`, error.message),
+    });
+    await server.start();
+    runtime.server = server;
+    runtime.listener = listener;
+    runtime.serverId = serverId;
     const ready = runtime as Runtime;
     // Whatever the last incarnation left open continues now, unasked.
     for (const operation of open) {
@@ -197,7 +224,7 @@ export class SessionCell extends DurableObject<Env> {
     const handle = await runtime.lane.watch(BACKGROUND_CONTEXT);
     try {
       const { tipId, operation, configuration } = handle.snapshot;
-      return { id: this.sessionId, tipId, operation, model: configuration.model };
+      return { id: this.sessionId, tipId, operation, model: configuration.model, serverId: runtime.serverId };
     } finally {
       handle.unsubscribe();
     }
@@ -208,7 +235,7 @@ export class SessionCell extends DurableObject<Env> {
     const handle = await runtime.lane.watch(BACKGROUND_CONTEXT);
     try {
       const { tipId, operation, configuration, transcript } = handle.snapshot;
-      return { id: this.sessionId, tipId, operation, model: configuration.model, entries: transcript };
+      return { id: this.sessionId, tipId, operation, model: configuration.model, serverId: runtime.serverId, entries: transcript };
     } finally {
       handle.unsubscribe();
     }
@@ -265,6 +292,15 @@ export class SessionCell extends DurableObject<Env> {
     const url = new URL(request.url);
     const route = `${request.method} ${url.pathname}`;
     try {
+      if (url.pathname === "/ws") {
+        if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") return new Response("expected a WebSocket upgrade", { status: 426 });
+        const runtime = await this.runtime();
+        const pair = new WebSocketPair();
+        const [client, server] = [pair[0], pair[1]];
+        server.accept();
+        runtime.listener.attach(server);
+        return new Response(null, { status: 101, webSocket: client });
+      }
       if (route === "GET /") return Response.json(await this.state());
       if (route === "GET /transcript") {
         const wait = Number(url.searchParams.get("wait") ?? "0");

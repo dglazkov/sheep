@@ -30,12 +30,12 @@ roster of them.
 
 ---
 
-**Where we are: PHASE 3 PART-DONE 5 Sep 2026; phases 1 and 2 closed, phase
-0 PART-DONE.** The cell drives pi's harness on its own event loop, the
-alarm brings it back after eviction, and journey 2's eviction test holds
-at every transition in workerd; the walks that need a deployed home and a
-real model wait, with phase 0's deploy, on a Cloudflare token and an
-Anthropic key. The next thing to do is phase 4.
+**Where we are: PHASE 4 PART-DONE 5 Sep 2026; phases 1 and 2 closed,
+phases 0 and 3 PART-DONE.** pi's own client attaches to a cell over a
+WebSocket through `lamb`, two terminals share one session in workerd, and
+an exported session opens in pi's Node backend; every walk that needs a
+deployed home or a real model waits on a Cloudflare token and an Anthropic
+key. The next thing to do is phase 5.
 
 The order is dependency order and it is also risk order: phase 1 is the
 gate, because if pi's storage does not run over the cell's SQL nothing
@@ -371,7 +371,18 @@ entries.
 
 ## Phase 4 — The wire, and the terminal
 
-**Status: NOT STARTED.**
+**Status: PART-DONE** 5 Sep 2026. Built and proved locally: pi's protocol
+server runs in the cell over standard WebSockets; the session and server
+services the client expects are pi's own providers, in-process; pi-client
+gained a WebSocket transport and `pi client` a `--connect wss://` route
+(patch 0004); `lamb new`, `-c`, `attach`, `ls`, and `export` exist.
+Journey 3 holds in workerd with two protocol clients on one cell. Journey
+1 walked against `wrangler dev` with pi's real client: `lamb new -- "…"`
+streamed a reply, `lamb attach` prompted the same cell, `lamb export`
+wrote a file pi's Node backend opened with the same entries, and the
+interactive TUI drew pi's session header under a pseudo-terminal. Missing:
+the overnight and second-machine steps of journey 1 and the dashboard
+check of journey 3, all on a deployed home, waiting on a Cloudflare token.
 
 **Closes journeys 1 and 3.** The boulder.
 
@@ -409,7 +420,43 @@ hibernates with the alarm clear, checked from the dashboard.
 
 **Findings:**
 
-- None yet.
+- **2026-09-05 — The boulder was smaller than feared.** pi's client picks
+  a route from a discriminated union in one file, and the two places that
+  tested `=== "radius"` meant "remote". A `websocket` member, a transport
+  factory of eighty lines, and two export-map entries were the whole
+  terminal half. Patch 0004, `websocket-route-and-exports`. Upstream: not
+  yet proposed.
+- **2026-09-05 — The address is `wss://<home>/s/<id>/ws?token=…&serverId=<uuid>`.**
+  pi's client verifies the server's logical id at the handshake, so the
+  id rides in the URL; the Directory mints one UUIDv4 per home and every
+  cell answers with it. `lamb` asks `GET /home` for it before dialing.
+- **2026-09-05 — Sockets are standard, not hibernating.** pi-server keeps
+  a connection's handshake stage and attachments in memory, and pi's
+  client never reconnects on its own, so a hibernation wake would end in
+  a reconnect either way. A cell with a terminal attached stays in memory;
+  it hibernates when the last one leaves. Open: hibernation with
+  re-attachment is later work.
+- **2026-09-05 — The cell is the server.** Session-scoped services are
+  pi's `createSessionWorkerServices` in-process with no `ModelRuntime`, so
+  `/model` shows the lane's model and cannot switch; server-scoped ones
+  are pi's `createExperimentalServerServices` over the Directory, with
+  `remove` refused and plugins empty. A cell resolves only its own session
+  id.
+- **2026-09-05 — Frames arrive as Blob or ArrayBuffer depending on the
+  peer.** workerd handed the in-process client's frames to the listener as
+  Blobs, and `instanceof` failed across the test runner's realms. Both
+  transports read either shape through a promise chain so order holds.
+- **2026-09-05 — `lamb` runs `pi client`, not a TUI of its own**, from
+  the pinned checkout with `PI_EXPERIMENTAL=1`, resolved through the ESM
+  export map because pi-coding-agent has no CommonJS condition. With a
+  prompt after `--` the reply streams and lamb exits, which is how the
+  walks ran without a terminal.
+- **2026-09-05 — `lamb export` is rows into pi's schema.** `node:sqlite`
+  applies `INITIAL_SCHEMA_SQL` and inserts the seven tables; pi's Node
+  backend opened the file and listed the same four entries. Journey 7
+  step 3 walked early.
+- **2026-09-05 — Open: the deployed walks.** Overnight, a second machine,
+  and the dashboard's hibernation check need a Cloudflare token.
 
 ## Phase 5 — Git
 

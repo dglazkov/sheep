@@ -18,6 +18,16 @@ export class Directory extends DurableObject<Env> {
     ctx.storage.sql.exec(
       "CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, name TEXT, created_at INTEGER NOT NULL)",
     );
+    ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+  }
+
+  /** The home's logical server id for pi's protocol: a UUIDv4, minted once and kept. */
+  serverId(): string {
+    const row = this.ctx.storage.sql.exec<{ value: string }>("SELECT value FROM meta WHERE key = 'serverId'").toArray()[0];
+    if (row !== undefined) return row.value;
+    const minted = crypto.randomUUID();
+    this.ctx.storage.sql.exec("INSERT INTO meta (key, value) VALUES ('serverId', ?)", minted);
+    return minted;
   }
 
   create(name: string | null): SessionSummary {

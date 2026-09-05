@@ -3,7 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "bin": { "lamb": "./bin/lamb.js" },
+  "bin": {
+    "lamb": "./bin/lamb.js"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -13,5 +15,9 @@
     "@types/node": "^22.0.0",
     "typescript": "^5.9.0",
     "vitest": "^4.1.0"
+  },
+  "dependencies": {
+    "@earendil-works/pi-session-backend-sqlite-node": "link:../../vendor/pi/packages/session-backends/sqlite-node",
+    "@earendil-works/pi-coding-agent": "link:../../vendor/pi/packages/coding-agent"
   }
 }

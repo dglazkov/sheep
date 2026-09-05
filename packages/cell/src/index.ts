@@ -37,6 +37,7 @@ export default {
       return Response.json(summary, { status: 201 });
     }
     if (url.pathname === "/sessions" && request.method === "GET") return Response.json(await directory.list());
+    if (url.pathname === "/home" && request.method === "GET") return Response.json({ serverId: await directory.serverId() });
 
     const match = /^\/s\/([^/]+)(\/.*)?$/.exec(url.pathname);
     if (match) {
