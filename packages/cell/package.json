@@ -13,6 +13,7 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.22.0",
     "@cloudflare/workers-types": "^5.20260905.0",
+    "@types/diff": "^8.0.0",
     "typescript": "^5.9.0",
     "vitest": "^4.1.0",
     "wrangler": "^4.0.0"
@@ -26,6 +27,8 @@
     "@earendil-works/pi-protocol": "link:../../vendor/pi/packages/protocol",
     "@earendil-works/pi-server": "link:../../vendor/pi/packages/server",
     "@earendil-works/pi-session-backend-sqlite-node": "link:../../vendor/pi/packages/session-backends/sqlite-node",
+    "diff": "8.0.4",
+    "isomorphic-git": "1.41.9",
     "just-bash": "3.4.2"
   }
 }

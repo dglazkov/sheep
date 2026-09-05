@@ -30,12 +30,11 @@ roster of them.
 
 ---
 
-**Where we are: PHASE 4 PART-DONE 5 Sep 2026; phases 1 and 2 closed,
-phases 0 and 3 PART-DONE.** pi's own client attaches to a cell over a
-WebSocket through `lamb`, two terminals share one session in workerd, and
-an exported session opens in pi's Node backend; every walk that needs a
-deployed home or a real model waits on a Cloudflare token and an Anthropic
-key. The next thing to do is phase 5.
+**Where we are: PHASE 5 PART-DONE 5 Sep 2026; phases 1 and 2 closed,
+phases 0, 3, and 4 PART-DONE.** `git` runs in the shell over isomorphic-git
+and journey 5 holds in workerd against a fixture served by `git
+http-backend`; every walk that needs a deployed home, a real model, or a
+real GitHub token waits on secrets. The next thing to do is phase 6.
 
 The order is dependency order and it is also risk order: phase 1 is the
 gate, because if pi's storage does not run over the cell's SQL nothing
@@ -460,7 +459,17 @@ hibernates with the alarm clear, checked from the dashboard.
 
 ## Phase 5 — Git
 
-**Status: NOT STARTED.**
+**Status: PART-DONE** 5 Sep 2026. Built and proved locally: `git` is a
+just-bash command over isomorphic-git against the workspace rows, with
+clone, status, add, commit, log, diff, checkout, branch, remote, push, and
+pull, and every other verb refused by name; files are stored in 1 MiB
+chunks so a packfile fits, with the per-file limit now 8 MiB. Journey 5's
+steps run in workerd against a bare fixture served over smart HTTP by
+`git http-backend` from vitest's global setup: clone, a branch, the typo
+fixed with `sed -i`, status and diff, add, commit, push, log, `rebase -i`
+refused, and a fresh clone in a second cell showing the fix. The fake
+credential appears in no shell environment, file, or config. Missing: the
+push to a real GitHub repository, waiting on `LAMB_GITHUB_TOKEN`.
 
 **Closes journey 5.** The largest piece of new code in the leg, and the one
 to cut down first if the leg runs long: the journey needs `clone`,
@@ -493,7 +502,35 @@ shell, or any tool result, checked by grepping the exported session file.
 
 **Findings:**
 
-- None yet.
+- **2026-09-05 — A clone is one packfile, so one file is now one row plus
+  chunk rows.** isomorphic-git writes what it fetched to
+  `.git/objects/pack/*.pack` as one file, which the 1 MiB cap refused
+  whole. Files are stored in 1 MiB chunks, the first in the row and the
+  rest in `file_chunks`, and the per-file limit is 8 MiB. The object-store
+  spill stays open; this is the stand-in that keeps everything in the cell.
+- **2026-09-05 — isomorphic-git runs in workerd over an `fs.promises` face
+  of eighty lines.** It reads `isFile`, `isDirectory`, `isSymbolicLink`,
+  `mode` with type bits, `mtime`, `ctime`, `ino`, `uid`, `gid`, and `dev`;
+  the inode is a hash of the path, which is what its index needs to tell
+  files apart.
+- **2026-09-05 — `statusMatrix` rows are `[HEAD, WORKDIR, STAGE]` and a
+  stage of 2 means "same as the working tree", which is the staged case.**
+  Read backwards the first time; `git add` then `git status` showed
+  nothing staged.
+- **2026-09-05 — `git diff` reads the index as the working tree** for
+  stages 2 and 3, because isomorphic-git's public API has no cheap way to
+  read an index blob. Cosmetic: the patches were right in every case the
+  test checks.
+- **2026-09-05 — The fixture is `git http-backend` behind fifty lines of
+  Node CGI**, started by vitest's global setup on 127.0.0.1:4180 with
+  `http.receivepack` on. workerd reaches it. git's own "push negotiation
+  failed; proceeding anyway" warning from the seed push is noise.
+- **2026-09-05 — The credential is `x-access-token` plus the secret**
+  through isomorphic-git's `onAuth`, sent only to the remote. The shell's
+  `env`, every workspace path, and `.git/config` were checked for the fake
+  secret and it was in none.
+- **2026-09-05 — Open: the real GitHub push.** No `LAMB_GITHUB_TOKEN` in
+  the environment; the walk against a real repository waits.
 
 ## Phase 6 — celld
 

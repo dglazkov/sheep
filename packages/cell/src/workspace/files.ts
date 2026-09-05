@@ -22,8 +22,14 @@ export interface FileRow {
 /** The roots the workspace fence allows. `/` itself is readable and lists them. */
 export const WORKSPACE_ROOT = "/workspace";
 export const TEMP_ROOT = "/tmp";
-/** A Durable Object value is capped at 2 MB; one file is one value. */
-export const MAX_FILE_BYTES = 1024 * 1024;
+/**
+ * A Durable Object value is capped at 2 MB, so a file is stored in chunks
+ * of one MiB: the first in the file's row, the rest in `file_chunks`.
+ * The per-file limit is the workspace's own, so a clone that would not fit
+ * is refused whole rather than stored halfway.
+ */
+export const CHUNK_BYTES = 1024 * 1024;
+export const MAX_FILE_BYTES = 8 * CHUNK_BYTES;
 
 export type FsErrorCode = "ENOENT" | "EEXIST" | "ENOTDIR" | "EISDIR" | "ENOTEMPTY" | "EACCES" | "EFBIG" | "ELOOP" | "EINVAL";
 
@@ -110,9 +116,29 @@ export class FilesTable {
       mtime_ms INTEGER NOT NULL,
       mode     INTEGER NOT NULL DEFAULT 420
     )`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS file_chunks (
+      path    TEXT NOT NULL,
+      idx     INTEGER NOT NULL,
+      content BLOB NOT NULL,
+      PRIMARY KEY (path, idx)
+    )`);
     for (const root of ["/", WORKSPACE_ROOT, TEMP_ROOT]) {
       if (this.get(root) === undefined) this.insertDirectory(root, 0o755);
     }
+  }
+
+  /** The whole content of a file row, its later chunks joined on. */
+  private assemble(row: FileRow): Uint8Array {
+    if (row.kind !== "file" || row.size <= row.content.byteLength) return row.content;
+    const out = new Uint8Array(row.size);
+    out.set(row.content, 0);
+    let offset = row.content.byteLength;
+    for (const chunk of this.sql.exec<{ content: ArrayBuffer }>("SELECT content FROM file_chunks WHERE path = ? ORDER BY idx", row.path).toArray()) {
+      const bytes = new Uint8Array(chunk.content);
+      out.set(bytes, offset);
+      offset += bytes.byteLength;
+    }
+    return out;
   }
 
   get(path: string): FileRow | undefined {
@@ -167,7 +193,7 @@ export class FilesTable {
   readFile(path: string): Uint8Array {
     const row = this.stat(path);
     if (row.kind === "directory") throw new FsError("EISDIR", "read", normalizePath(path));
-    return row.content;
+    return this.assemble(row);
   }
 
   readText(path: string): string {
@@ -182,14 +208,19 @@ export class FilesTable {
     }
     const existing = this.get(target);
     const mode = options.mode ?? existing?.mode ?? 0o644;
+    const head = bytes.subarray(0, CHUNK_BYTES);
     this.sql.exec(
       "INSERT INTO files (path, kind, content, size, mtime_ms, mode) VALUES (?, 'file', ?, ?, ?, ?) ON CONFLICT(path) DO UPDATE SET kind = 'file', content = excluded.content, size = excluded.size, mtime_ms = excluded.mtime_ms",
       target,
-      bytes,
+      head,
       bytes.byteLength,
       this.now(),
       mode,
     );
+    this.sql.exec("DELETE FROM file_chunks WHERE path = ?", target);
+    for (let offset = CHUNK_BYTES, index = 1; offset < bytes.byteLength; offset += CHUNK_BYTES, index++) {
+      this.sql.exec("INSERT INTO file_chunks (path, idx, content) VALUES (?, ?, ?)", target, index, bytes.subarray(offset, offset + CHUNK_BYTES));
+    }
   }
 
   appendFile(path: string, content: string | Uint8Array, options: { createParents?: boolean } = {}): void {
@@ -200,9 +231,10 @@ export class FilesTable {
       this.writeFile(target, bytes, options);
       return;
     }
-    const joined = new Uint8Array(existing.content.byteLength + bytes.byteLength);
-    joined.set(existing.content, 0);
-    joined.set(bytes, existing.content.byteLength);
+    const current = this.assemble(existing);
+    const joined = new Uint8Array(current.byteLength + bytes.byteLength);
+    joined.set(current, 0);
+    joined.set(bytes, current.byteLength);
     this.writeFile(target, joined, options);
   }
 
@@ -264,8 +296,10 @@ export class FilesTable {
       if (children.length > 0 && !options.recursive) throw new FsError("ENOTEMPTY", "rm", target);
       if (!options.recursive) throw new FsError("EISDIR", "rm", target);
       this.sql.exec("DELETE FROM files WHERE substr(path, 1, ?) = ?", target.length + 1, `${target}/`);
+      this.sql.exec("DELETE FROM file_chunks WHERE substr(path, 1, ?) = ?", target.length + 1, `${target}/`);
     }
     this.sql.exec("DELETE FROM files WHERE path = ?", target);
+    this.sql.exec("DELETE FROM file_chunks WHERE path = ?", target);
   }
 
   rename(source: string, destination: string): void {
@@ -288,19 +322,23 @@ export class FilesTable {
         throw new FsError("ENOTDIR", "rename", to);
       }
       this.sql.exec("DELETE FROM files WHERE path = ?", to);
+      this.sql.exec("DELETE FROM file_chunks WHERE path = ?", to);
     }
     if (row.kind === "directory") {
       if (to.startsWith(`${from}/`)) throw new FsError("EINVAL", "rename", to);
       const prefix = `${from}/`;
-      this.sql.exec(
-        "UPDATE files SET path = ? || substr(path, ?) WHERE substr(path, 1, ?) = ?",
-        `${to}/`,
-        prefix.length + 1,
-        prefix.length,
-        prefix,
-      );
+      for (const table of ["files", "file_chunks"]) {
+        this.sql.exec(
+          `UPDATE ${table} SET path = ? || substr(path, ?) WHERE substr(path, 1, ?) = ?`,
+          `${to}/`,
+          prefix.length + 1,
+          prefix.length,
+          prefix,
+        );
+      }
     }
     this.sql.exec("UPDATE files SET path = ? WHERE path = ?", to, from);
+    this.sql.exec("UPDATE file_chunks SET path = ? WHERE path = ?", to, from);
   }
 
   symlink(target: string, linkPath: string): void {
@@ -344,6 +382,7 @@ export class FilesTable {
   /** Empties a root's contents, keeping the root. Used for `/tmp` when the lane idles. */
   truncate(root: string): void {
     this.sql.exec("DELETE FROM files WHERE substr(path, 1, ?) = ?", root.length + 1, `${root}/`);
+    this.sql.exec("DELETE FROM file_chunks WHERE substr(path, 1, ?) = ?", root.length + 1, `${root}/`);
   }
 
   private prepareWrite(path: string, createParents: boolean): string {

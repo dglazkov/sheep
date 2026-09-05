@@ -245,14 +245,15 @@ resolution is POSIX and pure: `absolutePath` normalizes against
 `createTempDir` and `createTempFile` write under `/tmp`, which the cell
 truncates when the lane goes idle.
 
-**One file is one row, capped.** A Durable Object value is limited to 2 MB,
-so a file is capped at 1 MiB in this leg and a larger write is refused
-with `FileError("invalid")` naming the limit. Spilling large files to an
-object store is the next leg's work, and the table is shaped so that
-`content` can become nullable with an `object_key` beside it without a
-migration of the rows that fit. **Dependencies do not go in the
-workspace.** A `node_modules` tree in a table is the wrong shape and the
-wrong leg; the container tier owns installs.
+**One file is one row plus chunk rows, capped.** A Durable Object value is
+limited to 2 MB, so a file is stored in 1 MiB chunks, the first in its row
+and the rest in `file_chunks`, and a file is capped at 8 MiB in this leg;
+a larger write is refused with `FileError("invalid")` naming the limit.
+Phase 5 raised the cap from one row because a clone writes its packfile
+as one file. Spilling large files to an object store is a later leg's
+work. **Dependencies do not go in the workspace.** A `node_modules` tree
+in a table is the wrong shape and the wrong leg; the container tier owns
+installs.
 
 The same table backs just-bash. `CellFs` implements just-bash's
 `IFileSystem` over the same rows, so a file the model wrote with `write`
@@ -354,13 +355,12 @@ secret presented through isomorphic-git's `onAuth`, never written into the
 workspace.
 
 The model reaches it as `git` in the shell: a just-bash custom command
-covering `clone`, `status`, `add`, `commit`, `log`, `diff`, `checkout`,
-`branch`, `push`, and `pull`, each a thin call into isomorphic-git with
-output shaped like git's. Anything else prints `git: <verb> is not
-available in this shell`. This is the largest single piece of work in the
-leg and the one most likely to be cut down; the journey needs `clone`,
-`status`, `add`, `commit`, and `push`, and the rest is what a model expects
-to find beside them.
+covering `init`, `clone`, `status`, `add`, `commit`, `log`, `diff`,
+`checkout`, `branch`, `remote`, `push`, and `pull`, each a thin call into
+isomorphic-git with output shaped like git's. Anything else prints `git:
+<verb> is not available in this shell` with the list. Phase 5 built all
+of these; `diff` reads the index as the working tree because the index's
+blobs are not cheaply readable through isomorphic-git's public API.
 
 ## celld
 

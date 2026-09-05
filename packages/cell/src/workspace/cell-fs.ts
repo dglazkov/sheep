@@ -131,7 +131,7 @@ export class CellFs implements IFileSystem {
         const destination = posix.join(target, relative);
         if (row.kind === "directory") this.files.mkdir(destination, { recursive: true });
         else if (row.kind === "symlink") this.files.symlink(utf8.decode(row.content), destination);
-        else this.files.writeFile(destination, row.content, { mode: row.mode });
+        else this.files.writeFile(destination, this.files.readFile(row.path), { mode: row.mode });
       }
       return;
     }
@@ -139,7 +139,7 @@ export class CellFs implements IFileSystem {
       this.files.symlink(utf8.decode(source.content), target);
       return;
     }
-    this.files.writeFile(target, source.content, { mode: source.mode });
+    this.files.writeFile(target, this.files.readFile(source.path), { mode: source.mode });
   }
 
   async mv(src: string, dest: string): Promise<void> {
@@ -171,7 +171,7 @@ export class CellFs implements IFileSystem {
   async link(existingPath: string, newPath: string): Promise<void> {
     const source = this.files.stat(existingPath, false);
     if (source.kind === "directory") throw new FsError("EISDIR", "link", source.path);
-    this.files.writeFile(newPath, source.content, { mode: source.mode });
+    this.files.writeFile(newPath, this.files.readFile(source.path), { mode: source.mode });
   }
 
   async readlink(path: string): Promise<string> {
@@ -187,4 +187,98 @@ export class CellFs implements IFileSystem {
   async utimes(path: string, _atime: Date, mtime: Date): Promise<void> {
     this.files.utimes(path, mtime.getTime());
   }
+}
+
+/** Node-style stats, the third face over a row: what isomorphic-git reads. */
+export interface NodeLikeStats {
+  mode: number;
+  size: number;
+  mtimeMs: number;
+  ctimeMs: number;
+  mtime: Date;
+  ctime: Date;
+  ino: number;
+  dev: number;
+  uid: number;
+  gid: number;
+  isFile(): boolean;
+  isDirectory(): boolean;
+  isSymbolicLink(): boolean;
+}
+
+function toNodeStats(row: FileRow, ino: number): NodeLikeStats {
+  const typeBits = row.kind === "directory" ? 0o040000 : row.kind === "symlink" ? 0o120000 : 0o100000;
+  return {
+    mode: typeBits | row.mode,
+    size: row.size,
+    mtimeMs: row.mtimeMs,
+    ctimeMs: row.mtimeMs,
+    mtime: new Date(row.mtimeMs),
+    ctime: new Date(row.mtimeMs),
+    ino,
+    dev: 1,
+    uid: 0,
+    gid: 0,
+    isFile: () => row.kind === "file",
+    isDirectory: () => row.kind === "directory",
+    isSymbolicLink: () => row.kind === "symlink",
+  };
+}
+
+/** A stable inode per path, so git's index can tell files apart. */
+function inodeOf(path: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < path.length; index++) {
+    hash ^= path.charCodeAt(index);
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  return hash || 1;
+}
+
+/**
+ * The `fs.promises` subset isomorphic-git's `PromiseFsClient` asks for,
+ * over the same rows. Errors carry Node codes, which is all it reads.
+ */
+export function createNodeFsPromises(files: FilesTable) {
+  return {
+    async readFile(path: string, options?: { encoding?: string } | string): Promise<Uint8Array | string> {
+      const bytes = files.readFile(path);
+      const encoding = typeof options === "string" ? options : options?.encoding;
+      return encoding ? decode(bytes, encoding as BufferEncoding) : bytes;
+    },
+    async writeFile(path: string, data: string | Uint8Array, options?: { encoding?: string; mode?: number } | string): Promise<void> {
+      const encoding = typeof options === "string" ? options : options?.encoding;
+      const mode = typeof options === "object" ? options?.mode : undefined;
+      files.writeFile(path, typeof data === "string" ? encode(data, encoding as BufferEncoding) : data, mode === undefined ? {} : { mode });
+    },
+    async unlink(path: string): Promise<void> {
+      files.rm(path);
+    },
+    async readdir(path: string): Promise<string[]> {
+      return files.readdir(path).map((row) => posix.basename(row.path));
+    },
+    async mkdir(path: string, options?: { recursive?: boolean }): Promise<void> {
+      files.mkdir(path, { recursive: options?.recursive ?? false });
+    },
+    async rmdir(path: string): Promise<void> {
+      files.rm(path, { recursive: false });
+    },
+    async stat(path: string): Promise<NodeLikeStats> {
+      const row = files.stat(path, true);
+      return toNodeStats(row, inodeOf(row.path));
+    },
+    async lstat(path: string): Promise<NodeLikeStats> {
+      const row = files.stat(path, false);
+      return toNodeStats(row, inodeOf(row.path));
+    },
+    async readlink(path: string): Promise<string> {
+      return files.readlink(path);
+    },
+    async symlink(target: string, linkPath: string): Promise<void> {
+      files.symlink(target, linkPath);
+    },
+    async chmod(path: string, mode: number): Promise<void> {
+      files.chmod(path, mode);
+    },
+  };
 }
