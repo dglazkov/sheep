@@ -15,6 +15,11 @@
  * SHA-256 of their bytes (a symlink's bytes are its target), lowercase
  * hex.
  *
+ * A run is `run` from the cell, `stdout` and `stderr` frames from the
+ * container as they happen, `exit` or `killed` at the end, and then the
+ * container describes what the run changed, as `changed`, without being
+ * asked. `kill` from the cell ends a run early and `killed` answers it.
+ *
  * The two syncs are one dance in two directions. Sync in: `manifest`
  * from the cell, `need` from the container, one `blob` per needed hash
  * from the cell, `checkout` from the container once the tree is written.
@@ -79,7 +84,10 @@ export type CellFrame =
   | { type: "manifest"; id: string; entries: ManifestEntry[] }
   | BlobFrame
   | NeedFrame
-  | { type: "run"; id: string; command: string; cwd: string; env: Record<string, string>; /** seconds */ timeout: number }
+  /** Runs `command` through the container's own bash under `cwd`; `stdout` and `stderr` frames follow as they happen, then `exit` or `killed`, then `changed`. */
+  | { type: "run"; id: string; command: string; cwd: string; env: Record<string, string>; /** seconds; absent for no limit */ timeout?: number }
+  /** Ends the run under this id early; `killed` answers it. A kill for a run that has already ended is ignored. */
+  | { type: "kill"; id: string; reason: string }
   /** Asks the container to describe what changed since the last sync, as `changed` under this id. */
   | { type: "sync"; id: string }
   /** The diff the container sent under this id has been written to the rows, except the files named. */
@@ -92,9 +100,12 @@ export type ContainerFrame =
   | NeedFrame
   /** The manifest under this id is on disk: every blob written, modes set, the rest deleted. */
   | { type: "checkout"; id: string }
+  /** A chunk of the run's output as it happened; the two streams keep their arrival order on the one socket. */
   | { type: "stdout"; id: string; data: string }
   | { type: "stderr"; id: string; data: string }
+  /** The run ended on its own with this code. `changed` follows. */
   | { type: "exit"; id: string; code: number }
+  /** The run was ended early, by `kill` or by the agent's own backstop timer; no exit code exists. `changed` follows. */
   | { type: "killed"; id: string; reason: string }
   /** What changed since the last sync: new and changed entries, and paths no longer there. */
   | { type: "changed"; id: string; entries: ChangedEntry[]; deleted: string[] }

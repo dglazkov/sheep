@@ -47,9 +47,9 @@ and back.
 - **celld** has neither. What it has is a node the operator owns, where a
   container runtime can run beside it. The protocol is the same; who
   starts the container is configuration.
-- **Lamb's refusal sentence** lives in one file and a test checks the
-  shell and the system prompt carry the same words. Pen makes that file a
-  table.
+- **Lamb's refusal sentence** lived in one file and a test checks the
+  shell and the system prompt carry the same words. Pen made that file a
+  table, `packages/cell/src/env/programs.ts`, in pen phase 2.
 
 ## The router
 
@@ -74,7 +74,9 @@ line that names a program the table does not list goes to the container
 when this home has one, and the container's bash answers for it. A line
 that names a program no tier this home has can run is refused with the
 sentence for that program, which names the tier that would have it and
-whether this home has one.
+whether this home has one. With no container the router does not run:
+the line goes to just-bash as in lamb, and the table's one sentence is
+appended to the shell's own not-found line, as lamb appended it.
 
 The system prompt is generated from the same table, so the model is told
 once, up front, what runs where, and the refusal repeats it. When no

@@ -8,9 +8,14 @@
  *
  * Phase 1 speaks the checkout: `manifest` in, `changed` out, blobs by
  * hash both ways, the cache rule applied on this side to what it reports
- * and to what a sync-in may delete. `run` and `credential` get a typed
- * `error` so a later phase fills the case in rather than discovering it
- * was silently dropped.
+ * and to what a sync-in may delete. Phase 2 speaks `run`: the command
+ * goes to a `Runner`, the second thing injected beside the disk, its
+ * output is sent as it comes, and when it ends the agent describes what
+ * it changed without being asked. A run has its own lane: the frames
+ * that arrive while it runs (`ping`, `kill`) are answered at once, not
+ * queued behind it. `credential` still gets a typed `error` so a later
+ * phase fills the case in rather than discovering it was silently
+ * dropped.
  */
 import ignore from "ignore";
 import {
@@ -51,6 +56,43 @@ export interface Disk {
   remove(path: string): Promise<void>;
   /** SHA-256, lowercase hex. On the disk so Node can use `node:crypto` and a test WebCrypto. */
   digest(bytes: Uint8Array): Promise<string>;
+}
+
+/** One command to run, as the cell asked for it. */
+export interface RunRequest {
+  id: string;
+  command: string;
+  /** Absolute, under the checkout root's mount (`/workspace/...`). */
+  cwd: string;
+  /** Laid over the process's own environment; the container's `PATH` and `HOME` win by not being here. */
+  env: Record<string, string>;
+  /** Seconds; absent for no limit. The runner's own backstop, beside the cell's timer. */
+  timeout?: number;
+}
+
+/** Where a run's output goes as it happens. Chunks are text; the runner decodes. */
+export interface RunOutput {
+  stdout(data: string): void;
+  stderr(data: string): void;
+}
+
+/** How a run ended: on its own with a code, or early for a reason, in which case no code exists. */
+export type RunOutcome = { exit: number } | { killed: string };
+
+/** A run in progress: its end, and a way to end it early. `kill` after the end is a no-op. */
+export interface RunHandle {
+  outcome: Promise<RunOutcome>;
+  kill(reason: string): void;
+}
+
+/**
+ * What the agent needs of a process runner. The image runs `bash -c`
+ * under `/workspace`; the cell's tests run a script the test wrote, since
+ * workerd has no processes. That is the one place the fake is not the
+ * thing; the protocol around it is the agent's own in both.
+ */
+export interface Runner {
+  run(request: RunRequest, output: RunOutput): RunHandle;
 }
 
 /**
@@ -116,18 +158,21 @@ export interface ServedAgent {
   syncOut(id: string): Promise<Refused[]>;
 }
 
-/** Wires the agent to a socket. Frames are handled in the order they arrive, one at a time. */
-export function serveAgent(socket: AgentSocket, disk: Disk): ServedAgent {
-  const agent = new Agent(socket, disk);
+/** Wires the agent to a socket. Frames are handled in the order they arrive, one at a time; a run's work is not on that chain. */
+export function serveAgent(socket: AgentSocket, disk: Disk, runner: Runner): ServedAgent {
+  const agent = new Agent(socket, disk, runner);
   return { closed: agent.closed, syncOut: (id) => agent.syncOut(id) };
 }
 
 class Agent {
   private readonly socket: AgentSocket;
   private readonly disk: Disk;
+  private readonly runner: Runner;
   readonly closed: Promise<void>;
   private isClosed = false;
   private tail = Promise.resolve();
+  /** The run in progress, at most one. */
+  private running: { id: string; handle: RunHandle } | null = null;
   /** What is on disk as far as the last sync said. */
   private known = new Map<string, Known>();
   /** A sync-in in progress: the manifest and the blobs still to come. */
@@ -137,9 +182,10 @@ class Agent {
   /** A sync-out in progress. */
   private out: { id: string; entries: ChangedEntry[]; deleted: string[]; resolve: (refused: Refused[]) => void; reject: (error: Error) => void } | null = null;
 
-  constructor(socket: AgentSocket, disk: Disk) {
+  constructor(socket: AgentSocket, disk: Disk, runner: Runner) {
     this.socket = socket;
     this.disk = disk;
+    this.runner = runner;
     socket.addEventListener("message", (event) => {
       this.tail = this.tail.then(() => this.receive(event.data));
     });
@@ -148,6 +194,8 @@ class Agent {
         this.isClosed = true;
         this.out?.reject(new Error("the socket closed during a sync-out"));
         this.out = null;
+        // A container that loses its socket stops its command.
+        this.running?.handle.kill("the socket closed");
         resolve();
       });
     });
@@ -219,9 +267,57 @@ class Agent {
       case "synced":
         this.finishSyncOut(frame.id, frame.refused);
         return;
+      case "run":
+        // Not awaited: the run has its own lane, so `ping` and `kill` are answered while it runs.
+        this.startRun(frame);
+        return;
+      case "kill":
+        // A kill for a run that already ended is ignored: `exit` is on its way, and the cell takes either.
+        if (this.running !== null && this.running.id === frame.id) this.running.handle.kill(frame.reason);
+        return;
       default:
         this.send({ type: "error", code: "unsupported", of: frame.type, message: `the agent does not handle ${frame.type} yet` });
     }
+  }
+
+  /** Starts the runner, streams its output, and when it ends says how and then what changed. */
+  private startRun(frame: Extract<CellFrame, { type: "run" }>): void {
+    if (this.running !== null) {
+      this.send({ type: "error", code: "failed", of: "run", message: `a run (${this.running.id}) is already in progress` });
+      return;
+    }
+    const id = frame.id;
+    let handle: RunHandle;
+    try {
+      handle = this.runner.run(
+        { id, command: frame.command, cwd: frame.cwd, env: frame.env, ...(frame.timeout === undefined ? {} : { timeout: frame.timeout }) },
+        {
+          stdout: (data) => this.send({ type: "stdout", id, data }),
+          stderr: (data) => this.send({ type: "stderr", id, data }),
+        },
+      );
+    } catch (error) {
+      this.send({ type: "error", code: "failed", of: "run", message: error instanceof Error ? error.message : String(error) });
+      return;
+    }
+    this.running = { id, handle };
+    handle.outcome
+      .then((outcome) => {
+        this.running = null;
+        if ("exit" in outcome) this.send({ type: "exit", id, code: outcome.exit });
+        else this.send({ type: "killed", id, reason: outcome.killed });
+        if (this.isClosed) return;
+        return this.syncOut(id).then(
+          () => undefined,
+          (error: unknown) => {
+            this.send({ type: "error", code: "failed", of: "run", message: error instanceof Error ? error.message : String(error) });
+          },
+        );
+      })
+      .catch((error: unknown) => {
+        this.running = null;
+        this.send({ type: "error", code: "failed", of: "run", message: error instanceof Error ? error.message : String(error) });
+      });
   }
 
   private async handleBytes(bytes: Uint8Array): Promise<void> {

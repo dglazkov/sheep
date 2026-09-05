@@ -10,7 +10,7 @@ import {
 import { env, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { CellExecutionEnv, MAX_FILE_BYTES } from "../src/env/execution-env.ts";
-import { annotateCommandNotFound, SHELL_NOTICE, SHELL_SYSTEM_PROMPT_LINE } from "../src/env/shell-notice.ts";
+import { annotateCommandNotFound, NO_CONTAINER, SHELL_NOTICE, SHELL_SYSTEM_PROMPT_LINE, shellNotice, shellSystemPromptLine } from "../src/env/programs.ts";
 
 const context = BACKGROUND_CONTEXT;
 const noUpdate = () => {};
@@ -87,6 +87,19 @@ describe("CellExecutionEnv: the four tools over the workspace table", () => {
       expect(SHELL_SYSTEM_PROMPT_LINE).toContain(SHELL_NOTICE);
       expect(annotateCommandNotFound("bash: cargo: command not found\n")).toBe(`bash: cargo: command not found (${SHELL_NOTICE})\n`);
     });
+  });
+
+  it("pen journey 6: with no container the table generates lamb's two sentences byte for byte", () => {
+    // Lamb's strings as they were in shell-notice.ts the day it became the table; literals here, never imported.
+    const lambNotice = "this shell runs inside the session; no interpreters or package managers are installed";
+    const lambLine =
+      "The bash tool runs a shell interpreter inside the session with the usual text tools (ls, cat, grep, sed, awk, find, sort, jq, diff, tar) over the workspace at /workspace. " +
+      "There are no interpreters (no python, node) and no package managers (no npm, pip, cargo): this shell runs inside the session; no interpreters or package managers are installed. " +
+      "Say so plainly when asked for something the shell cannot do, rather than pretending it ran.";
+    expect(shellNotice(NO_CONTAINER)).toBe(lambNotice);
+    expect(shellSystemPromptLine(NO_CONTAINER)).toBe(lambLine);
+    expect(SHELL_NOTICE).toBe(lambNotice);
+    expect(SHELL_SYSTEM_PROMPT_LINE).toBe(lambLine);
   });
 
   it("journey 4 step 5: a runaway loop stops at the shell's own bound, and a timeout stops a slow one", async () => {

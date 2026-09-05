@@ -3,11 +3,12 @@
  * against a WebSocket server this test opens. Node on purpose: the agent
  * runs in Node inside the container, so Node is where it is proved. The
  * test acts as the cell: a manifest in, blobs down, an edit to the
- * directory, a sync out.
+ * directory, a sync out; then one real `run` through a real process,
+ * its frames in order, and a `kill` of a `sleep 30` answered by `killed`.
  */
 import { type ChildProcess, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmod, lstat, mkdir, mkdtemp, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -72,8 +73,8 @@ describe("pen-agent, the process", () => {
     socket.send(encodeFrame({ type: "ping", id: "1" }));
     expect(await next()).toEqual({ type: "pong", id: "1" });
 
-    socket.send(encodeFrame({ type: "run", id: "1", command: "true", cwd: "/workspace", env: {}, timeout: 1 }));
-    expect(await next()).toMatchObject({ type: "error", code: "unsupported", of: "run" });
+    socket.send(encodeFrame({ type: "credential", id: "1", value: "x", expires: 0 }));
+    expect(await next()).toMatchObject({ type: "error", code: "unsupported", of: "credential" });
 
     // Sync in: two files, one executable, and a symlink, under a directory.
     const hello = encoder.encode("hello from the rows\n");
@@ -146,6 +147,50 @@ describe("pen-agent, the process", () => {
     await expect(lstat(join(workspace, "src/new.txt"))).rejects.toMatchObject({ code: "ENOENT" });
     expect(await readFile(join(workspace, "debug.log"), "utf8")).toBe("noise\n");
     expect(await readFile(join(workspace, "node_modules/pkg/index.js"), "utf8")).toBe("cached\n");
+
+    // A run through the real process: both streams as they happen, the exit code, then `changed` unasked.
+    socket.send(encodeFrame({ type: "run", id: "run-1", command: "echo hi; echo err >&2; exit 3", cwd: "/workspace", env: { PEN_TEST: "1" } }));
+    // Two pipes, so the two chunks may arrive in either order; the exit comes after both.
+    const chunks = [await next(), await next()] as Array<{ type: string }>;
+    expect(chunks.sort((a, b) => a.type.localeCompare(b.type))).toEqual([
+      { type: "stderr", id: "run-1", data: "err\n" },
+      { type: "stdout", id: "run-1", data: "hi\n" },
+    ]);
+    expect(await next()).toEqual({ type: "exit", id: "run-1", code: 3 });
+    expect(await next()).toEqual({ type: "changed", id: "run-1", entries: [], deleted: [] });
+    socket.send(encodeFrame({ type: "need", id: "run-1", hashes: [] }));
+    socket.send(encodeFrame({ type: "synced", id: "run-1", refused: [] }));
+
+    // The run sees the request's env over the process's own, runs under the root, and its files come back.
+    socket.send(encodeFrame({ type: "run", id: "run-2", command: "pwd; printf %s \"$PEN_TEST\" > out.txt", cwd: "/workspace/src", env: { PEN_TEST: "two" } }));
+    expect(await next()).toEqual({ type: "stdout", id: "run-2", data: `${await realpath(join(workspace, "src"))}\n` });
+    expect(await next()).toEqual({ type: "exit", id: "run-2", code: 0 });
+    const out = encoder.encode("two");
+    expect(await next()).toEqual({ type: "changed", id: "run-2", entries: [{ path: "src/out.txt", kind: "file", mode: 0o644, hash: sha256(out), size: 3 }], deleted: [] });
+    socket.send(encodeFrame({ type: "need", id: "run-2", hashes: [sha256(out)] }));
+    expect(await next()).toEqual({ type: "blob", hash: sha256(out), size: 3 });
+    expect(await next()).toEqual(out);
+    socket.send(encodeFrame({ type: "synced", id: "run-2", refused: [] }));
+
+    // A kill: `sleep 30` ends at once, `killed` names the reason, no exit code is claimed, and `changed` still follows.
+    socket.send(encodeFrame({ type: "run", id: "run-3", command: "echo started; sleep 30; echo never", cwd: "/workspace", env: {} }));
+    expect(await next()).toEqual({ type: "stdout", id: "run-3", data: "started\n" });
+    socket.send(encodeFrame({ type: "ping", id: "while-running" }));
+    expect(await next()).toEqual({ type: "pong", id: "while-running" });
+    const killedAt = Date.now();
+    socket.send(encodeFrame({ type: "kill", id: "run-3", reason: "timeout" }));
+    expect(await next()).toEqual({ type: "killed", id: "run-3", reason: "timeout" });
+    expect(Date.now() - killedAt).toBeLessThan(5_000);
+    expect(await next()).toEqual({ type: "changed", id: "run-3", entries: [], deleted: [] });
+    socket.send(encodeFrame({ type: "need", id: "run-3", hashes: [] }));
+    socket.send(encodeFrame({ type: "synced", id: "run-3", refused: [] }));
+
+    // The runner's own backstop: a timeout the cell never enforced still ends the run.
+    socket.send(encodeFrame({ type: "run", id: "run-4", command: "sleep 30", cwd: "/workspace", env: {}, timeout: 0.2 }));
+    expect(await next()).toEqual({ type: "killed", id: "run-4", reason: "timeout" });
+    expect(await next()).toEqual({ type: "changed", id: "run-4", entries: [], deleted: [] });
+    socket.send(encodeFrame({ type: "need", id: "run-4", hashes: [] }));
+    socket.send(encodeFrame({ type: "synced", id: "run-4", refused: [] }));
 
     socket.close(1000, "cell done");
     expect(await exited(child)).toBe(0);

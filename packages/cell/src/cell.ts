@@ -27,7 +27,7 @@ import { Server } from "@earendil-works/pi-server";
 import type { SqliteSessionRepo } from "@earendil-works/pi-session-backend-sqlite-node/sqlite";
 import { DurableObject } from "cloudflare:workers";
 import { CellExecutionEnv } from "./env/execution-env.ts";
-import { SHELL_SYSTEM_PROMPT_LINE } from "./env/shell-notice.ts";
+import { NO_CONTAINER, shellSystemPromptLine } from "./env/programs.ts";
 import { type CellModels, createCellModels } from "./models.ts";
 import { createCellSessionRepo } from "./storage/sqlite.ts";
 import { createCellHost } from "./wire/host.ts";
@@ -77,7 +77,7 @@ function systemPrompt(): string {
     "You are a coding agent working in a session that lives in a cell, not on a machine.",
     "Working directory: /workspace",
     "Use the read, write, edit, and bash tools to inspect and change files.",
-    SHELL_SYSTEM_PROMPT_LINE,
+    shellSystemPromptLine(NO_CONTAINER),
     "Keep answers short and technical.",
   ].join("\n");
 }

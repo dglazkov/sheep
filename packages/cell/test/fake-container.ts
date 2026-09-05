@@ -9,8 +9,14 @@
  * The fake keeps a transcript, every frame in both directions in the
  * order the agent saw them, and can be told to die after the n-th, so a
  * kill test can walk every point of a sync.
+ *
+ * Its runner is the one place the fake is not the thing: workerd has no
+ * processes, so a `run` plays a script the test wrote for that command,
+ * chunks over ticks, edits to the disk, an exit code. The protocol around
+ * the run is the agent's own. A command with no script is answered as the
+ * container's bash would answer a program the image lacks.
  */
-import { type Disk, type DiskEntry, serveAgent } from "@lamb/pen/agent";
+import { type Disk, type DiskEntry, type Runner, type RunOutcome, type RunRequest, serveAgent } from "@lamb/pen/agent";
 import { type CellFrame, type ContainerFrame, decodeFrame, encodeFrame, type EntryKind, type Frame, messageBytes, type Refused } from "@lamb/pen/protocol";
 import { hashBytes } from "../src/workspace/files.ts";
 
@@ -105,6 +111,67 @@ export function memoryDisk(): MemoryDisk {
   return disk;
 }
 
+/** One step of a scripted run: wait, then act on the disk, then print. */
+export interface ScriptStep {
+  /** Milliseconds before this step, so a run takes time and its output streams. */
+  wait?: number;
+  act?: (disk: MemoryDisk) => void;
+  stdout?: string;
+  stderr?: string;
+}
+
+export interface Script {
+  steps: ScriptStep[];
+  exit: number;
+}
+
+/** What the fake does for a command; `undefined` for a program the image would not have. */
+export type ScriptFor = (request: RunRequest) => Script | undefined;
+
+function notFound(request: RunRequest): Script {
+  const program = request.command.trim().split(/\s+/)[0] ?? "";
+  return { steps: [{ stderr: `bash: ${program}: command not found\n` }], exit: 127 };
+}
+
+/** A runner that plays scripts. A kill ends the run at the next step, as SIGKILL ends a process between writes. */
+export function scriptRunner(disk: MemoryDisk, scriptFor: ScriptFor): Runner {
+  return {
+    run(request, output) {
+      const script = scriptFor(request) ?? notFound(request);
+      let killed: string | null = null;
+      let wake: (() => void) | null = null;
+      const kill = (reason: string) => {
+        if (killed !== null) return;
+        killed = reason;
+        wake?.();
+      };
+      const backstop = request.timeout === undefined ? undefined : setTimeout(() => kill("timeout"), request.timeout * 1000);
+      const outcome = (async (): Promise<RunOutcome> => {
+        // The runner starts after the agent has recorded the run; a process would too.
+        await Promise.resolve();
+        for (const step of script.steps) {
+          if (step.wait !== undefined) {
+            await new Promise<void>((resolve) => {
+              wake = resolve;
+              setTimeout(resolve, step.wait);
+            });
+            wake = null;
+          }
+          if (killed !== null) return { killed };
+          step.act?.(disk);
+          if (step.stdout !== undefined) output.stdout(step.stdout);
+          if (step.stderr !== undefined) output.stderr(step.stderr);
+        }
+        if (killed !== null) return { killed };
+        return { exit: script.exit };
+      })().finally(() => {
+        if (backstop !== undefined) clearTimeout(backstop);
+      });
+      return { outcome, kill };
+    },
+  };
+}
+
 /** One line of the transcript: a frame, or the bytes of a blob by their hash. */
 export type TranscriptEntry =
   | { from: "cell" | "container"; frame: Frame }
@@ -128,6 +195,8 @@ export interface FakeContainerOptions {
   disk?: MemoryDisk;
   /** Die right after the n-th transcript entry, sent or received. */
   stopAfter?: number;
+  /** What a `run` does. Without one, every program is one the image lacks. */
+  script?: ScriptFor;
 }
 
 export function startFakeContainer(options: FakeContainerOptions = {}): FakeContainer {
@@ -182,7 +251,7 @@ export function startFakeContainer(options: FakeContainerOptions = {}): FakeCont
     },
   };
   agentEnd.addEventListener("close", (event) => stop(event.reason));
-  const served = serveAgent(wrapped, disk);
+  const served = serveAgent(wrapped, disk, scriptRunner(disk, options.script ?? (() => undefined)));
   return {
     socket: cellEnd,
     disk,

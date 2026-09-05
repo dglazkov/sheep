@@ -11,13 +11,13 @@ never a bare "phase 2".
 
 ---
 
-**Where we are: pen phases 0 and 1 CLOSED, phases 2 to 7 NOT STARTED.**
-Planned 5 Sep 2026; the scaffold and the checkout built the same day.
-The next thing to do is pen phase 2, the router and the sentence. Pen
-phase 2 proves against the fake and needs nothing from lamb; pen phase
-3, the first real walk, uses `--detach`, `wait`, and `log` and so waits
-on lamb phase 5, the sheepdog's surface, and on the Workers Paid plan, a
-⚑ step asked when phase 3 begins.
+**Where we are: pen phases 0, 1, and 2 CLOSED, phases 3 to 7 NOT
+STARTED.** Planned 5 Sep 2026; the scaffold, the checkout, and the
+router built the same day. The next thing to do is pen phase 3, a real
+machine, and it waits on two things: lamb phase 5, the sheepdog's
+surface, whose `--detach`, `wait`, and `log` the walk uses, which is
+work and is conducted first; and the Workers Paid plan, a ⚑ step asked
+when phase 3 begins.
 
 The order is dependency order and risk order. Phase 1 is the gate: if a
 checkout cannot be synced by hash both ways with the atomicity journey 3
@@ -95,12 +95,11 @@ test.
   Worker bundle 3.9 MB raw, from 3.6. Cost: 25 minutes, 10 the builder's.
 - **2026-09-05 — `blob` frames were base64 text**, 1.37× plus a copy each
   way. Paid in pen phase 1: the bytes are one binary message each.
-- **2026-09-05 — Open: `serveAgent` answers frames on one chain**, so a
-  long `run` would queue `killed` behind it. Pen phase 2 owns streaming
-  and interruption, and gives runs their own lane.
-- **2026-09-05 — Open: the Worker imports only a type from pen.** Whether
-  wrangler bundles `@lamb/pen`'s `.ts` exports as the vitest pool does is
-  pen phase 2's to prove.
+- **2026-09-05 — `serveAgent` answered frames on one chain**, so a long
+  `run` would have queued `killed` behind it. Paid in pen phase 2: a run
+  has its own lane.
+- **2026-09-05 — The Worker imported only a type from pen.** Paid in pen
+  phase 2: wrangler bundles `@lamb/pen`'s `.ts` exports as the pool does.
 
 ## Phase 1 — The checkout
 
@@ -160,7 +159,9 @@ the rows and the transcript match a fixture at every kill point.
 
 ## Phase 2 — The router and the sentence
 
-**Status: NOT STARTED.**
+**Status: CLOSED.** 5 Sep 2026. Journey 6 holds byte for byte and journey
+1 steps 1 to 4 hold against the fake, through pi's real bash tool; pen
+phase 3 walks journey 1 and pen phase 7 walks journey 6.
 
 **Proves journey 6, and journey 1 steps 1, 2, and 4, against the fake.**
 Closes nothing; pen phase 3 walks journey 1 and pen phase 7 walks
@@ -184,6 +185,35 @@ journey 6.
 
 **Proof:** Journey 6 holds: lamb's suite green with pen's code present and
 no binding. Journey 1 steps 1 to 4 hold against the fake.
+
+**Findings:**
+
+- **2026-09-05 — With no container the router must not run at all.** An
+  up-front refusal lost the `hi` of `echo hi; npm test` and turned a
+  line ending in `echo b` from exit 0 to 127. Journey 6 is lamb's `exec`
+  with the sentence appended; four lines from lamb's tree assert it.
+- **2026-09-05 — `parse` went by patch.** The pool and wrangler resolve
+  just-bash through its `browser` condition, where `parse` is not
+  exported; `patches/just-bash@3.4.2.patch` adds the one name. Bundle
+  unchanged, 3.85 MiB uploaded.
+- **2026-09-05 — A streamed run costs at most ten updates a second.**
+  Three frames 120 ms apart reached pi's bash tool as three updates;
+  fifty frames 5 ms apart as four. Pi's publisher emits every 100 ms.
+- **2026-09-05 — The run has its own lane.** A `ping` is answered while
+  `sleep 30` runs in the real process; `kill` returns `killed` at once;
+  the agent's own backstop ends a run the cell never killed.
+- **2026-09-05 — Tier 0 is read from just-bash, mostly.** Its registry
+  is `getCommandNames()`; its 61 builtins have no export and are data
+  checked against `help` in workerd. Lamb's prompt names `tar`, which
+  just-bash 3.4.2 lacks; the list stays for byte-for-byte.
+- **2026-09-05 — Cost: 48 minutes wall clock**, 40 of them the builder's,
+  3 of those the journey 6 correction.
+- **2026-09-05 — Open: wrappers hide programs from the router.** `xargs
+  node`, `env X=1 pnpm i`, `bash -c "npm test"` are tier 0 by their first
+  word and fail in just-bash. Pen phase 3's walk decides a wrapper rule.
+- **2026-09-05 — Open: after `kill` the cell waits with no deadline** for
+  `killed` or `exit`. Pen phase 3's binding gives it one, since a stuck
+  container is then the platform's to stop.
 
 ## Phase 3 — A real machine
 

@@ -1,8 +1,19 @@
 /**
  * pi's `ExecutionEnv` for a cell: the `FileSystem` over the workspace
- * table, and the `Shell` over just-bash in the same isolate. Mirrors
- * `NodeExecutionEnv` method for method, minus the process plumbing a cell
- * does not have.
+ * table, and the `Shell` that routes a command line to the tier that has
+ * every program in it. Mirrors `NodeExecutionEnv` method for method,
+ * minus the process plumbing a cell does not have.
+ *
+ * `exec` is the seam. With no container configured it does not route at
+ * all: the line runs in just-bash over the rows exactly as lamb ran it,
+ * and the table's sentence reaches the output the way lamb's always did,
+ * appended by `annotateCommandNotFound` to just-bash's own not-found
+ * line. That is journey 6, byte for byte. With a container, the table is
+ * consulted: a line whose programs are all tier 0 still runs in
+ * just-bash; a line that names a program the shell lacks runs whole in
+ * the container, rented, synced in, streamed, synced out; a line that
+ * names a program the table marks absent from the image is refused up
+ * front with the sentence for that program.
  */
 import type { Context } from "@earendil-works/pi-agent-core";
 import {
@@ -17,11 +28,14 @@ import {
   type ShellExecOptions,
   type ShellExecResult,
 } from "@earendil-works/pi-agent-core";
+import type { Refused } from "@lamb/pen/protocol";
 import { Bash } from "just-bash/browser";
 import { posix } from "node:path";
+import { Checkout, CheckoutInterrupted } from "../pen/checkout.ts";
+import { ContainerRun, type RunEnd, RunInterrupted } from "../pen/run.ts";
 import { CellFs } from "../workspace/cell-fs.ts";
 import { type FileRow, FilesTable, FsError, isReadable, MAX_FILE_BYTES, normalizePath, TEMP_ROOT, WORKSPACE_ROOT } from "../workspace/files.ts";
-import { annotateCommandNotFound } from "./shell-notice.ts";
+import { annotateCommandNotFound, classify, type Home, INTERRUPTED_DURING_RUN, interruptedDuringSyncOut, refusalLine, type Route, shellNotice } from "./programs.ts";
 
 const MAX_TIMEOUT_MS = 2_147_483_647;
 
@@ -57,11 +71,39 @@ function toFileInfo(row: FileRow): FileInfo {
   return { name: posix.basename(row.path) || "/", path: row.path, kind: row.kind, size: row.size, mtimeMs: row.mtimeMs };
 }
 
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Tier 2, as the home provides it. `rent()` gives the cell's end of the
+ * socket to a container for this lane, starting one when none is up;
+ * the same socket again while it is up. `idle()` says a run has ended
+ * and nothing is running, so the home may stop the container after its
+ * idle period; the next `rent()` cancels that. Pen phase 3 gives it the
+ * Containers binding; the tests give it a function that starts a fake.
+ */
+export interface ContainerLease {
+  rent(): Promise<WebSocket>;
+  idle(): void;
+}
+
 export interface CellExecutionEnvOptions {
   cwd?: string;
   /** Default variables the shell sees when `inheritEnv` is true. */
   shellEnv?: Record<string, string>;
   now?: () => number;
+  /** Tier 2. Absent, this home has no container: the table's tier-2 column is empty and the shell is lamb's. */
+  container?: ContainerLease;
+}
+
+/** How a command ended, before the capture is settled. */
+type Outcome = { exitCode: number } | { error: ExecutionError };
+
+/** A command's whole output, for the spill file, and how it ended. */
+interface Ran {
+  full: string;
+  outcome: Outcome;
 }
 
 export class CellExecutionEnv implements ExecutionEnv {
@@ -69,12 +111,17 @@ export class CellExecutionEnv implements ExecutionEnv {
   readonly files: FilesTable;
   readonly fs: CellFs;
   private readonly shellEnv: Record<string, string>;
+  private readonly container: ContainerLease | undefined;
+  /** The checkout over the container socket most recently rented; one `Checkout` per socket. */
+  private lease: { socket: WebSocket; checkout: Checkout } | undefined;
+  private runs = 0;
 
   constructor(sql: SqlStorage, options: CellExecutionEnvOptions = {}) {
     this.cwd = options.cwd ?? WORKSPACE_ROOT;
     this.files = new FilesTable(sql, options.now);
     this.files.init();
     this.fs = new CellFs(this.files);
+    this.container = options.container;
     this.shellEnv = {
       HOME: WORKSPACE_ROOT,
       PATH: "/usr/local/bin:/usr/bin:/bin",
@@ -82,6 +129,11 @@ export class CellExecutionEnv implements ExecutionEnv {
       LAMB: "1",
       ...options.shellEnv,
     };
+  }
+
+  /** What this home has, as the table sees it. */
+  get home(): Home {
+    return { container: this.container !== undefined };
   }
 
   private resolvePath(path: string): string {
@@ -227,6 +279,49 @@ export class CellExecutionEnv implements ExecutionEnv {
       return err(new ExecutionError("unknown", cause.message, cause));
     }
 
+    const home = this.home;
+    // No container: lamb's shell, line for line; just-bash's own not-found line, annotated, is the refusal.
+    const route: Route = this.container === undefined ? { tier: 0, programs: [] } : classify(command, home);
+    const environment = options?.inheritEnv === false ? { ...options.env } : { ...this.shellEnv, ...options?.env };
+
+    try {
+      let ran: Ran;
+      if ("refused" in route) {
+        const line = refusalLine(route.refused, home);
+        capture.push(line);
+        ran = { full: line, outcome: { exitCode: 127 } };
+      } else if (route.tier === 0) {
+        ran = await this.runInShell(command, cwd, environment, options, signal, capture);
+      } else {
+        ran = await this.runInContainer(command, cwd, environment, options, signal, capture);
+      }
+      capture.finish();
+      await this.spill(capture, ran.full, options, context);
+      capture.flush();
+      if (callbackError) return err(callbackError);
+      if ("error" in ran.outcome) return err(ran.outcome.error);
+      if (signal?.aborted) return err(new ExecutionError("aborted", "aborted"));
+      const output = capture.snapshot();
+      return ok({
+        exitCode: ran.outcome.exitCode,
+        truncation: output.truncation,
+        ...(output.spillPath === undefined ? {} : { spillPath: output.spillPath }),
+        ...(output.lastLineBytes === undefined ? {} : { lastLineBytes: output.lastLineBytes }),
+      });
+    } finally {
+      capture.dispose();
+    }
+  }
+
+  /** Tier 0: just-bash over the rows, as lamb ran it. */
+  private async runInShell(
+    command: string,
+    cwd: string,
+    environment: Record<string, string>,
+    options: ShellExecOptions | undefined,
+    signal: AbortSignal | undefined,
+    capture: OutputCapture,
+  ): Promise<Ran> {
     const controller = new AbortController();
     let timedOut = false;
     const timeoutId = options?.timeout === undefined
@@ -238,7 +333,6 @@ export class CellExecutionEnv implements ExecutionEnv {
     const onAbort = () => controller.abort();
     signal?.addEventListener("abort", onAbort, { once: true });
 
-    const environment = options?.inheritEnv === false ? { ...options.env } : { ...this.shellEnv, ...options?.env };
     const bash = new Bash({
       fs: this.fs,
       cwd,
@@ -253,39 +347,142 @@ export class CellExecutionEnv implements ExecutionEnv {
       try {
         const result = await bash.exec(command, { signal: controller.signal, cwd });
         stdout = result.stdout;
-        stderr = annotateCommandNotFound(result.stderr);
+        stderr = annotateCommandNotFound(result.stderr, shellNotice(this.home));
         exitCode = result.exitCode;
       } catch (error) {
         // just-bash throws for its own bounds and for aborts; both are the command failing, not the env.
-        const message = error instanceof Error ? error.message : String(error);
-        stderr = `${message}\n`;
+        stderr = `${messageOf(error)}\n`;
         exitCode = 1;
       }
       capture.push(stdout);
       capture.push(stderr);
-      capture.finish();
-      if (options?.capture?.spill && capture.truncated) {
-        const spill = await this.createTempFile({ prefix: "pi-output-", suffix: ".log" }, context);
-        if (spill.ok) {
-          this.files.writeFile(spill.value, stdout + stderr);
-          capture.setSpillPath(spill.value);
-        }
-      }
-      capture.flush();
-      if (callbackError) return err(callbackError);
-      if (timedOut) return err(new ExecutionError("timeout", `timeout:${options?.timeout}`));
-      if (signal?.aborted) return err(new ExecutionError("aborted", "aborted"));
-      const output = capture.snapshot();
-      return ok({
-        exitCode,
-        truncation: output.truncation,
-        ...(output.spillPath === undefined ? {} : { spillPath: output.spillPath }),
-        ...(output.lastLineBytes === undefined ? {} : { lastLineBytes: output.lastLineBytes }),
-      });
+      const full = stdout + stderr;
+      if (timedOut) return { full, outcome: { error: new ExecutionError("timeout", `timeout:${options?.timeout}`) } };
+      if (signal?.aborted) return { full, outcome: { error: new ExecutionError("aborted", "aborted") } };
+      return { full, outcome: { exitCode } };
     } finally {
       if (timeoutId !== undefined) clearTimeout(timeoutId);
       signal?.removeEventListener("abort", onAbort);
-      capture.dispose();
+    }
+  }
+
+  /** The checkout over this socket, made once per socket. */
+  private checkoutFor(socket: WebSocket): Checkout {
+    if (this.lease?.socket !== socket) this.lease = { socket, checkout: new Checkout(socket, this.files) };
+    return this.lease.checkout;
+  }
+
+  /**
+   * Tier 2: rent, sync in, run with the output streamed into the capture
+   * as it arrives, sync out, and name what the sync refused. The socket
+   * closing at any point settles the command as interrupted, with the
+   * output so far and no exit code, which is journey 3.
+   */
+  private async runInContainer(
+    command: string,
+    cwd: string,
+    environment: Record<string, string>,
+    options: ShellExecOptions | undefined,
+    signal: AbortSignal | undefined,
+    capture: OutputCapture,
+  ): Promise<Ran> {
+    const container = this.container;
+    if (container === undefined) throw new Error("runInContainer without a container");
+    let full = "";
+    const unavailable = (message: string, cause?: Error): Ran => ({ full, outcome: { error: new ExecutionError("shell_unavailable", message, cause) } });
+
+    let socket: WebSocket;
+    try {
+      socket = await container.rent();
+    } catch (error) {
+      return unavailable(`no container could be rented: ${messageOf(error)}`, error instanceof Error ? error : undefined);
+    }
+    const checkout = this.checkoutFor(socket);
+    try {
+      try {
+        await checkout.syncIn();
+      } catch (error) {
+        if (error instanceof CheckoutInterrupted) return unavailable(error.message, error);
+        return { full, outcome: { error: new ExecutionError("unknown", `the sync-in failed: ${messageOf(error)}`) } };
+      }
+
+      // The container's own PATH and HOME win over lamb's stand-ins; the rest of the environment is what the shell would have seen.
+      const { PATH: _path, HOME: _home, ...runEnv } = environment;
+      const id = `run-${++this.runs}`;
+      const run = new ContainerRun(
+        socket,
+        { id, command, cwd, env: { ...runEnv, PWD: cwd }, ...(options?.timeout === undefined ? {} : { timeout: options.timeout }) },
+        {
+          stdout: (data) => {
+            full += data;
+            capture.push(data);
+          },
+          stderr: (data) => {
+            full += data;
+            capture.push(data);
+          },
+        },
+      );
+      let timedOut = false;
+      let aborted = false;
+      const timeoutId = options?.timeout === undefined
+        ? undefined
+        : setTimeout(() => {
+            timedOut = true;
+            run.kill("timeout");
+          }, options.timeout * 1000);
+      const onAbort = () => {
+        aborted = true;
+        run.kill("aborted");
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      let end: RunEnd;
+      try {
+        end = await run.start();
+      } catch (error) {
+        if (error instanceof RunInterrupted) return unavailable(INTERRUPTED_DURING_RUN, error);
+        return { full, outcome: { error: new ExecutionError("spawn_error", messageOf(error), error instanceof Error ? error : undefined) } };
+      } finally {
+        if (timeoutId !== undefined) clearTimeout(timeoutId);
+        signal?.removeEventListener("abort", onAbort);
+      }
+
+      let refused: Refused[];
+      try {
+        refused = await checkout.syncOut(id);
+      } catch (error) {
+        if (error instanceof CheckoutInterrupted) return unavailable(interruptedDuringSyncOut(end), error);
+        return { full, outcome: { error: new ExecutionError("unknown", `the sync-out failed: ${messageOf(error)}`) } };
+      }
+      for (const entry of refused) {
+        const line = `pen: ${entry.path} (${entry.size} bytes) is over the per-file limit and was not synced\n`;
+        full += line;
+        capture.push(line);
+      }
+
+      if (timedOut) return { full, outcome: { error: new ExecutionError("timeout", `timeout:${options?.timeout}`) } };
+      if (aborted || signal?.aborted) return { full, outcome: { error: new ExecutionError("aborted", "aborted") } };
+      if ("killed" in end) {
+        // Ended by the container's own hand: its backstop timer, or a reason of its own.
+        if (end.killed === "timeout") return { full, outcome: { error: new ExecutionError("timeout", `timeout:${options?.timeout}`) } };
+        return { full, outcome: { error: new ExecutionError("unknown", `the container ended the command: ${end.killed}`) } };
+      }
+      return { full, outcome: { exitCode: end.exit } };
+    } finally {
+      container.idle();
+    }
+  }
+
+  /** The whole output to a file under `/tmp` when the view was truncated, as pi's bash renderer expects. */
+  private async spill(capture: OutputCapture, full: string, options: ShellExecOptions | undefined, context: Context): Promise<void> {
+    if (!options?.capture?.spill || !capture.truncated) return;
+    const spill = await this.createTempFile({ prefix: "pi-output-", suffix: ".log" }, context);
+    if (!spill.ok) return;
+    try {
+      this.files.writeFile(spill.value, full);
+      capture.setSpillPath(spill.value);
+    } catch {
+      // Over the per-file cap: the bounded view stands on its own.
     }
   }
 

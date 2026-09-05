@@ -4,4 +4,5 @@ onlyBuiltDependencies:
   - workerd
   - esbuild
 patchedDependencies:
+  just-bash@3.4.2: patches/just-bash@3.4.2.patch
   safe-buffer@5.2.1: patches/safe-buffer@5.2.1.patch

@@ -2,14 +2,17 @@
  * The agent as a process: what `node bin/pen-agent.mjs` runs in the
  * image. Reads the cell's URL and token from the environment, opens one
  * WebSocket to the cell, and serves the agent over a disk rooted at
- * `/workspace` (or `PEN_WORKSPACE`, for a test on a machine without one).
- * Exits when the socket closes, so a container that loses its cell is a
- * container that is gone.
+ * `/workspace` (or `PEN_WORKSPACE`, for a test on a machine without one),
+ * with a runner that spawns `bash -c` under the same root. Exits when the
+ * socket closes, so a container that loses its cell is a container that
+ * is gone.
  */
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmod, lstat, mkdir, readdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
+import { constants as osConstants } from "node:os";
 import { dirname, join, posix, relative } from "node:path";
-import { type AgentSocket, type Disk, type DiskEntry, serveAgent } from "./agent.ts";
+import { type AgentSocket, type Disk, type DiskEntry, type RunHandle, type RunOutcome, type Runner, type RunRequest, serveAgent } from "./agent.ts";
 import { CELL_URL_ENV, TOKEN_ENV, TOKEN_PARAM } from "./protocol.ts";
 
 export const WORKSPACE_ENV = "PEN_WORKSPACE";
@@ -75,6 +78,66 @@ export function nodeDisk(root: string): Disk {
   };
 }
 
+/**
+ * A runner over `child_process`: `bash -c command` in its own process
+ * group under the checkout root, both streams decoded and forwarded as
+ * they arrive, `SIGKILL` to the whole group on kill, and a timer of the
+ * runner's own as the backstop for the cell's. The request's `cwd` is
+ * under `/workspace`; when the root is elsewhere (a test on a machine
+ * without one) the same relative place under the root is used.
+ */
+export function nodeRunner(root: string): Runner {
+  return {
+    run(request: RunRequest, output): RunHandle {
+      const cwd = request.cwd === DEFAULT_WORKSPACE || request.cwd.startsWith(`${DEFAULT_WORKSPACE}/`)
+        ? join(root, request.cwd.slice(DEFAULT_WORKSPACE.length))
+        : request.cwd;
+      const child = spawn("bash", ["-c", request.command], {
+        cwd,
+        env: { ...process.env, ...request.env },
+        stdio: ["ignore", "pipe", "pipe"],
+        detached: true,
+      });
+      const decoders = { stdout: new TextDecoder(), stderr: new TextDecoder() };
+      child.stdout.on("data", (chunk: Uint8Array) => output.stdout(decoders.stdout.decode(chunk, { stream: true })));
+      child.stderr.on("data", (chunk: Uint8Array) => output.stderr(decoders.stderr.decode(chunk, { stream: true })));
+
+      let killedFor: string | null = null;
+      let ended = false;
+      const kill = (reason: string) => {
+        if (ended || killedFor !== null) return;
+        killedFor = reason;
+        try {
+          if (child.pid !== undefined) process.kill(-child.pid, "SIGKILL");
+          else child.kill("SIGKILL");
+        } catch {
+          child.kill("SIGKILL");
+        }
+      };
+      const backstop = request.timeout === undefined ? undefined : setTimeout(() => kill("timeout"), request.timeout * 1000);
+
+      const outcome = new Promise<RunOutcome>((resolve, reject) => {
+        child.once("error", (error) => {
+          ended = true;
+          if (backstop !== undefined) clearTimeout(backstop);
+          reject(error);
+        });
+        child.once("close", (code, signal) => {
+          ended = true;
+          if (backstop !== undefined) clearTimeout(backstop);
+          const tail = { stdout: decoders.stdout.decode(), stderr: decoders.stderr.decode() };
+          if (tail.stdout !== "") output.stdout(tail.stdout);
+          if (tail.stderr !== "") output.stderr(tail.stderr);
+          if (killedFor !== null) resolve({ killed: killedFor });
+          else if (code !== null) resolve({ exit: code });
+          else resolve({ exit: 128 + (signal === null ? 0 : (osConstants.signals[signal] ?? 0)) });
+        });
+      });
+      return { outcome, kill };
+    },
+  };
+}
+
 /** The socket address: the cell's URL with the token as a query parameter. */
 export function cellAddress(cellUrl: string, token: string): string {
   const url = new URL(cellUrl);
@@ -95,7 +158,8 @@ export async function main(env: NodeJS.ProcessEnv = process.env): Promise<number
     socket.addEventListener("open", () => resolve(), { once: true });
     socket.addEventListener("error", () => reject(new Error(`pen-agent: could not connect to ${cellUrl}`)), { once: true });
   });
-  const served = serveAgent(socket, nodeDisk(env[WORKSPACE_ENV] || DEFAULT_WORKSPACE));
+  const root = env[WORKSPACE_ENV] || DEFAULT_WORKSPACE;
+  const served = serveAgent(socket, nodeDisk(root), nodeRunner(root));
   try {
     await opened;
   } catch (error) {

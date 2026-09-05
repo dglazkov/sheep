@@ -1,0 +1,23 @@
+diff --git a/dist/browser.d.ts b/dist/browser.d.ts
+index 5f67e72ed45297600e6df5f261a3865198a26937..3da5ecd69a612c0a492a34a80b9773f1cbeadf19 100644
+--- a/dist/browser.d.ts
++++ b/dist/browser.d.ts
+@@ -21,3 +21,5 @@ export { MountableFs, type MountableFsOptions, type MountConfig, } from "./fs/mo
+ export type { NetworkConfig } from "./network/index.js";
+ export { NetworkAccessDeniedError, RedirectNotAllowedError, TooManyRedirectsError, } from "./network/index.js";
+ export type { BashExecResult, Command, CommandContext, ExecResult, IFileSystem, ResolvedCommandContext, } from "./types.js";
++export type { CommandNode, PipelineNode, ScriptNode, SimpleCommandNode, StatementNode, WordNode, WordPart, } from "./ast/types.js";
++export { parse } from "./parser/parser.js";
+diff --git a/dist/bundle/browser.js b/dist/bundle/browser.js
+index 6ab2d2b60c06ec39de0b1d8cf302d04c755a922d..7a9956617121f9c89c7395fbce7d0aa9179a91e2 100644
+--- a/dist/bundle/browser.js
++++ b/dist/bundle/browser.js
+@@ -1555,7 +1555,7 @@ ${g.join(`
+ `,exitCode:2,env:kn(this.state.env,u.env)});if(y instanceof RangeError)return l({stdout:"",stderr:`bash: ${Ye(y.message)}
+ `,exitCode:1,env:kn(this.state.env,u.env)});throw y}finally{w?.deactivate()}}catch(f){if(f instanceof He)return l({stdout:f.stdout,stderr:f.stderr,exitCode:124,env:kn(this.state.env,u.env)});if(f instanceof C)return l({stdout:f.stdout,stderr:Ye(f.stderr),exitCode:C.EXIT_CODE,internalOutputAccounting:f.internalOutputAccounting,env:kn(this.state.env,u.env)});throw f}finally{c.cleanup()}}async readFile(t){return this.fs.readFile(this.fs.resolvePath(this.state.cwd,t))}async writeFile(t,n){return this.fs.writeFile(this.fs.resolvePath(this.state.cwd,t),n)}getCwd(){return this.state.cwd}getEnv(){return Ht(this.state.env)}registerTransformPlugin(t){this.transformPlugins.push(t)}transform(t){jp(t,this.limits.maxSourceBytes);let n=R3(t),r=or(n,{maxHeredocSize:this.limits.maxHeredocSize}),s=Object.create(null);for(let i of this.transformPlugins){let o=i.transform({ast:r,metadata:s});r=o.ast,o.metadata&&(s=vs(s,o.metadata))}return{script:g7(r),ast:r,metadata:s}}};function KO(e,t){let n=t;for(let r=0;r<e.length;r++){let s=e[r];if(n==="single")s==="'"&&(n="none");else if(n==="double")s==="\\"?r++:s==='"'&&(n="none");else if(s==="'")n="single";else if(s==='"')n="double";else if(s==="\\")r++;else if(s==="#"&&(r===0||/\s/.test(e[r-1])))break}return n}function R3(e){let t=e.split(`
+ `),n=[],r=[],s="none";for(let i=0;i<t.length;i++){let o=t[i];if(r.length>0){let u=r[r.length-1];if((u.stripTabs?o.replace(/^\t+/,""):o)===u.delimiter){n.push(o.trimStart()),r.pop();continue}n.push(o);continue}let a=s,l=a==="none"?o.trimStart():o;if(n.push(l),s=KO(o,a),a!=="none")continue;let c=/<<(-?)\s*(['"]?)([\w-]+)\2/g;for(let u of l.matchAll(c)){let f=u[1]==="-",d=u[3];r.push({delimiter:d,stripTabs:f})}}return n.join(`
+-`)}var QO=new TextDecoder("utf-8",{fatal:!0});function $3(e){if(!e)return e;let t=!1;for(let r=0;r<e.length;r++){let s=e.charCodeAt(r);if(s>255)return e;s>127&&(t=!0)}if(!t)return e;let n=new Uint8Array(e.length);for(let r=0;r<e.length;r++)n[r]=e.charCodeAt(r);try{return QO.decode(n)}catch{return e}}function XO(e,t,n,r,s,i){if(e===void 0)return;let o=t==="bytes"?e.length:_(e);if(o>n||o>r)throw new C(`stdin size limit exceeded (${Math.min(n,r)} bytes)`,"string_length");return i||s.consumeInput(o,"stdin"),t==="bytes"?e:Dn(e)}export{Hp as Bash,ir as InMemoryFs,Li as MountableFs,Pn as NetworkAccessDeniedError,qi as RedirectNotAllowedError,Gi as TooManyRedirectsError,Hv as createCommandContext,Vv as defineCommand,zv as getCommandNames,Wv as getNetworkCommandNames};
++`)}var QO=new TextDecoder("utf-8",{fatal:!0});function $3(e){if(!e)return e;let t=!1;for(let r=0;r<e.length;r++){let s=e.charCodeAt(r);if(s>255)return e;s>127&&(t=!0)}if(!t)return e;let n=new Uint8Array(e.length);for(let r=0;r<e.length;r++)n[r]=e.charCodeAt(r);try{return QO.decode(n)}catch{return e}}function XO(e,t,n,r,s,i){if(e===void 0)return;let o=t==="bytes"?e.length:_(e);if(o>n||o>r)throw new C(`stdin size limit exceeded (${Math.min(n,r)} bytes)`,"string_length");return i||s.consumeInput(o,"stdin"),t==="bytes"?e:Dn(e)}export{Hp as Bash,ir as InMemoryFs,Li as MountableFs,Pn as NetworkAccessDeniedError,qi as RedirectNotAllowedError,Gi as TooManyRedirectsError,Hv as createCommandContext,Vv as defineCommand,zv as getCommandNames,Wv as getNetworkCommandNames,or as parse};
+ /*! Bundled license information:
+ 
+ re2js/build/index.esm.js:

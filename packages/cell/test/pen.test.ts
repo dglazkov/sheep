@@ -40,7 +40,7 @@ describe("the fake container is the agent over a socket pair", () => {
     const container = startFakeContainer();
     expect(await ask(container.socket, { type: "ping", id: "a" })).toEqual({ type: "pong", id: "a" });
     expect(await ask(container.socket, { type: "ping" })).toEqual({ type: "pong" });
-    expect(await ask(container.socket, { type: "run", id: "r", command: "true", cwd: "/workspace", env: {}, timeout: 1 })).toMatchObject({ type: "error", code: "unsupported", of: "run" });
+    expect(await ask(container.socket, { type: "credential", id: "c", value: "x", expires: 0 })).toMatchObject({ type: "error", code: "unsupported", of: "credential" });
     container.stop();
     await container.closed;
   });

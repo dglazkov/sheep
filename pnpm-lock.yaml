@@ -5,6 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
+  just-bash@3.4.2:
+    hash: fd92372d7b69beab6e391dd41f52e01c6cb551547137e6a48292396549ce4409
+    path: patches/just-bash@3.4.2.patch
   safe-buffer@5.2.1:
     hash: 6ba8e818bf38604320e98adc7162b9a29c105ae68e9510417c3753dc12edd874
     path: patches/safe-buffer@5.2.1.patch
@@ -44,7 +47,7 @@ importers:
         version: link:../pen
       just-bash:
         specifier: 3.4.2
-        version: 3.4.2
+        version: 3.4.2(patch_hash=fd92372d7b69beab6e391dd41f52e01c6cb551547137e6a48292396549ce4409)
     devDependencies:
       '@cloudflare/vitest-pool-workers':
         specifier: ^0.22.0
@@ -2203,7 +2206,7 @@ snapshots:
 
   is-unsafe@2.0.2: {}
 
-  just-bash@3.4.2:
+  just-bash@3.4.2(patch_hash=fd92372d7b69beab6e391dd41f52e01c6cb551547137e6a48292396549ce4409):
     dependencies:
       diff: 8.0.4
       fast-xml-parser: 5.11.1
