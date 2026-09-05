@@ -348,24 +348,26 @@ so `/model` in the TUI writes the same value it writes today. On Cloudflare
 the AI Gateway binding is available through pi's existing transport and is
 optional; on celld the key goes straight to the provider.
 
-## Git
+## Git, and programs
 
-Journey 5 needs a repository in the workspace and the work out of it, and
-nothing in the cell can spawn `git`. isomorphic-git runs over any object
-with Node's `fs.promises` shape, and `CellFs` grows that shape as a second
-face over the same rows: `readFile`, `writeFile`, `unlink`, `readdir`,
-`mkdir`, `rmdir`, `stat`, `lstat`, `readlink`, `symlink`. HTTP is
-`isomorphic-git/http/web`, which is `fetch`. Credentials are a Worker
-secret presented through isomorphic-git's `onAuth`, never written into the
-workspace.
+`git` is a program, and the cell cannot spawn one. On 5 September a
+facade was built and withdrawn the same day: twelve verbs as a just-bash
+command over isomorphic-git, with `CellFs` grown an `fs.promises` face
+and credentials through `onAuth`. It held in workerd against a fixture and
+half-walked against a real repository, and the walk was the argument
+against it. A hand-written command surface over a library that
+reimplements git is two layers of almost-git, and every verb a model
+reaches for that the fixture did not is a bug the model then covers for.
+The shell now refuses `git` with the sentence it refuses `npm`, and the
+system prompt says the same thing once.
 
-The model reaches it as `git` in the shell: a just-bash custom command
-covering `init`, `clone`, `status`, `add`, `commit`, `log`, `diff`,
-`checkout`, `branch`, `remote`, `push`, and `pull`, each a thin call into
-isomorphic-git with output shaped like git's. Anything else prints `git:
-<verb> is not available in this shell` with the list. Phase 5 built all
-of these; `diff` reads the index as the working tree because the index's
-blobs are not cheaply readable through isomorphic-git's public API.
+The repository journey moves to the second leg, [pen](../pen/design.md),
+where git is real git in a container over a checkout synced from the
+workspace rows, and the credential is held at the home behind a helper
+the host controls. `Shell.exec` is the seam; nothing in this leg builds
+behind it. What the facade left behind and the workspace keeps: files in
+1 MiB chunks under an 8 MiB cap, which a packfile forced and which any
+large file wants.
 
 ## celld
 
@@ -377,8 +379,9 @@ What celld lacks, the Worker Loader and Containers, this leg does not
 touch. **What phase 6 found** (5 Sep): the same bundle ran on a local
 node unchanged. Two things around it differed: celld bundles with its own
 esbuild and refuses Wrangler's `alias`, so a CommonJS `require("buffer")`
-deep in isomorphic-git's dependencies is handled by a pnpm patch rather
-than a bundler alias; and celld's `setTimeout` returns a number, which
+deep in just-bash's dependencies (`safe-buffer`, under zstd's
+prebuild-install) is handled by a pnpm patch rather than a bundler
+alias; and celld's `setTimeout` returns a number, which
 one guarded line in pi-server absorbs. The one deliberate difference is
 cost shape: a hibernated session on celld costs bucket storage, which is
 the shape a session that is mostly idle wants.
@@ -388,7 +391,7 @@ the shape a session that is mostly idle wants.
 ```text
 packages/
   cell/      the Worker: SessionCell, Directory, CellSqliteDatabase, CellExecutionEnv,
-             CellFs, the shell, git, the WebSocket listener; wrangler.jsonc; vitest in workerd
+             CellFs, the shell, the WebSocket listener; wrangler.jsonc; vitest in workerd
   lamb/      the terminal: pi's experimental client TUI plus the WebSocket transport
              and the lamb commands
 vendor/pi/   pi as a submodule on the `sheep` branch of a fork: upstream plus a few commits

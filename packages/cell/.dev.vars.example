@@ -7,8 +7,3 @@ LAMB_TOKEN=
 # The model the cell calls. Leave LAMB_PROVIDER unset for Anthropic; "faux" is the scripted test provider.
 LAMB_ANTHROPIC_API_KEY=
 # LAMB_MODEL=claude-sonnet-5
-
-# Optional: for `git push` from the shell. A fine-grained token scoped to one scratch repository.
-# LAMB_GITHUB_TOKEN=
-# LAMB_GIT_AUTHOR_NAME=lamb
-# LAMB_GIT_AUTHOR_EMAIL=lamb@example.com

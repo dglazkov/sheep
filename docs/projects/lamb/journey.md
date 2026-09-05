@@ -2,7 +2,7 @@
 status: partial
 since: 2026-09-05
 see: lamb
-note: "journeys, design and seven phases written 5 Sep 2026 and every phase built the same day; phase 0 (the scaffold) closed by the first deploy to Cloudflare; phase 1 closed the same day: pi's storage and repo conformance suites pass in full in workerd, and pi's own SQLite repo runs in the cell with two small patches; phase 2 closed the same day: pi's four tools run over a workspace table and just-bash in the isolate, journey 4's steps each held by a test in workerd; phase 3 part-done the same day: the cell drives pi's harness, the alarm brings it back, journey 2's eviction test holds at every transition in workerd, and journey 2 walked in full on the deployed home, a turn evicted by a real `wrangler deploy` mid-flight and resumed by the alarm; phase 4 part-done the same day: pi's own client attaches to a cell over a WebSocket through `lamb`, journey 3 holds in workerd, journey 1 walked against a local home with the faux provider and then on the deployed home with a real model as far as one laptop can take it, and an exported session opens in pi's Node backend; phase 5 part-done the same day: git in the shell over isomorphic-git, journey 5 held in workerd against a fixture served by git http-backend; journey 5 later reframed into 5a (a deployed cell reaching a real remote, the credential held at the home) and 5b (a Sheep GitHub App, a later leg), and 5a's read-and-egress half walked on the deployed home against this repository, forcing two git fixes, with the push waiting on a scoped token; phase 6 part-done on one local celld node, journeys 1 and 3 walked there through lamb and pi's client with state surviving a node restart; phase 7 closed, pi's full suite green with the four patches and a fresh pi from the registry running beside lamb. Everything that waits, waits on a person at a terminal: two terminals side by side, a second machine, a scoped token to this repo for journey 5a's push, or a two-node fleet. The first leg of a longer walk — pi's harness in a Durable Object with a workspace in rows, an in-isolate shell, pi's own client attached over a WebSocket, and the same bundle on celld. Execution tiers, sub-agents as cells, and multi-user are named as later legs and not addressed here."
+note: "journeys, design and seven phases written 5 Sep 2026 and every phase built the same day; phase 0 (the scaffold) closed by the first deploy to Cloudflare; phase 1 closed the same day: pi's storage and repo conformance suites pass in full in workerd, and pi's own SQLite repo runs in the cell with two small patches; phase 2 closed the same day: pi's four tools run over a workspace table and just-bash in the isolate, journey 4's steps each held by a test in workerd; phase 3 part-done the same day: the cell drives pi's harness, the alarm brings it back, journey 2's eviction test holds at every transition in workerd, and journey 2 walked in full on the deployed home, a turn evicted by a real `wrangler deploy` mid-flight and resumed by the alarm; phase 4 part-done the same day: pi's own client attaches to a cell over a WebSocket through `lamb`, journey 3 holds in workerd, journey 1 walked against a local home with the faux provider and then on the deployed home with a real model as far as one laptop can take it, and an exported session opens in pi's Node backend; phase 5 built and withdrawn the same day: git had been a twelve-verb facade over isomorphic-git in the shell, and walking it against a real repository showed the cost of a program that is almost git, so the facade, its tests, and its secret were removed, the shell refuses `git` in the sentence it refuses `npm`, and the repository journey moved to the second leg, pen; phase 6 part-done on one local celld node, journeys 1 and 3 walked there through lamb and pi's client with state surviving a node restart; phase 7 closed, pi's full suite green with the four patches and a fresh pi from the registry running beside lamb. Everything that waits, waits on a person at a terminal: two terminals side by side, a second machine, or a two-node fleet. The first leg of a longer walk — pi's harness in a Durable Object with a workspace in rows, an in-isolate shell, pi's own client attached over a WebSocket, and the same bundle on celld. Execution tiers, sub-agents as cells, and multi-user are named as later legs and not addressed here."
 ---
 
 # Lamb — the journeys
@@ -22,11 +22,14 @@ need it to hold across a network, with the machine gone.
 
 This is the first leg of a marathon, and the journeys are written to the
 leg. A session with no machine under it, a turn that outlives the cell,
-two terminals on one session, a shell that knows what it is, a repository
-in and the work out, the same thing on a fleet you own, and nothing changed
-for pi on a laptop. Execution tiers, sub-agents, permission prompts
-answered from a phone, and who owns a session are the next legs, and the
-journeys name the gap where they touch it.
+two terminals on one session, a shell that knows what it is, the same
+thing on a fleet you own, and nothing changed for pi on a laptop. A
+repository in and the work out was journey 5 and is withdrawn to the
+second leg: `git` is a program, and programs run in the tier that runs
+programs. Execution tiers with git among them ([pen](../pen/journey.md)),
+sub-agents, permission prompts answered from a phone, and who owns a
+session are the next legs, and the journeys name the gap where they touch
+it.
 
 Key terms:
 
@@ -47,7 +50,7 @@ Key terms:
 | `bash` spawns `/bin/bash`. | `bash` runs an interpreter in the cell that says plainly what it lacks. |
 | Killing the process mid-turn leaves the session to be resumed by hand. | Evicting the cell mid-turn is followed by a wake and a resumption nobody asked for. |
 | `pi client` attaches over a Unix socket or the Radius relay. | `lamb` attaches over a WebSocket, and two terminals attach to one cell. |
-| `git` is whatever the laptop has. | `git` is a command in the shell, over the workspace, with credentials the model never sees. |
+| `git` is whatever the laptop has. | `git` is not in the cell, and the shell says so in the sentence it says for `npm`. It arrives with the second leg, as a program. |
 | pi runs where Node runs. | The same bundle runs on Cloudflare and on a celld fleet. |
 
 ## Cast
@@ -60,9 +63,10 @@ Key terms:
 - **The cell** — one session. Named by its id, and not by anything else.
 
 The journeys are ordered from the smallest claim outward: journeys 1 and 2
-are one terminal and one cell, journey 3 is two terminals, journeys 4 and
-5 are what the shell can do, journey 6 is a second home, and journey 7
-verifies nothing changed for anyone who never runs `lamb`.
+are one terminal and one cell, journey 3 is two terminals, journey 4 is
+what the shell can and cannot do, journey 5 is withdrawn to the second
+leg, journey 6 is a second home, and journey 7 verifies nothing changed
+for anyone who never runs `lamb`.
 
 ## Journey 1: A session with no machine under it
 
@@ -190,49 +194,26 @@ Acceptance criteria:
 - Truncation, spill to `/tmp`, and the bash renderer's periodic updates
   behave as they do in pi against a real shell.
 
-## Journey 5: A repository in, the work out
+## Journey 5: A repository in, the work out (withdrawn)
 
-Nadia wants the agent to make a change to a real repository and open a
-pull request, with nothing on her laptop.
+Withdrawn 5 September 2026, the day it was built, and moved to the second
+leg, [pen](../pen/journey.md).
 
-1. Ask the agent to clone `https://github.com/<org>/<repo>` and describe
-   its layout. It runs `git clone`, then `find` and `cat`, and describes
-   it.
-2. Ask it for a change: fix a typo across the docs, on a new branch. It
-   runs `git checkout -b`, edits, runs `git status` and `git diff`, and
-   shows the diff.
-3. Ask it to commit and push. It runs `git add`, `git commit -m`, and `git
-   push -u origin <branch>`. The push succeeds.
-4. Nadia opens GitHub and finds the branch, with the commit authored as
-   the home is configured to author, and opens the pull request herself.
-5. Ask it to `git rebase -i`. The shell says `git: rebase is not available
-   in this shell` and the agent says so.
+The reasoning: `git` is a program. The cell cannot spawn one, so this
+leg's `git` was a facade, twelve verbs hand-written over isomorphic-git,
+and walking it against a real repository showed what a facade costs. A
+`--depth` that parsed its own value as the URL, a `diff` with no header,
+and a model that fabricated real-looking output to cover for both. A
+shell that is almost git is harder to trust than a shell that says `git:
+command not found` in the sentence it already says for `npm`. So the
+facade, its tests, and its credential were removed, and the shell refuses
+`git` as it refuses every other program.
 
-This journey is two claims, split after the first walk. **5a**, this leg,
-is the network-and-secrets claim: a deployed cell reaches a real remote
-over egress, and the credential that authorizes a write is held at the
-home and never seen by the model. It is walked against a real repository
-with a scoped, revocable credential used as a test rig. **5b**, a later
-leg tied to identity, is the real client: a Sheep GitHub App with
-short-lived, repo-scoped installation tokens and a commit authored as the
-app. A personal-access token is neither, and is not the shape the product
-takes. Steps 1 to 3 and 5 are 5a; step 4's author identity is 5b's.
-
-Acceptance criteria:
-
-- The credential that authorized step 3 is a secret on the home. It
-  appears in no transcript entry, no tool result, no file in the
-  workspace, and no environment variable the shell exposes. For 5a the
-  credential is scoped to this one repository and revoked after; the
-  unscoped, long-lived token is not used.
-- The clone in step 1 fits the per-file cap, or the tool result names the
-  file that did not and the clone is refused whole. No partial clone.
-- `git status`, `git diff`, and `git log` print in git's shape closely
-  enough that the agent reads them without comment.
-- The pushed commit is bit-identical to what isomorphic-git wrote, and a
-  laptop `git fetch` of the branch shows the same tree.
-- Step 4's authored-as-the-app identity is 5b, not this leg. Here the
-  commit carries the home's configured author, which is not yet an app.
+What the journey wanted still stands, and pen carries it: a repository
+cloned into the workspace, a change on a branch, a push with a credential
+held at the home and never seen by the model, and a commit a laptop can
+fetch. There it is real git, in a container, over a checkout synced from
+the workspace rows, with credentials through a helper the host controls.
 
 ## Journey 6: The same lamb on a fleet you own
 
@@ -286,8 +267,7 @@ Named here so the design has a list to answer, not to decide them.
   7 step 3 need the transcript in pi's own schema, which means pi's own
   SQLite backend over an adapter, not a new backend.
 - **One filesystem with two faces.** Journey 4 needs `read`, `write`, and
-  `bash` to see the same rows; journey 5 needs isomorphic-git to see them
-  too. One table, three interfaces over it.
+  `bash` to see the same rows. One table, two interfaces over it.
 - **The alarm as the heartbeat of an open operation.** Journey 2 step 3
   says the client is not what resumes the turn, and journey 3 step 5 says
   an idle cell costs nothing. Both follow from arming the alarm only while
@@ -295,11 +275,9 @@ Named here so the design has a list to answer, not to decide them.
 - **A WebSocket transport on both sides of pi's protocol.** Journeys 1, 3,
   and 6 attach from anywhere; journey 3 needs multiple attachments, which
   the protocol has and a new wire would have to reinvent.
-- **A refusal the model can act on.** Journey 4 steps 4 and 6, journey 5
-  step 5. Every missing capability is a sentence that names the reason and
-  is the same sentence in the system prompt.
-- **Secrets at the home, never in the session.** Journey 5 step 3. The
-  model does the push; the model never holds the token.
+- **A refusal the model can act on.** Journey 4 steps 4 and 6, and `git`
+  with them. Every missing capability is a sentence that names the reason
+  and is the same sentence in the system prompt.
 - **A patch set, not a fork.** Journey 7. Every change to pi is named,
   small, and upstreamable.
 

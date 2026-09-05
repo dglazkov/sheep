@@ -6,11 +6,8 @@ export default defineConfig({
     cloudflareTest({
       wrangler: { configPath: "./wrangler.jsonc" },
       miniflare: {
-        bindings: { LAMB_TOKEN: "test-token", LAMB_PROVIDER: "faux", LAMB_GITHUB_TOKEN: "secret-git-credential-9f3a" },
+        bindings: { LAMB_TOKEN: "test-token", LAMB_PROVIDER: "faux" },
       },
     }),
   ],
-  test: {
-    globalSetup: ["./test/git-server.ts"],
-  },
 });

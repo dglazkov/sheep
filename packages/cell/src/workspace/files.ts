@@ -33,7 +33,7 @@ export const MAX_FILE_BYTES = 8 * CHUNK_BYTES;
 
 export type FsErrorCode = "ENOENT" | "EEXIST" | "ENOTDIR" | "EISDIR" | "ENOTEMPTY" | "EACCES" | "EFBIG" | "ELOOP" | "EINVAL";
 
-/** Node-shaped so just-bash's commands and isomorphic-git read `code` as they would from `node:fs`. */
+/** Node-shaped so just-bash's commands read `code` as they would from `node:fs`. */
 export class FsError extends Error {
   constructor(
     readonly code: FsErrorCode,

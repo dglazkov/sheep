@@ -42,14 +42,15 @@ take it (minted, built, grepped, resumed after hibernation, attached with
 only the id and the token, exported and opened by pi's Node backend), and
 journey 2 has walked in full there: a turn evicted by a real `wrangler
 deploy` mid-flight, resumed by the alarm, finished with pi's interruption
-note and no doubled effect. Journey 5 was reframed into 5a (a deployed
-cell reaching a real remote with the credential held at the home) and 5b
-(a Sheep GitHub App, a later leg); 5a's read-and-egress half walked
-against this repository on the deployed home. What remains is two real
-terminals side by side and the dashboard's hibernation check for journey
-3, a scoped token to this repo for journey 5a's push, and a two-node celld
-fleet for journey 6. The code is not expected to change for any of it,
-save the two git fixes that walking journey 5a forced.
+note and no doubled effect. Journey 5 and lamb phase 5, git, were
+withdrawn on 5 Sep: the shell's `git` was a facade over isomorphic-git,
+walking it against a real repository showed the cost, and git is a
+program for the second leg's container tier ([pen](../pen/phases.md)).
+The facade, its tests, its secret, and 43 packages are gone, and the
+shell refuses `git` in the sentence it refuses `npm`. What remains is two
+real terminals side by side and the dashboard's hibernation check for
+journey 3, and a two-node celld fleet for journey 6. The code is not
+expected to change for either.
 
 The order is dependency order and it is also risk order: phase 1 is the
 gate, because if pi's storage does not run over the cell's SQL nothing
@@ -75,8 +76,9 @@ the findings below still call them patches 0001 to 0004.)
 instead of improvising mid-task:
 
 - **Execution tiers.** A fresh isolate for model-written code and a
-  container for native work are the marathon's second leg. `Shell.exec` is
-  the seam; nothing here builds behind it.
+  container for native work are the marathon's second leg,
+  [pen](../pen/design.md). `Shell.exec` is the seam; nothing here builds
+  behind it. `git` is a program and goes there too.
 - **Large files.** The per-file cap stands in for an object store. The
   table is shaped for it; the leg does not build it.
 - **Identity.** One bearer token per home. No people, no grants.
@@ -243,9 +245,9 @@ before the wire exists, with the tool results asserted directly.
 
 - The `files` table from the design, created by the cell's own migration
   beside pi's.
-- `CellFs`: the table behind three faces. Pi's `FileSystem`; just-bash's
-  `IFileSystem`; and Node's `fs.promises` subset that isomorphic-git will
-  need in phase 5, written now because it is the same rows. POSIX path
+- `CellFs`: the table behind two faces. Pi's `FileSystem` and just-bash's
+  `IFileSystem`. (A third, Node's `fs.promises` subset for isomorphic-git,
+  was written here and removed with lamb phase 5.) POSIX path
   normalization in pure code; the `/workspace` and `/tmp` fence; the
   per-file cap refused with `FileError("invalid")` naming the limit.
 - `CellExecutionEnv`: `FileSystem` delegated to `CellFs`; `Shell.exec`
@@ -542,118 +544,44 @@ hibernates with the alarm clear, checked from the dashboard.
   types and the resolver maps the workspace packages to their sources.
   Still an unmodified client; the bridge did not change.
 
-## Phase 5 — Git
+## Phase 5 — Git (withdrawn)
 
-**Status: PART-DONE** 5 Sep 2026. Built and proved locally: `git` is a
-just-bash command over isomorphic-git against the workspace rows, with
-clone, status, add, commit, log, diff, checkout, branch, remote, push, and
-pull, and every other verb refused by name; files are stored in 1 MiB
-chunks so a packfile fits, with the per-file limit now 8 MiB. Journey 5's
-steps run in workerd against a bare fixture served over smart HTTP by
-`git http-backend` from vitest's global setup: clone, a branch, the typo
-fixed with `sed -i`, status and diff, add, commit, push, log, `rebase -i`
-refused, and a fresh clone in a second cell showing the fix. The fake
-credential appears in no shell environment, file, or config. On the
-deployed home, the read-and-egress half walked against this real public
-repository: the deployed cell cloned `github.com/dglazkov/sheep` over real
-HTTPS (full and `--depth 1`), branched, wrote a file, and printed
-git-shaped `status` and `diff`. Missing: the push and the
-credential-never-in-session assertion, which need an auth'd remote.
+**Status: WITHDRAWN** 5 Sep 2026, the day it closed locally. What was
+built: `git` as a just-bash command over isomorphic-git against the
+workspace rows, twelve verbs with every other refused by name, a
+smart-HTTP fixture in workerd, journey 5's steps held there, and the
+read-and-egress half walked against this repository from the deployed
+home. Why it was withdrawn is journey 5's note: a facade that is almost
+git costs more than a shell that says it has no git. Removed the same
+day: `packages/cell/src/env/git.ts`, its test and fixture, the
+`fs.promises` face of `CellFs`, the `LAMB_GITHUB_TOKEN` secret and the
+author variables, and the isomorphic-git and diff dependencies, 43
+packages. The shell now refuses `git` in the sentence it refuses `npm`,
+confirmed on the deployed home. What stayed: files in 1 MiB chunks under
+an 8 MiB cap.
 
-**Closes journey 5, now split into 5a and 5b.** On 5 Sep the journey was
-reframed with Dimitri: a personal-access token to GitHub was a sour spot,
-neither the product integration nor the cheapest mechanism test. **5a,
-this leg:** the network-and-secrets claim, that a deployed cell reaches a
-real remote over egress and the host injects a credential the model never
-sees. **5b, a later leg tied to Identity:** a Sheep GitHub App with
-short-lived, repo-scoped installation tokens and correct bot attribution,
-the real client. This leg walks 5a against this repository with a scoped,
-revocable throwaway credential used as a test rig, not a product answer.
-The git command remains the largest piece of new code.
-
-**Work:**
-
-- isomorphic-git over `CellFs`'s `fs.promises` face and
-  `isomorphic-git/http/web`, with `onAuth` reading a Worker secret and the
-  author from the home's configuration.
-- `git` as a just-bash custom command: `clone`, `status`, `add`, `commit`,
-  `log`, `diff`, `checkout`, `branch`, `push`, `pull`, output shaped like
-  git's; every other verb answered with `git: <verb> is not available in
-  this shell`.
-- A clone that meets a file over the cap is refused whole, with the file
-  named, and leaves no partial tree.
-- A test in workerd against a fixture repository served from the test:
-  clone, branch, edit, status, diff, commit, push, and the pushed tree
-  compared object by object.
-- ⚑ provision: a fine-grained token scoped to one repository,
-  contents-only and short-lived, as a Worker secret on the home. A test
-  rig for 5a, revoked after; the Sheep GitHub App is 5b.
-
-**Proof:** Journey 5 walked against a real repository on GitHub: cloned,
-a typo fixed on a branch, pushed, the branch found on GitHub with the
-configured author, and a laptop `git fetch` showing the same tree. The
-token appears nowhere in the transcript, the workspace, `env` in the
-shell, or any tool result, checked by grepping the exported session file.
-`git rebase -i` answered with the sentence.
+**Closes no journey.** Journey 5 moved to [pen](../pen/phases.md).
 
 **Findings:**
 
-- **2026-09-05 — A clone is one packfile, so one file is now one row plus
-  chunk rows.** isomorphic-git writes what it fetched to
-  `.git/objects/pack/*.pack` as one file, which the 1 MiB cap refused
-  whole. Files are stored in 1 MiB chunks, the first in the row and the
-  rest in `file_chunks`, and the per-file limit is 8 MiB. The object-store
-  spill stays open; this is the stand-in that keeps everything in the cell.
-- **2026-09-05 — isomorphic-git runs in workerd over an `fs.promises` face
-  of eighty lines.** It reads `isFile`, `isDirectory`, `isSymbolicLink`,
-  `mode` with type bits, `mtime`, `ctime`, `ino`, `uid`, `gid`, and `dev`;
-  the inode is a hash of the path, which is what its index needs to tell
-  files apart.
-- **2026-09-05 — `statusMatrix` rows are `[HEAD, WORKDIR, STAGE]` and a
-  stage of 2 means "same as the working tree", which is the staged case.**
-  Read backwards the first time; `git add` then `git status` showed
-  nothing staged.
-- **2026-09-05 — `git diff` reads the index as the working tree** for
-  stages 2 and 3, because isomorphic-git's public API has no cheap way to
-  read an index blob. Cosmetic: the patches were right in every case the
-  test checks.
-- **2026-09-05 — The fixture is `git http-backend` behind fifty lines of
-  Node CGI**, started by vitest's global setup on 127.0.0.1:4180 with
-  `http.receivepack` on. workerd reaches it. git's own "push negotiation
-  failed; proceeding anyway" warning from the seed push is noise.
-- **2026-09-05 — The credential is `x-access-token` plus the secret**
-  through isomorphic-git's `onAuth`, sent only to the remote. The shell's
-  `env`, every workspace path, and `.git/config` were checked for the fake
-  secret and it was in none.
-- **2026-09-05 — Journey 5 reframed into 5a and 5b.** The PAT-to-GitHub
-  walk served only the weakest claim (that the remote is literally GitHub)
-  and dragged a broad long-lived credential into the strongest (secrets
-  held at the home). 5a proves egress and host-side secret injection
-  against a controlled remote; 5b is the Sheep GitHub App, deferred with
-  Identity. See the Closes line above.
-- **2026-09-05 — Journey 5a's read-and-egress half walked on the deployed
-  home.** From a fresh cell on `lamb.dglazkov.workers.dev`, the model ran
-  `git clone https://github.com/dglazkov/sheep.git` (a full clone, ~176 KB
-  pack, within the 8 MiB cap) and `git clone --depth 1` of the same, then
-  `git checkout -b`, a file written into the tree, `git add`, and
-  git-shaped `status` and `diff --cached`. Real TLS egress from the isolate
-  to github.com, no credential needed for a public clone. The push half
-  waits on a scoped token.
-- **2026-09-05 — Two git bugs surfaced only against a real repository.**
-  `git clone --depth 1 <url>` took the depth value `1` as the url: the
-  positional filter dropped `--depth` but kept its value. And `git diff`
-  never emitted a `diff --git` header, with new files missing `/dev/null`
-  and a mode line, because the header regex matched `createPatch`'s
-  `Index:` line that `createTwoFilesPatch` never writes; the model papered
-  over it by fabricating a real-git diff on retry. Both fixed, covered by
-  workerd tests, deployed, and re-walked. The fixture never caught them
-  because its clone used no `--depth` and its diff only touched modified
-  files.
-- **2026-09-05 — Open: journey 5a's push and secret assertion.** Needs a
-  fine-grained, contents-only, short-lived token to this repository as a
-  Worker secret, then a push to a `lamb/*` branch and a grep of the
-  exported session for the credential. 5b, the GitHub App, is a later
-  leg.
+- **2026-09-05 — A clone is one packfile, so one file is one row plus
+  chunk rows.** A Durable Object value is capped at 2 MB; files are stored
+  in 1 MiB chunks, the first in the row and the rest in `file_chunks`,
+  with an 8 MiB per-file limit. The packfile forced it and the workspace
+  keeps it.
+- **2026-09-05 — A real repository finds what a fixture cannot.** `git
+  clone --depth 1 <url>` parsed the `1` as the url, and `git diff` never
+  emitted its header; the fixture used neither. The model covered for both,
+  once by fabricating a real-looking diff. This is the finding that
+  withdrew the phase: a command surface over a library is a second
+  almost-git, and its bugs are the model's to hide.
+- **2026-09-05 — The credential path worked as designed.** `x-access-token`
+  plus the secret through `onAuth`, sent only to the remote, absent from
+  `env`, every workspace path, and `.git/config`. Pen keeps the property
+  through a credential helper the host controls rather than a hook.
+- **2026-09-05 — The pnpm patch for `safe-buffer` is just-bash's**, via
+  zstd's prebuild-install, not isomorphic-git's. It stays after the
+  removal.
 
 ## Phase 6 — celld
 
@@ -693,7 +621,7 @@ say, for each celld claim the design leans on, whether it held.
   Worker code did not change for celld.
 - **2026-09-05 — celld bundles with its own esbuild call**, found through
   `CELLD_ESBUILD`, and refuses Wrangler's `alias` key. A CommonJS
-  dependency of isomorphic-git, `safe-buffer`, does a dynamic
+  dependency of just-bash, `safe-buffer`, does a dynamic
   `require("buffer")` that Wrangler's bundler shims and celld's leaves
   dynamic; a pnpm patch on `safe-buffer` takes the global `Buffer` first,
   which both runtimes provide.

@@ -10,10 +10,6 @@ declare namespace Cloudflare {
     LAMB_PROVIDER?: string;
     LAMB_MODEL?: string;
     LAMB_ANTHROPIC_API_KEY?: string;
-    /** Sent to HTTPS git remotes as the password with username x-access-token. */
-    LAMB_GITHUB_TOKEN?: string;
-    LAMB_GIT_AUTHOR_NAME?: string;
-    LAMB_GIT_AUTHOR_EMAIL?: string;
     ANTHROPIC_API_KEY?: string;
   }
 }

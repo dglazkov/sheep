@@ -106,12 +106,7 @@ export class SessionCell extends DurableObject<Env> {
     const repo = await createCellSessionRepo(this.ctx.storage);
     const existing = (await repo.list(undefined, context)).find((metadata) => metadata.id === this.sessionId);
     const session = existing === undefined ? await repo.create({ id: this.sessionId }, context) : await repo.open(existing, context);
-    const env = new CellExecutionEnv(this.ctx.storage.sql, {
-      git: {
-        ...(this.env.LAMB_GITHUB_TOKEN === undefined ? {} : { token: this.env.LAMB_GITHUB_TOKEN }),
-        author: { name: this.env.LAMB_GIT_AUTHOR_NAME ?? "lamb", email: this.env.LAMB_GIT_AUTHOR_EMAIL ?? "lamb@localhost" },
-      },
-    });
+    const env = new CellExecutionEnv(this.ctx.storage.sql);
     const models = createCellModels(this.env, { onProviderCall: () => this.transition() });
     const runtime: Partial<Runtime> = { repo, session, env, models, drives: new Set() };
     const { harness, open } = await AgentHarness.create(

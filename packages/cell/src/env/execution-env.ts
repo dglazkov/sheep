@@ -21,7 +21,6 @@ import { Bash } from "just-bash/browser";
 import { posix } from "node:path";
 import { CellFs } from "../workspace/cell-fs.ts";
 import { type FileRow, FilesTable, FsError, isReadable, MAX_FILE_BYTES, normalizePath, TEMP_ROOT, WORKSPACE_ROOT } from "../workspace/files.ts";
-import { createGitCommand, type GitOptions } from "./git.ts";
 import { annotateCommandNotFound } from "./shell-notice.ts";
 
 const MAX_TIMEOUT_MS = 2_147_483_647;
@@ -63,8 +62,6 @@ export interface CellExecutionEnvOptions {
   /** Default variables the shell sees when `inheritEnv` is true. */
   shellEnv?: Record<string, string>;
   now?: () => number;
-  /** Credentials and author for the shell's `git`. Absent means `git` still works, unauthenticated. */
-  git?: GitOptions;
 }
 
 export class CellExecutionEnv implements ExecutionEnv {
@@ -72,14 +69,12 @@ export class CellExecutionEnv implements ExecutionEnv {
   readonly files: FilesTable;
   readonly fs: CellFs;
   private readonly shellEnv: Record<string, string>;
-  private readonly commands: ReturnType<typeof createGitCommand>[];
 
   constructor(sql: SqlStorage, options: CellExecutionEnvOptions = {}) {
     this.cwd = options.cwd ?? WORKSPACE_ROOT;
     this.files = new FilesTable(sql, options.now);
     this.files.init();
     this.fs = new CellFs(this.files);
-    this.commands = [createGitCommand(this.files, options.git ?? { author: { name: "lamb", email: "lamb@localhost" } })];
     this.shellEnv = {
       HOME: WORKSPACE_ROOT,
       PATH: "/usr/local/bin:/usr/bin:/bin",
@@ -249,7 +244,6 @@ export class CellExecutionEnv implements ExecutionEnv {
       cwd,
       env: { ...environment, PWD: cwd },
       executionLimits: EXECUTION_LIMITS,
-      customCommands: this.commands,
     });
 
     try {

@@ -25,9 +25,9 @@ What you get today:
   session; two terminals can share one.
 - The agent has pi's four tools. `read`, `write`, and `edit` work on a
   workspace stored in the cell. `bash` runs a shell interpreter inside the
-  cell with the usual text tools and a `git` that clones, commits, and
-  pushes over HTTPS. There are no interpreters or package managers yet; the
-  shell says so plainly when asked.
+  cell with the usual text tools. There are no interpreters, package
+  managers, or `git` yet; the shell says so plainly when asked. Programs
+  arrive with the second leg, in a container.
 - A turn survives the cell being evicted. Pi's recovery settles the
   interrupted step honestly and continues.
 - `lamb export <id>` writes a pi SQLite session file that pi's own Node
@@ -135,10 +135,6 @@ lamb --home <url> ...                    # a different home for one command
 `lamb` here means `node packages/lamb/bin/lamb.js`; put an alias in your
 shell if you like. With a prompt after `--` the reply streams and the
 command exits; without one you get pi's full terminal.
-
-To let the agent push: make a fine-grained GitHub token scoped to one
-repository and set it as `LAMB_GITHUB_TOKEN`, in `.dev.vars` locally or with
-`wrangler secret put` on a deployed home.
 
 ### The same cell on celld
 
