@@ -5,7 +5,9 @@
  * and a single-threaded object needs no locking. The two async faces over
  * it, pi's `FileSystem` and just-bash's `IFileSystem`, live beside it.
  */
+import { createHash } from "node:crypto";
 import { posix } from "node:path";
+import type { ManifestEntry } from "@lamb/pen/protocol";
 
 export type FileKind = "file" | "directory" | "symlink";
 
@@ -17,6 +19,13 @@ export interface FileRow {
   size: number;
   mtimeMs: number;
   mode: number;
+  /** SHA-256 of the whole content (chunks included), lowercase hex. `null` for a directory. */
+  hash: string | null;
+}
+
+/** The content hash pen syncs by: SHA-256 over the bytes, lowercase hex. Synchronous, as the table is. */
+export function hashBytes(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
 }
 
 /** The roots the workspace fence allows. `/` itself is readable and lists them. */
@@ -96,6 +105,7 @@ type Row = {
   size: number;
   mtime_ms: number;
   mode: number;
+  hash: string | null;
 };
 
 const MAX_SYMLINK_DEPTH = 32;
@@ -106,7 +116,7 @@ export class FilesTable {
     private readonly now: () => number = Date.now,
   ) {}
 
-  /** Creates the table and the roots. Idempotent; run on every construction. */
+  /** Creates the table and the roots, and brings an older table up to date. Idempotent; run on every construction. */
   init(): void {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS files (
       path     TEXT PRIMARY KEY,
@@ -114,7 +124,8 @@ export class FilesTable {
       content  BLOB,
       size     INTEGER NOT NULL,
       mtime_ms INTEGER NOT NULL,
-      mode     INTEGER NOT NULL DEFAULT 420
+      mode     INTEGER NOT NULL DEFAULT 420,
+      hash     TEXT
     )`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS file_chunks (
       path    TEXT NOT NULL,
@@ -122,9 +133,44 @@ export class FilesTable {
       content BLOB NOT NULL,
       PRIMARY KEY (path, idx)
     )`);
+    this.migrateHashes();
     for (const root of ["/", WORKSPACE_ROOT, TEMP_ROOT]) {
       if (this.get(root) === undefined) this.insertDirectory(root, 0o755);
     }
+  }
+
+  /**
+   * A table from before pen has no `hash` column. Add it, then hash every
+   * file and symlink row that has none, one row at a time: the cell's SQL
+   * binds few variables and this runs once per cell.
+   */
+  private migrateHashes(): void {
+    const columns = this.sql.exec<{ name: string }>("PRAGMA table_info(files)").toArray().map((column) => column.name);
+    if (!columns.includes("hash")) this.sql.exec("ALTER TABLE files ADD COLUMN hash TEXT");
+    const unhashed = this.sql.exec<{ path: string }>("SELECT path FROM files WHERE hash IS NULL AND kind != 'directory' ORDER BY path").toArray();
+    for (const { path } of unhashed) {
+      const row = this.get(path);
+      if (row === undefined) continue;
+      this.sql.exec("UPDATE files SET hash = ? WHERE path = ?", hashBytes(this.assemble(row)), path);
+    }
+  }
+
+  /**
+   * The workspace as pen's manifest: every row under `/workspace`, the root
+   * itself and `/tmp` excluded, sorted by path, paths relative to the root.
+   * One query; the hash column is what makes it one.
+   */
+  manifest(): ManifestEntry[] {
+    const prefix = `${WORKSPACE_ROOT}/`;
+    return this.sql
+      .exec<{ path: string; kind: FileKind; mode: number; hash: string | null }>(
+        "SELECT substr(path, ?) AS path, kind, mode, hash FROM files WHERE substr(path, 1, ?) = ? ORDER BY files.path",
+        prefix.length + 1,
+        prefix.length,
+        prefix,
+      )
+      .toArray()
+      .map((row) => ({ path: row.path, kind: row.kind, mode: row.mode, hash: row.kind === "directory" ? null : row.hash }));
   }
 
   /** The whole content of a file row, its later chunks joined on. */
@@ -210,12 +256,13 @@ export class FilesTable {
     const mode = options.mode ?? existing?.mode ?? 0o644;
     const head = bytes.subarray(0, CHUNK_BYTES);
     this.sql.exec(
-      "INSERT INTO files (path, kind, content, size, mtime_ms, mode) VALUES (?, 'file', ?, ?, ?, ?) ON CONFLICT(path) DO UPDATE SET kind = 'file', content = excluded.content, size = excluded.size, mtime_ms = excluded.mtime_ms",
+      "INSERT INTO files (path, kind, content, size, mtime_ms, mode, hash) VALUES (?, 'file', ?, ?, ?, ?, ?) ON CONFLICT(path) DO UPDATE SET kind = 'file', content = excluded.content, size = excluded.size, mtime_ms = excluded.mtime_ms, hash = excluded.hash",
       target,
       head,
       bytes.byteLength,
       this.now(),
       mode,
+      hashBytes(bytes),
     );
     this.sql.exec("DELETE FROM file_chunks WHERE path = ?", target);
     for (let offset = CHUNK_BYTES, index = 1; offset < bytes.byteLength; offset += CHUNK_BYTES, index++) {
@@ -346,12 +393,13 @@ export class FilesTable {
     if (this.get(link) !== undefined) throw new FsError("EEXIST", "symlink", link);
     const bytes = encoder.encode(target);
     this.sql.exec(
-      "INSERT INTO files (path, kind, content, size, mtime_ms, mode) VALUES (?, 'symlink', ?, ?, ?, ?)",
+      "INSERT INTO files (path, kind, content, size, mtime_ms, mode, hash) VALUES (?, 'symlink', ?, ?, ?, ?, ?)",
       link,
       bytes,
       bytes.byteLength,
       this.now(),
       0o777,
+      hashBytes(bytes),
     );
   }
 
@@ -409,7 +457,7 @@ export class FilesTable {
 
   private insertDirectory(path: string, mode: number): void {
     this.sql.exec(
-      "INSERT INTO files (path, kind, content, size, mtime_ms, mode) VALUES (?, 'directory', NULL, 0, ?, ?)",
+      "INSERT INTO files (path, kind, content, size, mtime_ms, mode, hash) VALUES (?, 'directory', NULL, 0, ?, ?, NULL)",
       path,
       this.now(),
       mode,
@@ -425,5 +473,6 @@ function toFileRow(row: Row): FileRow {
     size: row.size,
     mtimeMs: row.mtime_ms,
     mode: row.mode,
+    hash: row.hash,
   };
 }

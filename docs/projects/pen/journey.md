@@ -2,7 +2,7 @@
 status: planned
 since: 2026-09-05
 see: pen
-note: "journeys, design and phases written 5 Sep 2026, the day lamb's git facade was withdrawn, and recast the same evening around agents as the actors: a sheepdog delegates to sheep, and a sheep rents a machine for the length of a command. Nothing built. Journey 2 is lamb's withdrawn git journey, a repository in and the work out, now over real git in a container. Journeys 1 and 3 use lamb phase 5's surface (detach, wait, log), so pen's first real walk waits on it."
+note: "journeys, design and phases written 5 Sep 2026, the day lamb's git facade was withdrawn, and recast the same evening around agents as the actors: a sheepdog delegates to sheep, and a sheep rents a machine for the length of a command. Pen phase 0, the scaffold, built 5 Sep: the hash column and manifest on the workspace table, the protocol file, the agent that answers ping, a fake container that is the agent over a socket pair in workerd, and the image; no journey walked yet. Journey 2 is lamb's withdrawn git journey, a repository in and the work out, now over real git in a container. Journeys 1 and 3 use lamb phase 5's surface (detach, wait, log), so pen's first real walk waits on it."
 ---
 
 # Pen — the journeys

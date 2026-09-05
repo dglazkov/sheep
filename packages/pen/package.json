@@ -1,0 +1,25 @@
+{
+  "name": "@lamb/pen",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "pen-agent": "./bin/pen-agent.mjs"
+  },
+  "exports": {
+    "./protocol": "./src/protocol.ts",
+    "./agent": "./src/agent.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest --run",
+    "build:image": "scripts/build-image.sh"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.9.0",
+    "vitest": "^4.1.0",
+    "ws": "^8.21.0"
+  }
+}

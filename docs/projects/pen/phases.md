@@ -11,10 +11,12 @@ never a bare "phase 2".
 
 ---
 
-**Where we are: NOTHING BUILT.** Planned 5 Sep 2026. The next thing to do
-is pen phase 0. Pen phases 0 to 2 prove against a fake and need nothing
-from lamb; pen phase 3, the first real walk, uses `--detach`, `wait`, and
-`log` and so waits on lamb phase 5, the sheepdog's surface.
+**Where we are: pen phase 0 CLOSED, phases 1 to 7 NOT STARTED.** Planned
+5 Sep 2026; the scaffold built the same day. The next thing to do is pen
+phase 1, the checkout. Pen phases 1 and 2 prove against the fake and need
+nothing from lamb; pen phase 3, the first real walk, uses `--detach`,
+`wait`, and `log` and so waits on lamb phase 5, the sheepdog's surface,
+and on the Workers Paid plan, a ⚑ step asked when phase 3 begins.
 
 The order is dependency order and risk order. Phase 1 is the gate: if a
 checkout cannot be synced by hash both ways with the atomicity journey 3
@@ -43,7 +45,9 @@ test.
 
 ## Phase 0 — The scaffold
 
-**Status: NOT STARTED.**
+**Status: CLOSED.** 5 Sep 2026. The manifest test and the fake's ping test
+run in workerd, the process test runs the real `pen-agent` in Node, and
+`sheep-pen:dev` builds and starts.
 
 **Closes no journey.** Makes every later phase possible to prove.
 
@@ -65,6 +69,37 @@ test.
 **Proof:** `pnpm test` runs the manifest test in workerd. The image
 builds. `pen-agent` answers `ping` against a local socket in the fake's
 test.
+
+**Findings:**
+
+- **2026-09-05 — The fake container is the agent.** `serveAgent` from
+  `@lamb/pen/agent` runs unchanged in workerd over a `Map` disk and one
+  end of a `WebSocketPair`; the image runs the same function over
+  `node:fs`. There is no second almost-agent to drift.
+- **2026-09-05 — The hash migration ran in workerd for real.** The cell's
+  SQLite accepts `PRAGMA table_info` and `ALTER TABLE ADD COLUMN`; a
+  raw-SQL pre-pen table with a two-chunk file backfilled correctly,
+  checked against WebCrypto, not the table's own code.
+- **2026-09-05 — `pen-agent` has no build step.** Node 24 strips types from
+  `.ts` imported by a `.mjs`, silently; the image copies `src` and `bin`
+  to `/opt/pen`. Under the image's node the entry exits 2 without its
+  environment and 1 without a cell.
+- **2026-09-05 — One `@types/node` major per workspace.** Pen at `^24`
+  re-resolved the cell's vitest peer and `vendor/pi` stopped typechecking;
+  pinned `^22` like lamb, the global `WebSocket` typed by hand.
+- **2026-09-05 — `WebSocketPair` carries a close code and reason across**,
+  so the fake's `stop()` is a real 1012 on the cell's end. Both ends need
+  `accept()` first.
+- **2026-09-05 — The image is 425 MB**, `python3-pip` most of it; the
+  Worker bundle 3.9 MB raw, from 3.6. Cost: 25 minutes, 10 the builder's.
+- **2026-09-05 — Open: `blob` frames are base64 text**, 1.37× plus a copy
+  each way. Binary messages are pen phase 1's call, when blobs first flow.
+- **2026-09-05 — Open: `serveAgent` answers frames on one chain**, so a
+  long `run` would queue `killed` behind it. Pen phase 2 owns streaming
+  and interruption, and gives runs their own lane.
+- **2026-09-05 — Open: the Worker imports only a type from pen.** Whether
+  wrangler bundles `@lamb/pen`'s `.ts` exports as the vitest pool does is
+  pen phase 2's to prove.
 
 ## Phase 1 — The checkout
 

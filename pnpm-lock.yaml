@@ -39,6 +39,9 @@ importers:
       '@earendil-works/pi-session-backend-sqlite-node':
         specifier: link:../../vendor/pi/packages/session-backends/sqlite-node
         version: link:../../vendor/pi/packages/session-backends/sqlite-node
+      '@lamb/pen':
+        specifier: workspace:*
+        version: link:../pen
       just-bash:
         specifier: 3.4.2
         version: 3.4.2
@@ -70,6 +73,24 @@ importers:
       '@earendil-works/pi-session-backend-sqlite-node':
         specifier: link:../../vendor/pi/packages/session-backends/sqlite-node
         version: link:../../vendor/pi/packages/session-backends/sqlite-node
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.1
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.0
+        version: 4.1.11(@types/node@22.20.1)(vite@7.3.6(@types/node@22.20.1)(yaml@2.9.0))
+      ws:
+        specifier: ^8.21.0
+        version: 8.21.0
+
+  packages/pen:
     devDependencies:
       '@types/node':
         specifier: ^22.0.0

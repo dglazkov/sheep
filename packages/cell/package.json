@@ -28,6 +28,7 @@
     "@earendil-works/pi-protocol": "link:../../vendor/pi/packages/protocol",
     "@earendil-works/pi-server": "link:../../vendor/pi/packages/server",
     "@earendil-works/pi-session-backend-sqlite-node": "link:../../vendor/pi/packages/session-backends/sqlite-node",
+    "@lamb/pen": "workspace:*",
     "just-bash": "3.4.2"
   }
 }
