@@ -20,7 +20,8 @@ git submodule update --init && pnpm patches:apply
 (cd vendor/pi && npm ci --ignore-scripts && for p in chord tui telemetry ai agent session-backends/sqlite-node protocol client server coding-agent; do (cd packages/$p && npm run build); done)
 pnpm install
 pnpm test          # every package's suite; the cell's runs in workerd
-pnpm --filter @lamb/cell dev        # a local home on :8787 (wrangler); .dev.vars holds LAMB_TOKEN and LAMB_PROVIDER
+cp packages/cell/.dev.vars.example packages/cell/.dev.vars   # then fill in LAMB_TOKEN and LAMB_ANTHROPIC_API_KEY
+pnpm --filter @lamb/cell dev        # a local home on :8787 (wrangler), reading .dev.vars
 pnpm --filter @lamb/cell dev:celld  # the same on a local celld node on :9876 (curl -fsSL https://celld.dev/install.sh | sh)
 LAMB_HOME=http://127.0.0.1:8787 LAMB_TOKEN=... node packages/lamb/bin/lamb.js new -- "hello"
 pnpm deploy        # wrangler deploy, needs CLOUDFLARE_API_TOKEN
