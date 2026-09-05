@@ -1,7 +1,7 @@
 ---
 name: conduct
 description: Run the conductor pattern on a project under docs/projects/ — read where it stands, brief a subagent on the next phase, verify the named proof independently, record findings, move the status lines, commit the phase whole to main. Use for "/conduct <project>", "conduct pen", "do the next phase of lamb", "where does pen stand", or "close lamb phase 5".
-argument-hint: "<project> [status | <phase number> | through]"
+argument-hint: "<project> [status | <phase number> | one]"
 ---
 
 # conduct: one phase of a project, verified, recorded, committed
@@ -12,6 +12,14 @@ walk). This skill is how the walk is walked. The session that runs it is
 the **conductor**. It does not build; it briefs a subagent that builds,
 then it verifies the proof the phase named up front, never taking the
 subagent's word for it, and only then writes the record and commits.
+Then it goes on to the next phase. **The default is unattended**: the
+conductor runs until the leg is done or until the next step needs a
+person, and nothing else stops it. A person is needed for exactly three
+things: a token or a login, a paid plan or a cloud resource (a ⚑ step),
+and a hand the journey names (a second machine, a kill from the
+dashboard). Everything else, a wrong design, a proof that cannot be run
+as written, a doc that disagrees with another, is the conductor's
+decision to take, record, and commit.
 
 The project's `phases.md` is the contract. Its opening paragraphs carry
 rules of its own (lamb: proofs run in workerd, pi is a dependency; pen:
@@ -21,15 +29,15 @@ real one). Those rules win over anything here. The house rules in
 
 ## Arguments
 
-- `/conduct <project>`: orient, then conduct the next phase. One phase
-  per invocation; stop and report after it.
+- `/conduct <project>`: orient, then conduct phase after phase until a
+  step needs a person or the leg is done. Commit and push after each
+  phase; the user reads progress from the commits on `main`, not from
+  a report they must wait for.
 - `/conduct <project> status`: orient and report, change nothing.
-- `/conduct <project> <N>`: conduct that phase. If an earlier phase is
-  NOT STARTED, say so and ask; phases run in order for a reason.
-- `/conduct <project> through`: keep going, phase after phase, until a
-  proof needs a person, a ⚑ provision step needs a yes, or the leg is
-  done. Report after each phase anyway; the user reads progress from
-  the commits on `main`.
+- `/conduct <project> <N>`: conduct that phase and stop after it. If an
+  earlier phase is NOT STARTED, conduct it first and say so; phases run
+  in order for a reason.
+- `/conduct <project> one`: the next phase only, then stop.
 
 ## Status vocabulary
 
@@ -71,12 +79,16 @@ a phase cost.
   which.
 - **Nothing is owed to another project.** The where-we-are paragraph
   says when a phase waits on another project's phase (pen phase 3 waits
-  on lamb phase 5). If so, say so and stop, or conduct the other project
-  first if the user asks.
+  on lamb phase 5). If so, conduct that phase of the other project
+  first, under the same rules, then come back. Say so in the report;
+  do not stop for it.
 - **⚑ provision steps are asked, not done.** Each one creates a cloud
-  resource or spends money. Before the phase starts, list them to the
-  user with the price, and get a yes for each. A step without a yes is
-  the subagent's stop line: it builds up to it and reports.
+  resource, spends money, or needs a login. Before the phase starts,
+  list them to the user with the price, and get a yes for each. A step
+  without a yes is the subagent's stop line: it builds up to it and
+  reports. This is the one gate that waits on a person, so before
+  stopping at it, do every phase and every part of this phase that does
+  not need the answer, so the ask is the only thing left.
 
 ## 1. Brief
 
@@ -201,26 +213,40 @@ follow. End with the session trailer the harness gives you. Commit to
 `main` and push; do not bunch phases on a branch. The user reads
 progress from the commits.
 
-Then report, standing alone: the phase and its new status, the proof
-you ran and what it printed, the findings, what the next phase is and
-what it needs from a person.
+Then go on to the next phase. Write a short report between phases (the
+phase, its new status, the proof and what it printed, the findings) so
+a reader following along has one; do not wait for a reply to it. The
+full report comes when you stop.
 
 ## Stopping
 
-A phase stops short in one of three ways, each recorded before you stop:
+The conductor stops for a person, and for nothing else. The stop is
+always recorded first, so a later session can pick up from the docs
+alone:
 
 - **PART-DONE, waits on a person.** Local proofs green; the walk needs a
-  second machine, a login, a plan. Status PART-DONE, an Open finding
-  naming exactly what and whom, where-we-are says so, commit, report the
-  ask in one sentence with the price if it has one.
+  second machine, a login, a token, a paid plan, or a hand. Status
+  PART-DONE, an Open finding naming exactly what and whom, where-we-are
+  says so, commit, push. Then, before stopping, look past it: if the
+  next phase needs none of that, conduct it. Stop only when every phase
+  left needs the person. The final report puts every ask in one list,
+  each one sentence with its price.
+
+Two things look like stops and are not. Decide them, record them, go on:
+
 - **The design is wrong.** The subagent found the mechanism does not
   hold (lamb phase 4's `pi client` leaving the CLI; lamb's git). Change
   `design.md` as its own commit with the reason, then re-brief. A phase
-  can be withdrawn; it cannot be quietly redefined.
+  can be withdrawn; it cannot be quietly redefined. This is the
+  conductor's call, not the user's, and the commit message is where the
+  user hears the argument.
 - **The proof cannot be run as written.** The Proof paragraph asks for
   something the repo cannot produce. Fix the Proof, say why in the
   commit, then continue. Never mark a phase by a proof that was not the
   one named.
+
+When in doubt whether something needs a person, ask: is the missing
+thing a credential, money, or a hand? If not, it is yours.
 
 ## Things that have gone wrong before
 
