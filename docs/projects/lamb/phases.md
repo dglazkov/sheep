@@ -485,6 +485,14 @@ hibernates with the alarm clear, checked from the dashboard.
   `text_delta` frames; the first one likely arrives inside the hydrated
   Transcript snapshot rather than as an event. Cosmetic for one-shot, not
   seen in the TUI; unmeasured.
+- **2026-09-05 — `pi client` left the published CLI.** Upstream #9132
+  moved the `server` and `client` commands into a development entrypoint,
+  `src/experimental/cli.ts`, that is not compiled into `dist/`; the stock
+  `dist/cli.js` answered `lamb new` with `Unknown option: --connect`. lamb
+  now spawns that entrypoint from the pinned checkout's source under pi's
+  own `source-resolver`, exactly as pi's tests run it: Node strips the
+  types and the resolver maps the workspace packages to their sources.
+  Still an unmodified client; the bridge did not change.
 
 ## Phase 5 — Git
 
@@ -670,6 +678,20 @@ neither knows about the other.
   client code any more; what remains is the SQLite backend, one export in
   agent-core, one in coding-agent's package.json, and pi-server's types
   and timer guard.
+- **2026-09-05 — First bump: upstream `9841914` to `da840b6` (v0.85.1,
+  nine commits), one conflict, about ten minutes wall.** The rebase itself
+  took seconds. The conflict was `coding-agent/package.json`: upstream
+  stopped compiling `src/experimental` into `dist/` and made its
+  experimental entrypoints source-only, so lamb's `./experimental/*`
+  export now points at the `.ts` source, which the cell's bundler and
+  `tsc` read directly; typecheck clean, no dist duplication because the
+  cell never imports the coding-agent's main entry. The same upstream
+  change broke `lamb new` (phase 4 finding, same date), which no test on
+  either side guards; the real-client walk caught it. Sheep's suites,
+  pi's suites (the only failures six live Codex E2E tests the Codex
+  server refuses for this account) and the walk with a tool call pass.
+  The cost of a bump is not the rebase but pi's CLI surface moving under
+  lamb.
 
 ---
 
