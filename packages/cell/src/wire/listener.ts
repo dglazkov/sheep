@@ -81,7 +81,11 @@ export class WebSocketListener implements ServerListener {
     };
     socket.addEventListener("close", finish);
     socket.addEventListener("error", (event) => {
-      handler.onError(new Error(`WebSocket error: ${String((event as { message?: string }).message ?? "unknown")}`));
+      // A peer that vanishes mid-connection surfaces here; that is a close, not a protocol fault.
+      const message = String((event as { message?: string }).message ?? "unknown");
+      if (!/connection lost|reset|closed/i.test(message)) {
+        handler.onError(new Error(`WebSocket error: ${message}`));
+      }
       finish();
     });
   }

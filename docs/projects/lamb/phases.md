@@ -461,6 +461,17 @@ hibernates with the alarm clear, checked from the dashboard.
   step 3 walked early.
 - **2026-09-05 — Open: the deployed walks.** Overnight, a second machine,
   and the dashboard's hibernation check need a Cloudflare token.
+- **2026-09-06 — First real-model turn on a laptop found a wire fault.** pi's
+  bash tool opens with a progress update of `details: undefined`; the
+  transcript service replicated the `undefined`, pi's strict codec refused
+  to encode the message, and pi-server dropped the connection. Only turns
+  that called a tool failed, so it looked intermittent. The cell's host
+  now normalizes every update to strict JSON before pi-server sees it, and
+  a wire test drives a tool-calling turn. Upstream: pi's provider should
+  strip `undefined` from `tool_update` partial results.
+- **2026-09-06 — A one-shot client hanging up read as a server error.**
+  workerd reports a vanished peer as a socket error; the listener now
+  treats "connection lost" as a close.
 
 ## Phase 5 — Git
 

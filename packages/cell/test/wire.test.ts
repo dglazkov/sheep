@@ -1,5 +1,5 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/pi-agent-core";
-import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
+import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { Client } from "@earendil-works/pi-client";
 import { createWebSocketTransportFactory } from "@earendil-works/pi-client/websocket";
 import { AgentController } from "@earendil-works/pi-coding-agent/experimental/services/agent-controller";
@@ -102,6 +102,26 @@ describe("journey 3: two terminals on one session, over pi's protocol on a WebSo
     await nadia.waitForIdle();
     expect(nadia.roles()).toHaveLength(6);
     await nadia.close();
+  });
+
+  it("survives a tool call: bash's first progress update carries an undefined, which the wire must not choke on", async () => {
+    setFauxScript((conversation) => {
+      const ranBash = conversation.messages.some(
+        (message) => message.role === "assistant" && message.content.some((part) => part.type === "toolCall" && part.name === "bash"),
+      );
+      return ranBash
+        ? fauxAssistantMessage("listed")
+        : fauxAssistantMessage([fauxToolCall("bash", { command: "echo hello > a.txt && ls" })], { stopReason: "toolUse" });
+    });
+    const summary = (await (await api("/sessions", { method: "POST", body: "{}" })).json()) as { id: string };
+    const { serverId } = (await (await api("/home")).json()) as { serverId: string };
+    const terminal = await attachTerminal(summary.id, serverId);
+    const accepted = await terminal.agent.prompt({ message: "list the workspace", images: null }, BACKGROUND_CONTEXT);
+    expect(accepted.accepted).toBe(true);
+    await terminal.waitForIdle();
+    expect(terminal.client.connected).toBe(true);
+    expect(terminal.roles()).toEqual(["user", "assistant", "toolResult", "assistant"]);
+    await terminal.close();
   });
 
   it("refuses the upgrade without the token", async () => {

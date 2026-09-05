@@ -55,7 +55,9 @@ export async function createCellHost(options: CellHostOptions): Promise<{ host: 
     async publish(scope, subscriptionId, update) {
       const publish = publishers.get(scopeKey(scope));
       if (publish === undefined) return;
-      await publish(subscriptionId, update, BACKGROUND_CONTEXT);
+      // pi's tool progress can carry `details: undefined`, which pi's strict codec refuses to encode and
+      // pi-server answers by dropping the connection. Absent and undefined mean the same to the replica.
+      await publish(subscriptionId, toStrictJson(update), BACKGROUND_CONTEXT);
     },
   });
 
@@ -93,4 +95,8 @@ export async function createCellHost(options: CellHostOptions): Promise<{ host: 
       await Promise.allSettled([sessionServices.dispose(), serverServices.dispose()]);
     },
   };
+}
+
+function toStrictJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
 }
