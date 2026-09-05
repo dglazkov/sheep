@@ -30,8 +30,9 @@ roster of them.
 
 ---
 
-**Where we are: ALL SEVEN PHASES BUILT 5 Sep 2026; phases 0, 1, 2, and
-7 CLOSED, phases 3, 4, 5, and 6 PART-DONE.** Every proof that can run
+**Where we are: phases 0, 1, 2, and 7 CLOSED, phases 3, 4, and 6
+PART-DONE, phase 5 re-cut and NOT STARTED. The next thing to do is lamb
+phase 5, the sheepdog's surface.** Every proof that can run
 locally has run: pi's conformance suites, journey 4 in workerd, journey 2's
 eviction test at every transition, journey 3 over pi's protocol on
 WebSockets, journey 5 against a git server, journeys 1 and 3 through
@@ -47,10 +48,14 @@ withdrawn on 5 Sep: the shell's `git` was a facade over isomorphic-git,
 walking it against a real repository showed the cost, and git is a
 program for the second leg's container tier ([pen](../pen/phases.md)).
 The facade, its tests, its secret, and 43 packages are gone, and the
-shell refuses `git` in the sentence it refuses `npm`. What remains is two
-real terminals side by side and the dashboard's hibernation check for
-journey 3, and a two-node celld fleet for journey 6. The code is not
-expected to change for either.
+shell refuses `git` in the sentence it refuses `npm`. The same evening
+the journeys were recast around agents as the actors: a sheepdog runs
+`lamb`, sheep are cells, a shepherd watches. That made the slot journey
+5, a dog and its flock, and lamb phase 5 is now the surface a program
+needs: detach, status, wait, abort, log, `--json`, and a queue where
+today there is a `LaneBusy` refusal. What waits on a person: a second
+machine and the TUI half of journey 3, and a two-node celld fleet for
+journey 6.
 
 The order is dependency order and it is also risk order: phase 1 is the
 gate, because if pi's storage does not run over the cell's SQL nothing
@@ -452,12 +457,13 @@ dashboard's hibernation check.
   in the same order; and a test that closes every socket, forces a wake,
   reattaches, and asserts the router recovered.
 
-**Proof:** Journey 1 walked end to end from two machines: `lamb new`,
-files made and grepped, the laptop closed overnight, `lamb -c` the next
-morning, `lamb attach` from Theo's machine with only the id. Journey 3
-walked with two terminals side by side: both stream, Theo prompts and
-aborts, one closes and the other notices nothing, both close and the cell
-hibernates with the alarm clear, checked from the dashboard.
+**Proof:** Journey 1 walked end to end by two dogs on two machines:
+`lamb new`, files made and grepped, the first dog's session ended, a
+second dog hours later finding the sheep with `lamb ls` and attaching, a
+third from another machine with only the id. Journey 3 walked with the
+shepherd's terminal beside the dog's stream: both stream, the shepherd
+prompts and aborts, one closes and the other notices nothing, both close
+and the cell hibernates with the alarm clear, checked from the dashboard.
 
 **Findings:**
 
@@ -544,25 +550,59 @@ hibernates with the alarm clear, checked from the dashboard.
   types and the resolver maps the workspace packages to their sources.
   Still an unmodified client; the bridge did not change.
 
-## Phase 5 — Git (withdrawn)
+## Phase 5 — The sheepdog's surface
 
-**Status: WITHDRAWN** 5 Sep 2026, the day it closed locally. What was
-built: `git` as a just-bash command over isomorphic-git against the
-workspace rows, twelve verbs with every other refused by name, a
-smart-HTTP fixture in workerd, journey 5's steps held there, and the
-read-and-egress half walked against this repository from the deployed
-home. Why it was withdrawn is journey 5's note: a facade that is almost
-git costs more than a shell that says it has no git. Removed the same
-day: `packages/cell/src/env/git.ts`, its test and fixture, the
-`fs.promises` face of `CellFs`, the `LAMB_GITHUB_TOKEN` secret and the
-author variables, and the isomorphic-git and diff dependencies, 43
-packages. The shell now refuses `git` in the sentence it refuses `npm`,
-confirmed on the deployed home. What stayed: files in 1 MiB chunks under
-an 8 MiB cap.
+**Status: NOT STARTED.** Re-cut 5 Sep 2026. This slot was git, built and
+withdrawn the same day; that record is at the end of this section.
 
-**Closes no journey.** Journey 5 moved to [pen](../pen/phases.md).
+**Closes journey 5**, and turns journey 1's `--detach` and journey 3's
+queue from prose into behaviour.
+
+**Work:**
+
+- `lamb new` and `lamb attach` grow `--detach`: mint or resolve, send the
+  prompt, print the id, exit before the first token. And `--wait` on a
+  busy lane: queue, then stream the queued turn when it starts.
+- A prompt to a busy lane queues through pi's own lane rules instead of
+  surfacing `LaneBusy`, and `lamb` says it queued. The TUI already does
+  this; prompt mode calls `agent.prompt` directly and must not.
+- `lamb ls` prints one record per line with lane state; `lamb status
+  <id>` prints the lane snapshot: open operation, last tool call, tokens.
+- `lamb wait <id>…` blocks on the cell's own idle notification over the
+  existing WebSocket, never polling a hibernated cell awake, and prints
+  each sheep's last assistant message.
+- `lamb abort <id>` is `AgentController.abort` over the wire.
+- `lamb log <id>` prints the transcript as text, oldest first, with
+  `--since`, `--last`, and `--json` whose entries are pi entries.
+- `--json` on every command, shapes borrowed from pi, never invented.
+- The dropped first delta in prompt mode (phase 4's open finding) is
+  fixed here, because a program reads the whole reply.
+- Tests in Node for the CLI against a cell in workerd, and one walk of
+  journey 5 with three sheep on the deployed home.
+
+**Proof:** Journey 5 walked by a Claude Code session in this repo against
+the deployed home: three sheep minted detached in one command, `ls` and
+`status` parsed, a queued prompt, a `wait` on all three, an abort, and a
+`log`. The Findings record how many tokens the dog spent herding.
 
 **Findings:**
+
+- **2026-09-05 — Prompt mode is the dog's surface and it was built for a
+  person.** `lamb … -- "…"` streams and exits, which is right; a second
+  prompt to a busy lane is refused, the first delta is dropped, `ls` has
+  no lane state, and there is no wait or abort. Named by recasting the
+  journeys; this phase is the list.
+
+**Formerly: Git, withdrawn.** Built 5 Sep as a just-bash command over
+isomorphic-git against the workspace rows, twelve verbs with every other
+refused by name, a smart-HTTP fixture in workerd, journey 5's steps held
+there, and the read-and-egress half walked against this repository from
+the deployed home. Withdrawn the same day: a facade that is almost git
+costs more than a shell that says it has no git, and git is a program for
+pen. Removed: `packages/cell/src/env/git.ts`, its test and fixture, the
+`fs.promises` face of `CellFs`, the `LAMB_GITHUB_TOKEN` secret and the
+author variables, and the isomorphic-git and diff dependencies, 43
+packages. Kept: files in 1 MiB chunks under an 8 MiB cap.
 
 - **2026-09-05 — A clone is one packfile, so one file is one row plus
   chunk rows.** A Durable Object value is capped at 2 MB; files are stored
@@ -573,8 +613,8 @@ an 8 MiB cap.
   clone --depth 1 <url>` parsed the `1` as the url, and `git diff` never
   emitted its header; the fixture used neither. The model covered for both,
   once by fabricating a real-looking diff. This is the finding that
-  withdrew the phase: a command surface over a library is a second
-  almost-git, and its bugs are the model's to hide.
+  withdrew git: a command surface over a library is a second almost-git,
+  and its bugs are the model's to hide.
 - **2026-09-05 — The credential path worked as designed.** `x-access-token`
   plus the secret through `onAuth`, sent only to the remote, absent from
   `env`, every workspace path, and `.git/config`. Pen keeps the property

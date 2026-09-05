@@ -2,126 +2,142 @@
 status: planned
 since: 2026-09-05
 see: pen
-note: "journeys, design and phases written 5 Sep 2026, the day lamb's git facade was withdrawn. Nothing built. The second leg: programs running for a cell. Lamb rented the durable half of a harness; pen rents the machine half, per command, and hands the results back to the rows. Journey 2 is lamb's withdrawn journey 5, a repository in and the work out, now over real git in a container."
+note: "journeys, design and phases written 5 Sep 2026, the day lamb's git facade was withdrawn, and recast the same evening around agents as the actors: a sheepdog delegates to sheep, and a sheep rents a machine for the length of a command. Nothing built. Journey 2 is lamb's withdrawn journey 5, a repository in and the work out, now over real git in a container."
 ---
 
 # Pen — the journeys
 
-These journeys describe what it is like to ask a cell to run a program.
-Lamb ([../lamb/journey.md](../lamb/journey.md)) put pi's session in a
-cell with a workspace in rows and a shell in the isolate, and that shell
-says plainly what it lacks: interpreters, package managers, and `git`.
-Pen is where those sentences stop being true. Each journey is an
-acceptance test: the work is done when you can walk it against a real
-deployment and it behaves as written here. [design.md](design.md) is the
-mechanism and [phases.md](phases.md) the walk. If a journey and the
-mechanism disagree, the mechanism is what changes.
+Sheep is a repository for coding agents that herd coding agents. The
+**sheepdog** has the terminal and runs `lamb`; the **sheep** are pi
+sessions in cells, each given a task; the **shepherd** is the person who
+deployed the home and gave the goal. Lamb
+([../lamb/journey.md](../lamb/journey.md)) put the sheep in cells with a
+workspace in rows and a shell in the isolate, and that shell says plainly
+what it lacks: interpreters, package managers, and `git`. Pen is where
+those sentences stop being true, so that a dog can delegate work that
+needs a machine and not do it itself.
+
+Each journey is an acceptance test: the work is done when a dog can walk
+it against a real deployment and it behaves as written here.
+[design.md](design.md) is the mechanism and [phases.md](phases.md) the
+walk. If a journey and the mechanism disagree, the mechanism is what
+changes.
 
 The starting point is lamb as it stands: the four tools over the workspace
 table, just-bash over the same rows, `Shell.exec` as the one place a
-command enters, and a refusal in one sentence for everything the isolate
-cannot do. The premise of this leg is that a cell should not become a
-machine. It should rent one, for the length of a command, and keep only
-what the command changed.
+command enters, a refusal in one sentence for everything the isolate
+cannot do, and `lamb` as the dog's surface. The premise of this leg is
+that a sheep should not become a machine. It should rent one, for the
+length of a command, and keep only what the command changed.
 
 Key terms, in addition to lamb's:
 
 - **Tier 0**: the shell in the isolate. just-bash, the text tools, the
   workspace rows. Lamb built it; pen does not change it.
 - **Tier 2**: a container. A real filesystem, a real process, `node`,
-  `pnpm`, `python`, `git`. Rented per session, started on first use,
-  discarded when idle. Its disk is a cache of the rows, never the truth.
-- **Tier 1**: a fresh isolate for model-written code. Named, designed,
+  `pnpm`, `python`, `git`. Rented by a sheep on first use, discarded when
+  idle. Its disk is a cache of the rows, never the truth.
+- **Tier 1**: a fresh isolate for code a sheep wrote. Named, designed,
   and the last phase, because the container makes it optional.
 - **Checkout**: the container's copy of the workspace, synced in by
   content hash and the diff synced back out.
 - **Helper**: the process in the container that a program asks for a
   credential. It asks the cell, the cell asks the home, and the program
-  gets a short-lived answer. The model gets nothing.
+  gets a short-lived answer. The sheep gets nothing, and neither does the
+  dog.
 
 ## What exists today, and what each journey adds
 
 | Today | After these journeys |
 | --- | --- |
-| `pnpm install` answers `command not found (this shell runs inside the session…)`. | `pnpm install` runs, in a container the cell rented, and `node_modules` stays there. |
-| The model's script cannot run. | `node script.js` runs, and its output and the files it wrote come back to the rows. |
-| `git` is not in the cell. | `git clone`, `commit`, and `push` run as real git, over a checkout, with a credential the model never sees. |
+| A sheep asked to `pnpm install` answers `command not found (this shell runs inside the session…)`, and the dog does it itself. | The sheep runs `pnpm install` in a container it rented, and `node_modules` stays there. |
+| A sheep's script cannot run. | `node script.js` runs, and its output and the files it wrote come back to the rows. |
+| `git` is not in the cell. | The sheep runs `git clone`, `commit`, and `push` as real git, over a checkout, with a credential neither it nor the dog ever sees. |
 | A command is a tier-0 command or a refusal. | A command is routed: tier 0 if the shell has it, tier 2 if a container is provisioned, a refusal that says which, otherwise. |
-| The cell's cost is its rows. | The cell's cost is its rows plus a container while one is running, and nothing while it is not. |
+| A sheep's cost is its rows. | A sheep's cost is its rows plus a container while one is running, and nothing while it is not. |
 | Nothing native runs on celld. | The same routing runs on a celld node with a container runtime beside it. |
 
 ## Cast
 
-- **Nadia** — uses pi every day, has a lamb home, and has been told
-  twice that the shell has no `npm`. Would like it to stop saying that.
-- **Theo** — Nadia's teammate. Attaches to her session and runs the tests.
-- **The operator** — whoever deployed the home and pays for the container
-  minutes. In this leg, Nadia.
-- **The container** — a machine rented by the cell. Named by nothing,
+- **The sheepdog** — a coding agent with a terminal and a goal. Runs
+  `lamb`, delegates to sheep, checks their work. Called "the dog" below.
+- **The sheep** — one session, given a task that needs a machine.
+- **The shepherd** — the person who deployed the home and pays for the
+  container minutes. Kills things, when a journey needs a hand.
+- **The container** — a machine rented by a sheep. Named by nothing,
   because it has no identity worth keeping.
 
 The journeys are ordered from the smallest claim outward: journey 1 is
 one command in a container, journey 2 is a repository, journey 3 is the
-container dying, journey 4 is the model's own code, journey 5 is celld,
-and journey 6 verifies nothing changed for lamb.
+container dying, journey 4 is a sheep's own code, journey 5 is celld, and
+journey 6 verifies nothing changed for lamb.
 
 ## Journey 1: A command that needs a machine
 
-Nadia has a project in her cell's workspace, put there by the agent with
-`write` over a few turns. She wants its tests run.
+The dog has had a sheep build a project in its workspace over a few
+turns. Now the dog wants the tests run, and would rather not pull the
+files down and run them itself.
 
-1. Ask the agent to install the dependencies and run the tests. It runs
-   `pnpm install`. The tool result streams pnpm's output as pnpm prints
-   it, and ends with the exit code.
-2. It runs `pnpm test`. The tests run. Output streams; the result says
-   which passed.
-3. Ask it to list the workspace. `find . -maxdepth 1` in tier 0 shows the
-   project files and no `node_modules`. `ls node_modules | head` runs in
-   the container and shows them there.
-4. Ask it what the shell can do now. The system prompt's sentence has
-   changed: it names the container and what runs there.
-5. Come back an hour later and ask for the tests again. The first command
-   takes longer, because the container is new and `node_modules` is
-   gone. The tests run the same.
+1. Run `lamb attach <id> -- "Install the dependencies and run the
+   tests."` The sheep runs `pnpm install`. The tool result streams pnpm's
+   output as pnpm prints it, and ends with the exit code.
+2. The sheep runs `pnpm test`. The tests run. Output streams; the sheep
+   reports which passed.
+3. Run `lamb attach <id> -- "List the workspace, then list node_modules."`
+   `find . -maxdepth 1` in tier 0 shows the project files and no
+   `node_modules`. `ls node_modules | head` runs in the container and
+   shows them there.
+4. Run `lamb attach <id> -- "What can your shell run now?"` The sheep
+   answers from its system prompt, and the sentence has changed: it names
+   the container and what runs there.
+5. An hour later, a second dog asks for the tests again. The first
+   command takes longer, because the container is new and `node_modules`
+   is gone. The tests run the same.
 
 Acceptance criteria:
 
 - Steps 1 and 2 are `Shell.exec` routing the command to tier 2. Pi's
   bash tool did not change; the renderer sees a normal bash result with
-  periodic updates.
+  periodic updates, and so does `lamb log`.
 - Step 3 shows the rule: files the command wrote under the checkout sync
   back to the rows, except paths the design names as cache
   (`node_modules`, build output, anything in `.gitignore`). Those live in
   the container and die with it.
 - Step 4's sentence is in one place, and a test checks that the shell's
-  refusal, the system prompt, and the routing table agree.
+  refusal, the system prompt, and the routing table agree. It is the
+  sentence the dog parses to decide what to delegate.
 - Step 5 costs nothing during the hour. The container was discarded when
   the lane idled, and the rows are what came back.
 
 ## Journey 2: A repository in, the work out
 
-Lamb's withdrawn journey 5, as written there, over real git.
+Lamb's withdrawn journey 5, as written there, over real git. The dog
+wants a change made to a real repository and a branch it can point the
+shepherd at, without cloning anything itself.
 
-1. Ask the agent to clone `https://github.com/<org>/<repo>` and describe
-   its layout. It runs `git clone`, then `find` and `cat`, and describes
-   it.
-2. Ask it for a change: fix a typo across the docs, on a new branch. It
-   runs `git checkout -b`, edits with `edit`, runs `git status` and `git
-   diff`, and shows the diff.
-3. Ask it to commit and push. It runs `git add`, `git commit -m`, and
-   `git push -u origin <branch>`. The push succeeds.
-4. Nadia opens GitHub and finds the branch, with the commit authored as
-   the home is configured to author, and opens the pull request herself.
-5. Ask it to `git rebase -i`. Real git says what real git says about an
-   interactive rebase with no terminal, and the agent says so.
+1. Run `lamb new --name typo-fix -- "Clone https://github.com/<org>/<repo>
+   and describe its layout."` The sheep runs `git clone`, then `find` and
+   `cat`, and describes it.
+2. Run `lamb attach <id> -- "Fix the typo across the docs, on a new
+   branch, and show me the diff."` The sheep runs `git checkout -b`,
+   edits with `edit`, runs `git status` and `git diff`, and shows the
+   diff.
+3. Run `lamb attach <id> -- "Commit and push."` The sheep runs `git add`,
+   `git commit -m`, and `git push -u origin <branch>`. The push succeeds.
+4. The dog runs `gh pr create` from its own terminal against the branch,
+   or tells the shepherd the branch name. The commit is authored as the
+   home is configured to author.
+5. Ask the sheep to `git rebase -i`. Real git says what real git says
+   about an interactive rebase with no terminal, and the sheep says so.
 
 Acceptance criteria:
 
 - The credential that authorized step 3 was minted by the home for that
   push, handed to git by the helper, and appears in no transcript entry,
-  no tool result, no file in the checkout or the rows, and no environment
-  variable any command can print. `env`, `git config --list`, and `cat
-  ~/.git-credentials` in the container show nothing.
+  no tool result, no file in the checkout or the rows, no environment
+  variable any command can print, and nothing `lamb log` shows the dog.
+  `env`, `git config --list`, and `cat ~/.git-credentials` in the
+  container show nothing.
 - Step 2's `edit` is pi's edit tool writing a row, and step 2's `git
   diff` is real git reading the checkout. The sync between them is by
   hash, in both directions, and a test proves an edit made by the tool is
@@ -136,18 +152,20 @@ Acceptance criteria:
 
 ## Journey 3: The container dies
 
-Nadia asks for a long test run and the container is lost in the middle.
+The dog asks a sheep for a long test run and the container is lost in
+the middle.
 
-1. Ask the agent to run a test suite that takes a minute. It runs `pnpm
-   test`. Output streams.
-2. The operator kills the container. On Cloudflare this is the container
+1. Run `lamb attach <id> --detach -- "Run the full test suite."` The
+   sheep runs `pnpm test`. It takes a minute.
+2. The shepherd kills the container. On Cloudflare this is the container
    instance ending; on a test rig it is a forced stop.
 3. The tool result ends with a clear statement that the command was
    interrupted by the container going away, with the output up to that
-   point and no exit code claimed. The agent says so and offers to run it
-   again.
-4. Ask it to. A new container is rented, the checkout is synced from the
-   rows, and the tests run.
+   point and no exit code claimed. The sheep says so in its reply and
+   stops. `lamb wait <id>` returns with that reply.
+4. The dog reads it and runs `lamb attach <id> -- "Run them again."` A
+   new container is rented, the checkout is synced from the rows, and the
+   tests run.
 5. `find` in tier 0 shows the workspace exactly as the rows had it before
    step 1, plus whatever the interrupted command synced back before it
    died, and nothing half-written.
@@ -156,7 +174,8 @@ Acceptance criteria:
 
 - Step 3 is honest in pi's terms: the tool result is an error result with
   the partial output, and pi's tool-durability rules settle it as an
-  effect of unknown outcome, which the transcript says.
+  effect of unknown outcome, which the transcript says. The dog is never
+  told a fake exit code.
 - Step 5 is the sync's atomicity claim: a file syncs back whole or not at
   all, and the rows are never a mix of before and after for one file.
 - The proof is repeatable: a test in workerd against a fake container
@@ -165,19 +184,19 @@ Acceptance criteria:
 - The cell itself is not evicted in this journey. Lamb's journey 2 covers
   that; the two together are covered by one more test that does both.
 
-## Journey 4: The model's own code
+## Journey 4: A sheep's own code
 
-Nadia asks for a quick computation and the agent writes a script.
+The dog asks for a computation and the sheep writes a script.
 
-1. Ask the agent to compute something from the workspace files that a
-   pipeline of text tools would not do well. It writes `compute.mjs` and
-   runs `node compute.mjs`.
+1. Run `lamb attach <id> -- "Compute <something> from the workspace
+   files."` A pipeline of text tools would do it badly, so the sheep
+   writes `compute.mjs` and runs `node compute.mjs`.
 2. The script runs in tier 1, a fresh isolate: it can read the workspace,
    it cannot reach the network, and it cannot see the container or the
    home's secrets. Its stdout is the tool result.
-3. Ask it to fetch a URL from the script. The script's `fetch` is refused
-   with a sentence that names tier 1 and what it lacks, and the agent
-   runs it in tier 2 instead, where `fetch` works.
+3. Ask the sheep to fetch a URL from the script. The script's `fetch` is
+   refused with a sentence that names tier 1 and what it lacks, and the
+   sheep runs it in tier 2 instead, where `fetch` works.
 
 Acceptance criteria:
 
@@ -192,11 +211,11 @@ Acceptance criteria:
 
 ## Journey 5: The same pen on celld
 
-The operator runs celld with a container runtime on the node.
+The shepherd runs celld with a container runtime on the node.
 
 1. Journey 1 walks as written against `lamb --home https://<fleet>`.
 2. Journey 2 walks as written.
-3. Journey 3 walks as written, with `docker kill` as the operator's hand.
+3. Journey 3 walks as written, with `docker kill` as the shepherd's hand.
 
 Acceptance criteria:
 
@@ -208,10 +227,10 @@ Acceptance criteria:
 
 ## Journey 6: Nothing changed for lamb
 
-A person with a lamb home who never provisions a container.
+A dog with a lamb home whose shepherd never provisioned a container.
 
-1. Every lamb journey walks as before. The shell refuses `npm` and `git`
-   with lamb's sentence, unchanged.
+1. Every lamb journey walks as before. The sheep refuse `npm` and `git`
+   with lamb's sentence, unchanged, and the dog delegates accordingly.
 2. Lamb's suite is green with pen's code present and no container
    configured.
 3. The system prompt says what lamb's said, because no tier 2 exists for
@@ -222,7 +241,8 @@ Acceptance criteria:
 - A home without a container binding is lamb, byte for byte in behaviour.
   The routing table's tier-2 column is empty and the refusal is the same
   sentence.
-- Pen adds no pi tool and no pi patch. `Shell.exec` is the whole seam.
+- Pen adds no pi tool, no pi patch, and no `lamb` command. `Shell.exec` is
+  the whole seam.
 
 ## What the journeys force
 
@@ -234,21 +254,25 @@ Acceptance criteria:
   hash, and a diff written back whole.
 - **A routing table in one place.** Journeys 1, 4, and 6. Which program
   runs where, and the sentence for each refusal, generated from the same
-  table the system prompt reads.
+  table the system prompt reads, so a sheep's answer to "what can you
+  run" is something a dog can parse.
 - **A credential helper, and a home that mints.** Journey 2. Short-lived,
-  scoped, per operation, never in the container's environment.
+  scoped, per operation, never in the container's environment, never in
+  anything the dog reads.
 - **A cache rule.** Journey 1 step 3. What syncs back and what does not,
-  and `.gitignore` as the model's way to say so.
+  and `.gitignore` as the sheep's way to say so.
 - **An honest interruption.** Journey 3. A tool result that says the
-  machine went away, settled by pi's rules, not a fake exit code.
+  machine went away, settled by pi's rules, not a fake exit code, so a
+  dog reading `lamb wait` knows to ask again.
 
 ## Open questions
 
 - **Who pays, and how much before the cell says no?** Container minutes
   are money. A per-home budget and a sentence when it is spent is this
-  leg's answer; a per-user one is Identity's.
+  leg's answer; a per-principal one is Identity's, and a dog is a
+  principal.
 - **A GitHub App that authors as itself.** Journey 2 step 4 authors as
-  the home. An installation token from an app the operator installed is
+  the home. An installation token from an app the shepherd installed is
   the real client and belongs with Identity.
 - **Large objects.** A `node_modules` never syncs; a `.git` with a big
   packfile does. Lamb's per-file cap stands in for an object store, and
@@ -256,5 +280,6 @@ Acceptance criteria:
 - **Which tier for which program**, beyond `node`. Python in a fresh
   isolate is Pyodide, which is a different thing than Python. The table
   starts small and grows by finding.
-- **Sub-agents.** A child cell that rents its own container, or shares
-  the parent's. Not this leg.
+- **A dog in a cell.** A sheepdog that is itself a sheep, renting a
+  container for its own work and herding sheep that rent theirs. Not
+  this leg; the reason the herding surface is a program's.

@@ -8,6 +8,14 @@ The thesis in one line: **a pi session is the durable half of a coding
 harness, a Durable Object is the shape of a durable half, and everything a
 harness does with a machine is the other half and can be rented.**
 
+Sheep is a repository for coding agents that herd coding agents. The one
+with the terminal is the sheepdog, a coding agent working a goal a person
+gave it; the ones it herds are sheep, pi sessions in cells; `lamb` is how
+the dog herds. A person does not run `lamb`. That decides what the
+terminal half of this design is for: pi's client, yes, so a shepherd can
+watch, but first a surface a program can drive, with the id printed before
+anything else and a queue where a person would see a refusal.
+
 Lamb is pi, running in a cell. It walks and quacks like pi because it *is*
 pi: the same harness package, the same session model, the same protocol,
 the same client. What changes is where the session lives. Today a pi

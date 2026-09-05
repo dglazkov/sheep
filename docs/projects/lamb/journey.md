@@ -2,118 +2,142 @@
 status: partial
 since: 2026-09-05
 see: lamb
-note: "journeys, design and seven phases written 5 Sep 2026 and every phase built the same day; phase 0 (the scaffold) closed by the first deploy to Cloudflare; phase 1 closed the same day: pi's storage and repo conformance suites pass in full in workerd, and pi's own SQLite repo runs in the cell with two small patches; phase 2 closed the same day: pi's four tools run over a workspace table and just-bash in the isolate, journey 4's steps each held by a test in workerd; phase 3 part-done the same day: the cell drives pi's harness, the alarm brings it back, journey 2's eviction test holds at every transition in workerd, and journey 2 walked in full on the deployed home, a turn evicted by a real `wrangler deploy` mid-flight and resumed by the alarm; phase 4 part-done the same day: pi's own client attaches to a cell over a WebSocket through `lamb`, journey 3 holds in workerd, journey 1 walked against a local home with the faux provider and then on the deployed home with a real model as far as one laptop can take it, and an exported session opens in pi's Node backend; phase 5 built and withdrawn the same day: git had been a twelve-verb facade over isomorphic-git in the shell, and walking it against a real repository showed the cost of a program that is almost git, so the facade, its tests, and its secret were removed, the shell refuses `git` in the sentence it refuses `npm`, and the repository journey moved to the second leg, pen; phase 6 part-done on one local celld node, journeys 1 and 3 walked there through lamb and pi's client with state surviving a node restart; phase 7 closed, pi's full suite green with the four patches and a fresh pi from the registry running beside lamb. Everything that waits, waits on a person at a terminal: two terminals side by side, a second machine, or a two-node fleet. The first leg of a longer walk — pi's harness in a Durable Object with a workspace in rows, an in-isolate shell, pi's own client attached over a WebSocket, and the same bundle on celld. Execution tiers, sub-agents as cells, and multi-user are named as later legs and not addressed here."
+note: "journeys, design and seven phases written 5 Sep 2026 and every phase built the same day; phase 0 (the scaffold) closed by the first deploy to Cloudflare; phase 1 closed the same day: pi's storage and repo conformance suites pass in full in workerd, and pi's own SQLite repo runs in the cell with two small patches; phase 2 closed the same day: pi's four tools run over a workspace table and just-bash in the isolate, journey 4's steps each held by a test in workerd; phase 3 part-done the same day: the cell drives pi's harness, the alarm brings it back, journey 2's eviction test holds at every transition in workerd, and journey 2 walked in full on the deployed home, a turn evicted by a real `wrangler deploy` mid-flight and resumed by the alarm; phase 4 part-done the same day: pi's own client attaches to a cell over a WebSocket through `lamb`, journey 3 holds in workerd, journey 1 walked against a local home with the faux provider and then on the deployed home with a real model as far as one machine can take it, and an exported session opens in pi's Node backend; phase 5 built as git and withdrawn the same day (a twelve-verb facade over isomorphic-git; git is a program and moved to the second leg, pen), and re-cut the same evening as the sheepdog's surface, not started; phase 6 part-done on one local celld node, journeys 1 and 3 walked there through lamb and pi's client with state surviving a node restart; phase 7 closed, pi's full suite green with the four patches and a fresh pi from the registry running beside lamb. Journeys recast 5 Sep around agents as the actors: a sheepdog runs lamb, sheep are cells, a shepherd watches. What waits on a person: a second machine, a two-node fleet, and the TUI half of journey 3. What waits on work: phase 5. The first leg of a longer walk — pi's harness in a Durable Object with a workspace in rows, an in-isolate shell, pi's own client attached over a WebSocket, and the same bundle on celld. Execution tiers are pen; sub-agents as cells and multi-user are named as later legs."
 ---
 
 # Lamb — the journeys
 
-These journeys describe what it is like to use pi when the session lives in
-a cell instead of on a laptop. Each journey is an acceptance test: the work
-is done when you can walk it against a real deployment and it behaves as
-written here. [design.md](design.md) is the mechanism and
-[phases.md](phases.md) the walk. If a journey and the mechanism disagree,
-the mechanism is what changes.
+Sheep is a repository for coding agents that herd coding agents. The one
+with the terminal is the **sheepdog**: a coding agent, Claude Code in this
+repo or pi on a laptop, working on a goal a person gave it. The ones it
+herds are **sheep**: pi sessions, each living in a cell with its own
+workspace, given a task and left to it. `lamb` is how the dog herds. A
+person does not run `lamb`. The dog does.
+
+These journeys describe what it is like for a sheepdog to use pi when the
+sessions it delegates to live in cells instead of on its own machine.
+Each journey is an acceptance test: the work is done when a dog can walk
+it against a real deployment and it behaves as written here.
+[design.md](design.md) is the mechanism and [phases.md](phases.md) the
+walk. If a journey and the mechanism disagree, the mechanism is what
+changes.
 
 The starting point is pi at `0.85.0`: a terminal coding agent with four
 tools, a durable session tree, and an experimental split into a protocol,
 a server, a session worker, and a client that renders and holds no agent
 state. That split was cut for a server on the same machine. These journeys
-need it to hold across a network, with the machine gone.
+need it to hold across a network, with the machine gone, and with a
+program on the other end of the terminal instead of a person.
 
 This is the first leg of a marathon, and the journeys are written to the
-leg. A session with no machine under it, a turn that outlives the cell,
-two terminals on one session, a shell that knows what it is, the same
-thing on a fleet you own, and nothing changed for pi on a laptop. A
-repository in and the work out was journey 5 and is withdrawn to the
-second leg: `git` is a program, and programs run in the tier that runs
-programs. Execution tiers with git among them ([pen](../pen/journey.md)),
-sub-agents, permission prompts answered from a phone, and who owns a
-session are the next legs, and the journeys name the gap where they touch
-it.
+leg. A sheep with no machine under it, a task that outlives the cell, a
+shepherd looking over the dog's shoulder, a sheep that says what it cannot
+do, a dog with more than one sheep, the same flock on a fleet you own, and
+nothing changed for pi on a laptop. A repository in and the work out was
+journey 5 and moved to the second leg: `git` is a program, and programs
+run in the tier that runs programs, [pen](../pen/journey.md). Execution
+tiers, the dog itself as a cell, permission prompts answered from
+anywhere, and who owns a sheep are the next legs, and the journeys name
+the gap where they touch it.
 
 Key terms:
 
-- **Cell**: one session's home. A Durable Object holding the transcript,
-  the workspace, the shell, and the harness that drives the loop.
-- **Workspace**: the files the agent reads and writes. Rows in the cell.
-- **Shell**: what `bash` runs. An interpreter in the cell's isolate, with
-  no processes, no interpreters, and no network.
-- **Presentation**: a terminal attached to a cell. Renders, holds nothing.
+- **Sheepdog**: the agent with the terminal. It runs `lamb`. Its own
+  context ends when its session does; what survives is what it wrote
+  down and what its sheep hold.
+- **Sheep**: one session's home. A Durable Object holding the transcript,
+  the workspace, the shell, and the harness that drives the loop. Also
+  called a cell, when the mechanism is the subject.
+- **Shepherd**: the person. Deploys the home, gives the dog the goal,
+  reads the result, and sometimes opens a terminal on a sheep to watch.
+- **Workspace**: the files a sheep reads and writes. Rows in the cell.
+- **Shell**: what a sheep's `bash` runs. An interpreter in the cell's
+  isolate, with no processes, no interpreters, and no network.
 - **Home**: a deployment, on Cloudflare or on celld. `lamb --home`.
 
 ## What exists today, and what each journey adds
 
 | Today | After these journeys |
 | --- | --- |
-| A pi session lives in a process on one machine. | A session lives in a cell, addressed by id, reachable from any terminal. |
-| The workspace is the laptop's disk. | The workspace is rows in the cell, capped per file, with no machine under it. |
-| `bash` spawns `/bin/bash`. | `bash` runs an interpreter in the cell that says plainly what it lacks. |
+| A pi session lives in a process on one machine, and dies with it. | A sheep lives in a cell, addressed by id, reachable from any dog on any machine. |
+| A dog that delegates holds the child in its own context, and loses it when the context ends. | A dog hands a task to a sheep, goes away, and a later dog picks the sheep up by id. |
+| The workspace is the dog's disk. | The workspace is rows in the cell, capped per file, with no machine under it. |
+| `bash` spawns `/bin/bash`. | `bash` runs an interpreter in the cell that says plainly what it lacks, so the dog knows what to delegate. |
 | Killing the process mid-turn leaves the session to be resumed by hand. | Evicting the cell mid-turn is followed by a wake and a resumption nobody asked for. |
-| `pi client` attaches over a Unix socket or the Radius relay. | `lamb` attaches over a WebSocket, and two terminals attach to one cell. |
-| `git` is whatever the laptop has. | `git` is not in the cell, and the shell says so in the sentence it says for `npm`. It arrives with the second leg, as a program. |
+| A dog talks to a session through a TUI meant for a person. | A dog prompts, polls, waits, aborts, and reads through `lamb`, non-interactively, and a shepherd can still open the TUI on the same sheep. |
+| `git` is whatever the machine has. | `git` is not in the cell, and the shell says so in the sentence it says for `npm`. It arrives with pen, as a program. |
 | pi runs where Node runs. | The same bundle runs on Cloudflare and on a celld fleet. |
 
 ## Cast
 
-- **Nadia** — uses pi every day on her laptop and has opinions about it.
-  Wants the same pi without the laptop.
-- **Theo** — Nadia's teammate, on a different machine and a different
-  operating system.
-- **The operator** — whoever deployed the home. In this leg, Nadia.
-- **The cell** — one session. Named by its id, and not by anything else.
+- **The sheepdog** — a coding agent with a terminal and a goal. Runs
+  `lamb`. Called "the dog" below.
+- **A second dog** — another agent session, on the same machine hours
+  later or on a different machine now. Knows nothing the first dog knew
+  except what is in the repo and at the home.
+- **The shepherd** — the person who deployed the home and gave the goal.
+  Never runs `lamb`; may open a terminal on a sheep to watch or steer.
+- **The sheep** — one session. Named by its id, and by the name the dog
+  gave it, and by nothing else.
 
 The journeys are ordered from the smallest claim outward: journeys 1 and 2
-are one terminal and one cell, journey 3 is two terminals, journey 4 is
-what the shell can and cannot do, journey 5 is withdrawn to the second
-leg, journey 6 is a second home, and journey 7 verifies nothing changed
-for anyone who never runs `lamb`.
+are one dog and one sheep, journey 3 is a shepherd watching, journey 4 is
+what a sheep can and cannot do, journey 5 is a dog with a flock, journey 6
+is a second home, and journey 7 verifies nothing changed for anyone who
+never runs `lamb`.
 
-## Journey 1: A session with no machine under it
+## Journey 1: A sheep with no machine under it
 
-Nadia has a home deployed. She wants a pi session she can leave and come
-back to from anywhere.
+The dog has a home configured. It wants to hand off a piece of work and
+not carry it in its own context.
 
-1. Run `lamb new --name scratch`. The terminal shows pi's interactive
-   screen: the same editor, the same transcript, the same footer with the
-   model name and token counts. The footer's working directory reads
-   `/workspace`.
-2. Ask the agent to create a small project: a README, a `src/` directory
-   with two files, and a note in each. The agent uses `write` and `bash`;
-   the tool renderers look as they do in pi.
-3. Ask it to list the tree and grep for a word. `bash` runs `find` and
-   `grep`, and the output is right.
-4. Close the laptop lid. Open it the next morning. Run `lamb -c`. The
-   transcript is intact from the first message, the files are as they were
-   left, and the next prompt continues the conversation.
-5. From Theo's machine, run `lamb attach <id>` with the id from `lamb ls`.
-   The same session opens, files and all.
+1. Run `lamb new --name scaffold -- "Create a small project: a README, a
+   src/ directory with two files, and a note in each."` The first line of
+   output is the sheep's id, on its own line, before anything streams.
+   The reply streams, and `lamb` exits when the turn ends.
+2. Run `lamb attach <id> -- "List the tree and grep for the word note."`
+   The sheep's `bash` runs `find` and `grep`, and the output is right.
+3. The dog's session ends. Hours later a second dog, working the same
+   goal, runs `lamb ls`, finds `scaffold` by name, and runs `lamb attach
+   <id> -- "Where were we?"` The sheep answers from its transcript, and
+   the files are as they were left.
+4. From a different machine, with nothing but the home's URL, its token,
+   and the id, a third dog runs `lamb attach <id> -- "cat README.md"` and
+   gets the file.
+5. The shepherd runs `lamb export <id>`, opens the file with pi's Node
+   SQLite backend, and reads what the sheep did, entry by entry.
 
 Acceptance criteria:
 
-- Step 1 mints the session at the home before the socket opens, so a
-  session exists even if the terminal dies before rendering.
-- Step 4 costs nothing while the laptop is closed. The cell is hibernated;
-  no alarm is armed while the lane is idle.
-- Step 5 needs nothing but the id and the home's token. No file was copied,
-  no machine was named.
+- Step 1 mints the session at the home before the socket opens, and prints
+  the id before anything else, so a dog that dies mid-stream still holds
+  the handle. A session exists even if `lamb` never renders a token.
+- Step 3 costs nothing in between. The cell is hibernated; no alarm is
+  armed while the lane is idle. `lamb ls` shows the name the dog gave it.
+- Step 4 needs nothing but the id and the home's token. No file was
+  copied, no machine was named, and nothing the first dog knew was needed.
 - Every message in the transcript is a pi entry with pi's shape. `lamb
   export <id>` writes the cell's SQLite file, and pi's Node SQLite backend
   opens it and lists the same entries.
 
-## Journey 2: The turn outlives the cell
+## Journey 2: The task outlives the cell
 
-Nadia asks for a multi-step change and, while the agent is in the middle
-of it, the cell is evicted. Nothing she did should be lost and nothing the
-agent did should happen twice.
+The dog hands a sheep a multi-step change and moves on. While the sheep
+is in the middle of it, the cell is evicted. Nothing the dog asked for
+should be lost and nothing the sheep did should happen twice.
 
-1. Ask the agent to rename a symbol across the three files and then
-   summarize what changed. It begins: a `read`, an `edit`, another `edit`.
-2. The operator evicts the cell between the second `edit` and the
+1. Run `lamb attach <id> -- "Rename the symbol across the three files,
+   then summarize what changed."` The sheep begins: a `read`, an `edit`,
+   another `edit`. The dog does not wait; `lamb` may have exited, or the
+   dog may have moved to another sheep.
+2. The shepherd evicts the cell between the second `edit` and the
    provider's next response. On Cloudflare this is a deploy of the same
    code; on a test rig it is a forced restart.
-3. Nadia's terminal shows a reconnecting notice and then the transcript,
-   unchanged. Within a few seconds, without anyone typing, the agent
-   continues: it reads the third file and finishes.
+3. Within a few seconds, without anyone typing, the sheep continues: it
+   reads the third file and finishes. A dog that was still attached sees
+   a reconnecting notice and then the transcript, unchanged. A dog that
+   was not attached sees nothing, and finds the finished turn when it
+   looks.
 4. The transcript shows what happened. If the eviction cut a provider
    stream, the interrupted assistant message is present with pi's
    interruption note, followed by the resumed turn. No `edit` appears
@@ -121,9 +145,9 @@ agent did should happen twice.
 
 Acceptance criteria:
 
-- Step 3 is driven by the cell's alarm, not by the reconnecting client. A
-  client that never reconnects gets the same resumption; `lamb attach` an
-  hour later shows the finished turn.
+- Step 3 is driven by the cell's alarm, not by any client. A dog that
+  never reconnects gets the same resumption; `lamb attach` an hour later
+  shows the finished turn. This is what lets the dog not babysit.
 - Step 4 is pi's own recovery: `AgentHarness.create` reports the open
   operation and `lane.resume` continues it. Lamb writes no recovery logic
   of its own.
@@ -134,39 +158,46 @@ Acceptance criteria:
   transition of a scripted turn and asserts the final transcript and
   workspace are the same every time.
 
-## Journey 3: Two terminals on one session
+## Journey 3: The shepherd looks over the dog's shoulder
 
-Nadia is mid-conversation. Theo wants to watch, then to steer.
+The dog is mid-task with a sheep. The shepherd wants to watch, then to
+steer.
 
-1. Nadia is attached. Theo runs `lamb attach <id>`. Theo's terminal renders
-   the whole transcript so far and then, as Nadia's next turn streams,
-   both terminals show the same tokens at the same time.
-2. Theo types a prompt. Nadia sees it appear in her transcript as a user
-   message, and the agent's reply streams to both.
-3. Theo presses the abort key. The turn stops in both terminals.
-4. Theo closes the terminal. Nadia notices nothing.
-5. Nadia closes hers. The cell finishes the turn in progress and then
+1. The dog is attached and a turn is streaming. The shepherd runs `lamb
+   attach <id>` with no prompt and gets pi's interactive terminal on the
+   same sheep. It renders the whole transcript so far, and then both the
+   dog's stream and the shepherd's screen show the same tokens at the same
+   time.
+2. The shepherd types a prompt. It is queued behind the running turn, as
+   pi queues a prompt typed mid-turn, and runs when the turn ends. The
+   dog's next read of the transcript shows it as a user message, and the
+   sheep's reply streams to both.
+3. The shepherd presses the abort key. The turn stops for the dog too,
+   and the dog's `lamb` reports the abort rather than an error.
+4. The shepherd closes the terminal. The dog notices nothing.
+5. The dog's `lamb` exits. The cell finishes the turn in progress and then
    hibernates.
 
 Acceptance criteria:
 
-- Each terminal holds its own attachment, and the cell's `Transcript`
-  subscription is per attachment, so a slow terminal never stalls a fast
-  one.
+- Each attachment is its own, and the cell's `Transcript` subscription is
+  per attachment, so a slow terminal never stalls the dog.
 - Step 2 is `AgentController.prompt` over the wire, unchanged from pi's
-  experimental client. Lamb adds no message type.
+  experimental client, queued by pi's own lane rules. Lamb adds no
+  message type.
 - Step 5's hibernation keeps the socket count at zero and the alarm
   cleared. A wake from `lamb attach` rebuilds the router from the sockets
   it has and needs nothing from the terminal beyond the handshake.
-- The transcript does not say which terminal a prompt came from. That is a
-  later leg's question, named below.
+- The transcript does not say whether the dog or the shepherd said a
+  thing. That is a later leg's question, named below.
 
-## Journey 4: A shell that knows what it is
+## Journey 4: A sheep that says what it cannot do
 
-Nadia treats the agent the way she treats pi, and the agent treats `bash`
-the way it treats bash.
+The dog delegates the way it would to a colleague, and the sheep treats
+`bash` the way it treats bash. What matters is that when the sheep cannot
+do a thing, it says so in a form the dog can act on.
 
-1. Ask for a count of lines per file, sorted. The agent runs `wc -l src/*
+1. Ask for a count of lines per file, sorted. The sheep runs `wc -l src/*
    | sort -n` and gets it.
 2. Ask it to rewrite a word in every file. It runs `sed -i` in a `for`
    loop over a glob, and the files change.
@@ -174,13 +205,13 @@ the way it treats bash.
    output is right.
 4. Ask it to run the tests. It runs `npm test`. The shell answers `bash:
    npm: command not found (this shell runs inside the session; no
-   interpreters or package managers are installed)`. The agent tells Nadia
-   it cannot run tests here and does not pretend it did.
+   interpreters or package managers are installed)`. The sheep tells the
+   dog it cannot run tests here and does not pretend it did. The dog
+   reads that sentence and runs the tests itself, or hands them to pen.
 5. Ask it, as a test, to `while true; do :; done`. The shell stops it at
-   its own limit, the tool result says so, and the terminal stays
-   responsive.
+   its own limit, the tool result says so, and the sheep stays responsive.
 6. Ask it to write a two-megabyte file. `write` refuses with a message
-   naming the per-file limit, and the agent says so.
+   naming the per-file limit, and the sheep says so.
 
 Acceptance criteria:
 
@@ -188,45 +219,71 @@ Acceptance criteria:
   rows `read` and `write` use. No second filesystem, no sync.
 - Step 4's sentence is the shell's, not the tool's, and the system prompt
   says the same thing once. A test checks both places carry the same
-  words.
+  words. The sentence is what the dog parses; it does not change between
+  programs except for the program's name.
 - Step 5 is just-bash's own bound, surfaced as a nonzero exit and pi's
   timeout code, and the cell's event loop is not blocked past the bound.
 - Truncation, spill to `/tmp`, and the bash renderer's periodic updates
   behave as they do in pi against a real shell.
 
-## Journey 5: A repository in, the work out (withdrawn)
+## Journey 5: A dog and its flock
 
-Withdrawn 5 September 2026, the day it was built, and moved to the second
-leg, [pen](../pen/journey.md).
+The goal is bigger than one sheep. The dog splits it, hands each piece
+to a sheep, and keeps working while they do.
 
-The reasoning: `git` is a program. The cell cannot spawn one, so this
-leg's `git` was a facade, twelve verbs hand-written over isomorphic-git,
-and walking it against a real repository showed what a facade costs. A
-`--depth` that parsed its own value as the URL, a `diff` with no header,
-and a model that fabricated real-looking output to cover for both. A
-shell that is almost git is harder to trust than a shell that says `git:
-command not found` in the sentence it already says for `npm`. So the
-facade, its tests, and its credential were removed, and the shell refuses
-`git` as it refuses every other program.
+1. Run `lamb new --name docs -- "…"`, `lamb new --name tests -- "…"`, and
+   `lamb new --name types -- "…"` in one go, each with `--detach`. Each
+   prints its id and returns at once. Three sheep are working.
+2. Run `lamb ls`. Each line is one sheep: id, name, when it was made, and
+   whether its lane is idle, running, or waiting. The output is one
+   record per line and stable enough to parse.
+3. Run `lamb status <id>` on a running sheep. It says what the sheep is
+   doing now: the open operation, the last tool call, tokens so far.
+4. Run `lamb attach <id> -- "…"` on a running sheep. The prompt is queued
+   behind the running turn, `lamb` says so and exits, and the sheep takes
+   it up when the turn ends. Or run it with `--wait` and `lamb` streams
+   the queued turn when it starts.
+5. Run `lamb wait <id> <id> <id>`. It returns when every named sheep is
+   idle, with each one's last assistant message, so the dog reads three
+   results in one call.
+6. One sheep is going wrong. Run `lamb abort <id>`. The turn stops, the
+   transcript says it was aborted, and the sheep is idle for the next
+   prompt.
+7. Run `lamb log <id>`. The transcript prints as text, oldest first, one
+   entry per block, with the tool calls and their results. `--since` and
+   `--last` cut it down. `lamb export` is still the file for a program
+   that wants the rows.
 
-What the journey wanted still stands, and pen carries it: a repository
-cloned into the workspace, a change on a branch, a push with a credential
-held at the home and never seen by the model, and a commit a laptop can
-fetch. There it is real git, in a container, over a checkout synced from
-the workspace rows, with credentials through a helper the host controls.
+Acceptance criteria:
 
-## Journey 6: The same lamb on a fleet you own
+- Every command here is non-interactive and exits. None needs a
+  terminal. Every one has a `--json` form whose shape is pi's: entries
+  are pi entries, lane state is pi's lane snapshot.
+- Step 1's `--detach` mints and prompts and returns before the first
+  token. The sheep runs whether or not any client is attached, which is
+  journey 2's claim used on purpose.
+- Step 4 is pi's queue, not a refusal. Today a prompt to a busy lane
+  answers `Lane "main" already has an active operation`; after this
+  journey it queues, and the dog is told it did.
+- Step 5 does not poll the sheep awake. It waits on the cell's own
+  notification of the lane going idle, and a hibernated sheep stays
+  hibernated.
+- Nothing here is a new message type on pi's protocol. It is pi's
+  `AgentController`, `Transcript`, and lane snapshot, read by a program
+  instead of drawn by a TUI.
 
-The operator runs celld on two nodes with a bucket, and wants the same
-sessions there.
+## Journey 6: The same flock on a fleet you own
+
+The shepherd runs celld on two nodes with a bucket, and wants the same
+sheep there.
 
 1. From the same `packages/cell` directory, run `celld deploy` against the
    fleet. It accepts the Wrangler project.
 2. Run `lamb --home https://<fleet> new`. Journey 1 walks as written.
 3. Stop the node that owns the cell mid-turn. Journey 2 walks as written:
    the cell wakes on the other node and finishes.
-4. Run `lamb --home https://<fleet> attach <id>` from Theo's machine.
-   Journey 3 walks as written.
+4. Run `lamb --home https://<fleet> attach <id>` from a second dog's
+   machine. Journeys 3 and 5 walk as written.
 
 Acceptance criteria:
 
@@ -251,11 +308,11 @@ A person who uses pi on a laptop and never runs `lamb`.
 
 Acceptance criteria:
 
-- Lamb carries its patches against pi as diffs in `vendor/pi`, each named
-  in phases.md with its upstream status. The list is short and every entry
-  is one that pi could take without knowing why.
+- Lamb carries its changes to pi as a short branch on a fork, each commit
+  named in phases.md with its upstream status. The list is short and every
+  entry is one that pi could take without knowing why.
 - No file in pi is forked. A version bump of the pinned commit is a
-  rebase of the patch set, and the phases record how long it took.
+  rebase of the branch, and the phases record how long it took.
 - pi's storage and repo conformance suites pass against lamb's adapter in
   workerd, and against the Node backend unchanged.
 
@@ -263,7 +320,7 @@ Acceptance criteria:
 
 Named here so the design has a list to answer, not to decide them.
 
-- **A `SqliteDatabase` over the cell's SQL.** Journey 1 step 4 and journey
+- **A `SqliteDatabase` over the cell's SQL.** Journey 1 step 5 and journey
   7 step 3 need the transcript in pi's own schema, which means pi's own
   SQLite backend over an adapter, not a new backend.
 - **One filesystem with two faces.** Journey 4 needs `read`, `write`, and
@@ -271,13 +328,19 @@ Named here so the design has a list to answer, not to decide them.
 - **The alarm as the heartbeat of an open operation.** Journey 2 step 3
   says the client is not what resumes the turn, and journey 3 step 5 says
   an idle cell costs nothing. Both follow from arming the alarm only while
-  an operation is open.
+  an operation is open. Journey 5 leans on it: a dog that detaches is
+  trusting the alarm.
 - **A WebSocket transport on both sides of pi's protocol.** Journeys 1, 3,
-  and 6 attach from anywhere; journey 3 needs multiple attachments, which
-  the protocol has and a new wire would have to reinvent.
-- **A refusal the model can act on.** Journey 4 steps 4 and 6, and `git`
+  5, and 6 attach from anywhere; journey 3 needs multiple attachments,
+  which the protocol has and a new wire would have to reinvent.
+- **A surface for a program, not a person.** Journey 5. The id first and
+  alone, one record per line, `--json` everywhere, exits that mean
+  something, a queue instead of a refusal, and a wait that does not poll.
+  All of it read from pi's protocol, none of it added to it.
+- **A refusal the dog can act on.** Journey 4 steps 4 and 6, and `git`
   with them. Every missing capability is a sentence that names the reason
-  and is the same sentence in the system prompt.
+  and is the same sentence in the system prompt, and the same sentence
+  from program to program.
 - **A patch set, not a fork.** Journey 7. Every change to pi is named,
   small, and upstreamable.
 
@@ -285,21 +348,25 @@ Named here so the design has a list to answer, not to decide them.
 
 Written down so they are decided on purpose, mostly by later legs.
 
-- **Who is a session's owner, and who may attach?** One token per home is
-  this leg's answer. The next leg that touches it needs a person and a
+- **Who is a sheep's owner, and who may attach?** One token per home is
+  this leg's answer. The next leg that touches it needs a principal and a
   grant, and pi's protocol notes that peer authentication is application
-  policy.
-- **Which terminal said what?** Journey 3 shows two people's prompts as
-  indistinguishable user messages. Pi's entries have room for source
-  metadata; whether to write it, and how to render it, is undecided.
+  policy. A dog is a principal too.
+- **Which principal said what?** Journey 3 shows the dog's and the
+  shepherd's prompts as indistinguishable user messages. Pi's entries have
+  room for source metadata; whether to write it, and how to render it, is
+  undecided.
+- **The dog as a sheep.** A dog that lives in a cell, herding sheep that
+  live in cells, is sub-agents as cells, and the reason the herding
+  surface must be a program's. Not this leg.
 - **What happens to `/tmp` and to spilled output** across hibernation?
-  This leg truncates `/tmp` when the lane idles. A spilled tool output the
-  terminal wants to open later is lost. Probably fine; named so it is not
-  a surprise.
+  This leg truncates `/tmp` when the lane idles. A spilled tool output a
+  dog wants to open later is lost. Probably fine; named so it is not a
+  surprise.
 - **Where do large files go?** The per-file cap is a placeholder for an
   object store behind the same table. The shape is designed; the leg does
   not build it.
-- **What does the model get told about the shell, exactly?** The design
+- **What does a sheep get told about the shell, exactly?** The design
   says one sentence in the system prompt and the same sentence at the
   refusal. Whether that is enough for a cheaper model is a measurement,
   and the evals project that would measure it does not exist yet.

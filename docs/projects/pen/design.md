@@ -10,10 +10,11 @@ changed.**
 
 Lamb ([../lamb/design.md](../lamb/design.md)) argued that a pi session is
 the durable half of a coding harness and a Durable Object is the shape of
-a durable half. The other half, everything a harness does with a machine,
-was declared rentable and then not rented: lamb's shell is an interpreter
-in the isolate, and for anything native it says one sentence. Pen is the
-renting. A container is started on the first command that needs one,
+a durable half, and put the sheep a sheepdog herds into cells. The other
+half, everything a harness does with a machine, was declared rentable and
+then not rented: a sheep's shell is an interpreter in the isolate, and for
+anything native it says one sentence, and the dog does that work itself.
+Pen is the renting, so the dog can delegate it. A container is started on the first command that needs one,
 given a checkout of the workspace, asked to run the command, and asked
 what it changed. Then it is forgotten. The rows in the cell remain the
 only truth; the container's disk is a cache with a lifetime.

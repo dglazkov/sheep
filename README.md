@@ -1,5 +1,12 @@
 # sheep
 
+Sheep is a repository for coding agents that herd coding agents. The one
+with the terminal is the **sheepdog**: a coding agent, Claude Code in this
+repo or pi on a laptop, working a goal a person gave it. The ones it herds
+are **sheep**: pi sessions, each in a cell with its own workspace, given a
+task and left to it. `lamb` is how the dog herds. A person does not run
+`lamb`. The dog does.
+
 Coding agents whose sessions live in cells rather than on machines. A cell
 is a Durable Object: one small SQLite database with an address, on
 Cloudflare or on a [celld](https://celld.dev) fleet you run yourself. The
