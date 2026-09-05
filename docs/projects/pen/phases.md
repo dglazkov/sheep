@@ -14,10 +14,9 @@ never a bare "phase 2".
 **Where we are: pen phases 0, 1, and 2 CLOSED, phases 3 to 7 NOT
 STARTED.** Planned 5 Sep 2026; the scaffold, the checkout, and the
 router built the same day. The next thing to do is pen phase 3, a real
-machine, and it waits on two things: lamb phase 5, the sheepdog's
-surface, whose `--detach`, `wait`, and `log` the walk uses, which is
-work and is conducted first; and the Workers Paid plan, a ⚑ step asked
-when phase 3 begins.
+machine. Lamb phase 5, the sheepdog's surface whose `--detach`, `wait`,
+and `log` the walk uses, closed on 5 Sep, so pen phase 3 waits on one
+thing: the Workers Paid plan, a ⚑ step asked when it begins.
 
 The order is dependency order and risk order. Phase 1 is the gate: if a
 checkout cannot be synced by hash both ways with the atomicity journey 3

@@ -19,6 +19,10 @@
     "ws": "^8.21.0"
   },
   "dependencies": {
+    "@earendil-works/chord": "link:../../vendor/pi/packages/chord",
+    "@earendil-works/pi-agent-core": "link:../../vendor/pi/packages/agent",
+    "@earendil-works/pi-ai": "link:../../vendor/pi/packages/ai",
+    "@earendil-works/pi-client": "link:../../vendor/pi/packages/client",
     "@earendil-works/pi-coding-agent": "link:../../vendor/pi/packages/coding-agent",
     "@earendil-works/pi-session-backend-sqlite-node": "link:../../vendor/pi/packages/session-backends/sqlite-node"
   }

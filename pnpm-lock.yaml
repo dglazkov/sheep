@@ -70,6 +70,18 @@ importers:
 
   packages/lamb:
     dependencies:
+      '@earendil-works/chord':
+        specifier: link:../../vendor/pi/packages/chord
+        version: link:../../vendor/pi/packages/chord
+      '@earendil-works/pi-agent-core':
+        specifier: link:../../vendor/pi/packages/agent
+        version: link:../../vendor/pi/packages/agent
+      '@earendil-works/pi-ai':
+        specifier: link:../../vendor/pi/packages/ai
+        version: link:../../vendor/pi/packages/ai
+      '@earendil-works/pi-client':
+        specifier: link:../../vendor/pi/packages/client
+        version: link:../../vendor/pi/packages/client
       '@earendil-works/pi-coding-agent':
         specifier: link:../../vendor/pi/packages/coding-agent
         version: link:../../vendor/pi/packages/coding-agent

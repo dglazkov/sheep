@@ -32,32 +32,27 @@ roster of them.
 
 ---
 
-**Where we are: phases 0, 1, 2, and 7 CLOSED, phases 3, 4, and 6
-PART-DONE, phase 5 re-cut and NOT STARTED. The next thing to do is lamb
-phase 5, the sheepdog's surface.** Every proof that can run
-locally has run: pi's conformance suites, journey 4 in workerd, journey 2's
-eviction test at every transition, journey 3 over pi's protocol on
-WebSockets, journey 5 against a git server, journeys 1 and 3 through
-`lamb` and pi's real client against both `wrangler dev` and a single
-`celld dev` node, and an export pi's Node backend opens. On the deployed
-home with a real model, journey 1 has walked as far as one laptop can
-take it (minted, built, grepped, resumed after hibernation, attached with
-only the id and the token, exported and opened by pi's Node backend), and
-journey 2 has walked in full there: a turn evicted by a real `wrangler
-deploy` mid-flight, resumed by the alarm, finished with pi's interruption
-note and no doubled effect. Journey 5 and lamb phase 5, git, were
-withdrawn on 5 Sep: the shell's `git` was a facade over isomorphic-git,
-walking it against a real repository showed the cost, and git is a
-program for the second leg's container tier ([pen](../pen/phases.md)).
-The facade, its tests, its secret, and 43 packages are gone, and the
-shell refuses `git` in the sentence it refuses `npm`. The same evening
-the journeys were recast around agents as the actors: a sheepdog runs
-`lamb`, sheep are cells, a shepherd watches. That made the slot journey
-5, a dog and its flock, and lamb phase 5 is now the surface a program
-needs: detach, status, wait, abort, log, `--json`, and a queue where
-today there is a `LaneBusy` refusal. What waits on a person: a second
-machine and the TUI half of journey 3, and a two-node celld fleet for
-journey 6.
+**Where we are: phases 0, 1, 2, 5, and 7 CLOSED, phases 3, 4, and 6
+PART-DONE. Nothing in lamb waits on work; what is left waits on a
+person.** Every proof that can run locally has run: pi's conformance
+suites, journey 4 in workerd, journey 2's eviction test at every
+transition, journey 3 over pi's protocol on WebSockets, journeys 1 and 3
+through `lamb` and pi's real client against both `wrangler dev` and a
+single `celld dev` node, journey 5 through the built CLI against a
+`wrangler dev` home, and an export pi's Node backend opens. On the
+deployed home with a real model, journey 1 has walked as far as one
+laptop can take it, journey 2 has walked in full (a turn evicted by a
+real `wrangler deploy` mid-flight, resumed by the alarm), and journey 5
+has walked in full: three sheep minted detached in one command, `ls` and
+`status` parsed, a queued prompt, a `wait` on all three, an abort, and a
+`log`, all by a Claude Code session on 5 Sep. Git was built as lamb
+phase 5 and withdrawn on 5 Sep: the shell's `git` was a facade over
+isomorphic-git, and git is a program for the second leg's container tier
+([pen](../pen/phases.md)); the same evening the journeys were recast
+around agents as the actors and lamb phase 5 became the sheepdog's
+surface, now built. What waits on a person: a second machine and the
+TUI half of journey 3, and a two-node celld fleet for journey 6. Pen
+phase 3, the first real machine, no longer waits on lamb.
 
 The order is dependency order and it is also risk order: phase 1 is the
 gate, because if pi's storage does not run over the cell's SQL nothing
@@ -537,12 +532,11 @@ and the cell hibernates with the alarm clear, checked from the dashboard.
   WebSocket, with the secrets set by `wrangler secret put` from
   `.dev.vars`. Journey 1 step 1 on Cloudflare. Steps 4 and 5, overnight
   and a second machine, are now walkable.
-- **2026-09-06 — Open: one-shot mode drops the first text delta.** Both
+- **2026-09-06 — One-shot mode dropped the first text delta.** Both
   locally and deployed, `lamb … -- "prompt"` printed replies missing their
-  first token ("'m running…"). pi's prompt-mode client prints
-  `text_delta` frames; the first one likely arrives inside the hydrated
-  Transcript snapshot rather than as an event. Cosmetic for one-shot, not
-  seen in the TUI; unmeasured.
+  first token ("'m running…"); the first `text_delta` likely arrives
+  inside the hydrated snapshot. Paid in lamb phase 5: lamb prints from
+  the replica's streaming message and checks the whole reply at its end.
 - **2026-09-05 — `pi client` left the published CLI.** Upstream #9132
   moved the `server` and `client` commands into a development entrypoint,
   `src/experimental/cli.ts`, that is not compiled into `dist/`; the stock
@@ -554,8 +548,10 @@ and the cell hibernates with the alarm clear, checked from the dashboard.
 
 ## Phase 5 — The sheepdog's surface
 
-**Status: NOT STARTED.** Re-cut 5 Sep 2026. This slot was git, built and
-withdrawn the same day; that record is at the end of this section.
+**Status: CLOSED.** 5 Sep 2026. Journey 5 walked on the deployed home by
+a Claude Code session, every step. Re-cut 5 Sep 2026; this slot was git,
+built and withdrawn the same day, and that record is at the end of this
+section.
 
 **Closes journey 5**, and turns journey 1's `--detach` and journey 3's
 queue from prose into behaviour.
@@ -589,11 +585,25 @@ the deployed home: three sheep minted detached in one command, `ls` and
 
 **Findings:**
 
-- **2026-09-05 — Prompt mode is the dog's surface and it was built for a
-  person.** `lamb … -- "…"` streams and exits, which is right; a second
-  prompt to a busy lane is refused, the first delta is dropped, `ls` has
-  no lane state, and there is no wait or abort. Named by recasting the
-  journeys; this phase is the list.
+- **2026-09-05 — Prompt mode was built for a person.** A second prompt to
+  a busy lane was refused, the first delta dropped, `ls` had no lane
+  state, and there was no wait or abort. This phase is that list.
+- **2026-09-05 — Journey 5 walked on the deployed home.** Three detached
+  mints in 3.9 s, `status` mid-turn with the running tool and tokens, a
+  queued prompt with and without `--wait`, `wait` on three sheep in
+  8.6 s, an abort in 0.5 s, `log`. The dog read about a hundred lines.
+- **2026-09-05 — `prompt` over the wire resolves when the turn ends**, so
+  `--detach` is the cell's own `POST /prompt`, which returns once durable.
+- **2026-09-05 — A wire-driven turn had no heartbeat.** One lane watch now
+  reports every transition to the Directory and arms the alarm for any
+  driver, which is also how `ls` wakes nobody.
+- **2026-09-05 — The queue is pi's `followUp`**, taken when the turn would
+  otherwise end; an abort drops queued follow-ups and `--wait` says so.
+- **2026-09-05 — A `wait` is one attachment per sheep**, which wakes a
+  hibernated one once, as `lamb attach` does. Cost: 35 minutes, 24 the
+  builder's, 7 the walk.
+- **2026-09-05 — Open: the `waiting` state is wired and never seen.** The
+  faux provider neither retries nor defers.
 
 **Formerly: Git, withdrawn.** Built 5 Sep as a just-bash command over
 isomorphic-git against the workspace rows, twelve verbs with every other

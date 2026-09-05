@@ -332,13 +332,28 @@ taught pi's client a WebSocket route (5 Sep) so that no commit on the
 terminal.
 
 ```
-lamb new [--name <name>] [-- <prompt>]   # mint a session at the Directory, attach, open pi's TUI
-lamb -c | --continue [-- <prompt>]       # attach to the newest session
-lamb attach <sessionId> [-- <prompt>]    # attach to a named one; a second terminal on the same cell
-lamb ls                                  # the Directory's list
-lamb export <sessionId> [file]           # pi's rows rebuilt into a SQLite file pi's Node backend opens
+lamb new [--name <name>] [--detach] [--wait] [-- <prompt>]   # mint at the Directory; pi's TUI, or send the prompt
+lamb -c | --continue [--detach] [--wait] [-- <prompt>]       # the same, on the newest session
+lamb attach <id> [--detach] [--wait] [-- <prompt>]           # the same, on a named one; a second terminal on the same cell
+lamb ls                                  # the Directory's list, with each lane's last reported state
+lamb status <id>                         # the lane now: open operation, last tool call, tokens
+lamb wait [--timeout <s>] <id>...        # until every named sheep is idle; each one's last reply
+lamb abort <id>                          # AgentController.requestAbort on the open operation
+lamb log [--since ..] [--last <n>] <id>  # the transcript as text; --json is pi's entries
+lamb export <id> [file]                  # pi's rows rebuilt into a SQLite file pi's Node backend opens
 lamb --home <url>                        # which deployment; default from ~/.lamb/config
 ```
+
+**The sheepdog's surface** (lamb phase 5, 5 Sep) is the one-shot half of
+that list, and it is lamb's own client of pi's protocol: pi's `Client`
+over a WebSocket, pi's `AgentController`, `Transcript`, and lane snapshot
+read by a program and printed, `--json` in pi's shapes. A prompt to a
+busy lane is pi's `followUp`; `--detach` is the cell's HTTP `POST
+/prompt`, which returns once the operation is durable, because `prompt`
+over the wire resolves when the turn ends; `ls` reads a lane-state column
+the cell reports to the Directory at each transition, so it wakes no
+hibernated cell. The interactive terminal is still pi's TUI through the
+bridge.
 
 Auth in this leg is one bearer token per deployment, a Worker secret, sent
 as a header on the upgrade. That is not a multi-user story. It is the

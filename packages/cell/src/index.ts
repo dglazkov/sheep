@@ -2,6 +2,8 @@
  * The Worker: the door and the router. A bearer token per home guards
  * everything; `/sessions` is the Directory's; `/s/<id>/...` is that cell's.
  */
+import { type FauxProgram, isFauxProgram } from "./models.ts";
+
 export { SessionCell } from "./cell.ts";
 export { Directory } from "./directory.ts";
 
@@ -38,6 +40,13 @@ export default {
     }
     if (url.pathname === "/sessions" && request.method === "GET") return Response.json(await directory.list());
     if (url.pathname === "/home" && request.method === "GET") return Response.json({ serverId: await directory.serverId() });
+    if (url.pathname === "/faux" && request.method === "POST" && env.LAMB_PROVIDER === "faux") {
+      // Test-only: the program every cell without one of its own answers from.
+      const program: unknown = await request.json();
+      if (program !== null && !isFauxProgram(program)) return new Response("a faux program is { steps: [{ text | tool: { name, args }, delayMs? }, …] }", { status: 400 });
+      await directory.setFauxProgram(program as FauxProgram | null);
+      return Response.json({ steps: program === null ? 0 : (program as FauxProgram).steps.length });
+    }
 
     const match = /^\/s\/([^/]+)(\/.*)?$/.exec(url.pathname);
     if (match) {

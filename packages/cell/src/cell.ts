@@ -19,16 +19,19 @@ import {
   createReadTool,
   createWriteTool,
   type Entry,
+  type HarnessEvent,
   type LaneSnapshot,
   type Session,
+  type WatchHandle,
   withCancel,
 } from "@earendil-works/pi-agent-core";
 import { Server } from "@earendil-works/pi-server";
 import type { SqliteSessionRepo } from "@earendil-works/pi-session-backend-sqlite-node/sqlite";
 import { DurableObject } from "cloudflare:workers";
+import type { LaneState } from "./directory.ts";
 import { CellExecutionEnv } from "./env/execution-env.ts";
 import { NO_CONTAINER, shellSystemPromptLine } from "./env/programs.ts";
-import { type CellModels, createCellModels } from "./models.ts";
+import { type CellModels, createCellModels, type FauxProgram, isFauxProgram } from "./models.ts";
 import { createCellSessionRepo } from "./storage/sqlite.ts";
 import { createCellHost } from "./wire/host.ts";
 import { WebSocketListener } from "./wire/listener.ts";
@@ -46,11 +49,22 @@ interface Runtime {
   lane: AgentLane;
   /** Cancels every detached drive this incarnation started. */
   drives: Set<() => void>;
+  /** The lane's events, whoever drives it: the wire, the HTTP face, or a resume. */
+  watch: WatchHandle<LaneSnapshot>;
+  /** The lane state last told to the Directory, so a transition is reported once. */
+  reported: LaneState | undefined;
   /** pi's protocol server over this cell's WebSockets. */
   server: Server;
   listener: WebSocketListener;
   serverId: string;
 }
+
+/**
+ * The cell's HTTP answer to a prompt: pi's `AgentOperationResponse` when
+ * the lane took it as an operation, pi's `AgentQueueResponse` when the lane
+ * was busy and the prompt was queued as a follow-up.
+ */
+export type PromptResponse = { accepted: true; operationId: string; error: null } | { accepted: true; entryId: string; error: null };
 
 export interface CellState {
   id: string;
@@ -107,8 +121,8 @@ export class SessionCell extends DurableObject<Env> {
     const existing = (await repo.list(undefined, context)).find((metadata) => metadata.id === this.sessionId);
     const session = existing === undefined ? await repo.create({ id: this.sessionId }, context) : await repo.open(existing, context);
     const env = new CellExecutionEnv(this.ctx.storage.sql);
-    const models = createCellModels(this.env, { onProviderCall: () => this.transition() });
-    const runtime: Partial<Runtime> = { repo, session, env, models, drives: new Set() };
+    const models = createCellModels(this.env, { onProviderCall: () => this.transition(), program: () => this.fauxProgram() });
+    const runtime: Partial<Runtime> = { repo, session, env, models, drives: new Set(), reported: undefined };
     const { harness, open } = await AgentHarness.create(
       {
         session,
@@ -122,6 +136,7 @@ export class SessionCell extends DurableObject<Env> {
     );
     runtime.harness = harness;
     runtime.lane = await harness.lane("main", context);
+    runtime.watch = await runtime.lane.watch(context);
     const directory = this.env.DIRECTORY.getByName("home");
     const serverId = await directory.serverId();
     const { host } = await createCellHost({
@@ -142,12 +157,64 @@ export class SessionCell extends DurableObject<Env> {
     runtime.listener = listener;
     runtime.serverId = serverId;
     const ready = runtime as Runtime;
+    // The lane's transitions are the Directory's state column and the heartbeat, whoever drives.
+    ready.watch.start((event) => this.observeLane(ready, event));
     // Whatever the last incarnation left open continues now, unasked.
     for (const operation of open) {
       const lane = operation.lane === "main" ? ready.lane : await harness.lane(operation.lane, context);
       this.detach(ready, (driveContext) => lane.resume(driveContext));
     }
     return ready;
+  }
+
+  /**
+   * One listener on the lane, so a turn started over the wire, over HTTP, or
+   * by a resume reports the same way. Nothing here awaits the lane: the
+   * event is delivered from inside its commit.
+   */
+  private observeLane(runtime: Runtime, event: HarnessEvent): void {
+    switch (event.type) {
+      case "run_start":
+      case "run_resume":
+      case "retry_start":
+      case "compaction_start":
+      case "navigation_start":
+        this.report(runtime, "running");
+        void this.ctx.storage.setAlarm(Date.now() + HEARTBEAT_MS);
+        return;
+      case "retry_scheduled":
+      case "run_suspend":
+        this.report(runtime, "waiting");
+        return;
+      case "run_end":
+      case "compaction_end":
+      case "navigation_end":
+        void this.settleWhenCurrent(runtime);
+        return;
+      default:
+        return;
+    }
+  }
+
+  private async settleWhenCurrent(runtime: Runtime): Promise<void> {
+    if (this.#runtime === undefined || (await this.#runtime) !== runtime) return;
+    await this.settleAlarm(runtime);
+  }
+
+  /** Tells the Directory the lane's state, once per change. */
+  private report(runtime: Runtime, state: LaneState): void {
+    if (runtime.reported === state) return;
+    runtime.reported = state;
+    this.env.DIRECTORY.getByName("home")
+      .setState(this.sessionId, state)
+      .catch((error: unknown) => console.error(`[cell ${this.sessionId}] could not report ${state}:`, error instanceof Error ? error.message : error));
+  }
+
+  /** With the faux provider: this cell's own program, else the home's default, else none. */
+  private async fauxProgram(): Promise<FauxProgram | undefined> {
+    if (this.env.LAMB_PROVIDER !== "faux") return undefined;
+    const own = await this.ctx.storage.get<FauxProgram>("faux-program");
+    return own ?? (await this.env.DIRECTORY.getByName("home").fauxProgram());
   }
 
   /** Wraps a tool so the eviction test can count effects and pick a kill point after each one. */
@@ -189,6 +256,7 @@ export class SessionCell extends DurableObject<Env> {
     if (live === undefined) return;
     for (const cancel of live.drives) cancel();
     live.drives.clear();
+    live.watch.unsubscribe();
   }
 
   private detach(runtime: Runtime, run: (context: Context) => Promise<unknown>): void {
@@ -203,14 +271,16 @@ export class SessionCell extends DurableObject<Env> {
     void this.ctx.storage.setAlarm(Date.now() + HEARTBEAT_MS);
   }
 
-  /** Arms the heartbeat while an operation is open; clears it and `/tmp` when the lane idles. */
+  /** Arms the heartbeat while an operation is open; clears it and `/tmp` when the lane idles. Reports either way. */
   private async settleAlarm(runtime: Runtime): Promise<void> {
     const execution = await runtime.lane.inspectExecution(BACKGROUND_CONTEXT);
     if (execution.current === null) {
       await this.ctx.storage.deleteAlarm();
       runtime.env.files.truncate(TEMP_ROOT);
+      this.report(runtime, "idle");
     } else {
       await this.ctx.storage.setAlarm(Date.now() + HEARTBEAT_MS);
+      if (runtime.reported !== "waiting") this.report(runtime, "running");
     }
   }
 
@@ -241,14 +311,23 @@ export class SessionCell extends DurableObject<Env> {
     }
   }
 
-  /** Accepts a prompt and drives it detached; returns once the operation is durable. */
-  async prompt(text: string): Promise<{ operationId: string }> {
+  /**
+   * Accepts a prompt and drives it detached; returns once the operation is
+   * durable. A busy lane queues it as pi's follow-up instead, taken up when
+   * the running turn ends, and the answer says which happened.
+   */
+  async prompt(text: string): Promise<PromptResponse> {
     const runtime = await this.runtime();
     const admission = await runtime.lane.accept({ kind: "prompt", prompt: text }, BACKGROUND_CONTEXT);
-    if (!admission.ok) throw new Error(`Prompt refused: ${admission.error._tag}`);
+    if (!admission.ok) {
+      if (admission.error._tag !== "LaneBusy") throw new Error(`Prompt refused: ${admission.error._tag}`);
+      const queued = await runtime.lane.followUp(text, undefined, BACKGROUND_CONTEXT);
+      if (!queued.ok) throw new Error(`Prompt not queued: ${queued.error._tag}`);
+      return { accepted: true, entryId: queued.value.entryId, error: null };
+    }
     const { operationId } = admission.value;
     this.detach(runtime, (context) => runtime.lane.drive({ operationId, waitForRetry: true, pollDeferred: true }, context));
-    return { operationId };
+    return { accepted: true, operationId, error: null };
   }
 
   async abort(): Promise<{ aborted: boolean }> {
@@ -320,6 +399,13 @@ export class SessionCell extends DurableObject<Env> {
       }
       if (route === "POST /abort") return Response.json(await this.abort());
       if (route === "GET /export") return Response.json(await this.exportRows());
+      if (route === "POST /faux" && this.env.LAMB_PROVIDER === "faux") {
+        // Test-only: the program this cell's faux model answers from.
+        const program: unknown = await request.json();
+        if (!isFauxProgram(program)) return new Response("a faux program is { steps: [{ text | tool: { name, args }, delayMs? }, …] }", { status: 400 });
+        await this.ctx.storage.put("faux-program", program);
+        return Response.json({ steps: program.steps.length });
+      }
       if (route === "GET /file") {
         const path = url.searchParams.get("path");
         if (!path) return new Response("path required", { status: 400 });
