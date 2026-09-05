@@ -149,7 +149,11 @@ which is journey 3.
 A program in the container that needs a credential asks the helper. For
 git that is a credential helper configured in the image, `credential.helper
 = pen`, which reads the request git makes, sends `credential {git,
-host}` to the cell, and answers git with what comes back. The cell holds
+host}` to the cell, and answers git with what comes back. The helper is
+a process git spawns, so it reaches the agent over a Unix socket the
+agent listens on inside the container, and the agent carries the request
+onto the one WebSocket; the helper answers `get` only, and `store` and
+`erase` are no-ops, so nothing is ever kept. The cell holds
 no token either: it asks the home, which holds the operator's secrets and
 mints a short-lived, scoped value for this one request. The value goes
 into git's process and nowhere else. Nothing writes it to disk, nothing

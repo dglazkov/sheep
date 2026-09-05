@@ -254,9 +254,14 @@ minute costs.
   secret, contents-only, short-lived, revoked after the walk.
 - `.git` syncing, with a test that a clone survives a fake-container
   restart and `git status` in the new one is clean.
-- A test in workerd against a git server fixture (lamb's fifty lines of
-  CGI, revived) that walks journey 2 through the fake, and greps every
-  frame, every row, and the exported session for the credential.
+- A test in Node against a git server fixture (lamb's fifty lines of
+  CGI, revived) that runs real git through the real `pen-agent` process
+  with the test as the cell: clone, branch, commit, push with the helper,
+  and the credential in no frame, no file of the checkout, no environment.
+- A test in workerd that walks journey 2's frames through the fake: the
+  broker mints once per `credential` request, returns the value once,
+  stores nothing, and the value is in no row, no tool result, and not in
+  the exported session.
 
 **Proof:** Journey 2 walked against a real repository from the deployed
 home: cloned, a branch, an `edit`-tool change that `git diff` shows,
