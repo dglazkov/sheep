@@ -98,14 +98,16 @@ what changed since the manifest, and sends the diff: new and changed
 files as blobs, deletions as paths. The cell writes each file whole, in
 one transaction per file, so a row is never half of before and half of
 after. Files over the per-file cap are refused by name in the tool
-result, and the command's other changes still land.
+result, and the command's other changes still land. The refusal happens
+before the bytes move: `changed` carries each file's size, and the cell
+asks only for what fits.
 
 **The cache rule.** Paths matching the checkout's `.gitignore`, plus a
 short built-in list (`node_modules`, `.venv`, `dist`, `build`,
-`__pycache__`), stay in the container and never sync back. They are
-rebuilt by the command that made them. The model is told the rule in the
-system prompt and can change it with `.gitignore`, which is the tool it
-already knows.
+`__pycache__`), stay in the container and never sync back, and a sync-in
+never deletes them. They are rebuilt by the command that made them. The
+model is told the rule in the system prompt and can change it with
+`.gitignore`, which is the tool it already knows.
 
 **`.git` syncs.** A repository's objects are files, they fit the cap in
 the common case, and they are what makes a clone survive the container.
@@ -119,12 +121,15 @@ authenticated WebSocket to the cell, using a token the cell minted for
 that container's lifetime, and everything else is messages on it:
 
 - `manifest` from the cell; `need [hashes]` from the container; `blob`
-  frames from the cell.
+  frames from the cell, the bytes as binary messages.
 - `run {command, cwd, env, timeout}` from the cell; `stdout`, `stderr`
   frames from the container as they happen; `exit {code}` or `killed
   {reason}` at the end.
-- `changed {manifest diff}` from the container after a run; `blob` frames
-  up; `synced` from the cell.
+- `changed {manifest diff}` from the container after a run; `need
+  [hashes]` from the cell, which asks only for what it will accept;
+  `blob` frames up; `synced {refused}` from the cell. The dance is the
+  same in both directions: whoever holds the newer tree describes it,
+  the other side asks for the bytes it lacks.
 - `credential {kind, scope}` from the container's helper; `credential
   {value, expires}` from the cell, after the cell asks the home.
 
