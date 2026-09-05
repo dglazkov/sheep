@@ -79,12 +79,12 @@ instead of improvising mid-task:
 
 ## Phase 0 — The scaffold
 
-**Status: PART-DONE** 5 Sep 2026. Built and proved locally: `pnpm test`
-runs the cell's two tests in workerd and the CLI's two in Node, all
-passing; `lamb --version` prints; typecheck clean. Missing: `pnpm deploy`
-and the `curl` against the scratch home, because no `CLOUDFLARE_API_TOKEN`
-was in the environment. Closes when the token arrives and the deploy
-answers.
+**Status: CLOSED** 6 Sep 2026. Proved locally 5 Sep: `pnpm test` runs the
+cell's tests in workerd and the CLI's in Node; `lamb --version` prints;
+typecheck clean. Deployed 6 Sep after Dimitri's first `wrangler login`:
+`pnpm deploy` put the cell on the Free plan at
+`https://lamb.dglazkov.workers.dev`, 4.4 MB uploaded, 46 ms startup, and
+`curl` got `lamb` back.
 
 **Closes no journey.** It makes every later phase possible to prove.
 
@@ -112,9 +112,9 @@ from it. `lamb --version` prints.
 
 **Findings:**
 
-- **2026-09-05 — Open: the deploy half of the proof is not run.** No
-  Cloudflare token in the environment. Everything else in the phase is
-  proved locally.
+- **2026-09-05 — The deploy half of the proof waited a day** for a
+  Cloudflare login; closed 6 Sep. `wrangler login` from the laptop was the
+  whole provisioning step; the Free plan carries SQLite Durable Objects.
 - **2026-09-05 — `@cloudflare/vitest-pool-workers` 0.22 needs vitest 4**
   and is a Vite plugin, `cloudflareTest(...)`, not `defineWorkersConfig`.
   Types come from its `./types` subpath.
@@ -472,6 +472,17 @@ hibernates with the alarm clear, checked from the dashboard.
 - **2026-09-06 — A one-shot client hanging up read as a server error.**
   workerd reports a vanished peer as a socket error; the listener now
   treats "connection lost" as a close.
+- **2026-09-06 — First turn on the deployed home:** `lamb new -- "…"` from
+  the laptop, the model ran `ls` in the cell and answered, over the
+  WebSocket, with the secrets set by `wrangler secret put` from
+  `.dev.vars`. Journey 1 step 1 on Cloudflare. Steps 4 and 5, overnight
+  and a second machine, are now walkable.
+- **2026-09-06 — Open: one-shot mode drops the first text delta.** Both
+  locally and deployed, `lamb … -- "prompt"` printed replies missing their
+  first token ("'m running…"). pi's prompt-mode client prints
+  `text_delta` frames; the first one likely arrives inside the hydrated
+  Transcript snapshot rather than as an event. Cosmetic for one-shot, not
+  seen in the TUI; unmeasured.
 
 ## Phase 5 — Git
 
