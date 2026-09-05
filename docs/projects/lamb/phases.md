@@ -42,10 +42,14 @@ take it (minted, built, grepped, resumed after hibernation, attached with
 only the id and the token, exported and opened by pi's Node backend), and
 journey 2 has walked in full there: a turn evicted by a real `wrangler
 deploy` mid-flight, resumed by the alarm, finished with pi's interruption
-note and no doubled effect. What remains is two real terminals side by
-side and the dashboard's hibernation check for journey 3, a GitHub token
-for journey 5, and a two-node celld fleet for journey 6. The code is not
-expected to change for any of it.
+note and no doubled effect. Journey 5 was reframed into 5a (a deployed
+cell reaching a real remote with the credential held at the home) and 5b
+(a Sheep GitHub App, a later leg); 5a's read-and-egress half walked
+against this repository on the deployed home. What remains is two real
+terminals side by side and the dashboard's hibernation check for journey
+3, a scoped token to this repo for journey 5a's push, and a two-node celld
+fleet for journey 6. The code is not expected to change for any of it,
+save the two git fixes that walking journey 5a forced.
 
 The order is dependency order and it is also risk order: phase 1 is the
 gate, because if pi's storage does not run over the cell's SQL nothing
@@ -543,13 +547,23 @@ steps run in workerd against a bare fixture served over smart HTTP by
 `git http-backend` from vitest's global setup: clone, a branch, the typo
 fixed with `sed -i`, status and diff, add, commit, push, log, `rebase -i`
 refused, and a fresh clone in a second cell showing the fix. The fake
-credential appears in no shell environment, file, or config. Missing: the
-push to a real GitHub repository, waiting on `LAMB_GITHUB_TOKEN`.
+credential appears in no shell environment, file, or config. On the
+deployed home, the read-and-egress half walked against this real public
+repository: the deployed cell cloned `github.com/dglazkov/sheep` over real
+HTTPS (full and `--depth 1`), branched, wrote a file, and printed
+git-shaped `status` and `diff`. Missing: the push and the
+credential-never-in-session assertion, which need an auth'd remote.
 
-**Closes journey 5.** The largest piece of new code in the leg, and the one
-to cut down first if the leg runs long: the journey needs `clone`,
-`status`, `add`, `commit`, and `push`, and the rest is what a model
-expects beside them.
+**Closes journey 5, now split into 5a and 5b.** On 5 Sep the journey was
+reframed with Dimitri: a personal-access token to GitHub was a sour spot,
+neither the product integration nor the cheapest mechanism test. **5a,
+this leg:** the network-and-secrets claim, that a deployed cell reaches a
+real remote over egress and the host injects a credential the model never
+sees. **5b, a later leg tied to Identity:** a Sheep GitHub App with
+short-lived, repo-scoped installation tokens and correct bot attribution,
+the real client. This leg walks 5a against this repository with a scoped,
+revocable throwaway credential used as a test rig, not a product answer.
+The git command remains the largest piece of new code.
 
 **Work:**
 
@@ -565,8 +579,9 @@ expects beside them.
 - A test in workerd against a fixture repository served from the test:
   clone, branch, edit, status, diff, commit, push, and the pushed tree
   compared object by object.
-- ⚑ provision: a GitHub token scoped to one scratch repository, as a
-  Worker secret on the home.
+- ⚑ provision: a fine-grained token scoped to one repository,
+  contents-only and short-lived, as a Worker secret on the home. A test
+  rig for 5a, revoked after; the Sheep GitHub App is 5b.
 
 **Proof:** Journey 5 walked against a real repository on GitHub: cloned,
 a typo fixed on a branch, pushed, the branch found on GitHub with the
@@ -604,8 +619,35 @@ shell, or any tool result, checked by grepping the exported session file.
   through isomorphic-git's `onAuth`, sent only to the remote. The shell's
   `env`, every workspace path, and `.git/config` were checked for the fake
   secret and it was in none.
-- **2026-09-05 — Open: the real GitHub push.** No `LAMB_GITHUB_TOKEN` in
-  the environment; the walk against a real repository waits.
+- **2026-09-05 — Journey 5 reframed into 5a and 5b.** The PAT-to-GitHub
+  walk served only the weakest claim (that the remote is literally GitHub)
+  and dragged a broad long-lived credential into the strongest (secrets
+  held at the home). 5a proves egress and host-side secret injection
+  against a controlled remote; 5b is the Sheep GitHub App, deferred with
+  Identity. See the Closes line above.
+- **2026-09-05 — Journey 5a's read-and-egress half walked on the deployed
+  home.** From a fresh cell on `lamb.dglazkov.workers.dev`, the model ran
+  `git clone https://github.com/dglazkov/sheep.git` (a full clone, ~176 KB
+  pack, within the 8 MiB cap) and `git clone --depth 1` of the same, then
+  `git checkout -b`, a file written into the tree, `git add`, and
+  git-shaped `status` and `diff --cached`. Real TLS egress from the isolate
+  to github.com, no credential needed for a public clone. The push half
+  waits on a scoped token.
+- **2026-09-05 — Two git bugs surfaced only against a real repository.**
+  `git clone --depth 1 <url>` took the depth value `1` as the url: the
+  positional filter dropped `--depth` but kept its value. And `git diff`
+  never emitted a `diff --git` header, with new files missing `/dev/null`
+  and a mode line, because the header regex matched `createPatch`'s
+  `Index:` line that `createTwoFilesPatch` never writes; the model papered
+  over it by fabricating a real-git diff on retry. Both fixed, covered by
+  workerd tests, deployed, and re-walked. The fixture never caught them
+  because its clone used no `--depth` and its diff only touched modified
+  files.
+- **2026-09-05 — Open: journey 5a's push and secret assertion.** Needs a
+  fine-grained, contents-only, short-lived token to this repository as a
+  Worker secret, then a push to a `lamb/*` branch and a grep of the
+  exported session for the credential. 5b, the GitHub App, is a later
+  leg.
 
 ## Phase 6 — celld
 

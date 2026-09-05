@@ -2,7 +2,7 @@
 status: partial
 since: 2026-09-05
 see: lamb
-note: "journeys, design and seven phases written 5 Sep 2026 and every phase built the same day; phase 0 (the scaffold) closed by the first deploy to Cloudflare; phase 1 closed the same day: pi's storage and repo conformance suites pass in full in workerd, and pi's own SQLite repo runs in the cell with two small patches; phase 2 closed the same day: pi's four tools run over a workspace table and just-bash in the isolate, journey 4's steps each held by a test in workerd; phase 3 part-done the same day: the cell drives pi's harness, the alarm brings it back, journey 2's eviction test holds at every transition in workerd, and journey 2 walked in full on the deployed home, a turn evicted by a real `wrangler deploy` mid-flight and resumed by the alarm; phase 4 part-done the same day: pi's own client attaches to a cell over a WebSocket through `lamb`, journey 3 holds in workerd, journey 1 walked against a local home with the faux provider and then on the deployed home with a real model as far as one laptop can take it, and an exported session opens in pi's Node backend; phase 5 part-done the same day: git in the shell over isomorphic-git, journey 5 held in workerd against a fixture served by git http-backend, the real GitHub push waiting on a token; phase 6 part-done on one local celld node, journeys 1 and 3 walked there through lamb and pi's client with state surviving a node restart; phase 7 closed, pi's full suite green with the four patches and a fresh pi from the registry running beside lamb. Everything that waits, waits on a person at a terminal: two terminals side by side, a second machine, a GitHub token, or a two-node fleet. The first leg of a longer walk — pi's harness in a Durable Object with a workspace in rows, an in-isolate shell, pi's own client attached over a WebSocket, and the same bundle on celld. Execution tiers, sub-agents as cells, and multi-user are named as later legs and not addressed here."
+note: "journeys, design and seven phases written 5 Sep 2026 and every phase built the same day; phase 0 (the scaffold) closed by the first deploy to Cloudflare; phase 1 closed the same day: pi's storage and repo conformance suites pass in full in workerd, and pi's own SQLite repo runs in the cell with two small patches; phase 2 closed the same day: pi's four tools run over a workspace table and just-bash in the isolate, journey 4's steps each held by a test in workerd; phase 3 part-done the same day: the cell drives pi's harness, the alarm brings it back, journey 2's eviction test holds at every transition in workerd, and journey 2 walked in full on the deployed home, a turn evicted by a real `wrangler deploy` mid-flight and resumed by the alarm; phase 4 part-done the same day: pi's own client attaches to a cell over a WebSocket through `lamb`, journey 3 holds in workerd, journey 1 walked against a local home with the faux provider and then on the deployed home with a real model as far as one laptop can take it, and an exported session opens in pi's Node backend; phase 5 part-done the same day: git in the shell over isomorphic-git, journey 5 held in workerd against a fixture served by git http-backend; journey 5 later reframed into 5a (a deployed cell reaching a real remote, the credential held at the home) and 5b (a Sheep GitHub App, a later leg), and 5a's read-and-egress half walked on the deployed home against this repository, forcing two git fixes, with the push waiting on a scoped token; phase 6 part-done on one local celld node, journeys 1 and 3 walked there through lamb and pi's client with state surviving a node restart; phase 7 closed, pi's full suite green with the four patches and a fresh pi from the registry running beside lamb. Everything that waits, waits on a person at a terminal: two terminals side by side, a second machine, a scoped token to this repo for journey 5a's push, or a two-node fleet. The first leg of a longer walk — pi's harness in a Durable Object with a workspace in rows, an in-isolate shell, pi's own client attached over a WebSocket, and the same bundle on celld. Execution tiers, sub-agents as cells, and multi-user are named as later legs and not addressed here."
 ---
 
 # Lamb — the journeys
@@ -208,17 +208,31 @@ pull request, with nothing on her laptop.
 5. Ask it to `git rebase -i`. The shell says `git: rebase is not available
    in this shell` and the agent says so.
 
+This journey is two claims, split after the first walk. **5a**, this leg,
+is the network-and-secrets claim: a deployed cell reaches a real remote
+over egress, and the credential that authorizes a write is held at the
+home and never seen by the model. It is walked against a real repository
+with a scoped, revocable credential used as a test rig. **5b**, a later
+leg tied to identity, is the real client: a Sheep GitHub App with
+short-lived, repo-scoped installation tokens and a commit authored as the
+app. A personal-access token is neither, and is not the shape the product
+takes. Steps 1 to 3 and 5 are 5a; step 4's author identity is 5b's.
+
 Acceptance criteria:
 
-- The token that authorized step 3 is a secret on the home. It appears in
-  no transcript entry, no tool result, no file in the workspace, and no
-  environment variable the shell exposes.
+- The credential that authorized step 3 is a secret on the home. It
+  appears in no transcript entry, no tool result, no file in the
+  workspace, and no environment variable the shell exposes. For 5a the
+  credential is scoped to this one repository and revoked after; the
+  unscoped, long-lived token is not used.
 - The clone in step 1 fits the per-file cap, or the tool result names the
   file that did not and the clone is refused whole. No partial clone.
 - `git status`, `git diff`, and `git log` print in git's shape closely
   enough that the agent reads them without comment.
 - The pushed commit is bit-identical to what isomorphic-git wrote, and a
   laptop `git fetch` of the branch shows the same tree.
+- Step 4's authored-as-the-app identity is 5b, not this leg. Here the
+  commit carries the home's configured author, which is not yet an app.
 
 ## Journey 6: The same lamb on a fleet you own
 
