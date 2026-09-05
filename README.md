@@ -14,8 +14,9 @@ The long version of the idea, and where the work stands, is in
 
 Lamb is the first leg: [pi](https://pi.dev), running in a cell. It is not a
 new agent. It is pi's own harness, session model, protocol, and terminal,
-with the machine underneath swapped for a Durable Object. Pi is a pinned
-dependency carrying a handful of small patches, never a fork.
+with the machine underneath swapped for a Durable Object. Pi comes in as a
+submodule tracking a branch that is upstream pi plus a few small commits,
+never a copy.
 
 What you get today:
 
@@ -50,9 +51,8 @@ Design, acceptance journeys, and the phase-by-phase record with findings:
 git clone https://github.com/dglazkov/sheep && cd sheep
 corepack enable
 
-# pi, pinned as a submodule, with lamb's patches applied and its packages built
+# pi, pinned as a submodule, with its packages built
 git submodule update --init
-pnpm patches:apply
 (cd vendor/pi && npm ci --ignore-scripts && for p in chord tui telemetry ai agent session-backends/sqlite-node protocol client server coding-agent; do (cd packages/$p && npm run build); done)
 
 pnpm install
@@ -156,7 +156,7 @@ pnpm deploy:celld -- --bucket s3://<bucket>     # a fleet
 ```
 packages/cell/    the Worker: the cell, the directory, the workspace, the shell, the wire
 packages/lamb/    the lamb command; runs pi's client
-vendor/pi/        pi, pinned; vendor/patches/ is what lamb changes in it
+vendor/pi/        pi, pinned to the sheep branch of dglazkov/pi; `git log upstream/main..sheep` is what lamb changes
 docs/projects/    the design, the journeys, the phases and their findings
 AGENTS.md         house rules for anyone, human or agent, working in this repo
 ```

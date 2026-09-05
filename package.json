@@ -7,7 +7,6 @@
     "build": "pnpm -r build",
     "test": "pnpm -r --workspace-concurrency=1 test",
     "deploy": "pnpm --filter @lamb/cell deploy",
-    "deploy:celld": "pnpm --filter @lamb/cell deploy:celld",
-    "patches:apply": "scripts/apply-patches.sh"
+    "deploy:celld": "pnpm --filter @lamb/cell deploy:celld"
   }
 }

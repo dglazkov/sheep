@@ -44,12 +44,11 @@ export class Home {
     return (await (await this.request(`/s/${encodeURIComponent(id)}/export`)).json()) as Record<string, Record<string, unknown>[]>;
   }
 
-  /** The address `pi client --connect` dials for one cell. */
-  socketUrl(id: string, serverId: string): string {
+  /** The WebSocket address of one cell, which the bridge dials on pi's behalf. */
+  socketUrl(id: string, _serverId: string): string {
     const url = new URL(`/s/${encodeURIComponent(id)}/ws`, this.url);
     url.protocol = url.protocol === "http:" ? "ws:" : "wss:";
     if (this.token !== undefined) url.searchParams.set("token", this.token);
-    url.searchParams.set("serverId", serverId);
     return url.toString();
   }
 }

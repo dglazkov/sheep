@@ -1,5 +1,6 @@
 [submodule "vendor/pi"]
 	path = vendor/pi
-	url = https://github.com/earendil-works/pi.git
+	url = https://github.com/dglazkov/pi.git
 	shallow = true
 	ignore = dirty
+	branch = sheep

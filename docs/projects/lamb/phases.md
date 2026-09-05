@@ -55,9 +55,11 @@ A test that passes in Node proves that Node works. Every phase's suite
 runs through `@cloudflare/vitest-pool-workers`, and every walk is against a
 deployed home, on a scratch account the user provisions once.
 
-**A second rule.** Pi is a dependency. A change the cell needs in pi is a
-patch in `vendor/pi`, named in the phase's Findings with its upstream
-status, and never a copy of a pi file into `packages/`.
+**A second rule.** Pi is a dependency. A change the cell needs in pi is one
+commit on the `sheep` branch of the `dglazkov/pi` fork that `vendor/pi`
+tracks, named in the phase's Findings, and never a copy of a pi file into
+`packages/`. (Until 6 Sep these were `.patch` files under `vendor/patches`;
+the findings below still call them patches 0001 to 0004.)
 
 **Deliberately open.** Postponed on purpose, so a later session decides
 instead of improvising mid-task:
@@ -657,6 +659,17 @@ neither knows about the other.
 - **2026-09-05 — The pin is still pi's `main`**, so what a bump costs is
   unmeasured. The patches are all additive or one-line, which is the
   reason to expect a small number.
+- **2026-09-06 — The patch set became a branch.** `vendor/pi` now tracks
+  `sheep` on `github.com/dglazkov/pi`: four commits, 163 lines, over
+  upstream `9841914`. Dimitri does not intend to upstream, so conflicts on
+  a bump are resolved with git rather than `git apply`. `/pi-bump` is the
+  procedure.
+- **2026-09-06 — The client patch is gone.** `lamb` bridges a local Unix
+  socket to the cell's WebSocket and runs an unmodified `pi client
+  --connect unix://…`. Nothing on the branch touches pi's experimental
+  client code any more; what remains is the SQLite backend, one export in
+  agent-core, one in coding-agent's package.json, and pi-server's types
+  and timer guard.
 
 ---
 

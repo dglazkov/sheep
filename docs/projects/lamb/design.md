@@ -310,13 +310,18 @@ and error map to their handlers. That is the whole transport. The Radius
 relay's transport in `pi-coding-agent` already does the same over undici's
 WebSocket, minus the relay's header, and is the reference.
 
-**The terminal.** `lamb` runs `pi client` from the pinned checkout with a
-WebSocket route beside its Unix and Radius routes: patch 0004 adds a
-transport to `pi-client` and a `--connect wss://…?serverId=<uuid>` address
-to the client, and `lamb` only chooses the route. The server's logical id
-rides in the URL because pi's client verifies it at the handshake, and
-`GET /home` answers it. With a prompt after `--` the reply streams and
-lamb exits, as pi does when stdout is not a terminal.
+**The terminal.** `lamb` runs an unmodified `pi client` against a local
+Unix socket that it bridges to the cell's WebSocket. pi's Unix transport
+is a byte stream of length-prefixed frames and the cell's listener takes
+one frame per message, so the bridge re-frames in one direction and
+passes frames through in the other, about a hundred lines in
+`packages/lamb/src/bridge.ts`. The socket is named `<serverId>.sock`
+because that is how pi's client learns the server id it verifies at the
+handshake, and `GET /home` answers the id. This replaced a patch that
+taught pi's client a WebSocket route (5 Sep) so that no commit on the
+`sheep` branch touches pi's experimental client code. With a prompt after
+`--` the reply streams and lamb exits, as pi does when stdout is not a
+terminal.
 
 ```
 lamb new [--name <name>] [-- <prompt>]   # mint a session at the Directory, attach, open pi's TUI
@@ -386,13 +391,16 @@ packages/
              CellFs, the shell, git, the WebSocket listener; wrangler.jsonc; vitest in workerd
   lamb/      the terminal: pi's experimental client TUI plus the WebSocket transport
              and the lamb commands
-vendor/pi/   a pinned checkout of pi at a named commit, carrying this project's patches
+vendor/pi/   pi as a submodule on the `sheep` branch of a fork: upstream plus a few commits
 ```
 
-Pi is a dependency, never a fork. Every change the cell needs in pi is a
-patch in `vendor/pi` with an upstream issue or PR named beside it in
-phases.md, and the list is expected to be short: the `--server` route, a
-`SqliteSessionRepo` over an opened database, migrations as strings.
+Pi is a dependency, never a copy. Every change the cell needs in pi is one
+commit on the `sheep` branch of `github.com/dglazkov/pi`, named in
+phases.md; `git log upstream/main..sheep` in the submodule is the whole
+difference, and rebasing it onto upstream is how pi is bumped. The list is
+expected to stay short and confined to slow-moving files. It started as
+`.patch` files applied on checkout (5 Sep) and became a branch on 6 Sep so
+that conflicts on a bump are resolved with git rather than by hand.
 
 ## Considered and left out
 

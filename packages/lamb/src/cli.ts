@@ -109,7 +109,7 @@ export async function main(argv: readonly string[]): Promise<number> {
 
 async function attach(home: Home, sessionId: string, prompt: string | undefined): Promise<number> {
   const serverId = await home.serverId();
-  return runPiClient({ socketUrl: home.socketUrl(sessionId, serverId), sessionId, ...(prompt === undefined ? {} : { prompt }) });
+  return runPiClient({ socketUrl: home.socketUrl(sessionId, serverId), serverId, sessionId, ...(prompt === undefined ? {} : { prompt }) });
 }
 
 function fail(message: string): number {

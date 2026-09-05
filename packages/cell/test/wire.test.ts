@@ -1,7 +1,6 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/pi-agent-core";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { Client } from "@earendil-works/pi-client";
-import { createWebSocketTransportFactory } from "@earendil-works/pi-client/websocket";
 import { AgentController } from "@earendil-works/pi-coding-agent/experimental/services/agent-controller";
 import { createServerServiceSource, createSessionServiceSource } from "@earendil-works/pi-coding-agent/experimental/services/connection";
 import { Models } from "@earendil-works/pi-coding-agent/experimental/services/models";
@@ -11,6 +10,7 @@ import { Transcript } from "@earendil-works/pi-coding-agent/experimental/service
 import { SELF } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { setFauxScript } from "../src/models.ts";
+import { adoptedSocketTransport } from "./ws-transport.ts";
 
 const headers = { authorization: "Bearer test-token", "content-type": "application/json" };
 
@@ -24,10 +24,7 @@ async function attachTerminal(sessionId: string, serverId: string) {
   expect(response.status).toBe(101);
   const socket = response.webSocket!;
   socket.accept();
-  const client = await Client.connect({
-    serverId,
-    transportFactory: createWebSocketTransportFactory({ url: "unused", socket: socket as never }),
-  });
+  const client = await Client.connect({ serverId, transportFactory: adoptedSocketTransport(socket) });
   const server = createServerServiceSource(client);
   const session = createSessionServiceSource(client);
   const serverServices = server.open({ services: [SessionDirectory, SessionManagement, PresentationPlugins], assertAccess() {}, onError() {} });

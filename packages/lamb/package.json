@@ -13,11 +13,13 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.1",
     "typescript": "^5.9.0",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.0",
+    "ws": "^8.21.0"
   },
   "dependencies": {
-    "@earendil-works/pi-session-backend-sqlite-node": "link:../../vendor/pi/packages/session-backends/sqlite-node",
-    "@earendil-works/pi-coding-agent": "link:../../vendor/pi/packages/coding-agent"
+    "@earendil-works/pi-coding-agent": "link:../../vendor/pi/packages/coding-agent",
+    "@earendil-works/pi-session-backend-sqlite-node": "link:../../vendor/pi/packages/session-backends/sqlite-node"
   }
 }

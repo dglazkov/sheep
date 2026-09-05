@@ -8,16 +8,19 @@ phase is.
 - **Proofs run in workerd, never in Node.** `packages/cell` tests go
   through `@cloudflare/vitest-pool-workers`. A test that passes in Node
   proves that Node works.
-- **Pi is a dependency, never a fork.** `vendor/pi` is a pinned submodule;
-  a change lamb needs in pi is a `.patch` in `vendor/patches`, named in
-  phases.md with its upstream status. Never copy a pi file into `packages/`.
+- **Pi is a dependency, never a copy.** `vendor/pi` is a submodule tracking
+  the `sheep` branch of `github.com/dglazkov/pi`, which is upstream pi plus
+  a few small commits; `git log upstream/main..sheep` in it is the whole
+  difference. A change lamb needs in pi is one commit on that branch, named
+  in phases.md. Never copy a pi file into `packages/`. `/pi-bump` checks,
+  rebases, and verifies.
 - **Nothing in the cloud without a token the user provided.** Steps marked
   ⚑ provision in phases.md are asked out loud first.
 - **Findings are one dated line, one claim, about forty words.** The
   argument goes in the commit message.
 
 ```
-git submodule update --init && pnpm patches:apply
+git submodule update --init
 (cd vendor/pi && npm ci --ignore-scripts && for p in chord tui telemetry ai agent session-backends/sqlite-node protocol client server coding-agent; do (cd packages/$p && npm run build); done)
 pnpm install
 pnpm test          # every package's suite; the cell's runs in workerd
