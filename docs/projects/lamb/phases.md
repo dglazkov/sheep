@@ -38,12 +38,14 @@ WebSockets, journey 5 against a git server, journeys 1 and 3 through
 `lamb` and pi's real client against both `wrangler dev` and a single
 `celld dev` node, and an export pi's Node backend opens. On the deployed
 home with a real model, journey 1 has walked as far as one laptop can
-take it: minted, built, grepped, resumed after hours hibernated, attached
-with only the id and the token, exported and opened by pi's Node backend.
-What remains is a deploy run by hand mid-turn for journey 2, two real
-terminals side by side and the dashboard's hibernation check for journey
-3, a GitHub token for journey 5, and a two-node celld fleet for journey 6.
-The code is not expected to change for any of it.
+take it (minted, built, grepped, resumed after hibernation, attached with
+only the id and the token, exported and opened by pi's Node backend), and
+journey 2 has walked in full there: a turn evicted by a real `wrangler
+deploy` mid-flight, resumed by the alarm, finished with pi's interruption
+note and no doubled effect. What remains is two real terminals side by
+side and the dashboard's hibernation check for journey 3, a GitHub token
+for journey 5, and a two-node celld fleet for journey 6. The code is not
+expected to change for any of it.
 
 The order is dependency order and it is also risk order: phase 1 is the
 gate, because if pi's storage does not run over the cell's SQL nothing
@@ -292,12 +294,14 @@ test kills a scripted two-tool turn at each of its five transitions and
 the workspace, the effects, and the settled transcript come out as journey
 2 says, with the alarm doing the waking. The HTTP walk ran by hand against
 `wrangler dev` with the faux provider; journey 1's turns ran on the
-deployed home with a real model through lamb phase 4's wire. Missing: a
-real mid-turn redeploy on the deployed home, which is `pnpm deploy` run by
-hand while a turn is streaming.
+deployed home with a real model through lamb phase 4's wire, and journey 2
+walked in full on the deployed home: a turn evicted by a real `wrangler
+deploy` mid-flight, resumed by the alarm, and finished with pi's
+interruption note and no doubled effect.
 
-**Closes journey 2, and journey 1 through the HTTP route.** The terminal
-half of journey 1 waits for phase 4.
+**Closes journey 2, and journey 1 through the HTTP route.** Journey 2 is
+now walked on the deployed home, not only in workerd. The terminal half of
+journey 1 is phase 4.
 
 **Work:**
 
@@ -379,10 +383,16 @@ entries.
 - **2026-09-05 — The deployed home ran real-model turns** for journey 1
   through lamb phase 4's wire, so the harness, the alarm, and the storage
   hold on Cloudflare with Anthropic behind them.
-- **2026-09-05 — Open: the mid-turn redeploy.** A nine-tool turn was
-  started on the deployed cell and `pnpm deploy` on top of it was refused
-  by the session's permission gate; the turn finished untouched in twenty
-  seconds. Someone at a terminal runs the deploy while a turn streams.
+- **2026-09-05 — Journey 2 walked on the deployed home.** A thirteen-tool
+  rename turn was started on the cell and `wrangler deploy` of the same
+  code run on top of it; the Worker tail showed the eviction as
+  Cloudflare's "This script has been upgraded" on the cell's live
+  WebSocket, the client dropped, and with nobody typing the turn came back
+  and finished. The export carries pi's own interruption note
+  ("Assistant request was interrupted…") at the cut, the resumed turn
+  after it, each `edit` once per rename round, and a workspace whose files
+  match the final rename. A mid-flight `bash` was re-run per pi's
+  tool-durability rules; no durable `edit` was. Walked twice.
 
 ## Phase 4 — The wire, and the terminal
 

@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm deploy)",
+      "Bash(pnpm deploy:*)",
+      "Bash(pnpm exec wrangler deploy:*)",
+      "Bash(pnpm exec wrangler secret list:*)"
+    ]
+  }
+}
