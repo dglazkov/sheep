@@ -1,9 +1,10 @@
 # House rules
 
-This repo is sheep; its first leg is [project lamb](docs/projects/lamb/design.md):
-pi, running in a cell. Setup and usage are in [README.md](README.md). Read
-`docs/projects/lamb/phases.md` for where the work stands and what the next
-phase is.
+This repo is sheep. Its first leg is [project lamb](docs/projects/lamb/design.md):
+pi, running in a cell. Its second is [project pen](docs/projects/pen/design.md):
+programs, running for a cell. Setup and usage are in [README.md](README.md).
+Read a project's `phases.md` for where its work stands and what the next
+phase is; [docs/projects/README.md](docs/projects/README.md) lists them.
 
 - **Proofs run in workerd, never in Node.** `packages/cell` tests go
   through `@cloudflare/vitest-pool-workers`. A test that passes in Node
@@ -28,6 +29,6 @@ cp packages/cell/.dev.vars.example packages/cell/.dev.vars   # then fill in LAMB
 pnpm --filter @lamb/cell dev        # a local home on :8787 (wrangler), reading .dev.vars
 pnpm --filter @lamb/cell dev:celld  # the same on a local celld node on :9876 (curl -fsSL https://celld.dev/install.sh | sh)
 LAMB_HOME=http://127.0.0.1:8787 LAMB_TOKEN=... node packages/lamb/bin/lamb.js new -- "hello"
-pnpm deploy        # wrangler deploy, needs CLOUDFLARE_API_TOKEN
-pnpm deploy:celld  # celld deploy against a fleet
+pnpm run deploy        # wrangler deploy (bare `pnpm deploy` is pnpm's own command and shadows the script)
+pnpm run deploy:celld  # celld deploy against a fleet
 ```
