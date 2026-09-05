@@ -1,0 +1,162 @@
+# sheep
+
+Coding agents whose sessions live in cells rather than on machines. A cell
+is a Durable Object: one small SQLite database with an address, on
+Cloudflare or on a [celld](https://celld.dev) fleet you run yourself. The
+transcript, the workspace, and the loop that drives the agent are rows in
+it. A terminal attaches from anywhere, the cell resumes on its own after
+being evicted mid-turn, and an idle session costs nothing.
+
+The long version of the idea, and where the work stands, is in
+[`docs/projects/`](docs/projects/README.md).
+
+## lamb
+
+Lamb is the first leg: [pi](https://pi.dev), running in a cell. It is not a
+new agent. It is pi's own harness, session model, protocol, and terminal,
+with the machine underneath swapped for a Durable Object. Pi is a pinned
+dependency carrying a handful of small patches, never a fork.
+
+What you get today:
+
+- `lamb new` mints a session at a **home** (a deployment) and opens pi's
+  terminal on it. `lamb attach <id>` from any other machine opens the same
+  session; two terminals can share one.
+- The agent has pi's four tools. `read`, `write`, and `edit` work on a
+  workspace stored in the cell. `bash` runs a shell interpreter inside the
+  cell with the usual text tools and a `git` that clones, commits, and
+  pushes over HTTPS. There are no interpreters or package managers yet; the
+  shell says so plainly when asked.
+- A turn survives the cell being evicted. Pi's recovery settles the
+  interrupted step honestly and continues.
+- `lamb export <id>` writes a pi SQLite session file that pi's own Node
+  backend opens.
+
+Design, acceptance journeys, and the phase-by-phase record with findings:
+[`docs/projects/lamb/`](docs/projects/lamb/design.md).
+
+### Prerequisites
+
+- Node 22 or newer, with corepack (ships with Node). The repo pins its pnpm
+  version, so `corepack enable` is the only install.
+- git.
+- For a deployed home, a free [Cloudflare](https://dash.cloudflare.com/sign-up)
+  account. No domain needed; the Free plan includes SQLite Durable Objects.
+- An Anthropic API key.
+
+### Set up the repo
+
+```sh
+git clone https://github.com/dglazkov/sheep && cd sheep
+corepack enable
+
+# pi, pinned as a submodule, with lamb's patches applied and its packages built
+git submodule update --init
+pnpm patches:apply
+(cd vendor/pi && npm ci --ignore-scripts && for p in chord tui telemetry ai agent session-backends/sqlite-node protocol client server coding-agent; do (cd packages/$p && npm run build); done)
+
+pnpm install
+pnpm test        # the cell's tests run inside workerd, the Workers runtime
+```
+
+### Secrets
+
+Copy the example and fill in two values:
+
+```sh
+cp packages/cell/.dev.vars.example packages/cell/.dev.vars
+```
+
+- `LAMB_TOKEN`: the bearer token every request to your home must carry. Any
+  long random string (`openssl rand -hex 24`).
+- `LAMB_ANTHROPIC_API_KEY`: the key the cell uses to call the model.
+
+`.dev.vars` is gitignored and is read only by the local dev servers. A
+deployed home gets the same names through `wrangler secret put`, below.
+
+### Run a home locally
+
+In one terminal:
+
+```sh
+pnpm --filter @lamb/cell dev            # a local home on http://127.0.0.1:8787
+```
+
+In another, tell `lamb` where the home is and talk to it:
+
+```sh
+export LAMB_HOME=http://127.0.0.1:8787
+export LAMB_TOKEN=$(grep ^LAMB_TOKEN= packages/cell/.dev.vars | cut -d= -f2)
+
+node packages/lamb/bin/lamb.js new -- "hello, what can you see in the workspace?"   # one reply, then exit
+node packages/lamb/bin/lamb.js new                                                   # pi's interactive terminal
+```
+
+### Deploy a home on Cloudflare
+
+Once, log Wrangler in; it opens a browser tab to authorize:
+
+```sh
+cd packages/cell
+pnpm exec wrangler login
+```
+
+Deploy, and set the two secrets from your `.dev.vars`:
+
+```sh
+pnpm deploy                                   # from the repo root; prints https://lamb.<you>.workers.dev
+cd packages/cell
+grep ^LAMB_TOKEN= .dev.vars | cut -d= -f2 | pnpm exec wrangler secret put LAMB_TOKEN
+grep ^LAMB_ANTHROPIC_API_KEY= .dev.vars | cut -d= -f2 | pnpm exec wrangler secret put LAMB_ANTHROPIC_API_KEY
+```
+
+The first deploy asks you to pick a `workers.dev` subdomain. Redeploying
+is `pnpm deploy` again; sessions and secrets survive it. `pnpm exec wrangler
+delete` removes everything.
+
+Point `lamb` at the home so it needs no environment variables:
+
+```json
+// ~/.lamb/config
+{ "home": "https://lamb.<you>.workers.dev", "token": "<your LAMB_TOKEN>" }
+```
+
+### Use it
+
+```sh
+lamb new [--name <name>] [-- <prompt>]   # a new session, pi's terminal attached
+lamb -c [-- <prompt>]                    # attach to the newest session
+lamb attach <id> [-- <prompt>]           # attach to a session; works from any machine with the config
+lamb ls                                  # sessions at the home
+lamb export <id> [file]                  # a pi SQLite session file
+lamb --home <url> ...                    # a different home for one command
+```
+
+`lamb` here means `node packages/lamb/bin/lamb.js`; put an alias in your
+shell if you like. With a prompt after `--` the reply streams and the
+command exits; without one you get pi's full terminal.
+
+To let the agent push: make a fine-grained GitHub token scoped to one
+repository and set it as `LAMB_GITHUB_TOKEN`, in `.dev.vars` locally or with
+`wrangler secret put` on a deployed home.
+
+### The same cell on celld
+
+The same Wrangler project runs on a celld node, which keeps every cell's
+state in a bucket you own.
+
+```sh
+curl -fsSL https://celld.dev/install.sh | sh     # installs to ~/.local/bin
+pnpm --filter @lamb/cell dev:celld              # one local node on http://127.0.0.1:9876, reading .dev.vars
+pnpm deploy:celld -- --bucket s3://<bucket>     # a fleet
+```
+
+### Layout
+
+```
+packages/cell/    the Worker: the cell, the directory, the workspace, the shell, the wire
+packages/lamb/    the lamb command; runs pi's client
+vendor/pi/        pi, pinned; vendor/patches/ is what lamb changes in it
+docs/projects/    the design, the journeys, the phases and their findings
+AGENTS.md         house rules for anyone, human or agent, working in this repo
+```

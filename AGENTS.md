@@ -1,8 +1,9 @@
 # House rules
 
-This repo is [project lamb](docs/projects/lamb/design.md): pi, running in a
-cell. Read `docs/projects/lamb/phases.md` for where the work stands and
-what the next phase is.
+This repo is sheep; its first leg is [project lamb](docs/projects/lamb/design.md):
+pi, running in a cell. Setup and usage are in [README.md](README.md). Read
+`docs/projects/lamb/phases.md` for where the work stands and what the next
+phase is.
 
 - **Proofs run in workerd, never in Node.** `packages/cell` tests go
   through `@cloudflare/vitest-pool-workers`. A test that passes in Node
