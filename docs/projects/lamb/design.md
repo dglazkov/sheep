@@ -144,6 +144,13 @@ protocol's `serverId` is the deployment's logical id, one per Worker, and
 `lamb new` is an HTTP call to the Directory that mints a session id before
 the socket opens.
 
+**What phase 3 found** (5 Sep): the cell has no database file to hand
+out, so `lamb export` is `GET /export`, pi's seven tables for the session
+as JSON, rebuilt into a SQLite file by the terminal with `node:sqlite`.
+And the test seam for eviction is a kill point that hangs the old
+incarnation forever, because cancelling its context only makes it run
+beside the new one.
+
 **Lifecycle.** The cell is constructed on first request and on every wake.
 Construction opens the storage, runs `AgentHarness.create`, and resumes
 every operation the list of open ones names, exactly as the mini worker

@@ -5,7 +5,16 @@
   "compatibility_date": "2026-08-22",
   "compatibility_flags": ["nodejs_compat"],
   "durable_objects": {
-    "bindings": [{ "name": "SESSION_CELL", "class_name": "SessionCell" }]
+    "bindings": [
+      { "name": "SESSION_CELL", "class_name": "SessionCell" },
+      { "name": "DIRECTORY", "class_name": "Directory" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SessionCell"] }]
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["SessionCell"] },
+    { "tag": "v2", "new_sqlite_classes": ["Directory"] }
+  ],
+  "vars": {
+    "LAMB_MODEL": "claude-sonnet-5"
+  }
 }

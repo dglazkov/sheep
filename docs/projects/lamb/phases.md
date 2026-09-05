@@ -30,10 +30,12 @@ roster of them.
 
 ---
 
-**Where we are: PHASE 2 CLOSED 5 Sep 2026; phases 1 closed, phase 0
-PART-DONE** on its deploy half, waiting on a Cloudflare token. The gate
-held in phase 1, and phase 2 put pi's four tools over a workspace table and
-an in-isolate shell, all proved in workerd. The next thing to do is phase 3.
+**Where we are: PHASE 3 PART-DONE 5 Sep 2026; phases 1 and 2 closed, phase
+0 PART-DONE.** The cell drives pi's harness on its own event loop, the
+alarm brings it back after eviction, and journey 2's eviction test holds
+at every transition in workerd; the walks that need a deployed home and a
+real model wait, with phase 0's deploy, on a Cloudflare token and an
+Anthropic key. The next thing to do is phase 4.
 
 The order is dependency order and it is also risk order: phase 1 is the
 gate, because if pi's storage does not run over the cell's SQL nothing
@@ -271,7 +273,17 @@ test route and reads the tool results.
 
 ## Phase 3 — The cell
 
-**Status: NOT STARTED.**
+**Status: PART-DONE** 5 Sep 2026. Built and proved locally: `SessionCell`
+boots pi's harness over the cell's storage, accepts and drives a prompt
+detached, resumes whatever a previous incarnation left open, and arms the
+alarm only while an operation is open; `Directory` mints and lists
+sessions; the Worker guards everything with a bearer token. The eviction
+test kills a scripted two-tool turn at each of its five transitions and
+the workspace, the effects, and the settled transcript come out as journey
+2 says, with the alarm doing the waking. The HTTP walk ran by hand against
+`wrangler dev` with the faux provider. Missing: the same walk on the
+scratch home with a real model and a real mid-turn redeploy, waiting on
+`CLOUDFLARE_API_TOKEN` and `LAMB_ANTHROPIC_API_KEY`.
 
 **Closes journey 2, and journey 1 through the HTTP route.** The terminal
 half of journey 1 waits for phase 4.
@@ -316,7 +328,46 @@ entries.
 
 **Findings:**
 
-- None yet.
+- **2026-09-05 — Journey 2 holds at every transition, on pi's recovery
+  alone.** Killed mid provider call, pi settles the orphaned request as an
+  interrupted assistant message and continues the run without a second
+  call. Killed after a tool's effect and before its outcome was durable,
+  pi writes the tool result as interrupted and never reruns it; the
+  transcript has the same shape as an unkilled turn. Effects were exactly
+  one write and one edit in all six runs, and the file was identical.
+- **2026-09-05 — The alarm is what wakes the cell.** `runDurableObjectAlarm`
+  returned true after every kill, and the resumed drive ran from `boot`,
+  not from a client's touch.
+- **2026-09-05 — Cancelling a drive's context is not an eviction.** The
+  first simulation cancelled the old driver's context and got identical
+  transcripts at every kill point, because the old driver kept running
+  beside the new one. A faithful eviction is an incarnation that never
+  makes progress again: the kill point now hangs forever.
+- **2026-09-05 — A cell has no database file to export.** The platform
+  exposes rows, not the file. `GET /export` returns pi's seven tables for
+  the session as JSON; `lamb export` in phase 4 rebuilds a SQLite file from
+  them with `node:sqlite`, which pi's Node backend then opens.
+- **2026-09-05 — RPC stubs choke on pi's types.** Calling a cell method that
+  returns a `LaneSnapshot` through the Durable Object RPC stub sent
+  TypeScript's instantiation depth over the edge; the router reaches the
+  cell by `fetch` and the Directory by RPC.
+- **2026-09-05 — The bundle is 3.6 MB raw, 746 KB gzipped**, with
+  pi-agent-core, pi-ai and its provider data, chord, the SQLite backend,
+  and just-bash inside. Well under the 10 MB script limit.
+- **2026-09-05 — Models are pi-ai's `createModels` with an auth context
+  answering from Worker secrets**; `pi-coding-agent`'s `ModelRuntime` and
+  its `~/.pi` stay in the terminal. Default model `claude-sonnet-5`, which
+  pi's Anthropic data carries.
+- **2026-09-05 — The faux provider consumes one queued step per call.** A
+  factory that re-queues itself answers every call from a script that
+  reads the conversation, which is what lets one script survive a reboot
+  mid-turn.
+- **2026-09-05 — `wrangler dev` walk:** door refused without the token,
+  session minted, prompt accepted, turn settled, transcript and list read,
+  on the bundled Worker with both Durable Object migrations applied.
+- **2026-09-05 — Open: the scratch-home walk with a real model** and the
+  mid-turn redeploy are not run. No Cloudflare token and no Anthropic key
+  in the environment.
 
 ## Phase 4 — The wire, and the terminal
 

@@ -1,29 +1,51 @@
-import { DurableObject } from "cloudflare:workers";
-
 /**
- * One session's home. Phase 0 gives it a name and a database and nothing
- * else; the harness, workspace, shell, and wire arrive in later phases.
+ * The Worker: the door and the router. A bearer token per home guards
+ * everything; `/sessions` is the Directory's; `/s/<id>/...` is that cell's.
  */
-export class SessionCell extends DurableObject<Env> {
-  /** Reads one row from the cell's SQLite. The scaffold's proof of life. */
-  ping(): { one: number; name: string } {
-    const row = this.ctx.storage.sql.exec<{ one: number }>("SELECT 1 AS one").one();
-    return { one: row.one, name: this.ctx.id.name ?? "" };
-  }
+export { SessionCell } from "./cell.ts";
+export { Directory } from "./directory.ts";
 
-  override async fetch(_request: Request): Promise<Response> {
-    return Response.json(this.ping());
+function unauthorized(reason: string): Response {
+  return new Response(reason, { status: 401 });
+}
+
+function admitted(request: Request, env: Env): Response | undefined {
+  if (env.LAMB_TOKEN === undefined || env.LAMB_TOKEN === "") {
+    if (env.LAMB_ALLOW_ANONYMOUS === "1") return undefined;
+    return new Response("this home has no LAMB_TOKEN; set one, or LAMB_ALLOW_ANONYMOUS=1 for local use", { status: 503 });
   }
+  const header = request.headers.get("authorization") ?? "";
+  const token = header.startsWith("Bearer ") ? header.slice("Bearer ".length) : new URL(request.url).searchParams.get("token");
+  if (token !== env.LAMB_TOKEN) return unauthorized("bad or missing token");
+  return undefined;
 }
 
 export default {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url);
-    const match = /^\/s\/([^/]+)/.exec(url.pathname);
-    if (match) {
-      const stub = env.SESSION_CELL.getByName(decodeURIComponent(match[1]!));
-      return stub.fetch(request);
+    if (url.pathname === "/" && request.method === "GET") return new Response("lamb\n");
+    const refused = admitted(request, env);
+    if (refused) return refused;
+
+    const directory = env.DIRECTORY.getByName("home");
+    if (url.pathname === "/sessions" && request.method === "POST") {
+      const body = ((await request.json().catch(() => ({}))) ?? {}) as { name?: unknown };
+      const name = typeof body.name === "string" && body.name.length > 0 ? body.name : null;
+      const summary = await directory.create(name);
+      // Boot the cell now so the session exists even if the terminal dies before rendering.
+      await env.SESSION_CELL.getByName(summary.id).fetch(new Request("https://cell/"));
+      return Response.json(summary, { status: 201 });
     }
-    return new Response("lamb\n", { status: 200 });
+    if (url.pathname === "/sessions" && request.method === "GET") return Response.json(await directory.list());
+
+    const match = /^\/s\/([^/]+)(\/.*)?$/.exec(url.pathname);
+    if (match) {
+      const id = decodeURIComponent(match[1]!);
+      if ((await directory.get(id)) === undefined) return new Response("unknown session", { status: 404 });
+      const inner = new URL(request.url);
+      inner.pathname = match[2] ?? "/";
+      return env.SESSION_CELL.getByName(id).fetch(new Request(inner, request));
+    }
+    return new Response("not found", { status: 404 });
   },
 } satisfies ExportedHandler<Env>;
