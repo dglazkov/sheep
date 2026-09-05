@@ -104,14 +104,14 @@ pnpm exec wrangler login
 Deploy, and set the two secrets from your `.dev.vars`:
 
 ```sh
-pnpm deploy                                   # from the repo root; prints https://lamb.<you>.workers.dev
+pnpm run deploy                               # from the repo root; prints https://lamb.<you>.workers.dev
 cd packages/cell
 grep ^LAMB_TOKEN= .dev.vars | cut -d= -f2 | pnpm exec wrangler secret put LAMB_TOKEN
 grep ^LAMB_ANTHROPIC_API_KEY= .dev.vars | cut -d= -f2 | pnpm exec wrangler secret put LAMB_ANTHROPIC_API_KEY
 ```
 
 The first deploy asks you to pick a `workers.dev` subdomain. Redeploying
-is `pnpm deploy` again; sessions and secrets survive it. `pnpm exec wrangler
+is `pnpm run deploy` again; sessions and secrets survive it. (Bare `pnpm deploy` is pnpm's own workspace-deploy command and shadows the script.) `pnpm exec wrangler
 delete` removes everything.
 
 Point `lamb` at the home so it needs no environment variables:

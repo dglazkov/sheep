@@ -138,6 +138,12 @@ from it. `lamb --version` prints.
 - **2026-09-05 — pi is pinned at `9841914`** (5 Sep, "keep list selection
   unchanged on mouse hover"), as a shallow submodule. The patch set is
   empty.
+- **2026-09-05 — `pnpm deploy` is pnpm's own command, not the script.**
+  pnpm 10 ships a built-in workspace `deploy` that shadows a script of the
+  same name, and the root script's inner `pnpm --filter @lamb/cell deploy`
+  hit the same built-in (`ERR_PNPM_NOTHING_TO_DEPLOY`). The scripts now
+  say `run deploy`, the README says `pnpm run deploy`, and extra flags
+  forward without `--`: `pnpm run deploy --dry-run` reaches wrangler.
 
 ## Phase 1 — pi's storage over the cell's SQL
 
