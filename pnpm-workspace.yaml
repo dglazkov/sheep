@@ -3,3 +3,5 @@ packages:
 onlyBuiltDependencies:
   - workerd
   - esbuild
+patchedDependencies:
+  safe-buffer@5.2.1: patches/safe-buffer@5.2.1.patch

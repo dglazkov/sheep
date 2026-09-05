@@ -263,3 +263,17 @@ index ad61d7c..01a2d86 100644
  export * from "./listener.ts";
  export * from "./server.ts";
  export * from "./types.ts";
+diff --git a/packages/server/src/server.ts b/packages/server/src/server.ts
+index 121aeaa..188826d 100644
+--- a/packages/server/src/server.ts
++++ b/packages/server/src/server.ts
+@@ -150,7 +150,8 @@ export class Server<TMetadata extends SessionMetadata = SessionMetadata> {
+ 				message: "Handshake timeout",
+ 			});
+ 		}, this.handshakeTimeoutMs);
+-		handshakeTimeout.unref();
++		// Node timers unref; Workers-shaped runtimes return a number.
++		(handshakeTimeout as { unref?: () => void }).unref?.();
+ 		state = {
+ 			connection,
+ 			decoder: new ClientMessageDecoder({ maxFrameLength: this.maxFrameLength }),

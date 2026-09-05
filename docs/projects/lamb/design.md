@@ -365,12 +365,16 @@ blobs are not cheaply readable through isomorphic-git's public API.
 ## celld
 
 The same Wrangler project, deployed with `celld deploy` to a fleet whose
-bucket the operator owns. celld advertises the Durable Object model in
-full: SQLite per cell, alarms, hibernating WebSockets. What the cell uses
-is exactly that and `fetch`. What celld lacks, the Worker Loader and
-Containers, this leg does not touch. Phase 6 measures the claim rather than
-trusting it, and its findings are the first evidence for whether the
-marathon's portability story is real. The one deliberate difference is
+bucket the operator owns, or run on one node with `celld dev`. celld
+advertises the Durable Object model in full: SQLite per cell, alarms,
+hibernating WebSockets. What the cell uses is exactly that and `fetch`.
+What celld lacks, the Worker Loader and Containers, this leg does not
+touch. **What phase 6 found** (5 Sep): the same bundle ran on a local
+node unchanged. Two things around it differed: celld bundles with its own
+esbuild and refuses Wrangler's `alias`, so a CommonJS `require("buffer")`
+deep in isomorphic-git's dependencies is handled by a pnpm patch rather
+than a bundler alias; and celld's `setTimeout` returns a number, which
+one guarded line in pi-server absorbs. The one deliberate difference is
 cost shape: a hibernated session on celld costs bucket storage, which is
 the shape a session that is mostly idle wants.
 

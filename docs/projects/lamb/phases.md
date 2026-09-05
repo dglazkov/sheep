@@ -30,11 +30,16 @@ roster of them.
 
 ---
 
-**Where we are: PHASE 5 PART-DONE 5 Sep 2026; phases 1 and 2 closed,
-phases 0, 3, and 4 PART-DONE.** `git` runs in the shell over isomorphic-git
-and journey 5 holds in workerd against a fixture served by `git
-http-backend`; every walk that needs a deployed home, a real model, or a
-real GitHub token waits on secrets. The next thing to do is phase 6.
+**Where we are: ALL SEVEN PHASES BUILT 5 Sep 2026; phases 1, 2, and 7
+CLOSED, phases 0, 3, 4, 5, and 6 PART-DONE.** Every proof that can run
+locally has run: pi's conformance suites, journey 4 in workerd, journey 2's
+eviction test at every transition, journey 3 over pi's protocol on
+WebSockets, journey 5 against a git server, journeys 1 and 3 through
+`lamb` and pi's real client against both `wrangler dev` and a single
+`celld dev` node, and an export pi's Node backend opens. What remains is
+every walk that needs a deployed Cloudflare home, a real model, a real
+GitHub token, or a two-node celld fleet. The next thing to do is provide
+those and walk them; the code is not expected to change for it.
 
 The order is dependency order and it is also risk order: phase 1 is the
 gate, because if pi's storage does not run over the cell's SQL nothing
@@ -534,7 +539,13 @@ shell, or any tool result, checked by grepping the exported session file.
 
 ## Phase 6 — celld
 
-**Status: NOT STARTED.**
+**Status: PART-DONE** 5 Sep 2026. Walked on one local node: `celld dev`
+accepted the Wrangler project, and journeys 1 and 3 ran through `lamb`
+and pi's real client against it, with the session made before a node
+restart still listed and readable after it, two terminals prompting at
+once, and an export pi's Node backend opened. `pnpm dev:celld` reproduces
+the setup. Missing: the two-node fleet with a bucket, and the node stopped
+mid-turn with the turn finishing on the other node.
 
 **Closes journey 6.**
 
@@ -555,11 +566,48 @@ say, for each celld claim the design leans on, whether it held.
 
 **Findings:**
 
-- None yet.
+- **2026-09-05 — celld 0.4.0 has `celld dev`**: one node, a local object
+  store, no Docker, state under `.celld/dev`. The design assumed a fleet
+  was the smallest celld; it is not.
+- **2026-09-05 — The same bundle runs.** SQLite per cell, alarms, the
+  Directory's RPC, `fetch`, and `nodejs_compat`'s `node:fs` and `Buffer`
+  all held; `celld deploy --dry-run` bundles the cell at 4.2 MB. The
+  Worker code did not change for celld.
+- **2026-09-05 — celld bundles with its own esbuild call**, found through
+  `CELLD_ESBUILD`, and refuses Wrangler's `alias` key. A CommonJS
+  dependency of isomorphic-git, `safe-buffer`, does a dynamic
+  `require("buffer")` that Wrangler's bundler shims and celld's leaves
+  dynamic; a pnpm patch on `safe-buffer` takes the global `Buffer` first,
+  which both runtimes provide.
+- **2026-09-05 — celld's `setTimeout` returns a number**, where workerd's
+  Node compat returns a Node-style timer. pi-server called `.unref()` on
+  it unguarded and every WebSocket upgrade answered 500. One guarded line
+  in pi-server, folded into patch 0004. Upstream: not yet proposed.
+- **2026-09-05 — State survived a node restart.** A session made before
+  `celld dev` was killed and restarted was listed and its transcript
+  read after; the local object store is the durable half, as the design
+  claims a bucket would be.
+- **2026-09-05 — Open: celld logs an isolate-startup event for every
+  resident cell every five seconds while idle.** Whether that is a
+  restart or a report was not measured; a long-lived WebSocket held for
+  the walk, which argues report.
+- **2026-09-05 — A replaced node drains before it exits** and answers
+  503 `{"draining": true}` meanwhile; a walk that restarts the node has to
+  wait for the new listen line, not for the port to answer.
+- **2026-09-05 — Open: the two-node walk.** No fleet and no bucket; the
+  failover claim in journey 6 step 3 is untested.
 
 ## Phase 7 — Nothing changed for pi
 
-**Status: NOT STARTED.**
+**Status: CLOSED** 5 Sep 2026. pi's full suite passed in every workspace
+at the pinned commit with all four patches applied, in three minutes. The
+patch set is four files under `vendor/patches`, each named in the phase
+that made it with its upstream status, plus one pnpm patch on
+`safe-buffer`. `lamb export` files from both `wrangler dev` and `celld
+dev` opened in pi's Node SQLite backend with the same entries. A fresh
+`npm install -g` of pi 0.85.0 from the registry runs beside `lamb` and
+neither knows about the other. pi's `main` had not moved since the pin,
+so the rebase measurement is zero.
 
 **Closes journey 7.**
 
@@ -576,7 +624,17 @@ neither knows about the other.
 
 **Findings:**
 
-- None yet.
+- **2026-09-05 — The patch set is four patches and one pnpm patch.** 0001
+  schema as a string and a `./sqlite` export; 0002 chunked entry lookups;
+  0003 `OutputCapture` exported; 0004 a WebSocket transport and route, an
+  `./experimental/*` export, the connection types from pi-server, and a
+  guarded timer `unref`. None touches the harness, the loop, or a test.
+  Upstream: none proposed yet; each is small enough to send as is.
+- **2026-09-05 — pi's suite with the patches: every workspace passed,
+  exit 0, three minutes wall.**
+- **2026-09-05 — The pin is still pi's `main`**, so what a bump costs is
+  unmeasured. The patches are all additive or one-line, which is the
+  reason to expect a small number.
 
 ---
 

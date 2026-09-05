@@ -8,7 +8,8 @@
     "deploy": "wrangler deploy",
     "deploy:celld": "celld deploy",
     "typecheck": "tsc --noEmit",
-    "test": "vitest --run"
+    "test": "vitest --run",
+    "dev:celld": "node scripts/celld-dev.mjs"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.22.0",
@@ -16,7 +17,8 @@
     "@types/diff": "^8.0.0",
     "typescript": "^5.9.0",
     "vitest": "^4.1.0",
-    "wrangler": "^4.0.0"
+    "wrangler": "^4.0.0",
+    "esbuild": "^0.28.0"
   },
   "dependencies": {
     "@earendil-works/chord": "link:../../vendor/pi/packages/chord",

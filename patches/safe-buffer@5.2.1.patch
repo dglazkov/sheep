@@ -1,0 +1,13 @@
+diff --git a/index.js b/index.js
+index f8d3ec98852f449b44b7d89fc82bae737c69f3fc..bd42180e07162aaa86b99e3a2fc395399a79e9ed 100644
+--- a/index.js
++++ b/index.js
+@@ -1,6 +1,7 @@
+ /*! safe-buffer. MIT License. Feross Aboukhadijeh <https://feross.org/opensource> */
+ /* eslint-disable node/no-deprecated-api */
+-var buffer = require('buffer')
++// lamb: Workers provide Buffer as a global under nodejs_compat; a dynamic require of 'buffer' does not bundle there.
++var buffer = typeof globalThis.Buffer === 'function' ? { Buffer: globalThis.Buffer } : require('buffer')
+ var Buffer = buffer.Buffer
+ 
+ // alternative to using Object.keys for old browsers
