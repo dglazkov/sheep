@@ -257,8 +257,8 @@ truncates when the lane goes idle.
 limited to 2 MB, so a file is stored in 1 MiB chunks, the first in its row
 and the rest in `file_chunks`, and a file is capped at 8 MiB in this leg;
 a larger write is refused with `FileError("invalid")` naming the limit.
-Phase 5 raised the cap from one row because a clone writes its packfile
-as one file. Spilling large files to an object store is a later leg's
+Lamb phase 5, as git before it was withdrawn, raised the cap from one
+row because a clone writes its packfile as one file. Spilling large files to an object store is a later leg's
 work. **Dependencies do not go in the workspace.** A `node_modules` tree
 in a table is the wrong shape and the wrong leg; the container tier owns
 installs.

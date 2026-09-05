@@ -6,7 +6,9 @@ claims one closes only when the journey is walked for real. Each phase is a
 discrete amount of work ending in a testable outcome, named up front.
 
 **How the work runs.** Claude does all of it, and a working session is a
-**conductor**: it reads the "where we are" line below, spawns a subagent on
+**conductor** (the `/conduct lamb` skill in `.claude/skills/conduct/` is
+the procedure; this paragraph is the idea): it reads the "where we are"
+line below, spawns a subagent on
 the next phase with the phase's section, the docs it cites, and the repo's
 house rules, and the subagent does the work: code, tests, and the walk.
 The conductor then **verifies the named proof itself**, running the suite

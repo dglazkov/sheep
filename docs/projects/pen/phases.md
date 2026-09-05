@@ -3,10 +3,11 @@
 [`design.md`](design.md) is the argument; [`journey.md`](journey.md) is the
 acceptance suite. Each phase names the journey it closes, and a phase that
 claims one closes only when the journey is walked for real. The rules are
-lamb's ([../lamb/phases.md](../lamb/phases.md)): the conductor verifies
-every proof itself, findings are one dated line of about forty words, and
-steps marked **⚑ provision** are asked out loud first. Phase citations
-name their project: `pen phase 2`, never a bare "phase 2".
+lamb's ([../lamb/phases.md](../lamb/phases.md)), and `/conduct pen` is
+the procedure: the conductor verifies every proof itself, findings are
+one dated line of about forty words, and steps marked **⚑ provision** are
+asked out loud first. Phase citations name their project: `pen phase 2`,
+never a bare "phase 2".
 
 ---
 
