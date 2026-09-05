@@ -42,7 +42,8 @@ and back.
   says or when idle. The object holds the container's lifecycle, which
   is the shape pen wants: one container per cell, at most.
 - **The Worker Loader** runs code in a fresh isolate with bindings the
-  parent chooses. That is tier 1, and it is the last phase.
+  parent chooses. That is tier 1, and it is pen phase 5, the phase
+  allowed to slip out of the leg.
 - **celld** has neither. What it has is a node the operator owns, where a
   container runtime can run beside it. The protocol is the same; who
   starts the container is configuration.
@@ -56,20 +57,24 @@ A command enters `Shell.exec` as a string. The router does not parse
 bash. It asks just-bash to parse, takes the first word of each simple
 command, and looks each up in the table:
 
-| Program | Tier 0 | Tier 2 | Tier 1 |
+| Program | Tier 0 | Tier 1 | Tier 2 |
 | --- | --- | --- | --- |
-| the text tools (`ls`, `cat`, `grep`, `sed`, `find`, `jq`, …) | yes | yes | no |
-| `git` | no | yes | no |
-| `node`, `pnpm`, `npm`, `npx` | no | yes | `node` only |
-| `python`, `pip` | no | yes | no |
-| everything else | no | if the image has it | no |
+| the text tools (`ls`, `cat`, `grep`, `sed`, `find`, `jq`, …) | yes | no | yes |
+| `git` | no | no | yes |
+| `node`, `pnpm`, `npm`, `npx` | no | `node` only | yes |
+| `python`, `pip` | no | no | yes |
+| everything else | no | no | if the image has it |
 
-The rule is: a command line runs whole in the lowest tier that has every
-program in it. A line that is all tier 0 runs in just-bash as it does in
-lamb. A line with any program that only tier 2 has runs whole in the
-container, through the container's own bash. A line that names a program
-no tier has is refused with the sentence for that program, which names
-the tier that would have it and whether this home has one.
+The rule is: a command line runs whole in one tier, the lowest that has
+every program in it, except that tier 1 is chosen only when no container
+is up. A line that is all tier 0 runs in just-bash as it does in lamb,
+whether or not a container is up. A line with any program that only tier
+2 has runs whole in the container, through the container's own bash. A
+line that names a program the table does not list goes to the container
+when this home has one, and the container's bash answers for it. A line
+that names a program no tier this home has can run is refused with the
+sentence for that program, which names the tier that would have it and
+whether this home has one.
 
 The system prompt is generated from the same table, so the model is told
 once, up front, what runs where, and the refusal repeats it. When no
@@ -137,7 +142,10 @@ host}` to the cell, and answers git with what comes back. The cell holds
 no token either: it asks the home, which holds the operator's secrets and
 mints a short-lived, scoped value for this one request. The value goes
 into git's process and nowhere else. Nothing writes it to disk, nothing
-exports it, and the model's tool result is git's output.
+exports it, and the model's tool result is git's output. The author of a
+commit is the home's configuration too: the container's git config gets
+`user.name` and `user.email` from the cell at start, which is journey 2
+step 4.
 
 This is lamb's "secrets at the home, never in the session," kept, and
 moved from an `onAuth` hook in the isolate to a helper in the container.
@@ -162,9 +170,9 @@ column empties for that home and the refusal says so.
 `node <file>` when no container is up runs in a fresh isolate from the
 Worker Loader, with the workspace as its only binding and no `fetch`.
 Its stdout is the tool result. It exists so that a quick script does not
-rent a machine, and it is the last phase because the container makes it
-optional. On celld, where the loader does not exist, `node` is tier 2
-and the table says so.
+rent a machine, and it is the phase allowed to slip out of the leg
+because the container makes it optional. On celld, where the loader does
+not exist, `node` is tier 2 and the table says so.
 
 ## celld
 
@@ -172,7 +180,7 @@ The same cell, the same protocol. What differs is who starts the
 container: on Cloudflare it is the Containers binding, on celld it is a
 runtime on the node that the cell reaches through a local endpoint the
 operator configures. The image is the same. What celld cannot do is
-measured in phase 6 and written down.
+measured in pen phase 6 and written down.
 
 ## Packages
 
@@ -189,7 +197,9 @@ Pen adds no pi tool and no pi patch. `Shell.exec` is the whole seam.
 
 ## Considered and left out
 
-- **Keeping git in the isolate.** Lamb tried it. See lamb's journey 5.
+- **Keeping git in the isolate.** Lamb tried it. See the withdrawn-git
+  record at the end of lamb phase 5 in
+  [../lamb/phases.md](../lamb/phases.md).
 - **A container that owns the workspace.** Then the container is the
   truth and the cell is a proxy, which is a machine with extra steps.
   The rows are the truth so that a container can die.

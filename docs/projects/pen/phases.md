@@ -11,7 +11,9 @@ name their project: `pen phase 2`, never a bare "phase 2".
 ---
 
 **Where we are: NOTHING BUILT.** Planned 5 Sep 2026. The next thing to do
-is pen phase 0.
+is pen phase 0. Pen phases 0 to 2 prove against a fake and need nothing
+from lamb; pen phase 3, the first real walk, uses `--detach`, `wait`, and
+`log` and so waits on lamb phase 5, the sheepdog's surface.
 
 The order is dependency order and risk order. Phase 1 is the gate: if a
 checkout cannot be synced by hash both ways with the atomicity journey 3
@@ -67,7 +69,8 @@ test.
 
 **Status: NOT STARTED.** The gate.
 
-**Closes journey 3's atomicity claim and journey 1 step 3.**
+**Proves journey 3's atomicity claim and journey 1 step 3 against the
+fake.** Closes nothing; pen phase 3 walks them.
 
 **Work:**
 
@@ -89,7 +92,9 @@ the rows and the transcript match a fixture at every kill point.
 
 **Status: NOT STARTED.**
 
-**Closes journey 6, and journey 1 steps 1, 2, and 4 against the fake.**
+**Proves journey 6, and journey 1 steps 1, 2, and 4, against the fake.**
+Closes nothing; pen phase 3 walks journey 1 and pen phase 7 walks
+journey 6.
 
 **Work:**
 
@@ -196,7 +201,7 @@ kill` as the operator's hand in journey 3.
 
 **Status: NOT STARTED.**
 
-**Closes journey 6 for real.**
+**Closes journey 6.**
 
 **Proof:** Every lamb journey walked against a home with no container
 binding, unchanged. Lamb's suite green. No pi patch added. `git log

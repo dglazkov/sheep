@@ -2,7 +2,7 @@
 status: planned
 since: 2026-09-05
 see: pen
-note: "journeys, design and phases written 5 Sep 2026, the day lamb's git facade was withdrawn, and recast the same evening around agents as the actors: a sheepdog delegates to sheep, and a sheep rents a machine for the length of a command. Nothing built. Journey 2 is lamb's withdrawn journey 5, a repository in and the work out, now over real git in a container."
+note: "journeys, design and phases written 5 Sep 2026, the day lamb's git facade was withdrawn, and recast the same evening around agents as the actors: a sheepdog delegates to sheep, and a sheep rents a machine for the length of a command. Nothing built. Journey 2 is lamb's withdrawn git journey, a repository in and the work out, now over real git in a container. Journeys 1 and 3 use lamb phase 5's surface (detach, wait, log), so pen's first real walk waits on it."
 ---
 
 # Pen — the journeys
@@ -23,10 +23,11 @@ it against a real deployment and it behaves as written here.
 walk. If a journey and the mechanism disagree, the mechanism is what
 changes.
 
-The starting point is lamb as it stands: the four tools over the workspace
-table, just-bash over the same rows, `Shell.exec` as the one place a
-command enters, a refusal in one sentence for everything the isolate
-cannot do, and `lamb` as the dog's surface. The premise of this leg is
+The starting point is lamb with its phase 5 done: the four tools over the
+workspace table, just-bash over the same rows, `Shell.exec` as the one
+place a command enters, a refusal in one sentence for everything the
+isolate cannot do, and `lamb` as the dog's surface with `--detach`,
+`wait`, and `log`, which the journeys below use. The premise of this leg is
 that a sheep should not become a machine. It should rent one, for the
 length of a command, and keep only what the command changed.
 
@@ -38,7 +39,8 @@ Key terms, in addition to lamb's:
   `pnpm`, `python`, `git`. Rented by a sheep on first use, discarded when
   idle. Its disk is a cache of the rows, never the truth.
 - **Tier 1**: a fresh isolate for code a sheep wrote. Named, designed,
-  and the last phase, because the container makes it optional.
+  and allowed to slip out of the leg, because the container makes it
+  optional.
 - **Checkout**: the container's copy of the workspace, synced in by
   content hash and the diff synced back out.
 - **Helper**: the process in the container that a program asks for a
@@ -83,10 +85,10 @@ files down and run them itself.
    output as pnpm prints it, and ends with the exit code.
 2. The sheep runs `pnpm test`. The tests run. Output streams; the sheep
    reports which passed.
-3. Run `lamb attach <id> -- "List the workspace, then list node_modules."`
-   `find . -maxdepth 1` in tier 0 shows the project files and no
-   `node_modules`. `ls node_modules | head` runs in the container and
-   shows them there.
+3. Run `lamb attach <id> -- "List the workspace, then list what was
+   installed."` `find . -maxdepth 1` in tier 0 shows the project files
+   and no `node_modules`. `pnpm ls --depth 0` runs in the container and
+   lists what is installed there.
 4. Run `lamb attach <id> -- "What can your shell run now?"` The sheep
    answers from its system prompt, and the sentence has changed: it names
    the container and what runs there.
@@ -111,9 +113,11 @@ Acceptance criteria:
 
 ## Journey 2: A repository in, the work out
 
-Lamb's withdrawn journey 5, as written there, over real git. The dog
-wants a change made to a real repository and a branch it can point the
-shepherd at, without cloning anything itself.
+Lamb's withdrawn git journey, over real git. The record of what was
+built and why it went is at the end of lamb phase 5 in
+[../lamb/phases.md](../lamb/phases.md). The dog wants a change made to a
+real repository and a branch it can point the shepherd at, without
+cloning anything itself.
 
 1. Run `lamb new --name typo-fix -- "Clone https://github.com/<org>/<repo>
    and describe its layout."` The sheep runs `git clone`, then `find` and
@@ -206,8 +210,8 @@ Acceptance criteria:
 - The routing decision, tier 1 or tier 2 for `node`, is the design's
   rule, stated once and tested. Tier 2 is the default when a container is
   up; tier 1 is the default when none is and the program is `node`.
-- This journey is the last phase and is allowed to slip out of the leg.
-  Everything before it stands without it.
+- This journey is pen phase 5 and is allowed to slip out of the leg.
+  Everything else stands without it.
 
 ## Journey 5: The same pen on celld
 
@@ -280,6 +284,11 @@ Acceptance criteria:
 - **Which tier for which program**, beyond `node`. Python in a fresh
   isolate is Pyodide, which is a different thing than Python. The table
   starts small and grows by finding.
+- **Looking at the cache.** A line of text tools runs in tier 0, so `cat
+  dist/index.js` reads the rows and finds nothing; what the cache rule
+  keeps in the container is reachable only through a program the
+  container has. Whether a sheep needs a way to say "this line, in the
+  container" is a finding for pen phase 3.
 - **A dog in a cell.** A sheepdog that is itself a sheep, renting a
   container for its own work and herding sheep that rent theirs. Not
   this leg; the reason the herding surface is a program's.
