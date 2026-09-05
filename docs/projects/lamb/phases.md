@@ -30,11 +30,10 @@ roster of them.
 
 ---
 
-**Where we are: PHASE 1 CLOSED 5 Sep 2026; phase 0 PART-DONE** on its
-deploy half, waiting on a Cloudflare token. The gate held: every case in
-pi's storage and repo conformance suites passes in workerd over the cell's
-SQLite, and pi's own repo runs there unmodified. The next thing to do is
-phase 2.
+**Where we are: PHASE 2 CLOSED 5 Sep 2026; phases 1 closed, phase 0
+PART-DONE** on its deploy half, waiting on a Cloudflare token. The gate
+held in phase 1, and phase 2 put pi's four tools over a workspace table and
+an in-isolate shell, all proved in workerd. The next thing to do is phase 3.
 
 The order is dependency order and it is also risk order: phase 1 is the
 gate, because if pi's storage does not run over the cell's SQL nothing
@@ -206,7 +205,12 @@ still passes at the pinned commit with lamb's patches applied.
 
 ## Phase 2 — The workspace and the shell
 
-**Status: NOT STARTED.**
+**Status: CLOSED** 5 Sep 2026. Eight tests in workerd run pi's `read`,
+`write`, `edit`, and `bash` tools against `CellExecutionEnv`: journey 4's
+steps 1 to 6 each have a test, plus truncation with spill to `/tmp`, the
+fence, directory renames, symlinks, and abort. The by-hand walk through
+the HTTP route moves to phase 3, which builds that route; it runs there
+against `wrangler dev` until a Cloudflare token exists. Typecheck clean.
 
 **Closes journey 4.** Walked against a cell driven by an HTTP test route,
 before the wire exists, with the tool results asserted directly.
@@ -239,7 +243,31 @@ test route and reads the tool results.
 
 **Findings:**
 
-- None yet.
+- **2026-09-05 — just-bash 3.4.2's browser build runs in workerd** with
+  its coreutils, `jq`, `sed -i`, `find | xargs`, symlinks, and loops, over
+  an `IFileSystem` that is thirty small methods on the table.
+- **2026-09-05 — The in-isolate shell does not stream.** just-bash returns
+  stdout and stderr when the command ends, so pi's `onUpdate` sees one
+  update and the bash renderer's periodic checkpoints never fire for this
+  shell. Truncation and spill still behave as pi's, after the fact.
+- **2026-09-05 — just-bash knows `python3` and says "command not
+  available"**, not "not found", because its Python runtime exists and is
+  off. `annotateCommandNotFound` covers both phrasings.
+- **2026-09-05 — Patch 0003, `export-output-capture`:** `OutputCapture`
+  exported from `pi-agent-core`'s index. Only the Node env used it, by
+  relative import; any env outside the package needs it. Upstream: not
+  yet proposed.
+- **2026-09-05 — Path resolution resolves as far as rows exist** and
+  returns the rest unresolved, so a write can create parents and a stat
+  can say not found; a resolver that throws on a missing parent broke
+  every `write` into a new directory.
+- **2026-09-05 — Hard links are copies.** `ln` without `-s` copies the
+  row; a table of paths has no inode to share.
+- **2026-09-05 — `withAbortSignal(signal, context)`**, signal first. The
+  test had it backwards and the abort silently never reached the env.
+- **2026-09-05 — Bundle size is phase 3's number.** The Worker entry does
+  not import the env yet, so a dry-run bundle measured 1 KB; the real
+  figure arrives when the cell wires the harness in.
 
 ## Phase 3 — The cell
 

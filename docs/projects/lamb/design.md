@@ -256,10 +256,12 @@ there is one.
 
 `Shell.exec` runs the command in a just-bash instance whose filesystem is
 `CellFs`, whose cwd is the env's, and whose network is off. Output flows
-into pi's `OutputCapture` exactly as the Node env feeds it from a child
-process, so truncation, spill to a temp file, and the bash tool's periodic
-checkpoints behave as they do on a laptop. The exit code is just-bash's.
-`cleanup` is a no-op, because there is no process tree.
+into pi's `OutputCapture` as the Node env feeds it from a child process,
+so truncation and spill to a temp file behave as they do on a laptop. One
+difference, found in phase 2: just-bash returns output when the command
+ends, so this shell does not stream and the bash tool's periodic
+checkpoints never fire for it. The exit code is just-bash's. `cleanup` is
+a no-op, because there is no process tree.
 
 **The shell says what it is.** A model trained on real bash will type
 `python3`, `npm test`, and `cargo build`. In this leg those are absent, and
