@@ -30,16 +30,20 @@ roster of them.
 
 ---
 
-**Where we are: ALL SEVEN PHASES BUILT 5 Sep 2026; phases 1, 2, and 7
-CLOSED, phases 0, 3, 4, 5, and 6 PART-DONE.** Every proof that can run
+**Where we are: ALL SEVEN PHASES BUILT 5 Sep 2026; phases 0, 1, 2, and
+7 CLOSED, phases 3, 4, 5, and 6 PART-DONE.** Every proof that can run
 locally has run: pi's conformance suites, journey 4 in workerd, journey 2's
 eviction test at every transition, journey 3 over pi's protocol on
 WebSockets, journey 5 against a git server, journeys 1 and 3 through
 `lamb` and pi's real client against both `wrangler dev` and a single
-`celld dev` node, and an export pi's Node backend opens. What remains is
-every walk that needs a deployed Cloudflare home, a real model, a real
-GitHub token, or a two-node celld fleet. The next thing to do is provide
-those and walk them; the code is not expected to change for it.
+`celld dev` node, and an export pi's Node backend opens. On the deployed
+home with a real model, journey 1 has walked as far as one laptop can
+take it: minted, built, grepped, resumed after hours hibernated, attached
+with only the id and the token, exported and opened by pi's Node backend.
+What remains is a deploy run by hand mid-turn for journey 2, two real
+terminals side by side and the dashboard's hibernation check for journey
+3, a GitHub token for journey 5, and a two-node celld fleet for journey 6.
+The code is not expected to change for any of it.
 
 The order is dependency order and it is also risk order: phase 1 is the
 gate, because if pi's storage does not run over the cell's SQL nothing
@@ -287,9 +291,10 @@ sessions; the Worker guards everything with a bearer token. The eviction
 test kills a scripted two-tool turn at each of its five transitions and
 the workspace, the effects, and the settled transcript come out as journey
 2 says, with the alarm doing the waking. The HTTP walk ran by hand against
-`wrangler dev` with the faux provider. Missing: the same walk on the
-scratch home with a real model and a real mid-turn redeploy, waiting on
-`CLOUDFLARE_API_TOKEN` and `LAMB_ANTHROPIC_API_KEY`.
+`wrangler dev` with the faux provider; journey 1's turns ran on the
+deployed home with a real model through lamb phase 4's wire. Missing: a
+real mid-turn redeploy on the deployed home, which is `pnpm deploy` run by
+hand while a turn is streaming.
 
 **Closes journey 2, and journey 1 through the HTTP route.** The terminal
 half of journey 1 waits for phase 4.
@@ -371,9 +376,13 @@ entries.
 - **2026-09-05 — `wrangler dev` walk:** door refused without the token,
   session minted, prompt accepted, turn settled, transcript and list read,
   on the bundled Worker with both Durable Object migrations applied.
-- **2026-09-05 — Open: the scratch-home walk with a real model** and the
-  mid-turn redeploy are not run. No Cloudflare token and no Anthropic key
-  in the environment.
+- **2026-09-05 — The deployed home ran real-model turns** for journey 1
+  through lamb phase 4's wire, so the harness, the alarm, and the storage
+  hold on Cloudflare with Anthropic behind them.
+- **2026-09-05 — Open: the mid-turn redeploy.** A nine-tool turn was
+  started on the deployed cell and `pnpm deploy` on top of it was refused
+  by the session's permission gate; the turn finished untouched in twenty
+  seconds. Someone at a terminal runs the deploy while a turn streams.
 
 ## Phase 4 — The wire, and the terminal
 
@@ -386,9 +395,13 @@ Journey 3 holds in workerd with two protocol clients on one cell. Journey
 1 walked against `wrangler dev` with pi's real client: `lamb new -- "…"`
 streamed a reply, `lamb attach` prompted the same cell, `lamb export`
 wrote a file pi's Node backend opened with the same entries, and the
-interactive TUI drew pi's session header under a pseudo-terminal. Missing:
-the overnight and second-machine steps of journey 1 and the dashboard
-check of journey 3, all on a deployed home, waiting on a Cloudflare token.
+interactive TUI drew pi's session header under a pseudo-terminal. On the
+deployed home with a real model, journey 1 steps 1 to 3 walked as
+written, step 4 as a resume of a cell left hibernated for hours, and step
+5 from a bare `HOME` with only the id and the token; the export opened in
+pi's Node backend. Missing: an actual second machine and a real night for
+journey 1, and journey 3 with two terminals side by side plus the
+dashboard's hibernation check.
 
 **Closes journeys 1 and 3.** The boulder.
 
@@ -461,8 +474,23 @@ hibernates with the alarm clear, checked from the dashboard.
   applies `INITIAL_SCHEMA_SQL` and inserts the seven tables; pi's Node
   backend opened the file and listed the same four entries. Journey 7
   step 3 walked early.
-- **2026-09-05 — Open: the deployed walks.** Overnight, a second machine,
-  and the dashboard's hibernation check need a Cloudflare token.
+- **2026-09-05 — Journey 1 on the deployed home.** `lamb new --name
+  deployed-j1 -- "…"` minted a cell and the model wrote a README and two
+  files; `lamb attach` ran `find` and `grep -rn` in the cell and the output
+  was right; a cell minted hours earlier and hibernated since answered from
+  its transcript; `lamb attach` from an empty `HOME` with `LAMB_HOME` and
+  `LAMB_TOKEN` alone read a file back; `lamb export` wrote 18 entries that
+  pi's `SqliteStorage` over `node:sqlite` listed with pi's stats. Each turn
+  ran under ten seconds.
+- **2026-09-05 — Two one-shot clients cannot prompt one cell at once.**
+  Two `lamb attach … -- "…"` runs a second apart: the first streamed, the
+  second got pi's `LaneBusy` ("already has an active operation") and
+  exited. Prompt mode calls `agent.prompt` directly; the TUI queues a
+  prompt typed mid-turn. Journey 3 step 2 is a TUI claim and still holds
+  in workerd; the deployed walk needs two terminals.
+- **2026-09-05 — Open: the deployed walks that need a person.** A real
+  second machine and a real night for journey 1; two terminals, an abort,
+  and the dashboard's hibernation check for journey 3.
 - **2026-09-06 — First real-model turn on a laptop found a wire fault.** pi's
   bash tool opens with a progress update of `details: undefined`; the
   transcript service replicated the `undefined`, pi's strict codec refused
