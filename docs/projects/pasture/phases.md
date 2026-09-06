@@ -89,7 +89,7 @@ none: the migration is written, not deployed.
 - **2026-09-06 — Lamb's `FilesTable` had no root: `/workspace` and `/tmp` were constants and the fence was hard-coded.** The constructor gained a `roots` list and `manifest` a root, defaults unchanged, so the pasture's tree is the same class rooted at `/pasture`, not a copy.
 - **2026-09-06 — vitest-pool-workers counts an Error rejected from an async Durable Object method as unhandled even when the caller catches it.** `Directory.create` stays sync, and the Worker asks `refusal()` first; the refusals are the directory's, before any cell exists.
 - **2026-09-06 — `sheep ls` now ends a pastureless row with a tab.** A reader that trims a line loses the empty column; journey 5's test reads only four columns and holds unchanged. `--json` carries `pasture: null`.
-- **2026-09-06 — Open: `return runX(...)` inside `main`'s `try` in `cli.ts` returns the promise unawaited,** so a rejection escapes the catch and exits 1 with a stack trace; `status`, `wait`, `abort`, and `log` carry the hole. `pasture` is `return await`. Waits on the next phase that touches `cli.ts`.
+- **2026-09-06 — A debt, paid in pasture phase 2: `return runX(...)` inside `main`'s `try` in `cli.ts` returned the promise unawaited,** so a rejection escapes the catch and exits 1 with a stack trace; `status`, `wait`, `abort`, and `log` carry the hole. `pasture` was `return await`; pasture phase 2 made every case so.
 - **2026-09-06 — The walk, by the conductor on a local faux home:** `--repo .` from a scratch checkout and refused from `/private/tmp`, the secret from stdin and refused as an argument, two sheep born and the column shown, both refusals verbatim, the secret route 404. Cost: 16 minutes of a subagent, 8 of verification.
 
 ## Phase 1: The mount, and the prompt
@@ -135,7 +135,7 @@ model if a key is in `.dev.vars`, else recorded as owed to pasture phase
 **Findings:**
 
 - **2026-09-06 — Pi's `formatSkillsForPrompt` cannot load in a Worker.** Its module drags in `config.js`, whose top level calls `fileURLToPath(import.meta.url)`, and a wrangler bundle dies at boot; `parseFrontmatter` and `createSyntheticSourceInfo` are leaves and are imported. The cell's `skillsBlock` is pinned byte for byte to pi's by a workerd test.
-- **2026-09-06 — Open: one fork commit owed, making `formatSkillsForPrompt` a leaf module** so `skillsBlock` becomes an import. Waits on pasture phase 4, which walks skills, per `/pi-bump`.
+- **2026-09-06 — A debt, paid in pasture phase 4: one fork commit owed, making `formatSkillsForPrompt` a leaf module** so `skillsBlock` becomes an import; `996849eef`, per `/pi-bump`.
 - **2026-09-06 — just-bash reports any failed write in `sed -i` and `chmod` as "No such file or directory", and `rm -f` reports nothing.** The mount records each refusal, and the cell corrects the shell's line, as `annotateCommandNotFound` corrects the not-found line.
 - **2026-09-06 — Pi's edit tool prints only a returned error's code, so the env's writing methods throw the `EROFS` error under `/pasture`;** the harness makes the throw the tool's text, and `write`, `edit`, and the shell say the same sentence.
 - **2026-09-06 — One `snapshot()` hop serves a whole tool call, and `readByHash` one hop per distinct hash.** A `Pasture` stub satisfies the mount's source with no adapter; a stub made outside a Durable Object's context cannot be used inside it in workerd.
@@ -260,7 +260,7 @@ secret. Suites unchanged. **⚑** none.
 - **2026-09-06 — Setup is a `run` frame like any other, with its own environment, so the protocol did not change.** The per-container memory is the env's per-socket record beside the checkout; a failed setup leaves it unmarked, so the next command retries.
 - **2026-09-06 — `env` alone is a text tool and runs in the cell's shell.** A sheep prints the container's environment only with a line naming a container program, `node -e 0 && env`; the test and the walk both use it.
 - **2026-09-06 — The fork commit owed by pasture phase 1 is paid: `996849eef`, `formatSkillsForPrompt` and `Skill` in a leaf module,** pi's own importers unchanged; the cell imports it and its own block is gone. Upstream is three commits ahead of the base, not rebased this phase; the bump is recorded in `/pi-bump`.
-- **2026-09-06 — The walk, by the conductor on the local rig with a real model:** setup ran at birth after the clone with the dummy secret and printed nothing to the sheep; the container's environment named neither secret; the script broken and the container idled, the next command stopped at the first line; the skill was read when asked. Cost: 24 minutes of a subagent, 12 of verification.
+- **2026-09-06 — The walk, by the conductor on the local rig with a real model:** setup ran at birth after the clone and printed nothing to the sheep; the container's environment named neither secret; the script broken and the container idled, the next command stopped at the first line; the skill was read when asked. Cost: 24 minutes of a subagent, 12 of verification.
 
 ## Phase 5: The walk
 
