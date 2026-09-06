@@ -146,5 +146,3 @@ vite.config.ts.timestamp-*
 .wrangler
 .dev.vars
 *.tsbuildinfo
-.celld
-wrangler.celld.dev.json

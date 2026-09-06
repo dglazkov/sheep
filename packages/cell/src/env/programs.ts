@@ -35,7 +35,7 @@ import { type CommandNode, getCommandNames, parse, type ScriptNode, type SimpleC
 export interface Home {
   container: boolean;
   budgetSpent?: boolean;
-  /** Pen phase 5: whether this home has the Worker Loader, so tier 1 exists. Absent, it does not (celld, or a home without the binding). */
+  /** Pen phase 5: whether this home has the Worker Loader, so tier 1 exists. Absent, it does not (a home without the binding). */
   isolate?: boolean;
   /** Pen phase 5: whether a container is up right now, socket open. Absent, none is. Tier 1 is chosen only when none is. */
   containerUp?: boolean;

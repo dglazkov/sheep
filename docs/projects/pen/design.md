@@ -44,7 +44,7 @@ and back.
 - **The Worker Loader** runs code in a fresh isolate with bindings the
   parent chooses. That is tier 1, and it is pen phase 5, the phase
   allowed to slip out of the leg.
-- **celld** has neither. What it has is a node the operator owns, where a
+- **celld** (withdrawn 5 Sep 2026) had neither. What it had was a node the operator owned, where a
   container runtime can run beside it. The protocol is the same; who
   starts the container is configuration.
 - **Lamb's refusal sentence** lived in one file and a test checks the
@@ -198,10 +198,14 @@ reach a filesystem the cell could read back; pen phase 5's finding.) It
 exists so that a quick script does not rent a machine, and it is the
 phase allowed to slip out of the leg because the container makes it
 optional. The loader is bound only in the pen environment: a home with
-no container has no tier 1 either, and is lamb. On celld, where the
-loader does not exist, `node` is tier 2 and the table says so.
+no container has no tier 1 either, and is lamb.
 
 ## celld
+
+**Withdrawn 5 Sep 2026.** The shepherd dropped celld the night pen phase
+6 measured it: it drops work no request covers, including what a
+WebSocket message wakes, and 0.4.1 boots no cell. The starter beside a
+node went with it. What follows is the record.
 
 The same cell, the same protocol. What differs is who starts the
 container: on Cloudflare it is the Containers binding, on celld it is a

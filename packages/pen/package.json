@@ -4,8 +4,7 @@
   "private": true,
   "type": "module",
   "bin": {
-    "pen-agent": "./bin/pen-agent.mjs",
-    "pen-starter": "./bin/pen-starter.mjs"
+    "pen-agent": "./bin/pen-agent.mjs"
   },
   "exports": {
     "./protocol": "./src/protocol.ts",
@@ -14,8 +13,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest --run",
-    "build:image": "scripts/build-image.sh",
-    "starter": "node bin/pen-starter.mjs"
+    "build:image": "scripts/build-image.sh"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

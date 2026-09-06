@@ -29,8 +29,6 @@ pnpm install
 pnpm test          # every package's suite; the cell's runs in workerd
 cp packages/cell/.dev.vars.example packages/cell/.dev.vars   # then fill in LAMB_TOKEN and LAMB_ANTHROPIC_API_KEY
 pnpm --filter @lamb/cell dev        # a local home on :8787 (wrangler), reading .dev.vars
-pnpm --filter @lamb/cell dev:celld  # the same on a local celld node on :9876 (curl -fsSL https://celld.dev/install.sh | sh)
 LAMB_HOME=http://127.0.0.1:8787 LAMB_TOKEN=... node packages/lamb/bin/lamb.js new -- "hello"
 pnpm run deploy        # wrangler deploy (bare `pnpm deploy` is pnpm's own command and shadows the script)
-pnpm run deploy:celld  # celld deploy against a fleet
 ```

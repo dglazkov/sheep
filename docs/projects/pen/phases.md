@@ -11,17 +11,18 @@ never a bare "phase 2".
 
 ---
 
-**Where we are: pen phases 0 to 5 CLOSED, phases 6 and 7 PART-DONE.
-Nothing in pen waits on work; what is left waits on a person.** Planned
+**Where we are: pen phases 0 to 5 CLOSED, phase 6 WITHDRAWN with celld,
+phase 7 PART-DONE. Nothing in pen waits on work; what is left waits on
+a person.** Planned
 5 Sep 2026; every phase built the same day. The shepherd enabled the
 Workers Paid plan that evening and scoped a token to a scratch
 repository; `lamb-pen` was deployed with its image, and journeys 1, 2,
 3, and 4 walked there with a real model. Phase 6 built the starter
 beside a celld node and reached a real container through it; the walk
-stalled on celld dropping the work a socket message wakes, a decision
-left open. Phase 7 walked lamb's journeys 1, 2, 4, and 5 on the lamb
-home with all of pen present and no binding; journeys 3 and 6 wait on
-lamb's own list: a second terminal and a two-node fleet.
+stalled on celld dropping the work a socket message wakes, and the
+shepherd withdrew celld that night. Phase 7 walked lamb's journeys 1, 2,
+4, and 5 on the lamb home with all of pen present and no binding;
+journey 3 waits on a second terminal.
 
 The order is dependency order and risk order. Phase 1 is the gate: if a
 checkout cannot be synced by hash both ways with the atomicity journey 3
@@ -386,10 +387,12 @@ did not.
 
 ## Phase 6 — celld
 
-**Status: PART-DONE.** 5 Sep 2026. The starter beside the node is built
-and proved; on celld 0.4.0 journey 1 step 1 reached a real container
-through it, and the turn then stalled on celld's dropped work. Journeys
-1, 2, and 3 on celld wait on that, celld's or a later phase's.
+**Status: WITHDRAWN.** 5 Sep 2026, with celld, the shepherd's call: not
+yet mature. Formerly PART-DONE the same day: the starter beside the node
+built and proved, journey 1 step 1 reaching a real container through it
+on celld 0.4.0, the turn then stalling on celld's dropped work. The
+starter, its HTTP seam, and the celld dev script are removed; the
+findings stay as the record.
 
 **Closes journey 5.**
 
@@ -425,19 +428,17 @@ kill` as the operator's hand in journey 3.
   generated top level; `dev:celld` had been broken by the comments in
   `wrangler.jsonc` and is fixed.
 - **2026-09-05 — Cost: 40 minutes**, 36 the builder's.
-- **2026-09-05 — Open: the walk on celld** waits on covering the work a
-  socket message wakes: `waitUntil` inside every message handler of the
-  cell (checkout, run, broker, wire), or celld keeping a socket's work.
-  A design decision for a later phase; not made quietly here.
-- **2026-09-05 — Open: `GET /home` says `container: false` on a celld
-  home with a starter**, since it reads the binding; one line.
+- **2026-09-05 — Withdrawn the same night.** Covering the work a socket
+  message wakes with `waitUntil` in every handler was the open decision;
+  the shepherd decided celld instead: not yet mature. The starter went
+  with it; `ctx.waitUntil` around the detached drive stays.
 
 ## Phase 7 — Nothing changed for lamb
 
 **Status: PART-DONE.** 5 Sep 2026. The lamb home redeployed with all of
 pen and no binding; lamb's journeys 1, 2, 4, and 5 walked there with a
-real model, its suite green, pi's branch the same four commits. Lamb's
-journeys 3 and 6 wait on a person, as lamb's own record says.
+real model, its suite green, pi's branch the same four commits. Lamb's journey 3 waits on a person, as lamb's own record says; journey
+6 went with celld, withdrawn.
 
 **Closes journey 6.**
 
@@ -455,8 +456,8 @@ upstream/main..sheep` in the submodule is the same list it was.
   it was at the start of the day and `upstream/main..sheep` is the same
   four commits; pen's only dependency patch is one export on just-bash.
 - **2026-09-05 — Cost: 8 minutes**, all walks.
-- **2026-09-05 — Open: lamb's journeys 3 and 6** need a second terminal
-  and a two-node celld fleet, a person's, as lamb's phases 4 and 6 say.
+- **2026-09-05 — Open: lamb's journey 3** needs a second terminal, a
+  person's, as lamb's phase 4 says; journey 6 went with celld.
 
 ## What the phases leave open
 

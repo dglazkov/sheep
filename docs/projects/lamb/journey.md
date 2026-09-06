@@ -2,7 +2,7 @@
 status: partial
 since: 2026-09-05
 see: lamb
-note: "journeys, design and seven phases written 5 Sep 2026 and every phase built the same day; phase 0 (the scaffold) closed by the first deploy to Cloudflare; phase 1 closed the same day: pi's storage and repo conformance suites pass in full in workerd, and pi's own SQLite repo runs in the cell with two small patches; phase 2 closed the same day: pi's four tools run over a workspace table and just-bash in the isolate, journey 4's steps each held by a test in workerd; phase 3 part-done the same day: the cell drives pi's harness, the alarm brings it back, journey 2's eviction test holds at every transition in workerd, and journey 2 walked in full on the deployed home, a turn evicted by a real `wrangler deploy` mid-flight and resumed by the alarm; phase 4 part-done the same day: pi's own client attaches to a cell over a WebSocket through `lamb`, journey 3 holds in workerd, journey 1 walked against a local home with the faux provider and then on the deployed home with a real model as far as one machine can take it, and an exported session opens in pi's Node backend; phase 5 built as git and withdrawn the same day (a twelve-verb facade over isomorphic-git; git is a program and moved to the second leg, pen), re-cut the same evening as the sheepdog's surface, and closed the same night: detach, status, wait, abort, log, and --json over lamb's own client of pi's protocol, journey 5 walked in full on the deployed home by a Claude Code session; phase 6 part-done on one local celld node, journeys 1 and 3 walked there through lamb and pi's client with state surviving a node restart; phase 7 closed, pi's full suite green with the four patches and a fresh pi from the registry running beside lamb. Journeys recast 5 Sep around agents as the actors: a sheepdog runs lamb, sheep are cells, a shepherd watches. What waits on a person: a second machine, a two-node fleet, and the TUI half of journey 3. Nothing waits on work. The first leg of a longer walk — pi's harness in a Durable Object with a workspace in rows, an in-isolate shell, pi's own client attached over a WebSocket, and the same bundle on celld. Execution tiers are pen; sub-agents as cells and multi-user are named as later legs."
+note: "journeys, design and seven phases written 5 Sep 2026 and every phase built the same day; phase 0 (the scaffold) closed by the first deploy to Cloudflare; phase 1 closed the same day: pi's storage and repo conformance suites pass in full in workerd, and pi's own SQLite repo runs in the cell with two small patches; phase 2 closed the same day: pi's four tools run over a workspace table and just-bash in the isolate, journey 4's steps each held by a test in workerd; phase 3 part-done the same day: the cell drives pi's harness, the alarm brings it back, journey 2's eviction test holds at every transition in workerd, and journey 2 walked in full on the deployed home, a turn evicted by a real `wrangler deploy` mid-flight and resumed by the alarm; phase 4 part-done the same day: pi's own client attaches to a cell over a WebSocket through `lamb`, journey 3 holds in workerd, journey 1 walked against a local home with the faux provider and then on the deployed home with a real model as far as one machine can take it, and an exported session opens in pi's Node backend; phase 5 built as git and withdrawn the same day (a twelve-verb facade over isomorphic-git; git is a program and moved to the second leg, pen), re-cut the same evening as the sheepdog's surface, and closed the same night: detach, status, wait, abort, log, and --json over lamb's own client of pi's protocol, journey 5 walked in full on the deployed home by a Claude Code session; phase 6 part-done on one local celld node, journeys 1 and 3 walked there through lamb and pi's client with state surviving a node restart; phase 7 closed, pi's full suite green with the four patches and a fresh pi from the registry running beside lamb. Journeys recast 5 Sep around agents as the actors: a sheepdog runs lamb, sheep are cells, a shepherd watches. celld and journey 6 withdrawn 5 Sep 2026, not yet mature. What waits on a person: a second machine and the TUI half of journey 3. Nothing waits on work. The first leg of a longer walk — pi's harness in a Durable Object with a workspace in rows, an in-isolate shell, pi's own client attached over a WebSocket, and a second home, celld, tried and withdrawn. Execution tiers are pen; sub-agents as cells and multi-user are named as later legs."
 ---
 
 # Lamb — the journeys
@@ -53,7 +53,7 @@ Key terms:
 - **Workspace**: the files a sheep reads and writes. Rows in the cell.
 - **Shell**: what a sheep's `bash` runs. An interpreter in the cell's
   isolate, with no processes, no interpreters, and no network.
-- **Home**: a deployment, on Cloudflare or on celld. `lamb --home`.
+- **Home**: a deployment, on Cloudflare. `lamb --home`.
 
 ## What exists today, and what each journey adds
 
@@ -66,7 +66,7 @@ Key terms:
 | Killing the process mid-turn leaves the session to be resumed by hand. | Evicting the cell mid-turn is followed by a wake and a resumption nobody asked for. |
 | A dog talks to a session through a TUI meant for a person. | A dog prompts, polls, waits, aborts, and reads through `lamb`, non-interactively, and a shepherd can still open the TUI on the same sheep. |
 | `git` is whatever the machine has. | `git` is not in the cell, and the shell says so in the sentence it says for `npm`. It arrives with pen, as a program. |
-| pi runs where Node runs. | The same bundle runs on Cloudflare and on a celld fleet. |
+| pi runs where Node runs. | The same bundle runs on Cloudflare. (celld, a second home, was withdrawn 5 Sep 2026.) |
 
 ## Cast
 
@@ -273,6 +273,11 @@ Acceptance criteria:
   instead of drawn by a TUI.
 
 ## Journey 6: The same flock on a fleet you own
+
+**Withdrawn 5 Sep 2026**, with celld: the shepherd judged it not yet
+mature, after pen phase 6 found it dropping the work a socket wakes. The
+journey stays as written, the record of what was wanted of a second
+home; lamb phase 6 holds what one local node did and did not do.
 
 The shepherd runs celld on two nodes with a bucket, and wants the same
 sheep there.

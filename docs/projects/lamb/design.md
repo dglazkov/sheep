@@ -27,14 +27,14 @@ attaches over a WebSocket from anywhere, and the loop resumes on its own
 after the cell is evicted mid-turn.
 
 This is the very first leg of a marathon. The marathon ends somewhere like
-this: a harness whose durable half runs on Cloudflare or on a celld fleet
-you own, unchanged; whose execution is tiered, a shell in the isolate for
+this: a harness whose durable half runs on Cloudflare, unchanged (celld, a fleet you
+own, was the second home until it was withdrawn on 5 Sep 2026); whose execution is tiered, a shell in the isolate for
 most commands, a fresh isolate for model-written code, a disposable
 container for anything native; whose sub-agents are sibling cells; and
 whose permission prompts are rows that any attached client can answer, a
 day later, from a phone. None of that is in this leg. **This leg proves
 one thing: pi's harness runs in a cell, with a real workspace and a real
-shell, attached from pi's own client, on Cloudflare and on celld.** If that
+shell, attached from pi's own client, on Cloudflare.** (celld was withdrawn 5 Sep 2026.) If that
 holds, the rest is plumbing. If it does not, nothing after it matters.
 
 ## What exists, exactly
@@ -112,9 +112,8 @@ already cut.
   (`ctx.storage.sql.exec`, `transactionSync`), which is what pi's
   `transaction` contract needs. WebSockets hibernate, alarms wake an
   evicted object, and a cell gets 10 GB of storage and a 128 MB heap.
-  celld runs the same Worker and Durable Object model on your own nodes
-  with state replicated to a bucket you own, deploys from a Wrangler
-  project, and lacks the Worker Loader and Containers. Neither is needed in
+  celld, withdrawn 5 Sep 2026, ran the same model on nodes you own and
+  lacked the Worker Loader and Containers; neither is needed in
   this leg.
 - **A bash interpreter exists that needs no process.** just-bash runs a
   shell in JavaScript over an `IFileSystem` interface, with pipes,
@@ -369,7 +368,7 @@ service answers with the providers its secrets name. The lane's model and
 thinking level are lane configuration in the session, as they are in pi,
 so `/model` in the TUI writes the same value it writes today. On Cloudflare
 the AI Gateway binding is available through pi's existing transport and is
-optional; on celld the key goes straight to the provider.
+optional.
 
 ## Git, and programs
 
@@ -393,6 +392,10 @@ behind it. What the facade left behind and the workspace keeps: files in
 large file wants.
 
 ## celld
+
+**Withdrawn 5 Sep 2026.** The shepherd dropped celld as a home the same
+night pen phase 6 found it dropping work no request covers and 0.4.1
+booting no cell. What follows is the record of what it was.
 
 The same Wrangler project, deployed with `celld deploy` to a fleet whose
 bucket the operator owns, or run on one node with `celld dev`. celld

@@ -2,7 +2,7 @@
 status: partial
 since: 2026-09-05
 see: pen
-note: "journeys, design and phases written 5 Sep 2026, the day lamb's git facade was withdrawn, and recast the same evening around agents as the actors: a sheepdog delegates to sheep, and a sheep rents a machine for the length of a command. Pen phase 0, the scaffold, built 5 Sep: the hash column and manifest on the workspace table, the protocol file, the agent that answers ping, a fake container that is the agent over a socket pair in workerd, and the image. Pen phase 1, the checkout, built the same day: the sync in both directions by hash over binary blobs, the cache rule in the agent, and a kill walk in workerd that finds the rows whole at every one of 246 points; journey 3's atomicity claim holds against the fake. Pen phase 2, the router and the sentence, built the same day: the table in one file generating the routing decision, the refusal, and the prompt paragraph; Shell.exec routing a line whole to just-bash or to the container, output streamed as pi's bash updates, a socket close settled as an honest interruption; journey 6 holds byte for byte and journey 1 steps 1 to 4 hold against the fake. Pen phase 3, a real machine, built the same day and walked on a local rig, wrangler dev with Docker and a real model: journeys 1 and 3 as written, a container rented in 1.2 s, gone after the idle period, killed mid-run and reported honestly. Pen phase 4, the repository and the broker, built the same night: real git in the image with a credential helper over a Unix socket, the broker in the cell handing the home's token over once per push, journey 2 held with real git in Node and through the fake in workerd. Pen phase 5, the fresh isolate, built the same night: node <file> in a dynamic worker over the workspace as read-only modules, fetch refused with a sentence, proved in workerd through the real loader; it did not slip. The shepherd enabled the Workers Paid plan that evening; lamb-pen was deployed with its image and journeys 1, 3, and 4 walked there with a real model, so pen phases 3 and 5 are closed. Journey 2 walked from the deployed pen home against dglazkov/lamb-playground with the shepherd's token, the branch on GitHub and the token in nothing the model saw. Pen phase 6 built the starter beside a celld node and reached a real container through it; journey 5 stalls on celld dropping the work a socket message wakes, recorded and left to a later phase or to celld. Journey 6 holds on the deployed lamb home with all of pen present: lamb's journeys 1, 2, 4, and 5 walked there unchanged; 3 and 6 wait on a person. Journey 2 is lamb's withdrawn git journey, a repository in and the work out, now over real git in a container. Journeys 1 and 3 use lamb phase 5's surface (detach, wait, log), which closed on 5 Sep; pen's first real walk waits only on the Workers Paid plan."
+note: "journeys, design and phases written 5 Sep 2026, the day lamb's git facade was withdrawn, and recast the same evening around agents as the actors: a sheepdog delegates to sheep, and a sheep rents a machine for the length of a command. Pen phase 0, the scaffold, built 5 Sep: the hash column and manifest on the workspace table, the protocol file, the agent that answers ping, a fake container that is the agent over a socket pair in workerd, and the image. Pen phase 1, the checkout, built the same day: the sync in both directions by hash over binary blobs, the cache rule in the agent, and a kill walk in workerd that finds the rows whole at every one of 246 points; journey 3's atomicity claim holds against the fake. Pen phase 2, the router and the sentence, built the same day: the table in one file generating the routing decision, the refusal, and the prompt paragraph; Shell.exec routing a line whole to just-bash or to the container, output streamed as pi's bash updates, a socket close settled as an honest interruption; journey 6 holds byte for byte and journey 1 steps 1 to 4 hold against the fake. Pen phase 3, a real machine, built the same day and walked on a local rig, wrangler dev with Docker and a real model: journeys 1 and 3 as written, a container rented in 1.2 s, gone after the idle period, killed mid-run and reported honestly. Pen phase 4, the repository and the broker, built the same night: real git in the image with a credential helper over a Unix socket, the broker in the cell handing the home's token over once per push, journey 2 held with real git in Node and through the fake in workerd. Pen phase 5, the fresh isolate, built the same night: node <file> in a dynamic worker over the workspace as read-only modules, fetch refused with a sentence, proved in workerd through the real loader; it did not slip. The shepherd enabled the Workers Paid plan that evening; lamb-pen was deployed with its image and journeys 1, 3, and 4 walked there with a real model, so pen phases 3 and 5 are closed. Journey 2 walked from the deployed pen home against dglazkov/lamb-playground with the shepherd's token, the branch on GitHub and the token in nothing the model saw. Pen phase 6 built the starter beside a celld node and reached a real container through it; journey 5 stalls on celld dropping the work a socket message wakes, and then celld itself was withdrawn by the shepherd, not yet mature, journey 5 with it. Journey 6 holds on the deployed lamb home with all of pen present: lamb's journeys 1, 2, 4, and 5 walked there unchanged; 3 waits on a second terminal. Journey 2 is lamb's withdrawn git journey, a repository in and the work out, now over real git in a container. Journeys 1 and 3 use lamb phase 5's surface (detach, wait, log), which closed on 5 Sep; pen's first real walk waits only on the Workers Paid plan."
 ---
 
 # Pen — the journeys
@@ -57,7 +57,7 @@ Key terms, in addition to lamb's:
 | `git` is not in the cell. | The sheep runs `git clone`, `commit`, and `push` as real git, over a checkout, with a credential neither it nor the dog ever sees. |
 | A command is a tier-0 command or a refusal. | A command is routed: tier 0 if the shell has it, tier 2 if a container is provisioned, a refusal that says which, otherwise. |
 | A sheep's cost is its rows. | A sheep's cost is its rows plus a container while one is running, and nothing while it is not. |
-| Nothing native runs on celld. | The same routing runs on a celld node with a container runtime beside it. |
+| Nothing native runs on celld. | (Withdrawn 5 Sep 2026 with celld.) |
 
 ## Cast
 
@@ -71,7 +71,7 @@ Key terms, in addition to lamb's:
 
 The journeys are ordered from the smallest claim outward: journey 1 is
 one command in a container, journey 2 is a repository, journey 3 is the
-container dying, journey 4 is a sheep's own code, journey 5 is celld, and
+container dying, journey 4 is a sheep's own code, journey 5 was celld (withdrawn), and
 journey 6 verifies nothing changed for lamb.
 
 ## Journey 1: A command that needs a machine
@@ -214,6 +214,11 @@ Acceptance criteria:
   Everything else stands without it.
 
 ## Journey 5: The same pen on celld
+
+**Withdrawn 5 Sep 2026**, with celld, by the shepherd: not yet mature.
+Pen phase 6 built the starter beside a node and reached a container
+through it, then found celld dropping the work a socket wakes; the
+record is there. The journey stays as written.
 
 The shepherd runs celld with a container runtime on the node.
 

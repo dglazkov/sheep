@@ -6,8 +6,7 @@
  * its idle clock when one is already running; the container's own
  * `sleepAfter` (`PEN_IDLE`, default ten minutes) stops it, and the cell
  * learns of the stop from its socket. The cell never fetches into the
- * container: the container is a client of the cell, so the same agent
- * runs on celld, where nothing like this class exists.
+ * container: the container is a client of the cell.
  *
  * The container's minutes are reported here, from `onStart` and `onStop`,
  * because they are what the platform bills and they fire whether or not

@@ -36,7 +36,6 @@ import { CredentialBroker, homeMinter } from "./pen/broker.ts";
 import { DEFAULT_IDLE } from "./pen/container.ts";
 import { DEFAULT_CPU_MS, Isolate } from "./pen/isolate.ts";
 import { type ContainerStarter, parseDuration, PenLease } from "./pen/lease.ts";
-import { HttpStarter, httpStarterFor } from "./pen/starter-http.ts";
 import { createCellSessionRepo } from "./storage/sqlite.ts";
 import { createCellHost } from "./wire/host.ts";
 import { WebSocketListener } from "./wire/listener.ts";
@@ -229,11 +228,9 @@ export class SessionCell extends DurableObject<Env> {
 
   /**
    * Tier 2 for this cell, when the home has it: the `PEN_CONTAINER`
-   * binding when bound, else the starter `PEN_STARTER_URL` names (a
-   * program beside a celld node, pen phase 6), else a starter the test set
-   * before the first boot. Configuration, never the platform: nothing here
-   * asks where it runs. A home with none is lamb, and the shell does not
-   * route.
+   * binding when bound, else a starter the test set before the first boot.
+   * Configuration, never the platform: nothing here asks where it runs. A
+   * home with none is lamb, and the shell does not route.
    */
   private leaseFor(): PenLease | undefined {
     const binding = this.env.PEN_CONTAINER;
@@ -248,7 +245,7 @@ export class SessionCell extends DurableObject<Env> {
               destroy: () => stub.destroy(),
             };
           })()
-        : httpStarterFor(this.env, this.sessionId));
+        : undefined);
     if (starter === undefined) return undefined;
     const directory = this.env.DIRECTORY.getByName("home");
     const origin = this.env.PEN_CELL_ORIGIN;
@@ -267,12 +264,6 @@ export class SessionCell extends DurableObject<Env> {
       }),
       log,
     );
-    // The minutes: the binding reports its own from `onStart` and `onStop`, and so does the test's stub; an HTTP starter
-    // is a plain program that knows nothing of the Directory, so its lease reports from the socket's open and close.
-    const report =
-      starter instanceof HttpStarter
-        ? { opened: (at: number) => directory.containerOpened(this.sessionId, at), closed: (at: number) => directory.containerClosed(this.sessionId, at) }
-        : undefined;
     return new PenLease({
       sessionId: this.sessionId,
       cellUrl: origin === undefined || origin === "" ? undefined : `${origin.replace(/\/$/, "")}/s/${encodeURIComponent(this.sessionId)}/pen`,
@@ -281,7 +272,6 @@ export class SessionCell extends DurableObject<Env> {
       startTimeoutMs: seconds(this.env.PEN_START_TIMEOUT, 90) * 1000,
       renewEveryMs: Math.max(1_000, Math.min((idleSeconds * 1000) / 2, 60_000)),
       broker,
-      ...(report === undefined ? {} : { report }),
       log,
     });
   }
@@ -347,8 +337,8 @@ export class SessionCell extends DurableObject<Env> {
   private detach(runtime: Runtime, run: (context: Context) => Promise<unknown>): void {
     const { context, cancel } = withCancel(BACKGROUND_CONTEXT);
     runtime.drives.add(cancel);
-    // The drive outlives the request that started it. workerd keeps a Durable Object's work either way; celld
-    // (pen phase 6's finding) drops any timer no request and no `waitUntil` covers, so the platform is told.
+    // The drive outlives the request that started it, so the platform is told: work no request and no
+    // `waitUntil` covers is the platform's to keep or drop, and this must be kept.
     this.ctx.waitUntil(
       run(context)
         .catch(() => undefined)

@@ -32,13 +32,12 @@ roster of them.
 
 ---
 
-**Where we are: phases 0, 1, 2, 5, and 7 CLOSED, phases 3, 4, and 6
-PART-DONE. Nothing in lamb waits on work; what is left waits on a
-person.** Every proof that can run locally has run: pi's conformance
+**Where we are: phases 0, 1, 2, 5, and 7 CLOSED, phases 3 and 4
+PART-DONE, phase 6 WITHDRAWN with celld. Nothing in lamb waits on work;
+what is left waits on a person.** Every proof that can run locally has run: pi's conformance
 suites, journey 4 in workerd, journey 2's eviction test at every
 transition, journey 3 over pi's protocol on WebSockets, journeys 1 and 3
-through `lamb` and pi's real client against both `wrangler dev` and a
-single `celld dev` node, journey 5 through the built CLI against a
+through `lamb` and pi's real client against `wrangler dev`, journey 5 through the built CLI against a
 `wrangler dev` home, and an export pi's Node backend opens. On the
 deployed home with a real model, journey 1 has walked as far as one
 laptop can take it, journey 2 has walked in full (a turn evicted by a
@@ -50,9 +49,9 @@ phase 5 and withdrawn on 5 Sep: the shell's `git` was a facade over
 isomorphic-git, and git is a program for the second leg's container tier
 ([pen](../pen/phases.md)); the same evening the journeys were recast
 around agents as the actors and lamb phase 5 became the sheepdog's
-surface, now built. What waits on a person: a second machine and the
-TUI half of journey 3, and a two-node celld fleet for journey 6. Pen
-phase 3, the first real machine, no longer waits on lamb.
+surface, now built. celld, and journey 6 with it, was withdrawn on 5 Sep by the shepherd
+after pen phase 6 found it dropping the work a socket wakes. What waits
+on a person: a second machine and the TUI half of journey 3.
 
 The order is dependency order and it is also risk order: phase 1 is the
 gate, because if pi's storage does not run over the cell's SQL nothing
@@ -639,7 +638,8 @@ packages. Kept: files in 1 MiB chunks under an 8 MiB cap.
 
 ## Phase 6 — celld
 
-**Status: PART-DONE** 5 Sep 2026. Walked on one local node: `celld dev`
+**Status: WITHDRAWN.** 5 Sep 2026; celld with it, the shepherd's call.
+Formerly PART-DONE the same day: walked on one local node: `celld dev`
 accepted the Wrangler project, and journeys 1 and 3 ran through `lamb`
 and pi's real client against it, with the session made before a node
 restart still listed and readable after it, two terminals prompting at
@@ -669,16 +669,12 @@ say, for each celld claim the design leans on, whether it held.
 - **2026-09-05 — celld 0.4.0 has `celld dev`**: one node, a local object
   store, no Docker, state under `.celld/dev`. The design assumed a fleet
   was the smallest celld; it is not.
-- **2026-09-05 — The same bundle runs.** SQLite per cell, alarms, the
-  Directory's RPC, `fetch`, and `nodejs_compat`'s `node:fs` and `Buffer`
-  all held; `celld deploy --dry-run` bundles the cell at 4.2 MB. The
-  Worker code did not change for celld.
-- **2026-09-05 — celld bundles with its own esbuild call**, found through
-  `CELLD_ESBUILD`, and refuses Wrangler's `alias` key. A CommonJS
-  dependency of just-bash, `safe-buffer`, does a dynamic
-  `require("buffer")` that Wrangler's bundler shims and celld's leaves
-  dynamic; a pnpm patch on `safe-buffer` takes the global `Buffer` first,
-  which both runtimes provide.
+- **2026-09-05 — The same bundle ran.** SQLite per cell, alarms, the
+  Directory's RPC, `fetch`, `node:fs`, and `Buffer` all held; the Worker
+  code did not change for celld.
+- **2026-09-05 — celld bundles with its own esbuild** (`CELLD_ESBUILD`)
+  and refuses Wrangler's `alias`; just-bash's `safe-buffer` does a dynamic
+  `require("buffer")`, so a pnpm patch takes the global `Buffer` first.
 - **2026-09-05 — celld's `setTimeout` returns a number**, where workerd's
   Node compat returns a Node-style timer. pi-server called `.unref()` on
   it unguarded and every WebSocket upgrade answered 500. One guarded line
@@ -687,19 +683,21 @@ say, for each celld claim the design leans on, whether it held.
   `celld dev` was killed and restarted was listed and its transcript
   read after; the local object store is the durable half, as the design
   claims a bucket would be.
-- **2026-09-05 — Open: celld logs an isolate-startup event for every
-  resident cell every five seconds while idle.** Whether that is a
-  restart or a report was not measured; a long-lived WebSocket held for
-  the walk, which argues report.
-- **2026-09-05 — A replaced node drains before it exits** and answers
-  503 `{"draining": true}` meanwhile; a walk that restarts the node has to
-  wait for the new listen line, not for the port to answer.
-- **2026-09-05 — Open: the two-node walk.** No fleet and no bucket; the
-  failover claim in journey 6 step 3 is untested.
+- **2026-09-05 — celld logged an isolate-startup event for every resident
+  cell every five seconds while idle**; a long-lived socket held, which
+  argues report, not restart.
+- **2026-09-05 — A replaced node drains before it exits**, answering 503
+  `{"draining": true}` meanwhile.
+- **2026-09-05 — The two-node walk never happened**; the failover claim
+  in journey 6 step 3 is untested, and now moot.
 - **2026-09-05 — celld drops work no request covers** (pen phase 6): a
   detached drive's timers never fired there until the cell put the drive
   under `ctx.waitUntil`. And celld 0.4.1 has no writable `node:fs`, so
-  the marker write fails and no cell boots on it; 0.4.0 does. Open.
+  the marker write fails and no cell boots on it; 0.4.0 does.
+
+**Withdrawn 5 Sep 2026** with celld, not yet mature; the dev and
+deploy scripts and pen's starter removed, the findings kept.
+
 
 ## Phase 7 — Nothing changed for pi
 

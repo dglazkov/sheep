@@ -8,11 +8,8 @@
     "dev:pen": "wrangler dev --env pen",
     "deploy": "wrangler deploy",
     "deploy:pen": "wrangler deploy --env pen",
-    "deploy:celld": "celld deploy",
     "typecheck": "tsc --noEmit",
-    "test": "vitest --run",
-    "dev:celld": "node scripts/celld-dev.mjs",
-    "dev:celld:pen": "PEN_STARTER_URL=${PEN_STARTER_URL:-http://127.0.0.1:9877} PEN_CELL_ORIGIN=${PEN_CELL_ORIGIN:-http://host.docker.internal:9876} node scripts/celld-dev.mjs"
+    "test": "vitest --run"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.22.0",
