@@ -90,7 +90,7 @@ none: the migration is written, not deployed.
 - **2026-09-06 — vitest-pool-workers counts an Error rejected from an async Durable Object method as unhandled even when the caller catches it.** `Directory.create` stays sync, and the Worker asks `refusal()` first; the refusals are the directory's, before any cell exists.
 - **2026-09-06 — `sheep ls` now ends a pastureless row with a tab.** A reader that trims a line loses the empty column; journey 5's test reads only four columns and holds unchanged. `--json` carries `pasture: null`.
 - **2026-09-06 — Open: `return runX(...)` inside `main`'s `try` in `cli.ts` returns the promise unawaited,** so a rejection escapes the catch and exits 1 with a stack trace; `status`, `wait`, `abort`, and `log` carry the hole. `pasture` is `return await`. Waits on the next phase that touches `cli.ts`.
-- **2026-09-06 — The walk, by the conductor on a local faux home:** `--repo .` from a scratch checkout and its refusal from `/private/tmp`, the secret set from stdin and refused as an argument, the brief put and read back, two sheep born and the column shown, both refusal sentences verbatim, `GET /p/walk/secrets/GIT_TOKEN` 404. Cost: 16 minutes of a subagent, 8 of verification.
+- **2026-09-06 — The walk, by the conductor on a local faux home:** `--repo .` from a scratch checkout and refused from `/private/tmp`, the secret from stdin and refused as an argument, two sheep born and the column shown, both refusals verbatim, the secret route 404. Cost: 16 minutes of a subagent, 8 of verification.
 
 ## Phase 1: The mount, and the prompt
 
