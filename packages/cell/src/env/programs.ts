@@ -414,8 +414,13 @@ export function programsOf(script: ScriptNode): Array<string | null> {
  * With no container the answer is what the table says, for the tests;
  * the shell does not ask, and runs the line in just-bash as it did before pen,
  * except for the tier-1 line, which the shell does take.
+ *
+ * `also` is what this cell's just-bash has beyond the registry: the
+ * custom commands it was made with (pasture phase 2's `pasture`, in a
+ * pastured cell). They are tier 0, since just-bash has them, and no row
+ * here names them.
  */
-export function classify(command: string, home: Home, exists?: (file: string) => boolean): Route {
+export function classify(command: string, home: Home, exists?: (file: string) => boolean, also?: ReadonlySet<string>): Route {
   let script: ScriptNode;
   try {
     script = parse(command);
@@ -425,7 +430,7 @@ export function classify(command: string, home: Home, exists?: (file: string) =>
   const found = programsOf(script);
   const programs = found.filter((name): name is string => name !== null);
   const tier0 = tier0Programs();
-  const outside = found.filter((name) => name === null || !tier0.has(name));
+  const outside = found.filter((name) => name === null || !(tier0.has(name) || also?.has(name) === true));
   if (outside.length === 0) return { tier: 0, programs };
   if (home.isolate === true && !(home.containerUp === true && hasContainer(home))) {
     const run = isolateRun(script);

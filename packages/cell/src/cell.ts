@@ -21,6 +21,7 @@ import {
   type Entry,
   type HarnessEvent,
   type LaneSnapshot,
+  type MessageEntry,
   type Session,
   type WatchHandle,
   withCancel,
@@ -28,7 +29,7 @@ import {
 import { Server } from "@earendil-works/pi-server";
 import type { SqliteSessionRepo } from "@earendil-works/pi-session-backend-sqlite-node/sqlite";
 import { DurableObject } from "cloudflare:workers";
-import type { LaneState } from "./directory.ts";
+import { type LaneState, taskOf } from "./directory.ts";
 import { CellExecutionEnv } from "./env/execution-env.ts";
 import { type CellModels, createCellModels, type FauxProgram, isFauxProgram } from "./models.ts";
 import { CredentialBroker, homeMinter } from "./pen/broker.ts";
@@ -59,6 +60,8 @@ interface Runtime {
   watch: WatchHandle<LaneSnapshot>;
   /** The lane state last told to the Directory, so a transition is reported once. */
   reported: LaneState | undefined;
+  /** Whether this incarnation has told the Directory the task, so the first prompt is reported once. */
+  taskReported: boolean;
   /** pi's protocol server over this cell's WebSockets. */
   server: Server;
   listener: WebSocketListener;
@@ -99,6 +102,14 @@ export interface EvictionTestHooks {
   starter?: ContainerStarter;
 }
 
+/** The text of a user entry's message: the string it was, or its text parts, an image being no words. */
+function promptText(entry: MessageEntry): string {
+  const content = (entry.message as { content: unknown }).content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.flatMap((part: { type?: unknown; text?: unknown }) => (part.type === "text" && typeof part.text === "string" ? [part.text] : [])).join("\n");
+}
+
 function seconds(value: string | undefined, fallback: number): number {
   const parsed = value === undefined || value.trim() === "" ? Number.NaN : Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -132,16 +143,24 @@ export class SessionCell extends DurableObject<Env> {
     const directory = this.env.DIRECTORY.getByName("home");
     // The cell learns its pasture from the directory's row, once, at boot: a row that names none, or no row, is lamb's sheep.
     const pastureName = (await directory.get(this.sessionId))?.pasture ?? null;
-    const pasture: CellPasture | undefined = pastureName === null ? undefined : { name: pastureName, source: this.env.PASTURE.getByName(pastureName) };
+    // One stub for the pasture's object: the prompt builder and the mount read through it, and the program writes through it.
+    const object = pastureName === null ? undefined : this.env.PASTURE.getByName(pastureName);
+    const pasture: CellPasture | undefined = pastureName === null || object === undefined ? undefined : { name: pastureName, source: object };
     // Tier 1 belongs to any home with the loader, container or not; `lease.socket` is whether a container is up.
     const loader = this.env.LOADER;
     const env = new CellExecutionEnv(this.ctx.storage.sql, {
       ...(lease === undefined ? {} : { container: lease, containerUp: () => lease.socket !== undefined, killTimeoutMs: seconds(this.env.PEN_KILL_TIMEOUT, 10) * 1000 }),
       ...(loader === undefined ? {} : { isolate: new Isolate(loader, { cpuMs: seconds(this.env.PEN_ISOLATE_CPU_MS, DEFAULT_CPU_MS) }) }),
-      ...(pasture === undefined ? {} : { pasture: pasture.source }),
+      // The mount and the program, both over the one stub: what the program puts, the mount's next call reads.
+      ...(pasture === undefined || object === undefined
+        ? {}
+        : {
+            pasture: object,
+            pastureProgram: { name: pasture.name, sessionId: this.sessionId, object, herd: () => directory.herd(pasture.name) },
+          }),
     });
     const models = createCellModels(this.env, { onProviderCall: () => this.transition(), program: () => this.fauxProgram() });
-    const runtime: Partial<Runtime> = { repo, session, env, lease, models, drives: new Set(), reported: undefined };
+    const runtime: Partial<Runtime> = { repo, session, env, lease, models, drives: new Set(), reported: undefined, taskReported: false };
     const { harness, open } = await AgentHarness.create(
       {
         session,
@@ -211,9 +230,31 @@ export class SessionCell extends DurableObject<Env> {
       case "navigation_end":
         void this.settleWhenCurrent(runtime);
         return;
+      case "entry_added":
+        // The prompt, as the lane took it: over the wire, over HTTP, or as a queued follow-up, it is an entry here.
+        if (event.entry.type === "message" && event.entry.message.role === "user") this.reportTask(runtime, event.entry);
+        return;
       default:
         return;
     }
+  }
+
+  /**
+   * Tells the Directory what this sheep was asked, the way `report` tells
+   * it the lane's state: the first line of the first prompt, once. An
+   * incarnation booted later in the sheep's life sees a later prompt
+   * first and says nothing, since the first is in the transcript before
+   * it; the Directory keeps the first report either way.
+   */
+  private reportTask(runtime: Runtime, entry: MessageEntry): void {
+    if (runtime.taskReported) return;
+    runtime.taskReported = true;
+    const first = runtime.watch.snapshot.transcript.find((candidate) => candidate.type === "message" && candidate.message.role === "user");
+    if (first !== undefined && first.id !== entry.id) return;
+    const task = taskOf(promptText(entry));
+    this.env.DIRECTORY.getByName("home")
+      .setTask(this.sessionId, task)
+      .catch((error: unknown) => console.error(`[cell ${this.sessionId}] could not report the task:`, error instanceof Error ? error.message : error));
   }
 
   private async settleWhenCurrent(runtime: Runtime): Promise<void> {

@@ -21,7 +21,7 @@ tree would do, has left the design.
 
 ---
 
-**Where we are: pasture phases 0 and 1 CLOSED; phase 2 NOT STARTED.** Planned 6 Sep 2026, the morning recast closed, from a brainstorm with the shepherd; the shepherd's calls are in the journey's front matter. Phase 0 built the same morning: the object, the directory's columns, the routes, the verbs. Phase 1 the same day: `/pasture` read-only in every path a sheep reads, the prompt with the brief and the skills, the pastureless literal; journey 2 steps 2 to 5 and journey 4 steps 1 and 2 walked on a local home with a real model. The next phase is pasture phase 2, the program and the herd. Nothing waits on a person before pasture phase 5.
+**Where we are: pasture phases 0, 1, and 2 CLOSED; phase 3 NOT STARTED.** Planned 6 Sep 2026, the morning recast closed, from a brainstorm with the shepherd; the shepherd's calls are in the journey's front matter. Phase 0 built the same morning: the object, the columns, the routes, the verbs. Phase 1: the read-only mount and the prompt. Phase 2: the `pasture` program, the task column, and the herd as one query behind two views, walked on a local home with a real model. The next phase is pasture phase 3, birth and the credential, the first that needs a container. Nothing waits on a person before pasture phase 5.
 
 The order is dependency order. Phase 0 is the object, the directory's
 two columns, the routes, and the dog's verbs, so that every later phase
@@ -168,9 +168,16 @@ as before, held as a literal. Against a local home with the faux
 provider: journey 2 step 1 and journey 1 step 6, the two views diffed
 empty. Suites unchanged. **⚑** none.
 
-**Status: NOT STARTED.**
+**Status: CLOSED.** 2026-09-06. The `pasture` program in tier 0 with `herd`, `put`, and `rm`, the task reported from the lane, and the two views diffed empty by a CLI test; journey 1 steps 6 and 7 and journey 2 step 1 walked by the conductor on a local home with a real model.
 
 **Findings:**
+
+- **2026-09-06 — just-bash's `getCommandNames()` is its static registry, so a custom command is not tier 0 to `classify` by itself.** `classify` gained an optional set of names a pastured cell passes, and `pasture put` stays in the shell on a home with a container.
+- **2026-09-06 — The first prompt reaches `observeLane` as `entry_added` with a user message whatever door it came through,** so the task is reported from the listener that reports lane state; the directory keeps the first report and ignores the rest.
+- **2026-09-06 — Pi's bash tool trims stderr's trailing newline before its exit line and renders empty stdout as `(no output)`;** a test reading exit codes through the tool normalises both. just-bash's stdin is a latin1 byte string, so `put` rebuilds bytes and a multibyte character lands as UTF-8.
+- **2026-09-06 — A line naming both `pasture` and a container program runs whole in the container, which has no `pasture` binary.** The brief tells a sheep to write a file and `put` it on its own line; a helper in the image is pasture phase 3's call.
+- **2026-09-06 — The Open finding of pasture phase 0 is paid:** every case in `main`'s `try` in `cli.ts` is `return await`.
+- **2026-09-06 — The walk, by the conductor on a local home with a real model:** two sheep born with tasks; `sheep pasture <name>` showed both rows with their tasks; a sheep asked who else was there ran `pasture` and named its sibling and the sibling's task; a sheep's `put` was the dog's `cat` at once. Cost: 19 minutes of a subagent, 9 of verification.
 
 ## Phase 3: Birth, and the credential
 

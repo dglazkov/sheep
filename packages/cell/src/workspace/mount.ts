@@ -100,6 +100,18 @@ export class PastureCall {
     throw error;
   }
 
+  /**
+   * The tree changed under this call, by the program's `put` or `rm`
+   * (pasture phase 2): the snapshot and the bytes are dropped, so the
+   * next touch in the same command line fetches again and reads what was
+   * just written. Nothing else forgets; a call is otherwise one snapshot.
+   */
+  forget(): void {
+    this.#snapshot = undefined;
+    this.#rows = undefined;
+    this.#content.clear();
+  }
+
   /** The one manifest hop of this call, made on first touch and never again. */
   snapshot(): Promise<PastureSnapshot> {
     this.#snapshot ??= this.source.snapshot().then((snapshot) => {

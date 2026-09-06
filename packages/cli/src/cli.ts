@@ -118,6 +118,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     return 0;
   }
   const output = { json: parsed.json, out: (text: string) => void process.stdout.write(text), err: (text: string) => void process.stderr.write(text) };
+  // Every case is `return await`: a rejection inside the `try` is caught below and printed as a sentence, not thrown out of `main`.
   try {
     const home = new Home(config);
     switch (command) {
@@ -134,47 +135,46 @@ export async function main(argv: readonly string[]): Promise<number> {
       case "new": {
         if (parsed.pasture !== undefined && !PASTURE_NAME.test(parsed.pasture)) return fail(`a pasture's name is [a-z0-9-]+, not ${JSON.stringify(parsed.pasture)}`);
         const session = await home.create(parsed.name, parsed.pasture);
-        if (parsed.detach) return detach(home, session.id, parsed);
+        if (parsed.detach) return await detach(home, session.id, parsed);
         process.stderr.write(`session ${session.id}\n`);
-        return attach(home, session.id, parsed, output);
+        return await attach(home, session.id, parsed, output);
       }
       case "-c":
       case "--continue": {
         const newest = (await home.list())[0];
         if (newest === undefined) return fail("no sessions at this home; run `sheep new`");
-        return parsed.detach ? detach(home, newest.id, parsed) : attach(home, newest.id, parsed, output);
+        return await (parsed.detach ? detach(home, newest.id, parsed) : attach(home, newest.id, parsed, output));
       }
       case "attach": {
         const id = parsed.rest[1];
         if (id === undefined) return fail("attach needs a session id");
-        return parsed.detach ? detach(home, id, parsed) : attach(home, id, parsed, output);
+        return await (parsed.detach ? detach(home, id, parsed) : attach(home, id, parsed, output));
       }
       case "status": {
         const id = parsed.rest[1];
         if (id === undefined) return fail("status needs a session id");
-        return runStatus(home, id, output);
+        return await runStatus(home, id, output);
       }
       case "wait": {
         const ids = parsed.rest.slice(1);
         if (ids.length === 0) return fail("wait needs at least one session id");
         const seconds = parsed.timeout === undefined ? undefined : Number(parsed.timeout);
         if (seconds !== undefined && !(seconds > 0)) return fail(`--timeout needs a number of seconds, not ${parsed.timeout}`);
-        return runWait(home, ids, { timeoutMs: seconds === undefined ? undefined : seconds * 1000 }, output);
+        return await runWait(home, ids, { timeoutMs: seconds === undefined ? undefined : seconds * 1000 }, output);
       }
       case "abort": {
         const id = parsed.rest[1];
         if (id === undefined) return fail("abort needs a session id");
-        return runAbort(home, id, output);
+        return await runAbort(home, id, output);
       }
       case "log": {
         const id = parsed.rest[1];
         if (id === undefined) return fail("log needs a session id");
         const last = parsed.last === undefined ? undefined : Number(parsed.last);
         if (last !== undefined && !(Number.isInteger(last) && last >= 0)) return fail(`--last needs a count, not ${parsed.last}`);
-        return runLog(home, id, { since: parsed.since, last }, output);
+        return await runLog(home, id, { since: parsed.since, last }, output);
       }
       case "pasture":
-        // Awaited, so the home's refusal sentence is caught below and printed, not thrown out of `main`.
         return await runPasture(home, { rest: parsed.rest.slice(1), repo: parsed.repo, branch: parsed.branch }, output);
       case "export": {
         const id = parsed.rest[1];

@@ -21,6 +21,10 @@
  * the mount (`workspace/mount.ts`) from the pasture's object, live per tool
  * call, and every write there is refused with `EROFS` and the design's
  * sentence. Without one, no method here routes and the env is lamb's.
+ * Pasture phase 2: with a `pastureProgram`, the shell of each run is made
+ * with the `pasture` command (`env/pasture-command.ts`) over that run's
+ * mount, and the router counts the name as tier 0. Without one, just-bash
+ * is made as it always was and `pasture` is its not-found line.
  */
 import type { Context } from "@earendil-works/pi-agent-core";
 import {
@@ -44,6 +48,7 @@ import { ContainerRun, KillUnanswered, type RunEnd, RunInterrupted } from "../pe
 import { CellFs } from "../workspace/cell-fs.ts";
 import { type FileRow, FilesTable, FsError, isReadable, MAX_FILE_BYTES, normalizePath, TEMP_ROOT, WORKSPACE_ROOT } from "../workspace/files.ts";
 import { annotateReadOnly, isPasturePath, PASTURE_ROOT, PastureCall, type PastureRow, type PastureSource, readOnly } from "../workspace/mount.ts";
+import { PASTURE_PROGRAMS, type PastureProgram, pastureCommand } from "./pasture-command.ts";
 import {
   annotateCommandNotFound,
   classify,
@@ -137,6 +142,8 @@ export interface CellExecutionEnvOptions {
   isolate?: Isolate;
   /** The pasture this sheep was born into, as the cell reaches its object. Absent, there is no `/pasture` and no second backing. */
   pasture?: PastureSource;
+  /** The program's needs, for a sheep with a pasture: its name, this sheep's id, the object, and the directory's herd. Absent, the shell has no `pasture`. */
+  pastureProgram?: PastureProgram;
 }
 
 /** How a command ended, before the capture is settled. */
@@ -155,6 +162,8 @@ export class CellExecutionEnv implements ExecutionEnv {
   readonly fs: CellFs;
   /** The second backing, or `undefined` for a pastureless cell, which has none anywhere. */
   readonly pasture: PastureSource | undefined;
+  /** The program, or `undefined` for a pastureless cell, whose shell is made without it. */
+  readonly pastureProgram: PastureProgram | undefined;
   private readonly shellEnv: Record<string, string>;
   private readonly container: ContainerLease | undefined;
   private readonly containerUp: (() => boolean) | undefined;
@@ -170,6 +179,7 @@ export class CellExecutionEnv implements ExecutionEnv {
     this.files.init();
     this.fs = new CellFs(this.files);
     this.pasture = options.pasture;
+    this.pastureProgram = options.pastureProgram;
     this.container = options.container;
     this.containerUp = options.containerUp;
     this.isolate = options.isolate;
@@ -439,7 +449,8 @@ export class CellExecutionEnv implements ExecutionEnv {
     const home = this.container === undefined ? this.home : await this.homeNow();
     let route: Route = { tier: 0, programs: [] };
     if (this.container !== undefined || this.isolate !== undefined) {
-      const classified = classify(command, home, (file) => this.isWorkspaceFile(file, cwd));
+      // The program is tier 0 in a pastured cell: a line of `pasture put …` stays in just-bash on a home with a container too.
+      const classified = classify(command, home, (file) => this.isWorkspaceFile(file, cwd), this.pastureProgram === undefined ? undefined : PASTURE_PROGRAMS);
       if (this.container !== undefined || ("tier" in classified && classified.tier === 1)) route = classified;
     }
     const environment = options?.inheritEnv === false ? { ...options.env } : { ...this.shellEnv, ...options?.env };
@@ -475,7 +486,12 @@ export class CellExecutionEnv implements ExecutionEnv {
     }
   }
 
-  /** Tier 0: just-bash over the rows, as the shell always ran it; `fs` carries this call's mount when the cell has a pasture. */
+  /**
+   * Tier 0: just-bash over the rows, as the shell always ran it; `fs`
+   * carries this call's mount when the cell has a pasture, and then, and
+   * only then, just-bash is made with the `pasture` command over it. A
+   * pastureless cell's just-bash is made exactly as before.
+   */
   private async runInShell(
     command: string,
     cwd: string,
@@ -497,11 +513,13 @@ export class CellExecutionEnv implements ExecutionEnv {
     const onAbort = () => controller.abort();
     signal?.addEventListener("abort", onAbort, { once: true });
 
+    const program = this.pastureProgram;
     const bash = new Bash({
       fs,
       cwd,
       env: { ...environment, PWD: cwd },
       executionLimits: EXECUTION_LIMITS,
+      ...(program === undefined || fs.pasture === undefined ? {} : { customCommands: [pastureCommand(program, fs.pasture)] }),
     });
 
     try {

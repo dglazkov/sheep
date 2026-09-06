@@ -51,6 +51,14 @@ export function noContainerForRepository(name: string): string {
   return `pasture ${name} has a repository, and this home has no container to clone it with; a pasture with no repository would work here`;
 }
 
+/** How much of a prompt the `task` column keeps. */
+export const TASK_LENGTH = 120;
+
+/** The `task` column's value for a prompt: its first line that says anything, whitespace trimmed, at most `TASK_LENGTH` characters. */
+export function taskOf(prompt: string): string {
+  const line = prompt.split(/\r?\n/).map((candidate) => candidate.trim()).find((candidate) => candidate.length > 0) ?? "";
+  return line.length > TASK_LENGTH ? line.slice(0, TASK_LENGTH).trimEnd() : line;
+}
 
 
 /** The home's container minutes against its budget; `budgetMinutes` is `null` when the home has none. */
@@ -162,9 +170,9 @@ export class Directory extends DurableObject<Env> {
       .map(toSummary);
   }
 
-  /** The cell's report of what its sheep was asked: the first line of the first prompt, trimmed. */
+  /** The cell's report of what its sheep was asked: the first line of the first prompt, trimmed. The first report is kept; a later one changes nothing. */
   setTask(id: string, task: string): void {
-    this.ctx.storage.sql.exec("UPDATE sessions SET task = ? WHERE id = ?", task, id);
+    this.ctx.storage.sql.exec("UPDATE sessions SET task = ? WHERE id = ? AND task IS NULL", task, id);
   }
 
   /** Registers a pasture's name; `false` when the name is taken. The object itself is the Worker's to initialise. */
