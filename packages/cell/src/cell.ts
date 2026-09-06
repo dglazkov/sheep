@@ -34,6 +34,7 @@ import { type Home, shellSystemPromptLine } from "./env/programs.ts";
 import { type CellModels, createCellModels, type FauxProgram, isFauxProgram } from "./models.ts";
 import { CredentialBroker, homeMinter } from "./pen/broker.ts";
 import { DEFAULT_IDLE } from "./pen/container.ts";
+import { DEFAULT_CPU_MS, Isolate } from "./pen/isolate.ts";
 import { type ContainerStarter, parseDuration, PenLease } from "./pen/lease.ts";
 import { createCellSessionRepo } from "./storage/sqlite.ts";
 import { createCellHost } from "./wire/host.ts";
@@ -138,10 +139,12 @@ export class SessionCell extends DurableObject<Env> {
     const existing = (await repo.list(undefined, context)).find((metadata) => metadata.id === this.sessionId);
     const session = existing === undefined ? await repo.create({ id: this.sessionId }, context) : await repo.open(existing, context);
     const lease = this.leaseFor();
-    const env = new CellExecutionEnv(
-      this.ctx.storage.sql,
-      lease === undefined ? {} : { container: lease, killTimeoutMs: seconds(this.env.PEN_KILL_TIMEOUT, 10) * 1000 },
-    );
+    // Tier 1 belongs to any home with the loader, container or not; `lease.socket` is whether a container is up.
+    const loader = this.env.LOADER;
+    const env = new CellExecutionEnv(this.ctx.storage.sql, {
+      ...(lease === undefined ? {} : { container: lease, containerUp: () => lease.socket !== undefined, killTimeoutMs: seconds(this.env.PEN_KILL_TIMEOUT, 10) * 1000 }),
+      ...(loader === undefined ? {} : { isolate: new Isolate(loader, { cpuMs: seconds(this.env.PEN_ISOLATE_CPU_MS, DEFAULT_CPU_MS) }) }),
+    });
     const models = createCellModels(this.env, { onProviderCall: () => this.transition(), program: () => this.fauxProgram() });
     const runtime: Partial<Runtime> = { repo, session, env, lease, models, drives: new Set(), reported: undefined };
     const { harness, open } = await AgentHarness.create(

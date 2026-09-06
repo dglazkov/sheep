@@ -8,8 +8,10 @@
  * registry plus its own builtins. Tier 2 is the container image: the
  * programs the table names, and anything else the image turns out to
  * have, which the container's bash answers for. Tier 1 is `node` in a
- * fresh isolate, pen phase 5; the column is in the data and the router
- * never chooses it here.
+ * fresh isolate from the Worker Loader, pen phase 5: the `isolate`
+ * column names the one program it takes, `isolateRun` is the one shape
+ * of line it takes, and the router chooses it only when this home has
+ * the loader and no container is up.
  *
  * With no container configured the tier-2 column is empty, and the table
  * generates lamb's sentence and lamb's prompt line byte for byte; a test
@@ -33,6 +35,10 @@ import { type CommandNode, getCommandNames, parse, type ScriptNode, type SimpleC
 export interface Home {
   container: boolean;
   budgetSpent?: boolean;
+  /** Pen phase 5: whether this home has the Worker Loader, so tier 1 exists. Absent, it does not (celld, or a home without the binding). */
+  isolate?: boolean;
+  /** Pen phase 5: whether a container is up right now, socket open. Absent, none is. Tier 1 is chosen only when none is. */
+  containerUp?: boolean;
 }
 
 export const NO_CONTAINER: Home = { container: false };
@@ -50,7 +56,7 @@ export interface Program {
   name: string;
   also?: string[];
   class: ProgramClass;
-  /** Tier 1, the fresh isolate: pen phase 5, never chosen by this router. */
+  /** Tier 1, the fresh isolate: the one program it takes, as `node <file> [args…]` and nothing more. */
   isolate: boolean;
   /** Tier 2: in the image, or known not to be. */
   container: boolean;
@@ -133,14 +139,66 @@ export const BUDGET_SPENT_NOTICE =
  * for every program.
  */
 export function shellNotice(home: Home): string {
-  if (!home.container) return "this shell runs inside the session; no interpreters or package managers are installed";
+  if (!home.container) {
+    const lamb = "this shell runs inside the session; no interpreters or package managers are installed";
+    return home.isolate === true ? `${lamb}, except that ${ISOLATE_TAKES} runs in a fresh isolate with no network` : lamb;
+  }
   if (home.budgetSpent === true) return BUDGET_SPENT_NOTICE;
   return "this shell runs inside the session; a line that names a program the shell lacks runs in the container instead";
 }
 
+// ---------------------------------------------------------------------------
+// Tier 1's sentences. Pen phase 5.
+
+/** The one shape of line tier 1 takes, as the sentences say it. */
+export const ISOLATE_TAKES = "a line of exactly `node <file> [args…]`, the file a workspace script ending in .mjs, .js, or .cjs";
+
+/** What the isolate is, as the prompt says it once and the refusals repeat it. */
+export const ISOLATE_DESCRIBED =
+  "the isolate is fresh for each run: the script reads the workspace with node:fs by paths relative to the workspace root and cannot write to it, so it prints what it computes; its stdout and stderr are the tool result; it has no node_modules and no network, so fetch there fails and says so";
+
+/** The refusal for a `node` line tier 1 cannot take, on a home with the isolate and no container. */
+export function isolateRefusal(): string {
+  return `node runs here only as ${ISOLATE_TAKES}, with no pipes, lists, redirections, or -e; ${ISOLATE_DESCRIBED}`;
+}
+
+/**
+ * The sentence a script's `fetch` gets in tier 1, in place of the runtime's own
+ * line: it names the tier and what would have it. Journey 4 step 3.
+ */
+export function fetchRefused(home: Home): string {
+  return `fetch is not available in tier 1, the fresh isolate; ${whereFetchIs(home)}`;
+}
+
+/** What would have the network: the container, when this home has one. */
+function whereFetchIs(home: Home): string {
+  if (!home.container) return "this home has no container, so a script here cannot reach the network at all";
+  return "run the script in the container with a line that names another program too, or when a container is up";
+}
+
+/**
+ * The sentence for what a script's top level cannot do in tier 1, in
+ * place of the runtime's line about global scope: the runtime names
+ * fetch, connect, timers, and random values there, and its advice, to
+ * do it in a handler, is not the script's to take.
+ */
+export function isolateScopeRefused(home: Home): string {
+  return `fetch, connect, timers, and random values are not available in tier 1, the fresh isolate; ${whereFetchIs(home)}`;
+}
+
+/** The sentence beside the runtime's `operation not permitted` for a write in tier 1, whose workspace is read-only. */
+export function isolateReadOnly(home: Home): string {
+  const where = home.container ? "run the script in the container with a line that names another program too, or when a container is up" : "this home has no container, so a script here can only print";
+  return `the workspace is read-only in tier 1, the fresh isolate; print the result instead, or ${where}`;
+}
+
 /** The sentence for refusing one program: which tier would have it, and whether this home has one. */
 export function refusalSentence(program: string, home: Home): string {
-  if (!hasContainer(home)) return shellNotice(home);
+  if (!hasContainer(home)) {
+    // Tier 1 has `node`, in one shape; a `node` line refused here is one it could not take.
+    if (home.isolate === true && programNamed(program)?.isolate === true) return isolateRefusal();
+    return shellNotice(home);
+  }
   const row = programNamed(program);
   if (row !== undefined && !row.container) {
     return `${program} is installed nowhere this session can reach: not in the shell and not in the container's image`;
@@ -152,9 +210,12 @@ export function refusalSentence(program: string, home: Home): string {
 export function shellSystemPromptLine(home: Home): string {
   const opening = `The bash tool runs a shell interpreter inside the session with the usual text tools (${list(TEXT_TOOLS_SHOWN)}) over the workspace at /workspace. `;
   if (!home.container) {
+    // Lamb's line, byte for byte; with the isolate, the one exception is said in its own sentence.
+    const isolate = home.isolate === true ? `One thing runs outside the shell: ${ISOLATE_TAKES}; ${ISOLATE_DESCRIBED}. ` : "";
     return (
       opening +
       `There are no interpreters (no ${list(spoken("interpreter", home))}) and no package managers (no ${list(spoken("package manager", home))}): ${shellNotice(home)}. ` +
+      isolate +
       `Say so plainly when asked for something the shell cannot do, rather than pretending it ran.`
     );
   }
@@ -166,11 +227,16 @@ export function shellSystemPromptLine(home: Home): string {
     );
   }
   const absent = PROGRAMS.filter((program) => !program.container).map((program) => program.name);
+  const isolate =
+    home.isolate === true
+      ? `One exception: ${ISOLATE_TAKES}, runs in a fresh isolate instead of the container while no container is up; ${ISOLATE_DESCRIBED}; while a container is up, or when the line has more in it, node runs in the container. `
+      : "";
   return (
     opening +
     `A container is rented beside the session for the programs the shell lacks: ${list(containerPrograms())}, and anything else in its image. ` +
     `A command line runs whole in one place: in the shell when every program in it is a text tool, otherwise in the container over a checkout of the same workspace. ` +
     `Output streams back, and the files a command changed sync back to the workspace, except node_modules, build output, and anything in .gitignore, which stay in the container and go when it does. ` +
+    isolate +
     (absent.length === 0 ? "" : `There is no ${list(absent)} in either. `) +
     `Say so plainly when asked for something neither can do, rather than pretending it ran.`
   );
@@ -180,9 +246,14 @@ export function shellSystemPromptLine(home: Home): string {
 export const SHELL_NOTICE = shellNotice(NO_CONTAINER);
 export const SHELL_SYSTEM_PROMPT_LINE = shellSystemPromptLine(NO_CONTAINER);
 
-/** Rewrites just-bash's `X: command not found` lines to carry the notice. */
-export function annotateCommandNotFound(text: string, notice: string = SHELL_NOTICE): string {
-  return text.replace(/^(.*: command not (?:found|available)(?:[^\n(]*)?)$/gm, `$1 (${notice})`);
+/**
+ * Rewrites just-bash's `X: command not found` lines to carry the notice:
+ * one string for every program, lamb's way, or a function of the
+ * program's name, which is how a `node` line tier 1 could not take gets
+ * its own sentence.
+ */
+export function annotateCommandNotFound(text: string, notice: string | ((program: string) => string) = SHELL_NOTICE): string {
+  return text.replace(/^.*?([^\s:]+): command not (?:found|available)(?:[^\n(]*)?$/gm, (line, program: string) => `${line} (${typeof notice === "string" ? notice : notice(program)})`);
 }
 
 /** The refusal as the shell prints it: lamb's line, with the sentence for the program. */
@@ -212,8 +283,40 @@ export function killUnanswered(reason: string, seconds: number): string {
 
 export type Route =
   | { tier: 0; programs: string[] }
+  | { tier: 1; file: string; args: string[]; programs: string[] }
   | { tier: 2; programs: string[] }
   | { refused: string; sentence: string; programs: string[] };
+
+/** The extensions tier 1 runs, as node would: `.mjs` and `.js` as ES modules (`.js` by the nearest package.json, else by its syntax), `.cjs` as CommonJS. */
+export const ISOLATE_EXTENSIONS: readonly string[] = [".mjs", ".js", ".cjs"];
+
+/**
+ * The one shape of line tier 1 takes: one simple command, `node`, one
+ * argument that is a script's path, any further plain arguments; no
+ * pipes, lists, background, negation, `time`, assignments, redirections,
+ * and nothing the shell would expand. `null` for any other line.
+ */
+export function isolateRun(script: ScriptNode): { file: string; args: string[] } | null {
+  if (script.statements.length !== 1) return null;
+  const statement = script.statements[0]!;
+  if (statement.background || statement.pipelines.length !== 1) return null;
+  const pipeline = statement.pipelines[0]!;
+  if (pipeline.negated || pipeline.timed === true || pipeline.commands.length !== 1) return null;
+  const command = pipeline.commands[0]!;
+  if (command.type !== "SimpleCommand" || command.name === null) return null;
+  if (command.assignments.length !== 0 || command.redirections.length !== 0) return null;
+  const name = literalText(command.name);
+  if (name === null || programNamed(name)?.isolate !== true) return null;
+  const words: string[] = [];
+  for (const arg of command.args) {
+    const text = literalText(arg);
+    if (text === null) return null;
+    words.push(text);
+  }
+  const file = words[0];
+  if (file === undefined || file.startsWith("-") || !ISOLATE_EXTENSIONS.some((extension) => file.endsWith(extension))) return null;
+  return { file, args: words.slice(1) };
+}
 
 /** The text of a word when nothing in it needs the shell to expand; `null` otherwise. */
 function literalText(word: WordNode): string | null {
@@ -299,16 +402,20 @@ export function programsOf(script: ScriptNode): Array<string | null> {
 
 /**
  * The rule: a command line runs whole in one tier, the lowest that has
- * every program in it. All tier 0: just-bash. Any program only the
- * container has, or any name the shell would have to expand, when this
- * home has a container: the container. A program the table says no
+ * every program in it. All tier 0: just-bash. Tier 1, when this home has
+ * the loader and no container can be chosen right now, which is none up
+ * or the budget spent: the one line `isolateRun` takes, whose file
+ * `exists` in the workspace when the caller can say. Any program only
+ * the container has, or any name the shell would have to expand, when
+ * this home has a container: the container. A program the table says no
  * available tier has: refused with its sentence. A line that will not
  * parse goes to just-bash, which reports it as it does today.
  *
  * With no container the answer is what the table says, for the tests;
- * the shell does not ask, and runs the line in just-bash as lamb did.
+ * the shell does not ask, and runs the line in just-bash as lamb did,
+ * except for the tier-1 line, which the shell does take.
  */
-export function classify(command: string, home: Home): Route {
+export function classify(command: string, home: Home, exists?: (file: string) => boolean): Route {
   let script: ScriptNode;
   try {
     script = parse(command);
@@ -320,6 +427,10 @@ export function classify(command: string, home: Home): Route {
   const tier0 = tier0Programs();
   const outside = found.filter((name) => name === null || !tier0.has(name));
   if (outside.length === 0) return { tier: 0, programs };
+  if (home.isolate === true && !(home.containerUp === true && hasContainer(home))) {
+    const run = isolateRun(script);
+    if (run !== null && (exists === undefined || exists(run.file))) return { tier: 1, ...run, programs };
+  }
   const named = outside.filter((name): name is string => name !== null);
   if (!hasContainer(home)) {
     // Nothing outside tier 0 runs anywhere; a name the shell expands is the shell's to resolve, as in lamb.

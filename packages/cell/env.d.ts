@@ -4,6 +4,8 @@ declare namespace Cloudflare {
     DIRECTORY: DurableObjectNamespace<import("./src/directory.ts").Directory>;
     /** Pen: the Containers binding, bound only in the `pen` environment. Absent, this home has no container and is lamb. */
     PEN_CONTAINER?: DurableObjectNamespace<import("./src/pen/container.ts").PenContainer>;
+    /** Pen phase 5: the Worker Loader, tier 1. Absent, `node` has no isolate and the table says so (celld). */
+    LOADER?: WorkerLoader;
     /** Bearer token every request must carry. */
     LAMB_TOKEN?: string;
     /** "1" allows requests with no token, for local use only. */
@@ -23,6 +25,8 @@ declare namespace Cloudflare {
     PEN_KILL_TIMEOUT?: string;
     /** Pen: this home's container budget in minutes. Unset, no budget. */
     PEN_BUDGET_MINUTES?: string;
+    /** Pen phase 5: the CPU one tier-1 run may spend, in ms. Default 10000. Enforced by the platform's runtime, not the local one. */
+    PEN_ISOLATE_CPU_MS?: string;
     /**
      * Pen: the home's git credential, a secret. The container's helper asks the cell for it at push time and the
      * broker hands it over once per request; it is in no row, no frame the model sees, and no file. Unset, a push is

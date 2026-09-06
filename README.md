@@ -168,8 +168,16 @@ grep ^LAMB_ANTHROPIC_API_KEY= .dev.vars | cut -d= -f2 | pnpm exec wrangler secre
 pnpm exec wrangler secret put PEN_GIT_TOKEN --env pen        # a fine-grained token: one repository, contents read and write
 ```
 
-`PEN_BUDGET_MINUTES` is the home's container budget; when the minutes
-reach it, the sheep's shell says so instead of renting. `GET /home`
+A line of exactly `node <file> [args…]`, the file a workspace script,
+runs in tier 1 while no container is up: a fresh isolate from the Worker
+Loader (`worker_loaders` in `wrangler.jsonc`, the `pen` environment only;
+the lamb home has no tier 1, which is journey 6) with the
+workspace as its modules and nothing else, read-only under `/bundle`,
+the script's working directory; no network; its stdout the tool result.
+`PEN_ISOLATE_CPU_MS` (default 10000) is the CPU one run may spend,
+enforced by the deployed runtime and not by `wrangler dev`.
+`PEN_BUDGET_MINUTES` is the home's container budget;
+when the minutes reach it, the sheep's shell says so instead of renting. `GET /home`
 reports the minutes and the budget. `PEN_GIT_TOKEN` is the home's git
 credential: when a sheep's `git push` needs one, the helper in the
 container asks the cell, the cell hands the token over for that one

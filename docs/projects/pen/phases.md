@@ -11,16 +11,14 @@ never a bare "phase 2".
 
 ---
 
-**Where we are: pen phases 0, 1, and 2 CLOSED, phases 3 and 4 PART-DONE,
-phases 5 to 7 NOT STARTED. The next thing to do is pen phase 5, the
-fresh isolate, whose local half needs no one.** Planned 5 Sep 2026; the
-scaffold, the checkout, the router, the real machine, and the broker
-built the same day. Pen phase 3 is built and walked on a local rig,
-`wrangler dev` with Docker and a real model, journeys 1 and 3 both; pen
-phase 4 is built and proved with real git in Node and the broker in
-workerd. Their walks on the deployed pen home wait on two ⚑ steps for
-the shepherd: the Workers Paid plan, and a fine-grained token to one
-scratch repository.
+**Where we are: pen phases 0, 1, and 2 CLOSED, phases 3, 4, and 5
+PART-DONE, phases 6 and 7 NOT STARTED. Next: pen phase 6, celld, after
+the deployed walks of pen phase 3 and pen phase 5.** Planned 5 Sep 2026;
+six phases built the same day. Phases 3, 4, and 5 are built and proved
+on a local rig, `wrangler dev` with Docker, real git in Node, and the
+Worker Loader in the pool; their walks on the deployed pen home waited
+on the Workers Paid plan, which the shepherd enabled the same evening,
+and phase 4's on a fine-grained token, still the shepherd's.
 
 The order is dependency order and risk order. Phase 1 is the gate: if a
 checkout cannot be synced by hash both ways with the atomicity journey 3
@@ -339,7 +337,10 @@ credential in nothing the model can see.
 
 ## Phase 5 — The fresh isolate
 
-**Status: NOT STARTED.** Allowed to slip out of the leg.
+**Status: PART-DONE.** 5 Sep 2026. Built and proved in workerd through the
+real Worker Loader and walked under `wrangler dev`; tier 1 reads the
+workspace and prints, and writes go to the container. The deployed walk
+of journey 4 waits on the pen home's deploy. Allowed to slip; it did not.
 
 **Closes journey 4.**
 
@@ -353,6 +354,36 @@ credential in nothing the model can see.
   environment.
 
 **Proof:** Journey 4 walked on the deployed home.
+
+**Findings:**
+
+- **2026-09-05 — A module's top level is global scope in workerd**,
+  outside any request: no filesystem a handler could read back, no
+  timers, no fetch, no top-level await. So tier 1 is read-only: the
+  workspace goes in as modules, the script reads and prints. The design
+  says so now.
+- **2026-09-05 — The pool binds a loader from miniflare's own option**,
+  `workerLoaders: { LOADER: {} }`, so the top-level config stays lamb's
+  with no loader, which is journey 6. `nodejs_compat` must not be named
+  in the loaded code; it is the default and the loader refuses it spelled.
+- **2026-09-05 — The loader compiles every code module at start**, so
+  only the script and what it reaches by relative static specifier go in
+  as code; every other file is bytes. A `.js` is ESM by the nearest
+  `package.json`, else by its syntax, node's rule.
+- **2026-09-05 — `limits.cpuMs` is production's.** Local workerd ignored
+  it, and a bare `for(;;){}` froze the pool's runtime whole, vitest's
+  timeout included; that test is skipped by name.
+- **2026-09-05 — Tier 1 costs milliseconds.** 6 ms for a nine-line script
+  over five files in the pool, 7 ms over a hundred and one; 9 and 23 ms
+  under `wrangler dev`. The same script in the container took 292 ms
+  after a 1120 ms start. Around one idle stop, `node` went isolate,
+  container, isolate.
+- **2026-09-05 — Cost: 47 minutes**, 42 the builder's, 2 of them the
+  loader moved out of the lamb home.
+- **2026-09-05 — Open: the deployed walk** must show three things the
+  local one cannot: `cpuMs` ending a spinning script, `globalOutbound:
+  null` on the account's Dynamic Workers beta, and a hundred `data`
+  modules accepted at the account's limits.
 
 ## Phase 6 — celld
 

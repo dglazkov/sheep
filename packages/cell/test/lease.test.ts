@@ -178,7 +178,8 @@ describe("the lease and the door", () => {
     await inCell(id, async (cell) => {
       const runtime = await cell.runtime();
       const lease = runtime.lease!;
-      expect(runtime.env.home).toEqual({ container: true });
+      // The pool binds the loader, so every cell here has tier 1 too; nothing is up until a rent.
+      expect(runtime.env.home).toEqual({ container: true, isolate: true, containerUp: false });
       expect(lease.socket).toBeUndefined();
 
       const socket = await lease.rent();
@@ -411,7 +412,7 @@ describe("the budget", () => {
     await inCell(id, async (cell) => {
       const runtime = await cell.runtime();
       const home = await runtime.env.homeNow();
-      expect(home).toEqual({ container: true, budgetSpent: true });
+      expect(home).toEqual({ container: true, isolate: true, containerUp: false, budgetSpent: true });
       // The refusal is up front, names the budget, and rents nothing.
       await expect(bash(cell, "pnpm install")).rejects.toThrow(`bash: pnpm: command not found (${BUDGET_SPENT_NOTICE})\n\n\nCommand exited with code 127`);
       expect(stub.ensures.length).toBe(0);

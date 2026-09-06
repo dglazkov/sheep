@@ -256,7 +256,7 @@ describe("the table", () => {
 describe("pen journey 6: a home with no container is lamb", () => {
   it("does not route: four lines through pi's bash tool give lamb's exact output, hi before the not-found and exit 0 after echo b", async () => {
     await inCell("j6", undefined, async (cell) => {
-      expect(cell.home).toEqual({ container: false });
+      expect(cell.home).toEqual({ container: false, isolate: false, containerUp: false });
       getOrThrow(await cell.writeFile("package.json", '{"name":"p"}\n', context));
       // Lamb's outputs, taken from lamb's tree with pen's changes stashed; the notice is the one part the table generates.
       const thrown = async (command: string) => {
@@ -360,7 +360,7 @@ describe("pen journey 1: a command that needs a machine, against the fake", () =
   it("step 4: the prompt with a container names it and what runs there, and a program the image lacks is refused saying so", async () => {
     const home = homeWith(projectScript);
     await inCell("j1-step4", home.lease, async (cell) => {
-      expect(cell.home).toEqual({ container: true });
+      expect(cell.home).toEqual({ container: true, isolate: false, containerUp: false });
       const line = shellSystemPromptLine(cell.home);
       expect(line).toContain("container");
       for (const name of ["git", "node", "pnpm", "npm", "npx", "python", "pip"]) expect(line).toContain(name);

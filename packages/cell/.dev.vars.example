@@ -18,6 +18,8 @@ LAMB_ANTHROPIC_API_KEY=
 # PEN_START_TIMEOUT=90         seconds a started container has to dial in
 # PEN_KILL_TIMEOUT=10          seconds a container has to answer `kill` before it is given up
 # PEN_BUDGET_MINUTES=          this home's container budget; unset, no budget
+# PEN_ISOLATE_CPU_MS=10000     the CPU one `node <file>` run may spend in the fresh isolate (tier 1), the `pen`
+#                              environment only. The deployed runtime enforces it; wrangler dev does not.
 # PEN_GIT_TOKEN=               the home's git credential, a secret: a fine-grained token to one repository,
 #                              contents read and write. The container's helper asks for it at push time and
 #                              it lives nowhere but here; unset, a push is refused by name.

@@ -47,6 +47,8 @@
           "max_instances": 3
         }
       ],
+      // Pen phase 5: tier 1, the fresh isolate. Pen's only: the top level is journey 6's lamb home and has no loader.
+      "worker_loaders": [{ "binding": "LOADER" }],
       "vars": {
         "LAMB_MODEL": "claude-sonnet-5",
         "PEN_IDLE": "10m"

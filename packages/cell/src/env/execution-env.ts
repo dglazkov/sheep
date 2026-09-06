@@ -13,7 +13,9 @@
  * just-bash; a line that names a program the shell lacks runs whole in
  * the container, rented, synced in, streamed, synced out; a line that
  * names a program the table marks absent from the image is refused up
- * front with the sentence for that program.
+ * front with the sentence for that program. Pen phase 5 adds one line
+ * the shell takes on any home with the loader: `node <file> [args…]`
+ * alone, while no container is up, runs in the fresh isolate.
  */
 import type { Context } from "@earendil-works/pi-agent-core";
 import {
@@ -32,19 +34,23 @@ import type { Refused } from "@lamb/pen/protocol";
 import { Bash } from "just-bash/browser";
 import { posix } from "node:path";
 import { Checkout, CheckoutInterrupted } from "../pen/checkout.ts";
+import { type Isolate, IsolateEnded } from "../pen/isolate.ts";
 import { ContainerRun, KillUnanswered, type RunEnd, RunInterrupted } from "../pen/run.ts";
 import { CellFs } from "../workspace/cell-fs.ts";
 import { type FileRow, FilesTable, FsError, isReadable, MAX_FILE_BYTES, normalizePath, TEMP_ROOT, WORKSPACE_ROOT } from "../workspace/files.ts";
 import {
   annotateCommandNotFound,
   classify,
+  fetchRefused,
   type Home,
+  isolateReadOnly,
+  isolateScopeRefused,
   INTERRUPTED_DURING_RUN,
   interruptedDuringSyncOut,
   killUnanswered,
   refusalLine,
+  refusalSentence,
   type Route,
-  shellNotice,
 } from "./programs.ts";
 
 const MAX_TIMEOUT_MS = 2_147_483_647;
@@ -113,6 +119,10 @@ export interface CellExecutionEnvOptions {
   container?: ContainerLease;
   /** Milliseconds a container has to answer `kill` before it is given up; absent, the cell waits. */
   killTimeoutMs?: number;
+  /** Whether a container is up right now, socket open; absent, never. Tier 1 is chosen only when none is. */
+  containerUp?: () => boolean;
+  /** Tier 1. Absent, this home has no Worker Loader: `node` is the container's or nobody's, and the table says so. */
+  isolate?: Isolate;
 }
 
 /** How a command ended, before the capture is settled. */
@@ -130,6 +140,8 @@ export class CellExecutionEnv implements ExecutionEnv {
   readonly fs: CellFs;
   private readonly shellEnv: Record<string, string>;
   private readonly container: ContainerLease | undefined;
+  private readonly containerUp: (() => boolean) | undefined;
+  private readonly isolate: Isolate | undefined;
   private readonly killTimeoutMs: number | undefined;
   /** The checkout over the container socket most recently rented; one `Checkout` per socket. */
   private lease: { socket: WebSocket; checkout: Checkout } | undefined;
@@ -141,6 +153,8 @@ export class CellExecutionEnv implements ExecutionEnv {
     this.files.init();
     this.fs = new CellFs(this.files);
     this.container = options.container;
+    this.containerUp = options.containerUp;
+    this.isolate = options.isolate;
     this.killTimeoutMs = options.killTimeoutMs;
     this.shellEnv = {
       HOME: WORKSPACE_ROOT,
@@ -153,13 +167,29 @@ export class CellExecutionEnv implements ExecutionEnv {
 
   /** What this home has, as the table sees it: the static half, without asking about the budget. */
   get home(): Home {
-    return { container: this.container !== undefined };
+    return { container: this.container !== undefined, isolate: this.isolate !== undefined, containerUp: this.containerUp?.() === true };
   }
 
   /** What this home has right now: the static half plus the budget, asked of the lease. */
   async homeNow(): Promise<Home> {
     if (this.container?.budgetSpent === undefined) return this.home;
-    return { container: true, budgetSpent: await this.container.budgetSpent() };
+    return { ...this.home, budgetSpent: await this.container.budgetSpent() };
+  }
+
+  /**
+   * Whether `file`, as the shell would resolve it, is a file in the
+   * workspace: what tier 1 can be given. Only from the workspace root:
+   * the isolate evaluates a script with the root as its working directory
+   * whatever the shell's is, and pi's shell never leaves the root.
+   */
+  private isWorkspaceFile(file: string, cwd: string): boolean {
+    if (cwd !== WORKSPACE_ROOT) return false;
+    try {
+      const resolved = normalizePath(posix.isAbsolute(file) ? file : posix.resolve(cwd, file));
+      return resolved.startsWith(`${WORKSPACE_ROOT}/`) && this.files.stat(resolved).kind === "file";
+    } catch {
+      return false;
+    }
   }
 
   private resolvePath(path: string): string {
@@ -306,8 +336,13 @@ export class CellExecutionEnv implements ExecutionEnv {
     }
 
     // No container: lamb's shell, line for line; just-bash's own not-found line, annotated, is the refusal.
+    // The one exception, on a home with the loader, is the tier-1 line, which the table is asked for either way.
     const home = this.container === undefined ? this.home : await this.homeNow();
-    const route: Route = this.container === undefined ? { tier: 0, programs: [] } : classify(command, home);
+    let route: Route = { tier: 0, programs: [] };
+    if (this.container !== undefined || this.isolate !== undefined) {
+      const classified = classify(command, home, (file) => this.isWorkspaceFile(file, cwd));
+      if (this.container !== undefined || ("tier" in classified && classified.tier === 1)) route = classified;
+    }
     const environment = options?.inheritEnv === false ? { ...options.env } : { ...this.shellEnv, ...options?.env };
 
     try {
@@ -318,6 +353,8 @@ export class CellExecutionEnv implements ExecutionEnv {
         ran = { full: line, outcome: { exitCode: 127 } };
       } else if (route.tier === 0) {
         ran = await this.runInShell(command, cwd, environment, options, signal, capture, home);
+      } else if (route.tier === 1) {
+        ran = await this.runInIsolate(route.file, route.args, cwd, options, signal, capture, home);
       } else {
         ran = await this.runInContainer(command, cwd, environment, options, signal, capture);
       }
@@ -374,7 +411,7 @@ export class CellExecutionEnv implements ExecutionEnv {
       try {
         const result = await bash.exec(command, { signal: controller.signal, cwd });
         stdout = result.stdout;
-        stderr = annotateCommandNotFound(result.stderr, shellNotice(home));
+        stderr = annotateCommandNotFound(result.stderr, (program) => refusalSentence(program, home));
         exitCode = result.exitCode;
       } catch (error) {
         // just-bash throws for its own bounds and for aborts; both are the command failing, not the env.
@@ -391,6 +428,67 @@ export class CellExecutionEnv implements ExecutionEnv {
       if (timeoutId !== undefined) clearTimeout(timeoutId);
       signal?.removeEventListener("abort", onAbort);
     }
+  }
+
+  /** Every workspace file as the isolate receives it: bytes by path relative to the root; a link to a file is the file, a link to a directory is left out. */
+  private workspaceFiles(): Record<string, Uint8Array> {
+    const files: Record<string, Uint8Array> = {};
+    for (const entry of this.files.manifest()) {
+      if (entry.kind === "directory") continue;
+      try {
+        files[entry.path] = this.files.readFile(posix.join(WORKSPACE_ROOT, entry.path));
+      } catch {
+        // A dangling link, or one to a directory: nothing a module can be.
+      }
+    }
+    return files;
+  }
+
+  /**
+   * Tier 1: the script in a fresh isolate over a copy of the rows, its
+   * output pushed whole when it ends. The runtime's own lines for what
+   * the isolate lacks are replaced by the table's sentences, which name
+   * tier 1: a refused `fetch`, an operation a module's top level cannot
+   * do, and a write to the read-only workspace.
+   */
+  private async runInIsolate(
+    file: string,
+    args: string[],
+    cwd: string,
+    options: ShellExecOptions | undefined,
+    signal: AbortSignal | undefined,
+    capture: OutputCapture,
+    home: Home,
+  ): Promise<Ran> {
+    const isolate = this.isolate;
+    if (isolate === undefined) throw new Error("runInIsolate without an isolate");
+    const resolved = normalizePath(posix.isAbsolute(file) ? file : posix.resolve(cwd, file));
+    const started = Date.now();
+    const files = this.workspaceFiles();
+    const count = Object.keys(files).length;
+    const wallMs = options?.timeout === undefined ? isolate.wallMs : options.timeout * 1000;
+    let result;
+    try {
+      result = await isolate.run({ file: posix.relative(WORKSPACE_ROOT, resolved), args, files, wallMs, ...(signal === undefined ? {} : { signal }) });
+    } catch (error) {
+      if (error instanceof IsolateEnded) {
+        console.info(`[pen] isolate ${file} ended (${error.reason}) after ${Date.now() - started} ms, ${count} files`);
+        if (error.reason === "aborted") return { full: "", outcome: { error: new ExecutionError("aborted", "aborted") } };
+        if (error.reason === "timeout" || options?.timeout !== undefined) return { full: "", outcome: { error: new ExecutionError("timeout", `timeout:${options?.timeout}`) } };
+        const line = `pen: the script ran for ${Math.round(wallMs / 1000)} s without ending and was given up; nothing it printed came back\n`;
+        capture.push(line);
+        return { full: line, outcome: { exitCode: 1 } };
+      }
+      throw error;
+    }
+    const output = result.output
+      .replace(/This worker is not permitted to access the internet[^\n]*/g, fetchRefused(home))
+      .replace(/Disallowed operation called within global scope\.[^\n]*/g, isolateScopeRefused(home))
+      .replace(/^(\w*Error: operation not permitted)$/gm, `$1 (${isolateReadOnly(home)})`);
+    capture.push(output);
+    console.info(`[pen] isolate ${file} exit ${result.exitCode} after ${Date.now() - started} ms, ${count} files`);
+    if (signal?.aborted) return { full: output, outcome: { error: new ExecutionError("aborted", "aborted") } };
+    return { full: output, outcome: { exitCode: result.exitCode } };
   }
 
   /** The checkout over this socket, made once per socket. */
