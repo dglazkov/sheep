@@ -216,9 +216,9 @@ no binding. Journey 1 steps 1 to 4 hold against the fake.
 - **2026-09-05 — Open: wrappers hide programs from the router.** `xargs
   node`, `env X=1 pnpm i`, `bash -c "npm test"` are tier 0 by their first
   word and fail in just-bash. Pen phase 3's walk decides a wrapper rule.
-- **2026-09-05 — Open: after `kill` the cell waits with no deadline** for
-  `killed` or `exit`. Pen phase 3's binding gives it one, since a stuck
-  container is then the platform's to stop.
+- **2026-09-05 — After `kill` the cell waited with no deadline** for
+  `killed` or `exit`. Paid in pen phase 3: `PEN_KILL_TIMEOUT`, after
+  which the container is discarded.
 
 ## Phase 3 — A real machine
 
