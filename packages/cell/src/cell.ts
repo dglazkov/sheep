@@ -32,6 +32,7 @@ import type { LaneState } from "./directory.ts";
 import { CellExecutionEnv } from "./env/execution-env.ts";
 import { type Home, shellSystemPromptLine } from "./env/programs.ts";
 import { type CellModels, createCellModels, type FauxProgram, isFauxProgram } from "./models.ts";
+import { CredentialBroker, homeMinter } from "./pen/broker.ts";
 import { DEFAULT_IDLE } from "./pen/container.ts";
 import { type ContainerStarter, parseDuration, PenLease } from "./pen/lease.ts";
 import { createCellSessionRepo } from "./storage/sqlite.ts";
@@ -245,6 +246,20 @@ export class SessionCell extends DurableObject<Env> {
     const directory = this.env.DIRECTORY.getByName("home");
     const origin = this.env.PEN_CELL_ORIGIN;
     const idleSeconds = parseDuration(this.env.PEN_IDLE, DEFAULT_IDLE);
+    const log = (line: string) => console.info(`[cell ${this.sessionId}] pen: ${line}`);
+    // The broker answers the container's credential requests from the home's secrets, read at each request; the cell keeps none.
+    const env = this.env;
+    const broker = new CredentialBroker(
+      homeMinter({
+        get gitToken() {
+          return env.PEN_GIT_TOKEN;
+        },
+        get gitHost() {
+          return env.PEN_GIT_HOST;
+        },
+      }),
+      log,
+    );
     return new PenLease({
       sessionId: this.sessionId,
       cellUrl: origin === undefined || origin === "" ? undefined : `${origin.replace(/\/$/, "")}/s/${encodeURIComponent(this.sessionId)}/pen`,
@@ -252,7 +267,8 @@ export class SessionCell extends DurableObject<Env> {
       ledger: { spent: async () => (await directory.budget()).spent },
       startTimeoutMs: seconds(this.env.PEN_START_TIMEOUT, 90) * 1000,
       renewEveryMs: Math.max(1_000, Math.min((idleSeconds * 1000) / 2, 60_000)),
-      log: (line) => console.info(`[cell ${this.sessionId}] pen: ${line}`),
+      broker,
+      log,
     });
   }
 

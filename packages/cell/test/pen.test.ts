@@ -36,11 +36,14 @@ function inCell<T>(name: string, body: (cell: CellExecutionEnv, sql: SqlStorage)
 }
 
 describe("the fake container is the agent over a socket pair", () => {
-  it("answers ping with pong, and types what it cannot do yet", async () => {
+  it("answers ping with pong, drops a credential answer no helper asked for, and types a frame the protocol does not name", async () => {
     const container = startFakeContainer();
     expect(await ask(container.socket, { type: "ping", id: "a" })).toEqual({ type: "pong", id: "a" });
     expect(await ask(container.socket, { type: "ping" })).toEqual({ type: "pong" });
-    expect(await ask(container.socket, { type: "credential", id: "c", value: "x", expires: 0 })).toMatchObject({ type: "error", code: "unsupported", of: "credential" });
+    // Pen phase 4: a stray credential answer is dropped without a word, since its value must not be repeated; the next frame is answered.
+    container.socket.send(JSON.stringify({ type: "credential", id: "c", value: "x", expires: 0 }));
+    expect(await ask(container.socket, { type: "ping", id: "after" })).toEqual({ type: "pong", id: "after" });
+    expect(await ask(container.socket, { type: "teleport" } as never)).toMatchObject({ type: "error", code: "unsupported", of: "teleport" });
     container.stop();
     await container.closed;
   });

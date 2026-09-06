@@ -16,6 +16,14 @@ RUN cd /opt/pen && npm install --omit=dev --no-audit --no-fund --no-package-lock
 COPY bin /opt/pen/bin
 COPY src /opt/pen/src
 
+# The git credential helper: `credential.helper = pen` in the system config makes git spawn
+# `git-credential-pen`, which asks the agent over its Unix socket. No terminal ever answers
+# a prompt here, so git is told not to try.
+RUN chmod +x /opt/pen/bin/git-credential-pen.mjs \
+  && ln -s /opt/pen/bin/git-credential-pen.mjs /usr/local/bin/git-credential-pen \
+  && git config --system credential.helper pen
+ENV GIT_TERMINAL_PROMPT=0
+
 RUN mkdir -p /workspace
 WORKDIR /workspace
 

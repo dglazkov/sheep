@@ -165,11 +165,17 @@ cd packages/cell
 pnpm exec wrangler secret put PEN_CELL_ORIGIN --env pen      # https://lamb-pen.<you>.workers.dev
 grep ^LAMB_TOKEN= .dev.vars | cut -d= -f2 | pnpm exec wrangler secret put LAMB_TOKEN --env pen
 grep ^LAMB_ANTHROPIC_API_KEY= .dev.vars | cut -d= -f2 | pnpm exec wrangler secret put LAMB_ANTHROPIC_API_KEY --env pen
+pnpm exec wrangler secret put PEN_GIT_TOKEN --env pen        # a fine-grained token: one repository, contents read and write
 ```
 
 `PEN_BUDGET_MINUTES` is the home's container budget; when the minutes
 reach it, the sheep's shell says so instead of renting. `GET /home`
-reports the minutes and the budget.
+reports the minutes and the budget. `PEN_GIT_TOKEN` is the home's git
+credential: when a sheep's `git push` needs one, the helper in the
+container asks the cell, the cell hands the token over for that one
+request, and it lives nowhere but the home. `PEN_GIT_HOST` (default
+`github.com`) is the one host it is for; `PEN_GIT_AUTHOR_NAME` and
+`PEN_GIT_AUTHOR_EMAIL` are who the container's commits are by.
 
 ### The same cell on celld
 

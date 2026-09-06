@@ -157,7 +157,10 @@ agent listens on inside the container, and the agent carries the request
 onto the one WebSocket; the helper answers `get` only, and `store` and
 `erase` are no-ops, so nothing is ever kept. The cell holds
 no token either: it asks the home, which holds the operator's secrets and
-mints a short-lived, scoped value for this one request. The value goes
+mints a short-lived, scoped value for this one request. (For a
+fine-grained token, which cannot be minted per request, the mint is the
+hand-over: the same value, read at the request and said to be good for a
+minute, so that nothing treats it as a thing to keep.) The value goes
 into git's process and nowhere else. Nothing writes it to disk, nothing
 exports it, and the model's tool result is git's output. The author of a
 commit is the home's configuration too: the container's git config gets

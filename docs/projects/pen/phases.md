@@ -11,14 +11,16 @@ never a bare "phase 2".
 
 ---
 
-**Where we are: pen phases 0, 1, and 2 CLOSED, phase 3 PART-DONE,
-phases 4 to 7 NOT STARTED. The next thing to do is pen phase 4, the
-repository and the broker.** Planned 5 Sep 2026; the scaffold, the
-checkout, the router, and the real machine built the same day. Pen
-phase 3 is built and walked on a local rig, `wrangler dev` with Docker
-and a real model, journeys 1 and 3 both; its deployed walk waits on the
-Workers Paid plan, a ⚑ step for the shepherd. Pen phase 4's local half
-needs no one; its walk waits on a fine-grained token, another ⚑.
+**Where we are: pen phases 0, 1, and 2 CLOSED, phases 3 and 4 PART-DONE,
+phases 5 to 7 NOT STARTED. The next thing to do is pen phase 5, the
+fresh isolate, whose local half needs no one.** Planned 5 Sep 2026; the
+scaffold, the checkout, the router, the real machine, and the broker
+built the same day. Pen phase 3 is built and walked on a local rig,
+`wrangler dev` with Docker and a real model, journeys 1 and 3 both; pen
+phase 4 is built and proved with real git in Node and the broker in
+workerd. Their walks on the deployed pen home wait on two ⚑ steps for
+the shepherd: the Workers Paid plan, and a fine-grained token to one
+scratch repository.
 
 The order is dependency order and risk order. Phase 1 is the gate: if a
 checkout cannot be synced by hash both ways with the atomicity journey 3
@@ -273,7 +275,11 @@ minute costs.
 
 ## Phase 4 — A repository, and the broker
 
-**Status: NOT STARTED.** The largest piece of new code.
+**Status: PART-DONE.** 5 Sep 2026. Real git through the real agent and
+helper in Node against a fixture that demands auth, and the broker in
+workerd through the fake; journey 2's steps held there. The walk against
+a real repository from the deployed home waits on a fine-grained token
+(⚑) and on the pen home's plan (⚑).
 
 **Closes journey 2.**
 
@@ -301,6 +307,35 @@ minute costs.
 home: cloned, a branch, an `edit`-tool change that `git diff` shows,
 pushed, the branch on GitHub, and a laptop fetch showing the tree. The
 credential in nothing the model can see.
+
+**Findings:**
+
+- **2026-09-05 — Real git asked the helper once per push.** The fixture's
+  401 on the receive-pack advertisement made git spawn
+  `git-credential-pen`: one `credential` frame, then the advertisement
+  and the pack with the token. A clone asked nothing.
+- **2026-09-05 — The token was in nothing but the one answer.** In Node,
+  112 frames and 51 blobs both ways, 73 rows, the checkout, `env`, `git
+  config --list --show-origin`, and `~/.git-credentials` carried none; in
+  workerd, no tool result, no transcript entry, no export table, no row.
+- **2026-09-05 — A clone survives the process.** It came back as 58 rows,
+  52 under `.git`; a new agent on an empty disk got them by manifest and
+  `git status` was clean, in step with `origin/fix-typo`.
+- **2026-09-05 — `git rebase -i` with no terminal says "Terminal is dumb,
+  but EDITOR unset"**, exit 1; `GIT_TERMINAL_PROMPT=0` in the image makes a
+  refused push fail at once. Git's objects are 0444, so the disk replaces
+  files rather than writing through.
+- **2026-09-05 — A minter cannot mint a fine-grained token**, so `expires`
+  is a promise about handling, not a property of the value: the same
+  secret, read at each request, said to be good for a minute.
+- **2026-09-05 — Cost: 30 minutes**, 24 the builder's.
+- **2026-09-05 — Open: the deployed walk** needs a fine-grained token to
+  one scratch repository, contents read and write, short-lived, as the
+  `lamb-pen` secret `PEN_GIT_TOKEN`, and the pen home itself. The
+  shepherd's.
+- **2026-09-05 — Open: one token per host.** `credential.useHttpPath` is
+  off, so the scope is the host and one token covers every repository on
+  it; a per-repository scope is a later table in the home.
 
 ## Phase 5 — The fresh isolate
 

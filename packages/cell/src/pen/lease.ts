@@ -47,6 +47,8 @@ export interface PenLeaseOptions {
   startTimeoutMs: number;
   /** Milliseconds between renewals of the container's idle clock while a command runs. */
   renewEveryMs: number;
+  /** Pen phase 4: attached to each admitted socket, to answer the container's `credential` frames from the home. */
+  broker?: { attach(socket: WebSocket): void };
   log?: (line: string) => void;
   now?: () => number;
 }
@@ -154,6 +156,8 @@ export class PenLease implements ContainerLease {
     this.lastStartMs = this.openedAt - pending.since;
     server.addEventListener("close", (event) => this.closed(server, event.code, event.reason));
     server.addEventListener("error", (event) => this.closed(server, 1006, String((event as { message?: string }).message ?? "socket error")));
+    // The broker listens for the socket's lifetime: a credential may be asked for in any run on it.
+    this.options.broker?.attach(server);
     this.log(`the container connected ${this.lastStartMs} ms after the rent`);
     pending.resolve(server);
     return client;

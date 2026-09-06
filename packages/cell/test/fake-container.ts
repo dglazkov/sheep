@@ -17,7 +17,18 @@
  * container's bash would answer a program the image lacks.
  */
 import { type Disk, type DiskEntry, type Runner, type RunOutcome, type RunRequest, serveAgent } from "@lamb/pen/agent";
-import { type CellFrame, type ContainerFrame, decodeFrame, encodeFrame, type EntryKind, type Frame, messageBytes, type Refused } from "@lamb/pen/protocol";
+import {
+  type CellFrame,
+  type ContainerFrame,
+  type CredentialAnswer,
+  type CredentialRequest,
+  decodeFrame,
+  encodeFrame,
+  type EntryKind,
+  type Frame,
+  messageBytes,
+  type Refused,
+} from "@lamb/pen/protocol";
 import { hashBytes } from "../src/workspace/files.ts";
 
 export type MemoryEntry =
@@ -111,11 +122,11 @@ export function memoryDisk(): MemoryDisk {
   return disk;
 }
 
-/** One step of a scripted run: wait, then act on the disk, then print. */
+/** One step of a scripted run: wait, then act on the disk, then print. An `act` may be asynchronous, as a program asking the helper is. */
 export interface ScriptStep {
   /** Milliseconds before this step, so a run takes time and its output streams. */
   wait?: number;
-  act?: (disk: MemoryDisk) => void;
+  act?: (disk: MemoryDisk) => void | Promise<void>;
   stdout?: string;
   stderr?: string;
 }
@@ -162,7 +173,7 @@ export function scriptRunner(disk: MemoryDisk, scriptFor: ScriptFor, options: { 
             wake = null;
           }
           if (killed !== null) return { killed };
-          step.act?.(disk);
+          await step.act?.(disk);
           if (step.stdout !== undefined) output.stdout(step.stdout);
           if (step.stderr !== undefined) output.stderr(step.stderr);
         }
@@ -189,6 +200,8 @@ export interface FakeContainer {
   transcript: TranscriptEntry[];
   /** The agent's sync-out, in place of the `run` a later phase ends with one. */
   syncOut(id: string): Promise<Refused[]>;
+  /** The helper's path, called as the helper's socket would call it: workerd has no processes, so the request comes from the test. */
+  askCredential(request: CredentialRequest, options?: { timeoutMs?: number }): Promise<CredentialAnswer | undefined>;
   /** The container dies: its end closes with `reason`, and nothing more is answered. */
   stop(reason?: string): void;
   /** Resolves once the agent has seen its socket close. */
@@ -273,6 +286,7 @@ export function serveFakeOn(agentEnd: WebSocket, options: FakeContainerOptions =
     disk,
     transcript,
     syncOut: (id) => served.syncOut(id),
+    askCredential: (request, options) => served.askCredential(request, options),
     stop(reason = "container stopped") {
       stop(reason);
     },

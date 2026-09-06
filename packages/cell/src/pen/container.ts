@@ -12,11 +12,25 @@
  * The container's minutes are reported here, from `onStart` and `onStop`,
  * because they are what the platform bills and they fire whether or not
  * the cell that rented the container is still in memory.
+ *
+ * The author of the container's commits is the home's configuration
+ * (`PEN_GIT_AUTHOR_NAME`, `PEN_GIT_AUTHOR_EMAIL`), given to the container
+ * as the four variables git reads without any config file, so no file in
+ * the checkout or the image carries an identity. Journey 2 step 4.
  */
 import { Container } from "@cloudflare/containers";
 import { CELL_URL_ENV, TOKEN_ENV } from "@lamb/pen/protocol";
 
 export const DEFAULT_IDLE = "10m";
+/** Who commits when the home says nothing: a name that is plainly nobody's, so a commit never fails for want of one. */
+export const DEFAULT_AUTHOR = { name: "lamb", email: "lamb@example.invalid" } as const;
+
+/** The author and committer as git reads them from the environment. */
+export function authorEnv(env: { PEN_GIT_AUTHOR_NAME?: string | undefined; PEN_GIT_AUTHOR_EMAIL?: string | undefined }): Record<string, string> {
+  const name = env.PEN_GIT_AUTHOR_NAME?.trim() || DEFAULT_AUTHOR.name;
+  const email = env.PEN_GIT_AUTHOR_EMAIL?.trim() || DEFAULT_AUTHOR.email;
+  return { GIT_AUTHOR_NAME: name, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_NAME: name, GIT_COMMITTER_EMAIL: email };
+}
 
 export class PenContainer extends Container<Env> {
   /** The agent's health port: `start()` returns once it listens, so "started" means the agent process is up. */
@@ -42,7 +56,8 @@ export class PenContainer extends Container<Env> {
       this.renewActivityTimeout();
       return { started: false };
     }
-    await this.start({ envVars: { [CELL_URL_ENV]: args.cellUrl, [TOKEN_ENV]: args.token }, enableInternet: true });
+    // The cell's address and the minted token, and the author; never a home secret: the helper asks for those, one at a time.
+    await this.start({ envVars: { [CELL_URL_ENV]: args.cellUrl, [TOKEN_ENV]: args.token, ...authorEnv(this.env) }, enableInternet: true });
     return { started: true };
   }
 

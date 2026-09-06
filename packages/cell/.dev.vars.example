@@ -18,3 +18,9 @@ LAMB_ANTHROPIC_API_KEY=
 # PEN_START_TIMEOUT=90         seconds a started container has to dial in
 # PEN_KILL_TIMEOUT=10          seconds a container has to answer `kill` before it is given up
 # PEN_BUDGET_MINUTES=          this home's container budget; unset, no budget
+# PEN_GIT_TOKEN=               the home's git credential, a secret: a fine-grained token to one repository,
+#                              contents read and write. The container's helper asks for it at push time and
+#                              it lives nowhere but here; unset, a push is refused by name.
+# PEN_GIT_HOST=github.com      the one host the token is for
+# PEN_GIT_AUTHOR_NAME=lamb     who the container's commits are by
+# PEN_GIT_AUTHOR_EMAIL=lamb@example.invalid

@@ -3,18 +3,22 @@
  * image. Reads the cell's URL and token from the environment, opens one
  * WebSocket to the cell, and serves the agent over a disk rooted at
  * `/workspace` (or `PEN_WORKSPACE`, for a test on a machine without one),
- * with a runner that spawns `bash -c` under the same root. Exits when the
- * socket closes, so a container that loses its cell is a container that
+ * with a runner that spawns `bash -c` under the same root. Listens on a
+ * Unix socket for the git credential helper (`bin/git-credential-pen.mjs`),
+ * a process git spawns inside a run, and carries each request through
+ * `askCredential`: one JSON line in, one out, nothing kept. Exits when the
+ * WebSocket closes, so a container that loses its cell is a container that
  * is gone.
  */
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmod, lstat, mkdir, readdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
+import { createServer as createSocketServer } from "node:net";
 import { constants as osConstants } from "node:os";
 import { dirname, join, posix, relative } from "node:path";
-import { type AgentSocket, type Disk, type DiskEntry, type RunHandle, type RunOutcome, type Runner, type RunRequest, serveAgent } from "./agent.ts";
-import { CELL_URL_ENV, TOKEN_ENV, TOKEN_PARAM } from "./protocol.ts";
+import { type AgentSocket, type Disk, type DiskEntry, type RunHandle, type RunOutcome, type Runner, type RunRequest, serveAgent, type ServedAgent } from "./agent.ts";
+import { CELL_URL_ENV, DEFAULT_HELPER_SOCKET, HELPER_SOCKET_ENV, type HelperAnswer, type HelperRequest, TOKEN_ENV, TOKEN_PARAM } from "./protocol.ts";
 
 export const WORKSPACE_ENV = "PEN_WORKSPACE";
 export const DEFAULT_WORKSPACE = "/workspace";
@@ -50,6 +54,8 @@ export function nodeDisk(root: string): Disk {
     },
     async write(path, bytes, options) {
       await mkdir(dirname(at(path)), { recursive: true });
+      // Replace, never write through: a read-only file (git's objects are 0444) or a symlink at the path would refuse or redirect the bytes.
+      await rm(at(path), { force: true });
       await writeFile(at(path), bytes);
       if (options?.mode !== undefined) await chmod(at(path), options.mode);
     },
@@ -94,9 +100,11 @@ export function nodeDisk(root: string): Disk {
  * they arrive, `SIGKILL` to the whole group on kill, and a timer of the
  * runner's own as the backstop for the cell's. The request's `cwd` is
  * under `/workspace`; when the root is elsewhere (a test on a machine
- * without one) the same relative place under the root is used.
+ * without one) the same relative place under the root is used. `env` is
+ * the process's own with `extra` laid over it and the request's over that,
+ * so the helper socket's path reaches git wherever the agent put it.
  */
-export function nodeRunner(root: string): Runner {
+export function nodeRunner(root: string, extra: Record<string, string> = {}): Runner {
   return {
     run(request: RunRequest, output): RunHandle {
       const cwd = request.cwd === DEFAULT_WORKSPACE || request.cwd.startsWith(`${DEFAULT_WORKSPACE}/`)
@@ -104,7 +112,7 @@ export function nodeRunner(root: string): Runner {
         : request.cwd;
       const child = spawn("bash", ["-c", request.command], {
         cwd,
-        env: { ...process.env, ...request.env },
+        env: { ...process.env, ...extra, ...request.env },
         stdio: ["ignore", "pipe", "pipe"],
         detached: true,
       });
@@ -148,6 +156,65 @@ export function nodeRunner(root: string): Runner {
   };
 }
 
+/**
+ * The helper's door: a Unix socket the agent listens on. Each connection is
+ * one request, a JSON line, answered with one JSON line and closed. The
+ * answer is written to the helper's socket and to nothing else; a request
+ * the cell refuses, or one that is not git's, gets `{}`.
+ */
+export async function serveHelper(path: string, agent: Pick<ServedAgent, "askCredential">): Promise<() => Promise<void>> {
+  const server = createSocketServer((connection) => {
+    let buffered = "";
+    let answered = false;
+    const answer = (reply: HelperAnswer) => {
+      if (answered) return;
+      answered = true;
+      connection.end(`${JSON.stringify(reply)}\n`);
+    };
+    connection.setEncoding("utf8");
+    connection.on("error", () => {
+      // The helper went away; nothing to answer.
+    });
+    connection.on("data", (chunk: string) => {
+      if (answered) return;
+      buffered += chunk;
+      const newline = buffered.indexOf("\n");
+      if (newline < 0) return;
+      let request: HelperRequest;
+      try {
+        request = JSON.parse(buffered.slice(0, newline)) as HelperRequest;
+      } catch {
+        answer({});
+        return;
+      }
+      if (request.kind !== "git" || typeof request.host !== "string" || typeof request.protocol !== "string") {
+        answer({});
+        return;
+      }
+      const scope = `${request.protocol}://${request.host}${request.path ? `/${request.path}` : ""}`;
+      void agent.askCredential({ kind: "git", scope }).then(
+        (minted) => answer(minted === undefined ? {} : { ...(minted.username === undefined ? {} : { username: minted.username }), value: minted.value }),
+        () => answer({}),
+      );
+    });
+  });
+  // A path left by an earlier process would refuse the listen; nothing is listening there now.
+  await rm(path, { force: true });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(path, () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+  // The helper's door does not keep the process alive: the WebSocket closing is the end.
+  server.unref();
+  return async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await rm(path, { force: true });
+  };
+}
+
 /** The socket address: the cell's URL with the token as a query parameter. */
 export function cellAddress(cellUrl: string, token: string): string {
   const url = new URL(cellUrl);
@@ -177,7 +244,14 @@ export async function main(env: NodeJS.ProcessEnv = process.env): Promise<number
     socket.addEventListener("error", () => reject(new Error(`pen-agent: could not connect to ${cellUrl}`)), { once: true });
   });
   const root = env[WORKSPACE_ENV] || DEFAULT_WORKSPACE;
-  const served = serveAgent(socket, nodeDisk(root), nodeRunner(root));
+  const helperSocket = env[HELPER_SOCKET_ENV] || DEFAULT_HELPER_SOCKET;
+  const served = serveAgent(socket, nodeDisk(root), nodeRunner(root, { [HELPER_SOCKET_ENV]: helperSocket }));
+  let closeHelper: (() => Promise<void>) | undefined;
+  try {
+    closeHelper = await serveHelper(helperSocket, served);
+  } catch (error) {
+    process.stderr.write(`pen-agent: helper socket ${helperSocket} not listening: ${error instanceof Error ? error.message : String(error)}\n`);
+  }
   // The process is PID 1 in the image, which ignores SIGTERM unless it listens; the platform's idle
   // stop is a SIGTERM. Close the socket (1000: a client may send only that or 3000-4999) so the cell
   // sees the close, and exit within a second whatever the socket does, since PID 1 leaving ends
@@ -203,5 +277,6 @@ export async function main(env: NodeJS.ProcessEnv = process.env): Promise<number
     return 1;
   }
   await Promise.race([served.closed, stopped]);
+  await closeHelper?.();
   return 0;
 }

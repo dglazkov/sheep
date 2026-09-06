@@ -73,8 +73,10 @@ describe("pen-agent, the process", () => {
     socket.send(encodeFrame({ type: "ping", id: "1" }));
     expect(await next()).toEqual({ type: "pong", id: "1" });
 
-    socket.send(encodeFrame({ type: "credential", id: "1", value: "x", expires: 0 }));
-    expect(await next()).toMatchObject({ type: "error", code: "unsupported", of: "credential" });
+    // A credential answer no helper asked for is dropped without a word, since its value must not be repeated; the agent goes on.
+    socket.send(encodeFrame({ type: "credential", id: "cred-none", value: "x", expires: 0 }));
+    socket.send(encodeFrame({ type: "ping", id: "after-stray" }));
+    expect(await next()).toEqual({ type: "pong", id: "after-stray" });
 
     // Sync in: two files, one executable, and a symlink, under a directory.
     const hello = encoder.encode("hello from the rows\n");

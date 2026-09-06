@@ -28,6 +28,15 @@
  * from the cell with what it refused. Whoever holds the newer tree
  * describes it; the other side asks for the bytes it lacks.
  *
+ * A credential is asked for from the container's side, by a program git
+ * spawned: the helper reaches the agent over a Unix socket and the agent
+ * sends `credential {id, kind, scope}` up the one WebSocket. The cell's
+ * broker answers `credential {id, username, value, expires}` from the
+ * home, or `error {of: "credential", id}` when the home has nothing for
+ * that scope. The value crosses once, is handed to the program that
+ * asked, and is kept by no one: not the agent, not the cell, not a row,
+ * and never a `stdout` or `stderr` frame.
+ *
  * This file must run anywhere: it is imported by the cell (workerd) and
  * by the agent (node). No `node:*`, no globals beyond JSON.
  */
@@ -37,6 +46,42 @@ export const CELL_URL_ENV = "PEN_CELL_URL";
 export const TOKEN_ENV = "PEN_TOKEN";
 /** The query parameter the token travels in. */
 export const TOKEN_PARAM = "token";
+/** Where the agent listens for the helper inside the container: a Unix socket path. */
+export const HELPER_SOCKET_ENV = "PEN_HELPER_SOCKET";
+export const DEFAULT_HELPER_SOCKET = "/tmp/pen-agent.sock";
+
+/**
+ * What the helper sends the agent, one JSON line on the Unix socket:
+ * git's `protocol`, `host`, and `path` (when git gives one), as they came
+ * from git's own `key=value` lines. The agent's `scope` is
+ * `${protocol}://${host}` plus `/${path}` when there is a path.
+ */
+export interface HelperRequest {
+  kind: "git";
+  protocol: string;
+  host: string;
+  path?: string;
+}
+
+/** The agent's one JSON line back: what git gets, or `{}` when there is nothing. */
+export interface HelperAnswer {
+  username?: string;
+  value?: string;
+}
+
+/** A credential request as the agent carries it: `scope` is a URL prefix the value is for. */
+export interface CredentialRequest {
+  kind: "git";
+  scope: string;
+}
+
+/** The cell's answer, from the home; `username` when the host wants one (`x-access-token` for GitHub). */
+export interface CredentialAnswer {
+  username?: string;
+  value: string;
+  /** Epoch ms after which the value should not be relied on. */
+  expires: number;
+}
 
 export type EntryKind = "file" | "directory" | "symlink";
 
@@ -92,7 +137,10 @@ export type CellFrame =
   | { type: "sync"; id: string }
   /** The diff the container sent under this id has been written to the rows, except the files named. */
   | { type: "synced"; id: string; refused: Refused[] }
-  | { type: "credential"; id: string; value: string; /** epoch ms */ expires: number };
+  /** The home's answer to the container's `credential` under this id. Handed to the program that asked; kept nowhere. */
+  | ({ type: "credential"; id: string } & CredentialAnswer)
+  /** The cell could not act on a frame; `of` names the frame's type and `id` the frame, when it had one. A `credential` gets `refused`. */
+  | { type: "error"; code: "refused" | "unsupported"; of: string; id?: string; message: string };
 
 /** Frames the container sends to the cell. */
 export type ContainerFrame =
@@ -110,7 +158,8 @@ export type ContainerFrame =
   /** What changed since the last sync: new and changed entries, and paths no longer there. */
   | { type: "changed"; id: string; entries: ChangedEntry[]; deleted: string[] }
   | BlobFrame
-  | { type: "credential"; id: string; kind: "git"; scope: string }
+  /** A program in the container asked the helper for a credential; the cell answers `credential` or `error` under this id. */
+  | ({ type: "credential"; id: string } & CredentialRequest)
   /**
    * The agent could not act on a frame; `of` names the frame's type. A
    * sync the error lands in is over: `unsupported` and `malformed` are the

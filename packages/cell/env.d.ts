@@ -23,6 +23,17 @@ declare namespace Cloudflare {
     PEN_KILL_TIMEOUT?: string;
     /** Pen: this home's container budget in minutes. Unset, no budget. */
     PEN_BUDGET_MINUTES?: string;
+    /**
+     * Pen: the home's git credential, a secret. The container's helper asks the cell for it at push time and the
+     * broker hands it over once per request; it is in no row, no frame the model sees, and no file. Unset, a push is
+     * refused by name. A fine-grained token to one repository, contents read and write, is enough.
+     */
+    PEN_GIT_TOKEN?: string;
+    /** Pen: the one host `PEN_GIT_TOKEN` is for. Default `github.com`. */
+    PEN_GIT_HOST?: string;
+    /** Pen: who the container's commits are by. Defaults `lamb` and `lamb@example.invalid`. */
+    PEN_GIT_AUTHOR_NAME?: string;
+    PEN_GIT_AUTHOR_EMAIL?: string;
   }
 }
 interface Env extends Cloudflare.Env {}

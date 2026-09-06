@@ -13,9 +13,12 @@
  * output is sent as it comes, and when it ends the agent describes what
  * it changed without being asked. A run has its own lane: the frames
  * that arrive while it runs (`ping`, `kill`) are answered at once, not
- * queued behind it. `credential` still gets a typed `error` so a later
- * phase fills the case in rather than discovering it was silently
- * dropped.
+ * queued behind it. Phase 4 carries a credential: `askCredential` is the
+ * helper's path in, called by the Unix socket server in `node.ts` and by
+ * a test directly; the agent sends `credential` up, and the cell's
+ * `credential` or `error` under the same id settles it. The value goes
+ * back to the caller and is held nowhere else: not logged, not kept, and
+ * never part of a `stdout` or `stderr` frame.
  */
 import ignore from "ignore";
 import {
@@ -23,6 +26,8 @@ import {
   type CellFrame,
   type ChangedEntry,
   type ContainerFrame,
+  type CredentialAnswer,
+  type CredentialRequest,
   decodeFrame,
   encodeFrame,
   type EntryKind,
@@ -156,12 +161,22 @@ export interface ServedAgent {
    * calls it in place of one.
    */
   syncOut(id: string): Promise<Refused[]>;
+  /**
+   * The helper's path: asks the cell for a credential and resolves with the
+   * home's answer, or with `undefined` when the cell refused it, the wait
+   * ran out, or the socket is gone. The answer is the caller's to hand on
+   * and forget.
+   */
+  askCredential(request: CredentialRequest, options?: { timeoutMs?: number }): Promise<CredentialAnswer | undefined>;
 }
+
+/** How long the helper waits for the cell's answer before git is told there is none. */
+export const CREDENTIAL_TIMEOUT_MS = 10_000;
 
 /** Wires the agent to a socket. Frames are handled in the order they arrive, one at a time; a run's work is not on that chain. */
 export function serveAgent(socket: AgentSocket, disk: Disk, runner: Runner): ServedAgent {
   const agent = new Agent(socket, disk, runner);
-  return { closed: agent.closed, syncOut: (id) => agent.syncOut(id) };
+  return { closed: agent.closed, syncOut: (id) => agent.syncOut(id), askCredential: (request, options) => agent.askCredential(request, options) };
 }
 
 class Agent {
@@ -181,6 +196,9 @@ class Agent {
   private expecting: { hash: string; size: number } | null = null;
   /** A sync-out in progress. */
   private out: { id: string; entries: ChangedEntry[]; deleted: string[]; resolve: (refused: Refused[]) => void; reject: (error: Error) => void } | null = null;
+  /** Credential requests waiting on the cell, by id. */
+  private credentials = new Map<string, { settle: (answer: CredentialAnswer | undefined) => void }>();
+  private credentialCount = 0;
 
   constructor(socket: AgentSocket, disk: Disk, runner: Runner) {
     this.socket = socket;
@@ -196,6 +214,8 @@ class Agent {
         this.out = null;
         // A container that loses its socket stops its command.
         this.running?.handle.kill("the socket closed");
+        for (const pending of this.credentials.values()) pending.settle(undefined);
+        this.credentials.clear();
         resolve();
       });
     });
@@ -275,8 +295,20 @@ class Agent {
         // A kill for a run that already ended is ignored: `exit` is on its way, and the cell takes either.
         if (this.running !== null && this.running.id === frame.id) this.running.handle.kill(frame.reason);
         return;
-      default:
-        this.send({ type: "error", code: "unsupported", of: frame.type, message: `the agent does not handle ${frame.type} yet` });
+      case "credential": {
+        // An answer no one is waiting for (the wait ran out first) is dropped, value and all; nothing is said, since the value must not be repeated.
+        const { id, ...answer } = frame;
+        this.settleCredential(id, answer.value === undefined ? undefined : { ...(answer.username === undefined ? {} : { username: answer.username }), value: answer.value, expires: answer.expires });
+        return;
+      }
+      case "error":
+        if (frame.of === "credential" && frame.id !== undefined) this.settleCredential(frame.id, undefined);
+        return;
+      default: {
+        // Every frame the protocol names is handled above; one it does not is answered, not dropped.
+        const { type } = frame as { type: string };
+        this.send({ type: "error", code: "unsupported", of: type, message: `the agent does not handle ${type}` });
+      }
     }
   }
 
@@ -318,6 +350,28 @@ class Agent {
         this.running = null;
         this.send({ type: "error", code: "failed", of: "run", message: error instanceof Error ? error.message : String(error) });
       });
+  }
+
+  askCredential(request: CredentialRequest, options: { timeoutMs?: number } = {}): Promise<CredentialAnswer | undefined> {
+    if (this.isClosed) return Promise.resolve(undefined);
+    const id = `cred-${++this.credentialCount}`;
+    return new Promise<CredentialAnswer | undefined>((resolve) => {
+      const timer = setTimeout(() => this.settleCredential(id, undefined), options.timeoutMs ?? CREDENTIAL_TIMEOUT_MS);
+      this.credentials.set(id, {
+        settle: (answer) => {
+          clearTimeout(timer);
+          resolve(answer);
+        },
+      });
+      this.send({ type: "credential", id, kind: request.kind, scope: request.scope });
+    });
+  }
+
+  private settleCredential(id: string, answer: CredentialAnswer | undefined): void {
+    const pending = this.credentials.get(id);
+    if (pending === undefined) return;
+    this.credentials.delete(id);
+    pending.settle(answer);
   }
 
   private async handleBytes(bytes: Uint8Array): Promise<void> {
