@@ -11,18 +11,17 @@ never a bare "phase 2".
 
 ---
 
-**Where we are: pen phases 0, 1, 2, 3, and 5 CLOSED, phases 4, 6, and 7
-PART-DONE. Nothing in pen waits on work; what is left waits on a
-person.** Planned 5 Sep 2026; every phase built the same day. The
-shepherd enabled the Workers Paid plan that evening; `lamb-pen` was
-deployed with its image, and journeys 1, 3, and 4 walked there with a
-real model. Phase 4 is proved with real git in Node; its walk waits on a
-fine-grained token. Phase 6 built the starter beside a celld node and
-reached a real container through it; the walk stalled on celld dropping
-the work a socket message wakes, a decision left open. Phase 7 walked
-lamb's journeys 1, 2, 4, and 5 on the lamb home with all of pen present
-and no binding; journeys 3 and 6 wait on lamb's own list: a second
-terminal and a two-node fleet.
+**Where we are: pen phases 0 to 5 CLOSED, phases 6 and 7 PART-DONE.
+Nothing in pen waits on work; what is left waits on a person.** Planned
+5 Sep 2026; every phase built the same day. The shepherd enabled the
+Workers Paid plan that evening and scoped a token to a scratch
+repository; `lamb-pen` was deployed with its image, and journeys 1, 2,
+3, and 4 walked there with a real model. Phase 6 built the starter
+beside a celld node and reached a real container through it; the walk
+stalled on celld dropping the work a socket message wakes, a decision
+left open. Phase 7 walked lamb's journeys 1, 2, 4, and 5 on the lamb
+home with all of pen present and no binding; journeys 3 and 6 wait on
+lamb's own list: a second terminal and a two-node fleet.
 
 The order is dependency order and risk order. Phase 1 is the gate: if a
 checkout cannot be synced by hash both ways with the atomicity journey 3
@@ -275,11 +274,10 @@ minute costs.
 
 ## Phase 4 — A repository, and the broker
 
-**Status: PART-DONE.** 5 Sep 2026. Real git through the real agent and
-helper in Node against a fixture that demands auth, and the broker in
-workerd through the fake; journey 2's steps held there. The walk against
-a real repository from the deployed home waits on a fine-grained token
-(⚑) and on the pen home's plan (⚑).
+**Status: CLOSED.** 5 Sep 2026. Real git through the real agent and
+helper in Node against a fixture that demands auth, the broker in
+workerd through the fake, and journey 2 walked from the deployed pen
+home against a real repository with the shepherd's token.
 
 **Closes journey 2.**
 
@@ -328,11 +326,10 @@ credential in nothing the model can see.
 - **2026-09-05 — A minter cannot mint a fine-grained token**, so `expires`
   is a promise about handling, not a property of the value: the same
   secret, read at each request, said to be good for a minute.
-- **2026-09-05 — Cost: 30 minutes**, 24 the builder's.
-- **2026-09-05 — Open: the deployed walk** needs a fine-grained token to
-  one scratch repository, contents read and write, short-lived, as the
-  `lamb-pen` secret `PEN_GIT_TOKEN`, and the pen home itself. The
-  shepherd's.
+- **2026-09-05 — Journey 2 walked on Cloudflare** against
+  `lamb-playground` with the shepherd's token: clone, `fix-typo` edited
+  by the tool, the diff, commit, push; the branch on GitHub authored as
+  the home says; the token in no entry, export, `env`, config, or file.
 - **2026-09-05 — Open: one token per host.** `credential.useHttpPath` is
   off, so the scope is the host and one token covers every repository on
   it; a per-repository scope is a later table in the home.
