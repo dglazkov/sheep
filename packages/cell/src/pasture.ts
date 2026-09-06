@@ -10,9 +10,10 @@
  */
 import { DurableObject } from "cloudflare:workers";
 import type { ManifestEntry } from "@sheep/pen/protocol";
-import { FilesTable, FsError, normalizePath } from "./workspace/files.ts";
+import { FilesTable, FsError, normalizePath, type TreeEntry } from "./workspace/files.ts";
+import { PASTURE_ROOT } from "./workspace/mount.ts";
 
-export const PASTURE_ROOT = "/pasture";
+export { PASTURE_ROOT };
 export const DEFAULT_BRANCH = "main";
 
 /** A pasture's name is a Durable Object name and a column the herd view prints, so it is plain. */
@@ -38,6 +39,12 @@ export interface PastureMeta {
   repo: string | null;
   branch: string;
   createdAt: number;
+}
+
+/** What a cell fetches in one hop at the start of a tool call that touches `/pasture` (pasture phase 1): the meta and the tree. */
+export interface PastureSnapshot {
+  meta: PastureMeta | undefined;
+  tree: TreeEntry[];
 }
 
 /** A path in the tree, relative to `/pasture`, resolved to the row's absolute path; `undefined` when it would leave the tree. */
@@ -97,6 +104,11 @@ export class Pasture extends DurableObject<Env> {
   /** The tree as pen's manifest: every row under `/pasture`, paths relative to it, sorted. */
   manifest(): ManifestEntry[] {
     return this.files.manifest(PASTURE_ROOT);
+  }
+
+  /** The meta and the tree with sizes and mtimes, together: the one RPC a cell's `PastureCall` makes (pasture phase 1). */
+  snapshot(): PastureSnapshot {
+    return { meta: this.meta(), tree: this.files.tree(PASTURE_ROOT) };
   }
 
   /** A file's bytes by its path in the tree; `undefined` when there is none. A directory is `EISDIR`. */

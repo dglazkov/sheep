@@ -21,7 +21,7 @@ tree would do, has left the design.
 
 ---
 
-**Where we are: pasture phase 0 CLOSED; phase 1 NOT STARTED.** Planned 6 Sep 2026, the morning recast closed, from a brainstorm with the shepherd; the shepherd's calls are in the journey's front matter. Phase 0 built the same morning: the `Pasture` object, the directory's two columns, the routes, the dog's verbs, and journey 4's refusal, walked by hand on a local home. The next phase is pasture phase 1, the mount and the prompt. Nothing waits on a person before pasture phase 5.
+**Where we are: pasture phases 0 and 1 CLOSED; phase 2 NOT STARTED.** Planned 6 Sep 2026, the morning recast closed, from a brainstorm with the shepherd; the shepherd's calls are in the journey's front matter. Phase 0 built the same morning: the object, the directory's columns, the routes, the verbs. Phase 1 the same day: `/pasture` read-only in every path a sheep reads, the prompt with the brief and the skills, the pastureless literal; journey 2 steps 2 to 5 and journey 4 steps 1 and 2 walked on a local home with a real model. The next phase is pasture phase 2, the program and the herd. Nothing waits on a person before pasture phase 5.
 
 The order is dependency order. Phase 0 is the object, the directory's
 two columns, the routes, and the dog's verbs, so that every later phase
@@ -130,9 +130,16 @@ and 2 with the faux provider, and journey 2 steps 2 and 4 with a real
 model if a key is in `.dev.vars`, else recorded as owed to pasture phase
 5. Suites unchanged. **⚑** none.
 
-**Status: NOT STARTED.**
+**Status: CLOSED.** 2026-09-06. The mount, the refusals, the prompt with the brief and the skills, and the pastureless literal built and proved in workerd; journey 4 steps 1 and 2 and journey 2 steps 2 to 5 walked by the conductor on a local home with a real model.
 
 **Findings:**
+
+- **2026-09-06 — Pi's `formatSkillsForPrompt` cannot load in a Worker.** Its module drags in `config.js`, whose top level calls `fileURLToPath(import.meta.url)`, and a wrangler bundle dies at boot; `parseFrontmatter` and `createSyntheticSourceInfo` are leaves and are imported. The cell's `skillsBlock` is pinned byte for byte to pi's by a workerd test.
+- **2026-09-06 — Open: one fork commit owed, making `formatSkillsForPrompt` a leaf module** so `skillsBlock` becomes an import. Waits on pasture phase 4, which walks skills, per `/pi-bump`.
+- **2026-09-06 — just-bash reports any failed write in `sed -i` and `chmod` as "No such file or directory", and `rm -f` reports nothing.** The mount records each refusal, and the cell corrects the shell's line, as `annotateCommandNotFound` corrects the not-found line.
+- **2026-09-06 — Pi's edit tool prints only a returned error's code, so the env's writing methods throw the `EROFS` error under `/pasture`;** the harness makes the throw the tool's text, and `write`, `edit`, and the shell say the same sentence.
+- **2026-09-06 — One `snapshot()` hop serves a whole tool call, and `readByHash` one hop per distinct hash.** A `Pasture` stub satisfies the mount's source with no adapter; a stub made outside a Durable Object's context cannot be used inside it in workerd.
+- **2026-09-06 — The walk, by the conductor on a local home with a real model:** the sheep read a note told only by path, quoted a brief changed mid-conversation, reported `edit`'s and a redirect's refusal verbatim, and found a removed note gone. Cost: 33 minutes of a subagent, 20 of verification.
 
 ## Phase 2: The program, and the herd
 

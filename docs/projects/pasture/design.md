@@ -80,11 +80,14 @@ and branch, and the secrets.
 - **The directory.** One row per session, with the columns lamb and pen
   needed. It gains two: which pasture a sheep was born into, and what it
   was asked.
-- **Pi's pieces.** `parseFrontmatter` and `formatSkillsForPrompt` are
-  exported from pi's coding agent, so a skill in the tree is listed the
-  way pi lists its own; `appendCustomMessageEntry` is how a birth's
-  output becomes a transcript entry the model has and `sheep log` shows.
-  Nothing in pi changes for this project.
+- **Pi's pieces.** `parseFrontmatter` is a leaf module of pi's coding
+  agent and is imported, so a skill in the tree is parsed the way pi
+  parses its own; `appendCustomMessageEntry` is how a birth's output
+  becomes a transcript entry the model has and `sheep log` shows.
+  `formatSkillsForPrompt` sits behind a module a Worker cannot load
+  (pasture phase 1 found `config.js` calling `fileURLToPath` at its top
+  level), so the cell makes the block itself, pinned byte for byte to
+  pi's by a test, until one fork commit makes pi's a leaf.
 
 ## The object
 

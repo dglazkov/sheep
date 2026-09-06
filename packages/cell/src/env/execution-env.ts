@@ -16,6 +16,11 @@
  * front with the sentence for that program. Pen phase 5 adds one line
  * the shell takes on any home with the loader: `node <file> [args…]`
  * alone, while no container is up, runs in the fresh isolate.
+ *
+ * Pasture phase 1: with a `pasture`, a path under `/pasture` is served by
+ * the mount (`workspace/mount.ts`) from the pasture's object, live per tool
+ * call, and every write there is refused with `EROFS` and the design's
+ * sentence. Without one, no method here routes and the env is lamb's.
  */
 import type { Context } from "@earendil-works/pi-agent-core";
 import {
@@ -38,6 +43,7 @@ import { type Isolate, IsolateEnded } from "../pen/isolate.ts";
 import { ContainerRun, KillUnanswered, type RunEnd, RunInterrupted } from "../pen/run.ts";
 import { CellFs } from "../workspace/cell-fs.ts";
 import { type FileRow, FilesTable, FsError, isReadable, MAX_FILE_BYTES, normalizePath, TEMP_ROOT, WORKSPACE_ROOT } from "../workspace/files.ts";
+import { annotateReadOnly, isPasturePath, PASTURE_ROOT, PastureCall, type PastureRow, type PastureSource, readOnly } from "../workspace/mount.ts";
 import {
   annotateCommandNotFound,
   classify,
@@ -77,14 +83,20 @@ function toFileError(error: unknown, fallbackPath: string): FileError {
       case "ELOOP":
       case "EINVAL":
         return new FileError("invalid", error.message, error.path, cause);
+      case "EROFS":
+        return new FileError("permission_denied", error.message, error.path, cause);
     }
   }
   const cause = error instanceof Error ? error : new Error(String(error));
   return new FileError("unknown", cause.message, fallbackPath, cause);
 }
 
-function toFileInfo(row: FileRow): FileInfo {
+function toFileInfo(row: Pick<FileRow, "path" | "kind" | "size" | "mtimeMs">): FileInfo {
   return { name: posix.basename(row.path) || "/", path: row.path, kind: row.kind, size: row.size, mtimeMs: row.mtimeMs };
+}
+
+function byPath(a: FileInfo, b: FileInfo): number {
+  return a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
 }
 
 function messageOf(error: unknown): string {
@@ -123,6 +135,8 @@ export interface CellExecutionEnvOptions {
   containerUp?: () => boolean;
   /** Tier 1. Absent, this home has no Worker Loader: `node` is the container's or nobody's, and the table says so. */
   isolate?: Isolate;
+  /** The pasture this sheep was born into, as the cell reaches its object. Absent, there is no `/pasture` and no second backing. */
+  pasture?: PastureSource;
 }
 
 /** How a command ended, before the capture is settled. */
@@ -137,7 +151,10 @@ interface Ran {
 export class CellExecutionEnv implements ExecutionEnv {
   cwd: string;
   readonly files: FilesTable;
+  /** The shell's file system over the rows alone; a shell run with a pasture gets a `CellFs` of its own, with that call's mount. */
   readonly fs: CellFs;
+  /** The second backing, or `undefined` for a pastureless cell, which has none anywhere. */
+  readonly pasture: PastureSource | undefined;
   private readonly shellEnv: Record<string, string>;
   private readonly container: ContainerLease | undefined;
   private readonly containerUp: (() => boolean) | undefined;
@@ -152,6 +169,7 @@ export class CellExecutionEnv implements ExecutionEnv {
     this.files = new FilesTable(sql, options.now);
     this.files.init();
     this.fs = new CellFs(this.files);
+    this.pasture = options.pasture;
     this.container = options.container;
     this.containerUp = options.containerUp;
     this.isolate = options.isolate;
@@ -200,9 +218,27 @@ export class CellExecutionEnv implements ExecutionEnv {
     return normalizePath(posix.isAbsolute(normalized) ? normalized : posix.resolve(this.cwd, normalized));
   }
 
-  private guard<T>(path: string, signal: AbortSignal | undefined, read: (resolved: string) => T): Result<T, FileError> {
+  /**
+   * Resolves, fences, and runs a read over the rows; with a pasture, a
+   * path under `/pasture` runs `mounted` instead, over a `PastureCall` made
+   * here. This is the call boundary for pi's file tools: one tool call is
+   * one env method, one call, one manifest hop, forgotten on return.
+   */
+  private async guard<T>(
+    path: string,
+    signal: AbortSignal | undefined,
+    read: (resolved: string) => T,
+    mounted: (resolved: string, call: PastureCall) => Promise<T>,
+  ): Promise<Result<T, FileError>> {
     const resolved = this.resolvePath(path);
     if (signal?.aborted) return err(new FileError("aborted", "aborted", resolved));
+    if (this.pasture !== undefined && isPasturePath(resolved)) {
+      try {
+        return ok(await mounted(resolved, new PastureCall(this.pasture)));
+      } catch (error) {
+        return err(toFileError(error, resolved));
+      }
+    }
     if (!isReadable(resolved)) {
       return err(new FileError("permission_denied", `outside ${WORKSPACE_ROOT} and ${TEMP_ROOT}`, resolved));
     }
@@ -211,6 +247,22 @@ export class CellExecutionEnv implements ExecutionEnv {
     } catch (error) {
       return err(toFileError(error, resolved));
     }
+  }
+
+  /**
+   * The refusal every writing method makes under `/pasture`. Thrown, not
+   * returned: pi's edit tool reports only a returned error's code, and the
+   * sentence must reach the model from `edit` as it does from `write` and
+   * from the shell. A pastureless cell returns at once.
+   */
+  private refuseWrite(path: string, syscall: string): void {
+    if (this.pasture === undefined) return;
+    const resolved = this.resolvePath(path);
+    if (isPasturePath(resolved)) throw readOnly(syscall, resolved);
+  }
+
+  private static rowInfo(row: PastureRow): FileInfo {
+    return toFileInfo(row);
   }
 
   async absolutePath(path: string, _context: Context): Promise<Result<string, FileError>> {
@@ -226,50 +278,89 @@ export class CellExecutionEnv implements ExecutionEnv {
   }
 
   async readTextFile(path: string, context: Context): Promise<Result<string, FileError>> {
-    return this.guard(path, context.abortSignal, (resolved) => this.files.readText(resolved));
+    return this.guard(
+      path,
+      context.abortSignal,
+      (resolved) => this.files.readText(resolved),
+      (resolved, call) => call.readText(resolved),
+    );
   }
 
   async readTextLines(path: string, options: { maxLines?: number } | undefined, context: Context): Promise<Result<string[], FileError>> {
     if (options?.maxLines !== undefined && options.maxLines <= 0) return ok([]);
-    return this.guard(path, context.abortSignal, (resolved) => {
-      const text = this.files.readText(resolved);
-      const lines = text.split(/\r?\n/);
-      if (text.endsWith("\n")) lines.pop();
-      return options?.maxLines === undefined ? lines : lines.slice(0, options.maxLines);
-    });
+    const lines = (text: string): string[] => {
+      const all = text.split(/\r?\n/);
+      if (text.endsWith("\n")) all.pop();
+      return options?.maxLines === undefined ? all : all.slice(0, options.maxLines);
+    };
+    return this.guard(
+      path,
+      context.abortSignal,
+      (resolved) => lines(this.files.readText(resolved)),
+      async (resolved, call) => lines(await call.readText(resolved)),
+    );
   }
 
   async readBinaryFile(path: string, context: Context): Promise<Result<Uint8Array, FileError>> {
-    return this.guard(path, context.abortSignal, (resolved) => this.files.readFile(resolved));
+    return this.guard(
+      path,
+      context.abortSignal,
+      (resolved) => this.files.readFile(resolved),
+      (resolved, call) => call.readFile(resolved),
+    );
   }
 
   async writeFile(path: string, content: string | Uint8Array, context: Context): Promise<Result<void, FileError>> {
-    return this.guard(path, context.abortSignal, (resolved) => this.files.writeFile(resolved, content, { createParents: true }));
+    this.refuseWrite(path, "open");
+    return this.guard(path, context.abortSignal, (resolved) => this.files.writeFile(resolved, content, { createParents: true }), never);
   }
 
   async appendFile(path: string, content: string | Uint8Array, context: Context): Promise<Result<void, FileError>> {
-    return this.guard(path, context.abortSignal, (resolved) => this.files.appendFile(resolved, content, { createParents: true }));
+    this.refuseWrite(path, "open");
+    return this.guard(path, context.abortSignal, (resolved) => this.files.appendFile(resolved, content, { createParents: true }), never);
   }
 
   async renameFile(sourcePath: string, destinationPath: string, context: Context): Promise<Result<void, FileError>> {
+    this.refuseWrite(sourcePath, "rename");
+    this.refuseWrite(destinationPath, "rename");
     const destination = this.resolvePath(destinationPath);
-    return this.guard(sourcePath, context.abortSignal, (resolved) => this.files.rename(resolved, destination));
+    return this.guard(sourcePath, context.abortSignal, (resolved) => this.files.rename(resolved, destination), never);
   }
 
   async fileInfo(path: string, context: Context): Promise<Result<FileInfo, FileError>> {
-    return this.guard(path, context.abortSignal, (resolved) => toFileInfo(this.files.stat(resolved, false)));
+    return this.guard(
+      path,
+      context.abortSignal,
+      (resolved) => toFileInfo(this.files.stat(resolved, false)),
+      async (resolved, call) => CellExecutionEnv.rowInfo(await call.stat(resolved)),
+    );
   }
 
   async listDir(path: string, context: Context): Promise<Result<FileInfo[], FileError>> {
-    return this.guard(path, context.abortSignal, (resolved) => this.files.readdir(resolved).map(toFileInfo));
+    const rows = (resolved: string): FileInfo[] => this.files.readdir(resolved).map(toFileInfo);
+    if (this.pasture === undefined) return this.guard(path, context.abortSignal, rows, never);
+    const pasture = this.pasture;
+    const result = await this.guard(path, context.abortSignal, rows, async (resolved, call) => (await call.readdir(resolved)).map(CellExecutionEnv.rowInfo));
+    if (!result.ok || this.resolvePath(path) !== "/") return result;
+    // `/` lists the mount beside the rows' roots; its row is the pasture's, so the listing has its date.
+    const root = await new PastureCall(pasture).stat(PASTURE_ROOT);
+    return ok([...result.value, CellExecutionEnv.rowInfo(root)].sort(byPath));
   }
 
   async canonicalPath(path: string, context: Context): Promise<Result<string, FileError>> {
-    return this.guard(path, context.abortSignal, (resolved) => {
-      const canonical = this.files.resolve(resolved, true);
-      if (this.files.get(canonical) === undefined) throw new FsError("ENOENT", "realpath", resolved);
-      return canonical;
-    });
+    return this.guard(
+      path,
+      context.abortSignal,
+      (resolved) => {
+        const canonical = this.files.resolve(resolved, true);
+        if (this.files.get(canonical) === undefined) throw new FsError("ENOENT", "realpath", resolved);
+        return canonical;
+      },
+      async (resolved, call) => {
+        if ((await call.get(resolved)) === undefined) throw new FsError("ENOENT", "realpath", resolved);
+        return resolved;
+      },
+    );
   }
 
   async exists(path: string, context: Context): Promise<Result<boolean, FileError>> {
@@ -280,12 +371,17 @@ export class CellExecutionEnv implements ExecutionEnv {
   }
 
   async createDir(path: string, options: { recursive?: boolean } | undefined, context: Context): Promise<Result<void, FileError>> {
-    return this.guard(path, context.abortSignal, (resolved) => this.files.mkdir(resolved, { recursive: options?.recursive ?? true }));
+    this.refuseWrite(path, "mkdir");
+    return this.guard(path, context.abortSignal, (resolved) => this.files.mkdir(resolved, { recursive: options?.recursive ?? true }), never);
   }
 
   async remove(path: string, options: { recursive?: boolean; force?: boolean } | undefined, context: Context): Promise<Result<void, FileError>> {
-    return this.guard(path, context.abortSignal, (resolved) =>
-      this.files.rm(resolved, { recursive: options?.recursive ?? false, force: options?.force ?? false }),
+    this.refuseWrite(path, "rm");
+    return this.guard(
+      path,
+      context.abortSignal,
+      (resolved) => this.files.rm(resolved, { recursive: options?.recursive ?? false, force: options?.force ?? false }),
+      never,
     );
   }
 
@@ -315,8 +411,11 @@ export class CellExecutionEnv implements ExecutionEnv {
       }
     }
     const cwd = options?.cwd ? this.resolvePath(options.cwd) : this.cwd;
-    const cwdRow = this.files.get(cwd);
-    if (cwdRow === undefined || cwdRow.kind !== "directory") {
+    // The call boundary for the shell: one bash tool call, one `PastureCall`, dropped when the command ends. Its one
+    // manifest hop happens at the first touch of `/pasture`, so a command that never looks there never pays it.
+    const call = this.pasture === undefined ? undefined : new PastureCall(this.pasture);
+    const cwdKind = call !== undefined && isPasturePath(cwd) ? (await call.get(cwd))?.kind : this.files.get(cwd)?.kind;
+    if (cwdKind !== "directory") {
       return err(new ExecutionError("spawn_error", `Working directory does not exist: ${cwd}\nCannot execute bash commands.`));
     }
 
@@ -352,7 +451,7 @@ export class CellExecutionEnv implements ExecutionEnv {
         capture.push(line);
         ran = { full: line, outcome: { exitCode: 127 } };
       } else if (route.tier === 0) {
-        ran = await this.runInShell(command, cwd, environment, options, signal, capture, home);
+        ran = await this.runInShell(command, cwd, environment, options, signal, capture, home, call === undefined ? this.fs : new CellFs(this.files, call));
       } else if (route.tier === 1) {
         ran = await this.runInIsolate(route.file, route.args, cwd, options, signal, capture, home);
       } else {
@@ -376,7 +475,7 @@ export class CellExecutionEnv implements ExecutionEnv {
     }
   }
 
-  /** Tier 0: just-bash over the rows, as the shell always ran it. */
+  /** Tier 0: just-bash over the rows, as the shell always ran it; `fs` carries this call's mount when the cell has a pasture. */
   private async runInShell(
     command: string,
     cwd: string,
@@ -385,6 +484,7 @@ export class CellExecutionEnv implements ExecutionEnv {
     signal: AbortSignal | undefined,
     capture: OutputCapture,
     home: Home,
+    fs: CellFs,
   ): Promise<Ran> {
     const controller = new AbortController();
     let timedOut = false;
@@ -398,7 +498,7 @@ export class CellExecutionEnv implements ExecutionEnv {
     signal?.addEventListener("abort", onAbort, { once: true });
 
     const bash = new Bash({
-      fs: this.fs,
+      fs,
       cwd,
       env: { ...environment, PWD: cwd },
       executionLimits: EXECUTION_LIMITS,
@@ -412,6 +512,7 @@ export class CellExecutionEnv implements ExecutionEnv {
         const result = await bash.exec(command, { signal: controller.signal, cwd });
         stdout = result.stdout;
         stderr = annotateCommandNotFound(result.stderr, (program) => refusalSentence(program, home));
+        if (fs.pasture !== undefined) stderr = annotateReadOnly(stderr, fs.pasture.refusals);
         exitCode = result.exitCode;
       } catch (error) {
         // just-bash throws for its own bounds and for aborts; both are the command failing, not the env.
@@ -627,6 +728,11 @@ export class CellExecutionEnv implements ExecutionEnv {
   async cleanup(_context: Context): Promise<void> {
     // No processes to kill. The table stays; `/tmp` is truncated by the cell when the lane idles.
   }
+}
+
+/** The mounted branch of a writing method: unreachable, since `refuseWrite` threw first. */
+function never(resolved: string): Promise<never> {
+  return Promise.reject(readOnly("open", resolved));
 }
 
 export { MAX_FILE_BYTES };

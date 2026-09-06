@@ -40,7 +40,8 @@ export const TEMP_ROOT = "/tmp";
 export const CHUNK_BYTES = 1024 * 1024;
 export const MAX_FILE_BYTES = 8 * CHUNK_BYTES;
 
-export type FsErrorCode = "ENOENT" | "EEXIST" | "ENOTDIR" | "EISDIR" | "ENOTEMPTY" | "EACCES" | "EFBIG" | "ELOOP" | "EINVAL";
+/** `EROFS` is pasture phase 1's: a write under `/pasture`, refused by the mount (`mount.ts`), never by this table. */
+export type FsErrorCode = "ENOENT" | "EEXIST" | "ENOTDIR" | "EISDIR" | "ENOTEMPTY" | "EACCES" | "EFBIG" | "ELOOP" | "EINVAL" | "EROFS";
 
 /** Node-shaped so just-bash's commands read `code` as they would from `node:fs`. */
 export class FsError extends Error {
@@ -68,7 +69,14 @@ function describe(code: FsErrorCode): string {
     case "EFBIG": return "file too large";
     case "ELOOP": return "too many levels of symbolic links";
     case "EINVAL": return "invalid argument";
+    case "EROFS": return "read-only file system";
   }
+}
+
+/** A manifest entry with what a `stat` needs: the pasture's tree as a cell mounts it (pasture phase 1). */
+export interface TreeEntry extends ManifestEntry {
+  size: number;
+  mtimeMs: number;
 }
 
 const encoder = new TextEncoder();
@@ -181,6 +189,20 @@ export class FilesTable {
       )
       .toArray()
       .map((row) => ({ path: row.path, kind: row.kind, mode: row.mode, hash: row.kind === "directory" ? null : row.hash }));
+  }
+
+  /** The manifest with sizes and mtimes: what a cell needs to `stat` a mounted tree without fetching its bytes. One query. */
+  tree(root: string): TreeEntry[] {
+    const prefix = `${root}/`;
+    return this.sql
+      .exec<{ path: string; kind: FileKind; mode: number; hash: string | null; size: number; mtime_ms: number }>(
+        "SELECT substr(path, ?) AS path, kind, mode, hash, size, mtime_ms FROM files WHERE substr(path, 1, ?) = ? ORDER BY files.path",
+        prefix.length + 1,
+        prefix.length,
+        prefix,
+      )
+      .toArray()
+      .map((row) => ({ path: row.path, kind: row.kind, mode: row.mode, hash: row.kind === "directory" ? null : row.hash, size: row.size, mtimeMs: row.mtime_ms }));
   }
 
   /** The whole content of a file row, its later chunks joined on. */

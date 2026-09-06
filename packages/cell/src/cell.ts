@@ -30,12 +30,12 @@ import type { SqliteSessionRepo } from "@earendil-works/pi-session-backend-sqlit
 import { DurableObject } from "cloudflare:workers";
 import type { LaneState } from "./directory.ts";
 import { CellExecutionEnv } from "./env/execution-env.ts";
-import { type Home, shellSystemPromptLine } from "./env/programs.ts";
 import { type CellModels, createCellModels, type FauxProgram, isFauxProgram } from "./models.ts";
 import { CredentialBroker, homeMinter } from "./pen/broker.ts";
 import { DEFAULT_IDLE } from "./pen/container.ts";
 import { DEFAULT_CPU_MS, Isolate } from "./pen/isolate.ts";
 import { type ContainerStarter, parseDuration, PenLease } from "./pen/lease.ts";
+import { type CellPasture, cellSystemPrompt } from "./prompt.ts";
 import { createCellSessionRepo } from "./storage/sqlite.ts";
 import { createCellHost } from "./wire/host.ts";
 import { WebSocketListener } from "./wire/listener.ts";
@@ -99,16 +99,6 @@ export interface EvictionTestHooks {
   starter?: ContainerStarter;
 }
 
-function systemPrompt(home: Home): string {
-  return [
-    "You are a coding agent working in a session that lives in a cell, not on a machine.",
-    "Working directory: /workspace",
-    "Use the read, write, edit, and bash tools to inspect and change files.",
-    shellSystemPromptLine(home),
-    "Keep answers short and technical.",
-  ].join("\n");
-}
-
 function seconds(value: string | undefined, fallback: number): number {
   const parsed = value === undefined || value.trim() === "" ? Number.NaN : Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -139,11 +129,16 @@ export class SessionCell extends DurableObject<Env> {
     const existing = (await repo.list(undefined, context)).find((metadata) => metadata.id === this.sessionId);
     const session = existing === undefined ? await repo.create({ id: this.sessionId }, context) : await repo.open(existing, context);
     const lease = this.leaseFor();
+    const directory = this.env.DIRECTORY.getByName("home");
+    // The cell learns its pasture from the directory's row, once, at boot: a row that names none, or no row, is lamb's sheep.
+    const pastureName = (await directory.get(this.sessionId))?.pasture ?? null;
+    const pasture: CellPasture | undefined = pastureName === null ? undefined : { name: pastureName, source: this.env.PASTURE.getByName(pastureName) };
     // Tier 1 belongs to any home with the loader, container or not; `lease.socket` is whether a container is up.
     const loader = this.env.LOADER;
     const env = new CellExecutionEnv(this.ctx.storage.sql, {
       ...(lease === undefined ? {} : { container: lease, containerUp: () => lease.socket !== undefined, killTimeoutMs: seconds(this.env.PEN_KILL_TIMEOUT, 10) * 1000 }),
       ...(loader === undefined ? {} : { isolate: new Isolate(loader, { cpuMs: seconds(this.env.PEN_ISOLATE_CPU_MS, DEFAULT_CPU_MS) }) }),
+      ...(pasture === undefined ? {} : { pasture: pasture.source }),
     });
     const models = createCellModels(this.env, { onProviderCall: () => this.transition(), program: () => this.fauxProgram() });
     const runtime: Partial<Runtime> = { repo, session, env, lease, models, drives: new Set(), reported: undefined };
@@ -154,15 +149,15 @@ export class SessionCell extends DurableObject<Env> {
         model: models.model,
         tools: [createReadTool(), createWriteTool(), createEditTool(), createBashTool()].map((tool) => this.observe(tool)),
         toolContext: { env },
-        // Resolved at every model call, so the line says what this home has now: the container, or the budget spent.
-        systemPrompt: async () => systemPrompt(await env.homeNow()),
+        // Resolved at every model call, so the line says what this home has now: the container, or the budget spent;
+        // and, with a pasture, the brief and the skills as the tree has them now.
+        systemPrompt: async () => cellSystemPrompt(await env.homeNow(), pasture),
       },
       context,
     );
     runtime.harness = harness;
     runtime.lane = await harness.lane("main", context);
     runtime.watch = await runtime.lane.watch(context);
-    const directory = this.env.DIRECTORY.getByName("home");
     const serverId = await directory.serverId();
     const { host } = await createCellHost({
       serverId,
