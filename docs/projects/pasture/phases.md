@@ -295,15 +295,12 @@ two deploys above, asked with the price first.
 
 **Findings:**
 
-- **2026-09-06 — Deployed at 12:32, both homes, each in under four seconds of upload;** `GET /pastures` answered `[]` on both before the walk. Secrets survived the redeploy, as recast found.
-- **2026-09-06 — Journey 4 on `sheep`:** a pastureless sheep's `pasture` is the annotated not-found line and `ls -la /` shows `tmp` and `workspace` only; a notes pasture with a brief and a herd of one works with no container; the repository pasture is refused with the sentence and no row.
-- **2026-09-06 — Journey 1 on `sheep-pen`:** the pasture made with `--repo .` from a scratch checkout; two sheep born into clones, each pushed its branch with the pasture's token and named it in the tree; a sheep asked who else was there named its sibling's task.
-- **2026-09-06 — Journey 2 on `sheep-pen`:** a note put by one sheep read by a new sheep told only the path; `edit` and a redirect refused with the sentence and the tree unchanged; a brief changed mid-conversation quoted on the next turn; a removed note gone.
-- **2026-09-06 — Journey 3 on `sheep-pen`:** setup ran at birth after the clone with the dummy secret, printing nothing to the sheep; the container's environment named neither secret; after the ten-minute idle a fresh container ran the broken script and the command stopped at the first line; the skill was read when asked.
-- **2026-09-06 — The first journey 3 birth was refused: "Maximum number of running container instances exceeded".** `max_instances` is 3 and three idle sheep held theirs for the ten-minute `PEN_IDLE`; the entry said so, the sheep lived, a fresh sheep was born once they stopped.
+- **2026-09-06 — Deployed at 12:32, both homes; `GET /pastures` answered `[]` on both before the walk.** Journey 4 on `sheep`: the pastureless sheep unchanged, a notes pasture with a herd of one, the repository pasture refused with the sentence.
+- **2026-09-06 — Journeys 1 to 3 on `sheep-pen`, as written:** two sheep born into clones pushed branches with the pasture's token and named them in the tree; a note read across sheep by path; the refusals, the changed brief, the removed note; setup at birth, no secret in the container's environment, the broken script stopping the command after the idle.
+- **2026-09-06 — The first journey 3 birth was refused: `max_instances` is 3, and three idle sheep held theirs for the ten-minute `PEN_IDLE`.** The entry said so, the sheep lived, a fresh sheep was born once they stopped.
 - **2026-09-06 — `wrangler tail` dropped the second rent's setup line;** step 5's rerun on the deployed home rests on step 6's failure there, the fake's count, and the local rig's log.
-- **2026-09-06 — Open: a GitHub App in place of tokens.** `pastureMinter` in `packages/cell/src/pen/broker.ts` is the one function it replaces; `Mint` is async already. Waits on a project of its own, the shepherd's stated direction.
-- **2026-09-06 — Open: a cache for the tree,** if a walk shows `grep -r /pasture` paying a hop per file; the manifest's hashes are its key. Waits on a walk that shows it.
-- **2026-09-06 — Open: what each sheep pushed in the herd view.** The broker sees each push's host and not its branch; the brief asks the sheep to `put` a note. Waits on a project that touches the herd.
-- **2026-09-06 — Open: births compete with idle containers for `max_instances`.** A dog minting more sheep than the cap in ten minutes sees a refused birth; a shorter idle, a queue, or a sentence to the dog is a later project's call.
-- **2026-09-06 — Open: `sheep log` prints a birth as `[custom birth]` and 200 characters of JSON;** the clone shows, the output's tail does not. `formatEntry` in `packages/cli/src/herd.ts`, for the next project that touches it.
+- **2026-09-06 — Open: a GitHub App in place of tokens.** `pastureMinter` in `broker.ts` is the one function it replaces. A project of its own.
+- **2026-09-06 — Open: a cache for the tree,** keyed by the manifest's hashes, if a walk shows a hop per file.
+- **2026-09-06 — Open: what each sheep pushed in the herd view;** the broker sees the host, not the branch. For a project that touches the herd.
+- **2026-09-06 — Open: births compete with idle containers for `max_instances`;** a shorter idle, a queue, or a sentence to the dog is a later call.
+- **2026-09-06 — Open: `sheep log` prints a birth as `[custom birth]` and 200 characters of JSON;** `formatEntry` in `herd.ts`, for the next project that touches it.
