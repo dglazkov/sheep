@@ -110,10 +110,19 @@ type Row = {
 
 const MAX_SYMLINK_DEPTH = 32;
 
+/** The roots a cell's table has: the workspace and the scratch space. A pasture's table has one root of its own. */
+export const CELL_ROOTS: readonly string[] = [WORKSPACE_ROOT, TEMP_ROOT];
+
 export class FilesTable {
+  /**
+   * `roots` are the directories the table creates on `init` and the only
+   * places it writes; the cell's are `/workspace` and `/tmp`, the pasture's
+   * object (pasture phase 0) roots its own table at `/pasture`.
+   */
   constructor(
     private readonly sql: SqlStorage,
     private readonly now: () => number = Date.now,
+    private readonly roots: readonly string[] = CELL_ROOTS,
   ) {}
 
   /** Creates the table and the roots, and brings an older table up to date. Idempotent; run on every construction. */
@@ -134,7 +143,7 @@ export class FilesTable {
       PRIMARY KEY (path, idx)
     )`);
     this.migrateHashes();
-    for (const root of ["/", WORKSPACE_ROOT, TEMP_ROOT]) {
+    for (const root of ["/", ...this.roots]) {
       if (this.get(root) === undefined) this.insertDirectory(root, 0o755);
     }
   }
@@ -158,10 +167,11 @@ export class FilesTable {
   /**
    * The workspace as pen's manifest: every row under `/workspace`, the root
    * itself and `/tmp` excluded, sorted by path, paths relative to the root.
-   * One query; the hash column is what makes it one.
+   * One query; the hash column is what makes it one. A pasture's table asks
+   * for its own root.
    */
-  manifest(): ManifestEntry[] {
-    const prefix = `${WORKSPACE_ROOT}/`;
+  manifest(root: string = WORKSPACE_ROOT): ManifestEntry[] {
+    const prefix = `${root}/`;
     return this.sql
       .exec<{ path: string; kind: FileKind; mode: number; hash: string | null }>(
         "SELECT substr(path, ?) AS path, kind, mode, hash FROM files WHERE substr(path, 1, ?) = ? ORDER BY files.path",
@@ -450,8 +460,8 @@ export class FilesTable {
   }
 
   private assertWritable(path: string, syscall: string): void {
-    if (!isWritable(path)) {
-      throw new FsError("EACCES", syscall, path, `outside ${WORKSPACE_ROOT} and ${TEMP_ROOT}`);
+    if (!this.roots.some((root) => isUnder(path, root))) {
+      throw new FsError("EACCES", syscall, path, `outside ${this.roots.join(" and ")}`);
     }
   }
 

@@ -2,120 +2,27 @@
  * Journey 5 through the built CLI against a local home: `wrangler dev` on
  * a free port with the faux provider, scripted over its test-only route,
  * and `bin/sheep.js` driven as a child process through steps 1 to 7. Skips,
- * with a message, when the home cannot be started here.
+ * with a message, when the home cannot be started here. The home and the
+ * runner are `local-home.ts`'s, shared with pasture phase 0's test.
  */
-import { type ChildProcess, execFile, spawn } from "node:child_process";
-import { existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
-import { createServer } from "node:net";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
+import { type Result, runSheep, scriptFaux, startHome, stopHome } from "./local-home.js";
 
-const bin = new URL("../bin/sheep.js", import.meta.url).pathname;
-const cellDir = new URL("../../cell/", import.meta.url).pathname;
 const TOKEN = "journey-5-token";
 
-interface LocalHome {
-  url: string;
-  child: ChildProcess;
-  persist: string;
-}
-
-async function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer();
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const port = (server.address() as { port: number }).port;
-      server.close(() => resolve(port));
-    });
-  });
-}
-
-async function startHome(): Promise<LocalHome | string> {
-  const wrangler = join(cellDir, "node_modules", "wrangler", "bin", "wrangler.js");
-  if (!existsSync(wrangler)) return `wrangler is not installed at ${wrangler}`;
-  let port: number;
-  let inspector: number;
-  try {
-    // SHEEP_TEST_PORT pins the home's port, which is how the skip path is exercised: point it at a port in use.
-    [port, inspector] = await Promise.all([process.env.SHEEP_TEST_PORT ? Number(process.env.SHEEP_TEST_PORT) : freePort(), freePort()]);
-  } catch (error) {
-    return `no port could be bound: ${error instanceof Error ? error.message : String(error)}`;
-  }
-  const persist = await mkdtemp(join(tmpdir(), "sheep-home-"));
-  const child = spawn(
-    process.execPath,
-    [
-      wrangler,
-      "dev",
-      "--port",
-      String(port),
-      "--inspector-port",
-      String(inspector),
-      "--persist-to",
-      persist,
-      "--var",
-      `SHEEP_TOKEN:${TOKEN}`,
-      "--var",
-      "SHEEP_PROVIDER:faux",
-      "--log-level",
-      "error",
-      "--show-interactive-dev-session=false",
-    ],
-    { cwd: cellDir, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, CI: "1" } },
-  );
-  let output = "";
-  child.stdout?.on("data", (chunk: Buffer) => (output += chunk.toString()));
-  child.stderr?.on("data", (chunk: Buffer) => (output += chunk.toString()));
-  const url = `http://127.0.0.1:${port}`;
-  const deadline = Date.now() + 90_000;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) break;
-    try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(1_000) });
-      if (response.ok && (await response.text()).startsWith("sheep")) return { url, child, persist };
-    } catch {
-      // not up yet
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  child.kill("SIGTERM");
-  await rm(persist, { recursive: true, force: true });
-  return `wrangler dev did not answer on ${url} (exit ${child.exitCode}): ${output.trim().split("\n").slice(-3).join(" | ")}`;
-}
-
-const home = await startHome();
+const home = await startHome(TOKEN);
 // Written to stderr directly: the runner swallows console output while it collects tests.
 if (typeof home === "string") process.stderr.write(`journey 5 skipped: ${home}\n`);
-
-const run = promisify(execFile);
-
-interface Result {
-  stdout: string;
-  stderr: string;
-  code: number;
-}
 
 /** Runs the built CLI against the local home; never throws on a nonzero exit. */
 async function sheep(...args: string[]): Promise<Result> {
   if (typeof home === "string") throw new Error(home);
-  const env = { ...process.env, SHEEP_HOME: home.url, SHEEP_TOKEN: TOKEN, SHEEP_CONFIG: join(home.persist, "no-config"), NODE_NO_WARNINGS: "1" };
-  try {
-    const { stdout, stderr } = await run(process.execPath, [bin, ...args], { env, maxBuffer: 16 * 1024 * 1024 });
-    return { stdout, stderr, code: 0 };
-  } catch (error) {
-    const failed = error as { stdout: string; stderr: string; code: number };
-    return { stdout: failed.stdout, stderr: failed.stderr, code: failed.code };
-  }
+  return runSheep(home, args);
 }
 
 async function script(path: string, program: unknown): Promise<void> {
   if (typeof home === "string") throw new Error(home);
-  const response = await fetch(`${home.url}${path}`, { method: "POST", headers: { authorization: `Bearer ${TOKEN}` }, body: JSON.stringify(program) });
-  expect(response.status).toBe(200);
+  expect(await scriptFaux(home, path, program)).toBe(200);
 }
 
 const ID = /^[0-9a-f-]{36}$/;
@@ -128,9 +35,7 @@ const TURN = {
 describe.skipIf(typeof home === "string")("journey 5: a dog and its flock, through sheep against a local home", () => {
   afterAll(async () => {
     if (typeof home === "string") return;
-    home.child.kill("SIGTERM");
-    await new Promise((resolve) => home.child.once("exit", resolve));
-    await rm(home.persist, { recursive: true, force: true });
+    await stopHome(home);
   });
 
   it("steps 1 to 7, then prompt mode with the whole reply", { timeout: 120_000 }, async () => {

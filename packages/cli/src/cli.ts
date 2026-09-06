@@ -3,6 +3,7 @@ import { loadConfig } from "./config.js";
 import { writeSessionFile } from "./export.js";
 import { runAbort, runLog, runPrompt, runStatus, runWait } from "./herd.js";
 import { Home } from "./home.js";
+import { PASTURE_NAME, runPasture } from "./pasture.js";
 import { runPiClient } from "./pi.js";
 
 const require = createRequire(import.meta.url);
@@ -11,10 +12,13 @@ const { version } = require("../package.json") as { version: string };
 const USAGE = `sheep — pi, running in a cell
 
 usage:
-  sheep new [--name <name>] [--detach] [--wait] [-- <prompt>]   mint a session at the home; attach pi's terminal, or send the prompt
+  sheep new [--name <name>] [--pasture <name>] [--detach] [--wait] [-- <prompt>]
+                                            mint a session at the home, born into a pasture or into none; attach pi's
+                                            terminal, or send the prompt
   sheep -c | --continue [--detach] [--wait] [-- <prompt>]       the same, on the newest session
   sheep attach <id> [--detach] [--wait] [-- <prompt>]           the same, on a named session; a second terminal on the same cell
-  sheep ls                                  the home's sessions: id, name, created, lane state; one per line, tab separated
+  sheep ls [--pasture <name>]               the home's sessions: id, name, created, lane state, pasture; one per line, tab
+                                            separated, the last column empty for a pastureless sheep; with --pasture, that herd
   sheep status <id>                         the lane now: open operation, last tool call, tokens so far
   sheep wait [--timeout <seconds>] <id>...  block until every named session is idle; print each one's last assistant message
   sheep abort <id>                          stop the open operation
@@ -23,10 +27,25 @@ usage:
   sheep config                              print the resolved home (never the token)
   sheep --version
 
+  sheep pasture new <name> [--repo <url> | --repo .] [--branch <branch>]
+                                            make a pasture: a shared tree, a repository or none, and the sheep born into it;
+                                            --repo . reads this checkout's origin and stores the URL, uploading nothing;
+                                            prints name, repository, branch
+  sheep pasture ls                          the home's pastures: name, created
+  sheep pasture <name>                      the meta, then the herd: id, name, state, born, task
+  sheep pasture ls <name> [path]            the tree, or a directory in it; one path per line, a directory with its slash
+  sheep pasture cat <name> <path>           a file of the tree, to stdout
+  sheep pasture put <name> <path> [file]    write a file, or stdin, to the tree at <path>; whole, last write wins
+  sheep pasture rm <name> <path>            remove a file, or a directory and what is under it
+  sheep pasture secret set <name> <KEY>     set a secret; the value is stdin, never an argument (GIT_TOKEN is the credential)
+  sheep pasture secret ls <name>            the secrets' names, one per line, never a value
+
 options:
   --home <url>    which home; also SHEEP_HOME or ~/.sheep/config ({"home": "...", "token": "..."})
   --json          machine output, pi's shapes: entries are pi entries, status is pi's lane snapshot,
-                  a queued prompt is pi's queue response, a detached prompt is pi's operation response
+                  a queued prompt is pi's queue response, a detached prompt is pi's operation response;
+                  ls rows carry "pasture": null | "<name>" and "task": null | "<first line of the first prompt>"
+  --pasture <name>  with new: the pasture to be born into; with ls: only that herd
   --detach        with a prompt: send it and exit before the first token; the id is the first line of stdout
   --wait          with a prompt to a busy session: stream the queued turn when it starts
 
@@ -38,6 +57,9 @@ Without a prompt, sheep attaches pi's interactive terminal. wait exits 124 on ti
 interface Parsed {
   home?: string;
   name?: string;
+  pasture?: string;
+  repo?: string;
+  branch?: string;
   prompt?: string;
   json: boolean;
   detach: boolean;
@@ -54,6 +76,9 @@ function parse(argv: readonly string[]): Parsed {
   const valued: Record<string, (value: string | undefined) => void> = {
     "--home": (value) => (parsed.home = value),
     "--name": (value) => (parsed.name = value),
+    "--pasture": (value) => (parsed.pasture = value),
+    "--repo": (value) => (parsed.repo = value),
+    "--branch": (value) => (parsed.branch = value),
     "--since": (value) => (parsed.since = value),
     "--last": (value) => (parsed.last = value),
     "--timeout": (value) => (parsed.timeout = value),
@@ -97,13 +122,18 @@ export async function main(argv: readonly string[]): Promise<number> {
     const home = new Home(config);
     switch (command) {
       case "ls": {
-        const sessions = await home.list();
+        const sessions = await home.list(parsed.pasture);
         if (parsed.json) process.stdout.write(`${JSON.stringify(sessions)}\n`);
-        else for (const session of sessions) process.stdout.write(`${session.id}\t${session.name ?? ""}\t${new Date(session.createdAt).toISOString()}\t${session.state}\n`);
+        else {
+          for (const session of sessions) {
+            process.stdout.write(`${session.id}\t${session.name ?? ""}\t${new Date(session.createdAt).toISOString()}\t${session.state}\t${session.pasture ?? ""}\n`);
+          }
+        }
         return 0;
       }
       case "new": {
-        const session = await home.create(parsed.name);
+        if (parsed.pasture !== undefined && !PASTURE_NAME.test(parsed.pasture)) return fail(`a pasture's name is [a-z0-9-]+, not ${JSON.stringify(parsed.pasture)}`);
+        const session = await home.create(parsed.name, parsed.pasture);
         if (parsed.detach) return detach(home, session.id, parsed);
         process.stderr.write(`session ${session.id}\n`);
         return attach(home, session.id, parsed, output);
@@ -143,6 +173,9 @@ export async function main(argv: readonly string[]): Promise<number> {
         if (last !== undefined && !(Number.isInteger(last) && last >= 0)) return fail(`--last needs a count, not ${parsed.last}`);
         return runLog(home, id, { since: parsed.since, last }, output);
       }
+      case "pasture":
+        // Awaited, so the home's refusal sentence is caught below and printed, not thrown out of `main`.
+        return await runPasture(home, { rest: parsed.rest.slice(1), repo: parsed.repo, branch: parsed.branch }, output);
       case "export": {
         const id = parsed.rest[1];
         if (id === undefined) return fail("export needs a session id");

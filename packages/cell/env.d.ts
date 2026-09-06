@@ -2,6 +2,8 @@ declare namespace Cloudflare {
   interface Env {
     SESSION_CELL: DurableObjectNamespace<import("./src/cell.ts").SessionCell>;
     DIRECTORY: DurableObjectNamespace<import("./src/directory.ts").Directory>;
+    /** Pasture: one object per pasture, by name; the tree, the repository, and the secrets (pasture phase 0). */
+    PASTURE: DurableObjectNamespace<import("./src/pasture.ts").Pasture>;
     /** Pen: the Containers binding, bound only in the `pen` environment. Absent, this home has no container. */
     PEN_CONTAINER?: DurableObjectNamespace<import("./src/pen/container.ts").PenContainer>;
     /** Pen phase 5: the Worker Loader, tier 1. Absent, `node` has no isolate and the table says so. */

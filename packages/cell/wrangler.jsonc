@@ -7,12 +7,15 @@
   "durable_objects": {
     "bindings": [
       { "name": "SESSION_CELL", "class_name": "SessionCell" },
-      { "name": "DIRECTORY", "class_name": "Directory" }
+      { "name": "DIRECTORY", "class_name": "Directory" },
+      { "name": "PASTURE", "class_name": "Pasture" }
     ]
   },
+  // `v4` is pasture phase 0's class, on both homes; `v3` is pen's container class and exists only in `pen` below.
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["SessionCell"] },
-    { "tag": "v2", "new_sqlite_classes": ["Directory"] }
+    { "tag": "v2", "new_sqlite_classes": ["Directory"] },
+    { "tag": "v4", "new_sqlite_classes": ["Pasture"] }
   ],
   "vars": {
     "SHEEP_MODEL": "claude-sonnet-5"
@@ -29,13 +32,15 @@
         "bindings": [
           { "name": "SESSION_CELL", "class_name": "SessionCell" },
           { "name": "DIRECTORY", "class_name": "Directory" },
-          { "name": "PEN_CONTAINER", "class_name": "PenContainer" }
+          { "name": "PEN_CONTAINER", "class_name": "PenContainer" },
+          { "name": "PASTURE", "class_name": "Pasture" }
         ]
       },
       "migrations": [
         { "tag": "v1", "new_sqlite_classes": ["SessionCell"] },
         { "tag": "v2", "new_sqlite_classes": ["Directory"] },
-        { "tag": "v3", "new_sqlite_classes": ["PenContainer"] }
+        { "tag": "v3", "new_sqlite_classes": ["PenContainer"] },
+        { "tag": "v4", "new_sqlite_classes": ["Pasture"] }
       ],
       "containers": [
         {

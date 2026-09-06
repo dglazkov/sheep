@@ -1,8 +1,8 @@
 ---
-status: planned
+status: partial
 since: 2026-09-06
 see: pasture
-note: "written 6 Sep 2026, the morning recast closed, from a brainstorm with the shepherd: a pasture is the place a dog puts what every sheep on a repository should know, and a sheep is born into one or into none. The shepherd's calls: the tree is mounted read-only and the one write path is the `pasture` program, not the agent tools; a sheep with a repository is cloned at birth; the tree is live; the herd view is generated from the directory and printed by a tier 0 program; tokens live in the pasture for now and a GitHub App is its own project. Nothing built."
+note: "written 6 Sep 2026, the morning recast closed, from a brainstorm with the shepherd: a pasture is the place a dog puts what every sheep on a repository should know, and a sheep is born into one or into none. The shepherd's calls: the tree is mounted read-only and the one write path is the `pasture` program, not the agent tools; a sheep with a repository is cloned at birth; the tree is live; the herd view is generated from the directory and printed by a tier 0 program; tokens live in the pasture for now and a GitHub App is its own project. Pasture phase 0 built the same morning: the `Pasture` object with lamb's files table rooted at `/pasture`, the directory's `pasture` and `task` columns, the routes, the dog's verbs, and the two refusal sentences; journey 1 steps 1 to 3 and journey 4 step 3 walked on a local home."
 ---
 
 # Pasture — the journeys
