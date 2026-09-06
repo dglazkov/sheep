@@ -244,42 +244,27 @@ minute costs.
 **Findings:**
 
 - **2026-09-05 — Two homes from one config.** The top level is lamb;
-  `env.pen` is `lamb-pen` with the `containers` entry, the binding, and
-  the migrations repeated, since nothing is inherited.
-- **2026-09-05 — A real container answers in 1.2 s** under `wrangler dev`
-  with Docker; sync-in 40 ms for six entries, 150 ms for a hundred; `npm
-  install` of one package 1.7 s. An idle `basic` minute is about 0.0005
-  USD at the published rates.
-- **2026-09-05 — The agent is PID 1** and ignored SIGTERM, so the idle
-  stop never ended it; now it closes with 1000 and exits. Local dev
-  insists on an exposed port; the agent answers `ok` on 8080.
-- **2026-09-05 — Journeys 1 and 3 walked locally with a real model:**
-  `node_modules` on the container's disk and not in the rows, the
-  container gone after `PEN_IDLE`, `docker kill` mid-run giving an error
-  result with the output so far and the sentence, `lamb wait` back in
-  12 s, a new container for the rerun.
+  `env.pen` is `lamb-pen` with the containers entry, the binding, and the
+  migrations repeated, since nothing is inherited.
+- **2026-09-05 — A real container answers in 1.2 s**, locally and on
+  Cloudflare; install and test in 11 s there with the start. An idle
+  `basic` minute is about 0.0005 USD; the deployed walk was 27 minutes.
+- **2026-09-05 — The agent is PID 1**: SIGTERM must be handled, and a
+  SIGKILL from inside is dropped by the kernel. Local dev insists on an
+  exposed port; the agent answers `ok` on 8080.
+- **2026-09-05 — Journeys 1 and 3 walked, locally and on Cloudflare**,
+  with a real model: a kill mid-run gave an error result with the output
+  so far and the sentence, `lamb wait` came back in 12 s, and the rerun
+  got a fresh container. SIGTERM to PID 1 stood in for the dashboard.
 - **2026-09-05 — The sentence is the instruction.** Given the honest
   interruption the model retried on its own; "Report this to the user
   and stop" in the same sentence made it stop and say so.
 - **2026-09-05 — The model folds commands**, so `find … && pnpm ls` ran
   whole in the container and listed `node_modules`; one command per turn,
-  tier 0 lists none.
-- **2026-09-05 — `lamb wait` mid-stream hit the strict codec again**, on
-  an invoke result; fixed. Cost: 61 minutes, 43 the builder's.
-- **2026-09-05 — Walked on Cloudflare the same evening**, once the plan
-  was on: `lamb-pen` deployed with its image in 28 s; install and test in
-  a real container in 11 s including its start; `find` in tier 0 without
-  `node_modules`; the prompt naming the container; 27 container-minutes
-  for the whole walk, about a cent.
-- **2026-09-05 — SIGKILL to PID 1 is dropped inside the container**, so a
-  ten-minute run survived it; SIGTERM, which the agent handles, ended the
-  instance mid-run: an error result with the sentence, the sheep reporting
-  and stopping, `lamb wait` back in 12 s, a fresh container in 9 s. The
-  dashboard kill itself was not exercised.
+  tier 0 lists none. Cost: 61 minutes, 43 the builder's.
 - **2026-09-05 — Open: an idle container's socket drops at about 270 s**
-  on Cloudflare (1006, no close frame) and the agent exits, so a
-  container lives the shorter of `PEN_IDLE` and that; a keepalive `ping`
-  from the lease would hold it, if a warm container is worth the minutes.
+  on Cloudflare (1006) and the agent exits; a keepalive from the lease
+  would hold it, if a warm container is worth the minutes.
 - **2026-09-05 — Open: `.dev.vars.pen` replaces `.dev.vars`**; the local
   walk passes `PEN_*` with `--var`. The wrapper rule is still undecided.
 
@@ -380,9 +365,8 @@ did not.
   with no loader, which is journey 6. `nodejs_compat` must not be named
   in the loaded code; it is the default and the loader refuses it spelled.
 - **2026-09-05 — The loader compiles every code module at start**, so
-  only the script and what it reaches by relative static specifier go in
-  as code; every other file is bytes. A `.js` is ESM by the nearest
-  `package.json`, else by its syntax, node's rule.
+  only the script and what it reaches by relative import goes in as code;
+  every other file is bytes.
 - **2026-09-05 — `limits.cpuMs` is production's.** Local workerd ignored
   it, and a bare `for(;;){}` froze the pool's runtime whole, vitest's
   timeout included; that test is skipped by name.
@@ -391,8 +375,7 @@ did not.
   under `wrangler dev`. The same script in the container took 292 ms
   after a 1120 ms start. Around one idle stop, `node` went isolate,
   container, isolate.
-- **2026-09-05 — Cost: 47 minutes**, 42 the builder's, 2 of them the
-  loader moved out of the lamb home.
+- **2026-09-05 — Cost: 47 minutes**, 42 the builder's.
 - **2026-09-05 — Walked on Cloudflare the same evening.** `node
   compute.mjs` answered from the isolate before any container existed;
   `fetch` there was refused with the sentence; a hundred and one files
