@@ -603,7 +603,9 @@ the deployed home: three sheep minted detached in one command, `ls` and
   hibernated one once, as `lamb attach` does. Cost: 35 minutes, 24 the
   builder's, 7 the walk.
 - **2026-09-05 — Open: the `waiting` state is wired and never seen.** The
-  faux provider neither retries nor defers.
+  faux provider neither retries nor defers. Open: `lamb attach … | head`
+  dies with an EPIPE stack trace when the pipe closes early; a program
+  piping lamb should get a quiet exit.
 
 **Formerly: Git, withdrawn.** Built 5 Sep as a just-bash command over
 isomorphic-git against the workspace rows, twelve verbs with every other

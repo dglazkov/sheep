@@ -11,14 +11,13 @@ never a bare "phase 2".
 
 ---
 
-**Where we are: pen phases 0, 1, and 2 CLOSED, phases 3, 4, and 5
-PART-DONE, phases 6 and 7 NOT STARTED. Next: pen phase 6, celld, after
-the deployed walks of pen phase 3 and pen phase 5.** Planned 5 Sep 2026;
-six phases built the same day. Phases 3, 4, and 5 are built and proved
-on a local rig, `wrangler dev` with Docker, real git in Node, and the
-Worker Loader in the pool; their walks on the deployed pen home waited
-on the Workers Paid plan, which the shepherd enabled the same evening,
-and phase 4's on a fine-grained token, still the shepherd's.
+**Where we are: pen phases 0, 1, 2, 3, and 5 CLOSED, phase 4 PART-DONE,
+phases 6 and 7 NOT STARTED. Next: pen phase 6, celld.** Planned 5 Sep
+2026; six phases built the same day. The shepherd enabled the Workers
+Paid plan that evening; `lamb-pen` was deployed with its image, and
+journeys 1, 3, and 4 walked there with a real model. Phase 4 is built
+and proved with real git in Node; its walk on the deployed pen home
+waits on a fine-grained token, the shepherd's.
 
 The order is dependency order and risk order. Phase 1 is the gate: if a
 checkout cannot be synced by hash both ways with the atomicity journey 3
@@ -218,9 +217,10 @@ no binding. Journey 1 steps 1 to 4 hold against the fake.
 
 ## Phase 3 — A real machine
 
-**Status: PART-DONE.** 5 Sep 2026. Built and walked on a local rig:
-`wrangler dev --env pen` with Docker, a real model, journeys 1 and 3
-as written. The deployed walk waits on the Workers Paid plan (⚑).
+**Status: CLOSED.** 5 Sep 2026. Walked on the local rig and then on the
+deployed pen home with a real model, journeys 1 and 3 as written; the
+container instance was ended mid-run from inside, since the dashboard's
+hand was not at the keyboard in the window.
 
 **Closes journey 1 and journey 3 on Cloudflare.**
 
@@ -266,8 +266,20 @@ minute costs.
   tier 0 lists none.
 - **2026-09-05 — `lamb wait` mid-stream hit the strict codec again**, on
   an invoke result; fixed. Cost: 61 minutes, 43 the builder's.
-- **2026-09-05 — Open: the deployed walk** needs the Workers Paid plan,
-  5 USD a month, and a dashboard kill for journey 3. The shepherd's.
+- **2026-09-05 — Walked on Cloudflare the same evening**, once the plan
+  was on: `lamb-pen` deployed with its image in 28 s; install and test in
+  a real container in 11 s including its start; `find` in tier 0 without
+  `node_modules`; the prompt naming the container; 27 container-minutes
+  for the whole walk, about a cent.
+- **2026-09-05 — SIGKILL to PID 1 is dropped inside the container**, so a
+  ten-minute run survived it; SIGTERM, which the agent handles, ended the
+  instance mid-run: an error result with the sentence, the sheep reporting
+  and stopping, `lamb wait` back in 12 s, a fresh container in 9 s. The
+  dashboard kill itself was not exercised.
+- **2026-09-05 — Open: an idle container's socket drops at about 270 s**
+  on Cloudflare (1006, no close frame) and the agent exits, so a
+  container lives the shorter of `PEN_IDLE` and that; a keepalive `ping`
+  from the lease would hold it, if a warm container is worth the minutes.
 - **2026-09-05 — Open: `.dev.vars.pen` replaces `.dev.vars`**; the local
   walk passes `PEN_*` with `--var`. The wrapper rule is still undecided.
 
@@ -337,10 +349,11 @@ credential in nothing the model can see.
 
 ## Phase 5 — The fresh isolate
 
-**Status: PART-DONE.** 5 Sep 2026. Built and proved in workerd through the
-real Worker Loader and walked under `wrangler dev`; tier 1 reads the
-workspace and prints, and writes go to the container. The deployed walk
-of journey 4 waits on the pen home's deploy. Allowed to slip; it did not.
+**Status: CLOSED.** 5 Sep 2026. Proved in workerd through the real Worker
+Loader and walked on the deployed pen home with a real model: journey 4
+steps 1 to 3, a hundred files, and the CPU limit. Tier 1 reads the
+workspace and prints; writes go to the container. Allowed to slip; it
+did not.
 
 **Closes journey 4.**
 
@@ -380,10 +393,11 @@ of journey 4 waits on the pen home's deploy. Allowed to slip; it did not.
   container, isolate.
 - **2026-09-05 — Cost: 47 minutes**, 42 the builder's, 2 of them the
   loader moved out of the lamb home.
-- **2026-09-05 — Open: the deployed walk** must show three things the
-  local one cannot: `cpuMs` ending a spinning script, `globalOutbound:
-  null` on the account's Dynamic Workers beta, and a hundred `data`
-  modules accepted at the account's limits.
+- **2026-09-05 — Walked on Cloudflare the same evening.** `node
+  compute.mjs` answered from the isolate before any container existed;
+  `fetch` there was refused with the sentence; a hundred and one files
+  went in and answered in 64 ms; a bare `for(;;){}` was ended by the CPU
+  limit as exit 1 in 70 ms, "Dynamic import exceeded CPU time limit".
 
 ## Phase 6 — celld
 
