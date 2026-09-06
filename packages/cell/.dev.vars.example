@@ -26,3 +26,10 @@ LAMB_ANTHROPIC_API_KEY=
 # PEN_GIT_HOST=github.com      the one host the token is for
 # PEN_GIT_AUTHOR_NAME=lamb     who the container's commits are by
 # PEN_GIT_AUTHOR_EMAIL=lamb@example.invalid
+
+# Pen on celld (`pnpm dev:celld`), where there is no Containers binding: a starter beside the node
+# (`pnpm --filter @lamb/pen starter`) runs the image with Docker, and the cell reaches it here. With it
+# set, the home has a container; the container dials PEN_CELL_ORIGIN as above. `pnpm dev:celld` also
+# takes every PEN_* name, LAMB_PROVIDER, and LAMB_MODEL from its own environment, over this file, so a
+# local walk needs no edit here (see README, "The same cell on celld").
+# PEN_STARTER_URL=http://127.0.0.1:9877

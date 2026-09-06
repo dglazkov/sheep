@@ -15,6 +15,12 @@ declare namespace Cloudflare {
     LAMB_MODEL?: string;
     LAMB_ANTHROPIC_API_KEY?: string;
     ANTHROPIC_API_KEY?: string;
+    /**
+     * Pen phase 6: the endpoint that starts containers when there is no `PEN_CONTAINER` binding, a program beside a
+     * celld node (`pen-starter`, `http://127.0.0.1:9877`). Set with the binding absent, this home has a container;
+     * unset too, it is lamb. Configuration, not platform: the cell never asks where it runs.
+     */
+    PEN_STARTER_URL?: string;
     /** Pen: this home's own origin, which a container dials back to (`https://lamb-pen.<you>.workers.dev`; locally `http://host.docker.internal:8787`). */
     PEN_CELL_ORIGIN?: string;
     /** Pen: how long a container stays up after its last activity, `"10m"`, `"30s"`, `"1h"`. Default ten minutes. */

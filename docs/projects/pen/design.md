@@ -206,8 +206,13 @@ loader does not exist, `node` is tier 2 and the table says so.
 The same cell, the same protocol. What differs is who starts the
 container: on Cloudflare it is the Containers binding, on celld it is a
 runtime on the node that the cell reaches through a local endpoint the
-operator configures. The image is the same. What celld cannot do is
-measured in pen phase 6 and written down.
+operator configures: `pen-starter`, a program beside the node that
+drives Docker and answers the starter's three verbs over HTTP, named by
+`PEN_STARTER_URL`. The image is the same. What celld cannot do is
+measured in pen phase 6 and written down: celld drops work no request
+covers, including what a WebSocket message wakes, unless a `waitUntil`
+is taken inside the handler; the cell's detached drive is covered, and
+covering the container socket's handlers is a decision left open.
 
 ## Packages
 

@@ -696,6 +696,10 @@ say, for each celld claim the design leans on, whether it held.
   wait for the new listen line, not for the port to answer.
 - **2026-09-05 — Open: the two-node walk.** No fleet and no bucket; the
   failover claim in journey 6 step 3 is untested.
+- **2026-09-05 — celld drops work no request covers** (pen phase 6): a
+  detached drive's timers never fired there until the cell put the drive
+  under `ctx.waitUntil`. And celld 0.4.1 has no writable `node:fs`, so
+  the marker write fails and no cell boots on it; 0.4.0 does. Open.
 
 ## Phase 7 — Nothing changed for pi
 

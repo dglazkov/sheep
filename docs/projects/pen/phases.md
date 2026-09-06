@@ -11,13 +11,15 @@ never a bare "phase 2".
 
 ---
 
-**Where we are: pen phases 0, 1, 2, 3, and 5 CLOSED, phase 4 PART-DONE,
-phases 6 and 7 NOT STARTED. Next: pen phase 6, celld.** Planned 5 Sep
-2026; six phases built the same day. The shepherd enabled the Workers
-Paid plan that evening; `lamb-pen` was deployed with its image, and
-journeys 1, 3, and 4 walked there with a real model. Phase 4 is built
-and proved with real git in Node; its walk on the deployed pen home
-waits on a fine-grained token, the shepherd's.
+**Where we are: pen phases 0, 1, 2, 3, and 5 CLOSED, phases 4 and 6
+PART-DONE, phase 7 NOT STARTED. Next: pen phase 7, nothing changed for
+lamb.** Planned 5 Sep 2026; every phase built the same day. The shepherd
+enabled the Workers Paid plan that evening; `lamb-pen` was deployed with
+its image, and journeys 1, 3, and 4 walked there with a real model.
+Phase 4 is proved with real git in Node; its walk waits on a
+fine-grained token, the shepherd's. Phase 6 built the starter beside a
+celld node and reached a real container through it; the walk stalled on
+celld dropping the work a socket message wakes, which is written down.
 
 The order is dependency order and risk order. Phase 1 is the gate: if a
 checkout cannot be synced by hash both ways with the atomicity journey 3
@@ -384,7 +386,10 @@ did not.
 
 ## Phase 6 — celld
 
-**Status: NOT STARTED.**
+**Status: PART-DONE.** 5 Sep 2026. The starter beside the node is built
+and proved; on celld 0.4.0 journey 1 step 1 reached a real container
+through it, and the turn then stalled on celld's dropped work. Journeys
+1, 2, and 3 on celld wait on that, celld's or a later phase's.
 
 **Closes journey 5.**
 
@@ -397,6 +402,35 @@ did not.
 
 **Proof:** Journeys 1, 2, and 3 walked against the fleet, with `docker
 kill` as the operator's hand in journey 3.
+
+**Findings:**
+
+- **2026-09-05 — Who starts the container is configuration.** With no
+  Containers binding, `PEN_STARTER_URL` names a program beside the node,
+  `pen-starter`, which drives Docker and speaks the starter's three
+  verbs over HTTP; the same image, the same protocol, the same lease. A
+  cell reaches 127.0.0.1 on celld, and a container reaches the node at
+  `host.docker.internal`: dial-in in 293 ms.
+- **2026-09-05 — celld drops work no request covers.** A timer set after
+  a response never fires in a Durable Object there; `ctx.waitUntil`
+  keeps it. The cell's detached drive now runs under `waitUntil`, and
+  detached turns complete on celld; workerd never needed it.
+- **2026-09-05 — A WebSocket message covers nothing on celld.** A timer
+  or a `fetch` woken by a socket message is dropped unless a `waitUntil`
+  is taken inside that handler. So `pnpm install` ran in the container
+  (run 354 ms, syncs under 10 ms) and the turn's next step never began.
+- **2026-09-05 — celld 0.4.1 has no writable `node:fs`**; the cell's
+  marker write fails and no cell boots. 0.4.0, which lamb walked, boots.
+  `celld deploy` refuses the `env` key, so the celld config is the
+  generated top level; `dev:celld` had been broken by the comments in
+  `wrangler.jsonc` and is fixed.
+- **2026-09-05 — Cost: 40 minutes**, 36 the builder's.
+- **2026-09-05 — Open: the walk on celld** waits on covering the work a
+  socket message wakes: `waitUntil` inside every message handler of the
+  cell (checkout, run, broker, wire), or celld keeping a socket's work.
+  A design decision for a later phase; not made quietly here.
+- **2026-09-05 — Open: `GET /home` says `container: false` on a celld
+  home with a starter**, since it reads the binding; one line.
 
 ## Phase 7 — Nothing changed for lamb
 

@@ -14,10 +14,15 @@
  * starts anew.
  *
  * On Cloudflare the starter is the `PenContainer` binding
- * (`container.ts`); in workerd's tests it is a stub that dials the same
- * route with the fake. The ledger is the Directory's minutes: the budget
- * is asked before a command is routed, not here, and a spent budget
- * empties the table's tier-2 column for that command.
+ * (`container.ts`); on celld it is a program beside the node reached over
+ * HTTP (`starter-http.ts`); in workerd's tests it is a stub that dials the
+ * same route with the fake. The ledger is the Directory's minutes: the
+ * budget is asked before a command is routed, not here, and a spent budget
+ * empties the table's tier-2 column for that command. Who reports the
+ * minutes is the starter's business: the binding reports from its own
+ * `onStart` and `onStop`, and a starter that cannot (pen phase 6's, a
+ * plain program) has the lease report, from the socket's open and close,
+ * through `report`.
  */
 import type { ContainerLease } from "../env/execution-env.ts";
 import { DISCARDED_CLOSE_CODE } from "./run.ts";
@@ -37,6 +42,12 @@ export interface ContainerLedger {
   spent(): Promise<boolean>;
 }
 
+/** Where a lease that reports the container's minutes itself sends them: the Directory's `containerOpened` and `containerClosed`. */
+export interface MinutesReporter {
+  opened(at: number): Promise<void> | void;
+  closed(at: number): Promise<void> | void;
+}
+
 export interface PenLeaseOptions {
   sessionId: string;
   /** What the container dials: the home's origin plus `/s/<id>/pen`. Unset, every rent is refused with a clear error. */
@@ -49,6 +60,8 @@ export interface PenLeaseOptions {
   renewEveryMs: number;
   /** Pen phase 4: attached to each admitted socket, to answer the container's `credential` frames from the home. */
   broker?: { attach(socket: WebSocket): void };
+  /** Pen phase 6: set when the starter does not report the container's minutes itself; the lease then reports from the socket's open and close. */
+  report?: MinutesReporter;
   log?: (line: string) => void;
   now?: () => number;
 }
@@ -159,6 +172,7 @@ export class PenLease implements ContainerLease {
     // The broker listens for the socket's lifetime: a credential may be asked for in any run on it.
     this.options.broker?.attach(server);
     this.log(`the container connected ${this.lastStartMs} ms after the rent`);
+    this.reportOpened(this.openedAt);
     pending.resolve(server);
     return client;
   }
@@ -179,6 +193,8 @@ export class PenLease implements ContainerLease {
       } catch {
         // Already closed.
       }
+      // Closing our own end fires no close event here; the minutes end now.
+      this.reportClosed(this.now());
     }
     this.log(`discarding the container: ${reason}`);
     void this.options.starter.destroy().catch((error: unknown) => this.log(`destroy failed: ${messageOf(error)}`));
@@ -193,6 +209,23 @@ export class PenLease implements ContainerLease {
     this.live = undefined;
     this.stopKeepAlive();
     this.log(`the container's socket closed (${code}${reason ? `: ${reason}` : ""}) after ${Math.round((this.now() - this.openedAt) / 1000)} s`);
+    this.reportClosed(this.now());
+  }
+
+  private reportOpened(at: number): void {
+    const report = this.options.report;
+    if (report === undefined) return;
+    void Promise.resolve()
+      .then(() => report.opened(at))
+      .catch((error: unknown) => this.log(`could not report the start: ${messageOf(error)}`));
+  }
+
+  private reportClosed(at: number): void {
+    const report = this.options.report;
+    if (report === undefined) return;
+    void Promise.resolve()
+      .then(() => report.closed(at))
+      .catch((error: unknown) => this.log(`could not report the stop: ${messageOf(error)}`));
   }
 
   private fail(error: Error): void {

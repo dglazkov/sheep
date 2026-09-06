@@ -196,6 +196,34 @@ pnpm --filter @lamb/cell dev:celld              # one local node on http://127.0
 pnpm deploy:celld -- --bucket s3://<bucket>     # a fleet
 ```
 
+celld runs the top-level config, which is lamb's; it has no container
+support of its own, so the `pen` environment never reaches it. Pen on
+celld is configuration on top: a **starter** beside the node, a small
+program (`packages/pen/bin/pen-starter.mjs`, plain node) that drives
+Docker on that machine, and `PEN_STARTER_URL` telling the cell where it
+is. The cell speaks the same three verbs to it that the Containers
+binding has (`ensure`, `renew`, `destroy`, one `POST` each); the image is
+the same; the container dials the cell back at `PEN_CELL_ORIGIN` as
+before. Which starter a home has is configuration, and no code path
+asks what platform it is on.
+
+```sh
+pnpm --filter @lamb/pen build:image             # sheep-pen:dev, once
+# the starter, beside the node: 127.0.0.1:9877, the image, and its own idle stop (docker stop after PEN_IDLE)
+pnpm --filter @lamb/pen starter -- --port 9877 --idle 10m          # also --image, --cell-origin
+# the node, told where the starter is and what the container dials; from Docker on a Mac that is host.docker.internal
+PEN_STARTER_URL=http://127.0.0.1:9877 PEN_CELL_ORIGIN=http://host.docker.internal:9876 PEN_IDLE=10m pnpm --filter @lamb/cell dev:celld
+pnpm --filter @lamb/cell dev:celld:pen          # the same two, with those defaults
+```
+
+`dev:celld` passes every `PEN_*` name, `LAMB_PROVIDER`, and `LAMB_MODEL`
+from its environment to the node over `.dev.vars`, so the walk above
+needs no edit to the secrets file. The starter's `--cell-origin` rewrites
+the origin of the address the cell gives, for a node whose Docker cannot
+reach the cell where the cell thinks it lives; with `PEN_CELL_ORIGIN` set
+on the cell it is not needed. `docker kill pen-<session id>` is the
+shepherd's hand.
+
 ### Layout
 
 ```
