@@ -21,7 +21,7 @@ tree would do, has left the design.
 
 ---
 
-**Where we are: pasture phases 0 to 4 CLOSED; phase 5, the walk, NOT STARTED and waiting on the shepherd for two ⚑ deploys.** Planned 6 Sep 2026, the morning recast closed, from a brainstorm with the shepherd; the shepherd's calls are in the journey's front matter. Phases 0 to 4 built and walked locally the same day: the object and the verbs, the read-only mount and the prompt, the `pasture` program and the herd, birth and the credential, setup and skills, the last two on the local rig against the scratch repository with a real model, and the fork commit paid. The next phase is pasture phase 5: deploy `sheep` and `sheep-pen` with the `Pasture` class, then the four journeys on them.
+**Where we are: pasture phases 0 to 5 CLOSED. The project is done; nothing in it waits on work or on a person.** Planned 6 Sep 2026, the morning recast closed, from a brainstorm with the shepherd; the shepherd's calls are in the journey's front matter. Phases 0 to 4 built and walked locally the same day. Phase 5 the same afternoon: `sheep` and `sheep-pen` redeployed with the `Pasture` class, both ⚑ deploys approved by the shepherd, and journeys 1 to 4 walked on them with a real model against the scratch repository. The Open roster carries the GitHub App, a cache for the tree, the pushed column, the container cap against the idle period, and `sheep log`'s birth line.
 
 The order is dependency order. Phase 0 is the object, the directory's
 two columns, the routes, and the dog's verbs, so that every later phase
@@ -291,6 +291,19 @@ through `sheep export`, and from `env` in the container;
 `.claude/skills/conduct/status.sh pasture` printing `clean`. **⚑** the
 two deploys above, asked with the price first.
 
-**Status: NOT STARTED.**
+**Status: CLOSED.** 2026-09-06. Both homes deployed with the `Pasture` class; journeys 1 to 4 walked by the conductor as the dog with a real model, journey 4 on `sheep` and the rest on `sheep-pen` against `dglazkov/lamb-playground`; the token in no transcript, export, log, or container variable.
 
 **Findings:**
+
+- **2026-09-06 — Deployed at 12:32, both homes, each in under four seconds of upload;** `GET /pastures` answered `[]` on both before the walk. Secrets survived the redeploy, as recast found.
+- **2026-09-06 — Journey 4 on `sheep`:** a pastureless sheep's `pasture` is the annotated not-found line and `ls -la /` shows `tmp` and `workspace` only; a notes pasture with a brief and a herd of one works with no container; the repository pasture is refused with the sentence and no row.
+- **2026-09-06 — Journey 1 on `sheep-pen`:** the pasture made with `--repo .` from a scratch checkout; two sheep born into clones, each pushed its branch with the pasture's token and named it in the tree; a sheep asked who else was there named its sibling's task.
+- **2026-09-06 — Journey 2 on `sheep-pen`:** a note put by one sheep read by a new sheep told only the path; `edit` and a redirect refused with the sentence and the tree unchanged; a brief changed mid-conversation quoted on the next turn; a removed note gone.
+- **2026-09-06 — Journey 3 on `sheep-pen`:** setup ran at birth after the clone with the dummy secret, printing nothing to the sheep; the container's environment named neither secret; after the ten-minute idle a fresh container ran the broken script and the command stopped at the first line; the skill was read when asked.
+- **2026-09-06 — The first journey 3 birth was refused: "Maximum number of running container instances exceeded".** `max_instances` is 3 and three idle sheep held theirs for the ten-minute `PEN_IDLE`; the entry said so, the sheep lived, a fresh sheep was born once they stopped.
+- **2026-09-06 — `wrangler tail` dropped the second rent's setup line;** step 5's rerun on the deployed home rests on step 6's failure there, the fake's count, and the local rig's log.
+- **2026-09-06 — Open: a GitHub App in place of tokens.** `pastureMinter` in `packages/cell/src/pen/broker.ts` is the one function it replaces; `Mint` is async already. Waits on a project of its own, the shepherd's stated direction.
+- **2026-09-06 — Open: a cache for the tree,** if a walk shows `grep -r /pasture` paying a hop per file; the manifest's hashes are its key. Waits on a walk that shows it.
+- **2026-09-06 — Open: what each sheep pushed in the herd view.** The broker sees each push's host and not its branch; the brief asks the sheep to `put` a note. Waits on a project that touches the herd.
+- **2026-09-06 — Open: births compete with idle containers for `max_instances`.** A dog minting more sheep than the cap in ten minutes sees a refused birth; a shorter idle, a queue, or a sentence to the dog is a later project's call.
+- **2026-09-06 — Open: `sheep log` prints a birth as `[custom birth]` and 200 characters of JSON;** the clone shows, the output's tail does not. `formatEntry` in `packages/cli/src/herd.ts`, for the next project that touches it.
