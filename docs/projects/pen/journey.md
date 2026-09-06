@@ -53,7 +53,7 @@ Key terms, in addition to lamb's:
 | Today | After these journeys |
 | --- | --- |
 | A sheep asked to `pnpm install` answers `command not found (this shell runs inside the session…)`, and the dog does it itself. | The sheep runs `pnpm install` in a container it rented, and `node_modules` stays there. |
-| A sheep's script cannot run. | `node script.js` runs, and its output and the files it wrote come back to the rows. |
+| A sheep's script cannot run. | `node script.js` runs in a fresh isolate over the workspace and its output is the tool result; a script that writes files runs in the container, and those come back to the rows. |
 | `git` is not in the cell. | The sheep runs `git clone`, `commit`, and `push` as real git, over a checkout, with a credential neither it nor the dog ever sees. |
 | A command is a tier-0 command or a refusal. | A command is routed: tier 0 if the shell has it, tier 2 if a container is provisioned, a refusal that says which, otherwise. |
 | A sheep's cost is its rows. | A sheep's cost is its rows plus a container while one is running, and nothing while it is not. |

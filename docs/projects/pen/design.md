@@ -189,10 +189,17 @@ column empties for that home and the refusal says so.
 
 `node <file>` when no container is up runs in a fresh isolate from the
 Worker Loader, with the workspace as its only binding and no `fetch`.
-Its stdout is the tool result. It exists so that a quick script does not
-rent a machine, and it is the phase allowed to slip out of the leg
-because the container makes it optional. On celld, where the loader does
-not exist, `node` is tier 2 and the table says so.
+Its stdout is the tool result. The workspace it sees is read-only: the
+files go in as the isolate's modules, the script reads them by relative
+path, and a write is refused with a sentence that says to run the
+script in the container instead. (A module's top level is global scope
+in workerd, outside any request, so nothing a script does there can
+reach a filesystem the cell could read back; pen phase 5's finding.) It
+exists so that a quick script does not rent a machine, and it is the
+phase allowed to slip out of the leg because the container makes it
+optional. The loader is bound only in the pen environment: a home with
+no container has no tier 1 either, and is lamb. On celld, where the
+loader does not exist, `node` is tier 2 and the table says so.
 
 ## celld
 
