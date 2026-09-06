@@ -260,7 +260,7 @@ secret. Suites unchanged. **⚑** none.
 - **2026-09-06 — Setup is a `run` frame like any other, with its own environment, so the protocol did not change.** The per-container memory is the env's per-socket record beside the checkout; a failed setup leaves it unmarked, so the next command retries.
 - **2026-09-06 — `env` alone is a text tool and runs in the cell's shell.** A sheep prints the container's environment only with a line naming a container program, `node -e 0 && env`; the test and the walk both use it.
 - **2026-09-06 — The fork commit owed by pasture phase 1 is paid: `996849eef`, `formatSkillsForPrompt` and `Skill` in a leaf module,** pi's own importers unchanged; the cell imports it and its own block is gone. Upstream is three commits ahead of the base, not rebased this phase; the bump is recorded in `/pi-bump`.
-- **2026-09-06 — The walk, by the conductor on the local rig with a real model:** setup ran at birth after the clone and printed nothing to the sheep; the container's environment named neither secret; the script broken and the container idled, the next command stopped at the first line; the skill was read when asked. Cost: 24 minutes of a subagent, 12 of verification.
+- **2026-09-06 — The walk, by the conductor on the local rig with a real model:** setup ran at birth and printed nothing to the sheep; the container's environment named neither secret; broken and idled, the next command stopped at the first line; the skill was read when asked. Cost: 24 minutes of a subagent, 12 of verification.
 
 ## Phase 5: The walk
 
