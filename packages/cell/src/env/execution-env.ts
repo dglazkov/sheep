@@ -28,6 +28,7 @@
  */
 import type { Context } from "@earendil-works/pi-agent-core";
 import {
+  BACKGROUND_CONTEXT,
   type ExecutionEnv,
   ExecutionError,
   err,
@@ -51,8 +52,10 @@ import { annotateReadOnly, isPasturePath, PASTURE_ROOT, PastureCall, type Pastur
 import { PASTURE_PROGRAMS, type PastureProgram, pastureCommand } from "./pasture-command.ts";
 import {
   annotateCommandNotFound,
+  BUDGET_SPENT_NOTICE,
   classify,
   fetchRefused,
+  hasContainer,
   type Home,
   isolateReadOnly,
   isolateScopeRefused,
@@ -65,6 +68,27 @@ import {
 } from "./programs.ts";
 
 const MAX_TIMEOUT_MS = 2_147_483_647;
+
+/** The sentence a line run whole in the container gets on a home that has none. */
+export const NO_CONTAINER_NOTICE = "this home has no container";
+
+/** What a line run whole in the container came to (pasture phase 3): the output's tail, bounded, and how it ended. */
+export interface ContainerLineResult {
+  /** The tail of the output, within the caller's limits. */
+  output: string;
+  /** Whether the whole output was more than the tail. */
+  truncated: boolean;
+  end: { exit: number } | { error: string };
+}
+
+export interface ContainerLineOptions {
+  cwd?: string;
+  /** Seconds. */
+  timeout?: number;
+  /** The tail to keep: lines and bytes. */
+  maxLines?: number;
+  maxBytes?: number;
+}
 
 /** just-bash's bounds for one command. Generous for real work, fatal for `while true`. */
 const EXECUTION_LIMITS = {
@@ -610,10 +634,45 @@ export class CellExecutionEnv implements ExecutionEnv {
     return { full: output, outcome: { exitCode: result.exitCode } };
   }
 
-  /** The checkout over this socket, made once per socket. */
+  /** The checkout over this socket, made once per socket; with a pasture, its tree is the manifest's second root (pasture phase 3). */
   private checkoutFor(socket: WebSocket): Checkout {
-    if (this.lease?.socket !== socket) this.lease = { socket, checkout: new Checkout(socket, this.files) };
+    if (this.lease?.socket !== socket) {
+      this.lease = { socket, checkout: new Checkout(socket, this.files, this.pasture === undefined ? {} : { pasture: this.pasture }) };
+    }
     return this.lease.checkout;
+  }
+
+  /**
+   * One line in the container, whole, outside any tool call: pasture phase
+   * 3's birth, `git clone` before the first prompt, and from pasture phase
+   * 4 the setup script. Rented, synced in, run, synced out, as a tool's
+   * tier-2 line is; the output is kept as a bounded tail rather than
+   * streamed, and how it ended is said instead of thrown. A home with no
+   * container, or one whose budget is spent, is an `error` that says so.
+   */
+  async containerLine(command: string, options: ContainerLineOptions = {}): Promise<ContainerLineResult> {
+    const home = await this.homeNow();
+    if (!hasContainer(home)) return { output: "", truncated: false, end: { error: home.container ? BUDGET_SPENT_NOTICE : NO_CONTAINER_NOTICE } };
+    const capture = new OutputCapture(
+      { limits: { maxBytes: options.maxBytes ?? 16 * 1024, maxLines: options.maxLines ?? 40, retain: "tail" } },
+      BACKGROUND_CONTEXT,
+      { onError: () => {} },
+    );
+    try {
+      const ran = await this.runInContainer(
+        command,
+        options.cwd ?? WORKSPACE_ROOT,
+        this.shellEnv,
+        options.timeout === undefined ? undefined : { timeout: options.timeout },
+        undefined,
+        capture,
+      );
+      capture.finish();
+      const view = capture.snapshot();
+      return { output: view.text, truncated: view.truncation.truncated, end: "error" in ran.outcome ? { error: ran.outcome.error.message } : { exit: ran.outcome.exitCode } };
+    } finally {
+      capture.dispose();
+    }
   }
 
   /**
@@ -652,6 +711,10 @@ export class CellExecutionEnv implements ExecutionEnv {
       }
       // Timings for the findings: what a sync-in costs for this workspace, and the run and sync-out after it.
       console.info(`[pen] sync-in ${Date.now() - syncInStarted} ms, ${this.files.manifest().length} entries`);
+
+      // Pasture phase 4's place: `/pasture/setup.sh`, when the tree has one, runs here, once per fresh container and
+      // before this container's first command, with the pasture's other secrets in its environment; a setup that
+      // fails is a tool result that says so, and the command below is not run. This phase leaves the place.
 
       // The container's own PATH and HOME win over the cell shell's stand-ins; the rest of the environment is what the shell would have seen.
       const { PATH: _path, HOME: _home, ...runEnv } = environment;

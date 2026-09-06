@@ -21,7 +21,7 @@ tree would do, has left the design.
 
 ---
 
-**Where we are: pasture phases 0, 1, and 2 CLOSED; phase 3 NOT STARTED.** Planned 6 Sep 2026, the morning recast closed, from a brainstorm with the shepherd; the shepherd's calls are in the journey's front matter. Phase 0 built the same morning: the object, the columns, the routes, the verbs. Phase 1: the read-only mount and the prompt. Phase 2: the `pasture` program, the task column, and the herd as one query behind two views, walked on a local home with a real model. The next phase is pasture phase 3, birth and the credential, the first that needs a container. Nothing waits on a person before pasture phase 5.
+**Where we are: pasture phases 0 to 3 CLOSED; phase 4 NOT STARTED.** Planned 6 Sep 2026, the morning recast closed, from a brainstorm with the shepherd; the shepherd's calls are in the journey's front matter. Phase 0 built the same morning: the object, the columns, the routes, the verbs. Phase 1: the read-only mount and the prompt. Phase 2: the `pasture` program and the herd. Phase 3: birth in the container, `/pasture` as the checkout's second root, and the broker reading the pasture's token, walked on the local rig against the scratch repository with a real model. The next phase is pasture phase 4, setup and skills, which also pays the fork commit. Nothing waits on a person before pasture phase 5.
 
 The order is dependency order. Phase 0 is the object, the directory's
 two columns, the routes, and the dog's verbs, so that every later phase
@@ -216,9 +216,16 @@ a real model): journey 1 steps 4 and 5 against a scratch repository the
 shepherd names, if the shepherd's token is at hand; else owed to pasture
 phase 5. Suites unchanged. **⚑** none.
 
-**Status: NOT STARTED.**
+**Status: CLOSED.** 2026-09-06. Birth on first boot, the second root read-only in the container, and the pasture's minter built and proved through the fake in workerd and with real git in Node; journey 1 steps 4, 5, and 8 walked by the conductor on the local rig against the scratch repository with a real model.
 
 **Findings:**
+
+- **2026-09-06 — The birth is agent-core's `custom` entry with an `entryProjectors` hook on the harness, not the coding agent's `custom_message`:** the cell never holds a `SessionManager`, and the projector is how the model reads the entry before its first prompt.
+- **2026-09-06 — The boot holds until the birth settles, so no prompt precedes the entry;** that would deadlock the container's dial-in, so `/pen` is answered from a lease field set before the birth, the one door open while a cell is born.
+- **2026-09-06 — A birth into the scratch repository took about two seconds on the local rig:** one to the container's dial-in, under one for the clone, 47 rows; `sheep new --detach` returning after it was not noticeable.
+- **2026-09-06 — The container's `/pasture` is a second disk for the agent, so the sync-out cannot enter it by construction.** The agent runs as root there, so `0444` is advisory: a write on disk is lost at the next sync-in and never leaves the container.
+- **2026-09-06 — `env | grep -c token` in the container is 1: the agent's own dial-in token, pen's by design.** The git credential is in no variable, no config, and no file; `~/.git-credentials` does not exist.
+- **2026-09-06 — The walk, by the conductor on the local rig with a real model:** two sheep born into a pasture on `lamb-playground`, each clone in the log, each branch pushed with the pasture's token, each branch named in the tree; the four walk branches deleted after. Cost: 28 minutes of a subagent, 14 of verification.
 
 ## Phase 4: Setup, and skills
 

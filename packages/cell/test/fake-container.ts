@@ -92,6 +92,8 @@ export function memoryDisk(): MemoryDisk {
       disk.putFile(path, bytes, options?.mode ?? (existing?.kind === "file" ? existing.mode : 0o644));
     },
     async mkdir(path, mode) {
+      // The root itself (`""`, as the agent names it for the pasture's disk) is always there and has no entry.
+      if (path === "") return;
       const existing = entries.get(path);
       if (existing?.kind === "directory") existing.mode = mode;
       else disk.putDirectory(path, mode);
@@ -106,6 +108,7 @@ export function memoryDisk(): MemoryDisk {
       return entry.target;
     },
     async chmod(path, mode) {
+      if (path === "") return;
       const entry = entries.get(path);
       if (entry === undefined) throw new Error(`ENOENT: ${path}`);
       entry.mode = mode;
@@ -196,6 +199,8 @@ export interface FakeContainer {
   /** The cell's end of the socket. */
   socket: WebSocket;
   disk: MemoryDisk;
+  /** Pasture phase 3: the second disk, `/pasture`, written read-only from a manifest's second root and never walked by a sync-out. */
+  pasture: MemoryDisk;
   /** Every frame the agent received or sent, in order, as it saw them. */
   transcript: TranscriptEntry[];
   /** The agent's sync-out, in place of the `run` a later phase ends with one. */
@@ -210,6 +215,8 @@ export interface FakeContainer {
 
 export interface FakeContainerOptions {
   disk?: MemoryDisk;
+  /** The pasture's disk; a fresh one when absent. */
+  pasture?: MemoryDisk;
   /** Die right after the n-th transcript entry, sent or received. */
   stopAfter?: number;
   /** What a `run` does. Without one, every program is one the image lacks. */
@@ -236,6 +243,7 @@ export function startFakeContainer(options: FakeContainerOptions = {}): FakeCont
  */
 export function serveFakeOn(agentEnd: WebSocket, options: FakeContainerOptions = {}): Omit<FakeContainer, "socket"> {
   const disk = options.disk ?? memoryDisk();
+  const pasture = options.pasture ?? memoryDisk();
   const transcript: TranscriptEntry[] = [];
 
   let stopped = false;
@@ -281,9 +289,10 @@ export function serveFakeOn(agentEnd: WebSocket, options: FakeContainerOptions =
     },
   };
   agentEnd.addEventListener("close", (event) => stop(event.reason));
-  const served = serveAgent(wrapped, disk, scriptRunner(disk, options.script ?? (() => undefined), { deaf: options.deaf ?? false }));
+  const served = serveAgent(wrapped, disk, scriptRunner(disk, options.script ?? (() => undefined), { deaf: options.deaf ?? false }), { pasture });
   return {
     disk,
+    pasture,
     transcript,
     syncOut: (id) => served.syncOut(id),
     askCredential: (request, options) => served.askCredential(request, options),

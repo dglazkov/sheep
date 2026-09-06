@@ -29,10 +29,11 @@ import {
 import { Server } from "@earendil-works/pi-server";
 import type { SqliteSessionRepo } from "@earendil-works/pi-session-backend-sqlite-node/sqlite";
 import { DurableObject } from "cloudflare:workers";
+import { BIRTH_ENTRY, BIRTH_TAIL_BYTES, BIRTH_TAIL_LINES, BIRTH_TIMEOUT_S, type BirthData, type BirthRecord, birthCommand, birthProjector } from "./birth.ts";
 import { type LaneState, taskOf } from "./directory.ts";
-import { CellExecutionEnv } from "./env/execution-env.ts";
+import { CellExecutionEnv, type ContainerLineResult } from "./env/execution-env.ts";
 import { type CellModels, createCellModels, type FauxProgram, isFauxProgram } from "./models.ts";
-import { CredentialBroker, homeMinter } from "./pen/broker.ts";
+import { CredentialBroker, homeMinter, pastureMinter, type PastureSecrets } from "./pen/broker.ts";
 import { DEFAULT_IDLE } from "./pen/container.ts";
 import { DEFAULT_CPU_MS, Isolate } from "./pen/isolate.ts";
 import { type ContainerStarter, parseDuration, PenLease } from "./pen/lease.ts";
@@ -40,7 +41,7 @@ import { type CellPasture, cellSystemPrompt } from "./prompt.ts";
 import { createCellSessionRepo } from "./storage/sqlite.ts";
 import { createCellHost } from "./wire/host.ts";
 import { WebSocketListener } from "./wire/listener.ts";
-import { TEMP_ROOT } from "./workspace/files.ts";
+import { TEMP_ROOT, WORKSPACE_ROOT } from "./workspace/files.ts";
 
 /** How far ahead the heartbeat is armed while an operation is open. */
 export const HEARTBEAT_MS = 5_000;
@@ -117,6 +118,13 @@ function seconds(value: string | undefined, fallback: number): number {
 
 export class SessionCell extends DurableObject<Env> {
   #runtime: Promise<Runtime> | undefined;
+  /**
+   * The lease of the incarnation booting or booted, set before the birth
+   * runs: the container's `/pen` door admits through it without waiting
+   * for the boot, since the birth's own container dials in while the boot
+   * holds (pasture phase 3).
+   */
+  #lease: PenLease | undefined;
   readonly test: EvictionTestHooks = { step: 0, killAt: -1, effects: {} };
 
   get sessionId(): string {
@@ -129,6 +137,7 @@ export class SessionCell extends DurableObject<Env> {
   runtime(): Promise<Runtime> {
     this.#runtime ??= this.boot().catch((error: unknown) => {
       this.#runtime = undefined;
+      this.#lease = undefined;
       throw error;
     });
     return this.#runtime;
@@ -139,13 +148,15 @@ export class SessionCell extends DurableObject<Env> {
     const repo = await createCellSessionRepo(this.ctx.storage);
     const existing = (await repo.list(undefined, context)).find((metadata) => metadata.id === this.sessionId);
     const session = existing === undefined ? await repo.create({ id: this.sessionId }, context) : await repo.open(existing, context);
-    const lease = this.leaseFor();
     const directory = this.env.DIRECTORY.getByName("home");
     // The cell learns its pasture from the directory's row, once, at boot: a row that names none, or no row, is lamb's sheep.
     const pastureName = (await directory.get(this.sessionId))?.pasture ?? null;
-    // One stub for the pasture's object: the prompt builder and the mount read through it, and the program writes through it.
+    // One stub for the pasture's object: the prompt builder and the mount read through it, the program writes through it,
+    // the checkout sends its tree as the second root, and the broker reads its `GIT_TOKEN` through it.
     const object = pastureName === null ? undefined : this.env.PASTURE.getByName(pastureName);
     const pasture: CellPasture | undefined = pastureName === null || object === undefined ? undefined : { name: pastureName, source: object };
+    const lease = this.leaseFor(pasture === undefined || object === undefined ? undefined : { name: pasture.name, object });
+    this.#lease = lease;
     // Tier 1 belongs to any home with the loader, container or not; `lease.socket` is whether a container is up.
     const loader = this.env.LOADER;
     const env = new CellExecutionEnv(this.ctx.storage.sql, {
@@ -171,12 +182,18 @@ export class SessionCell extends DurableObject<Env> {
         // Resolved at every model call, so the line says what this home has now: the container, or the budget spent;
         // and, with a pasture, the brief and the skills as the tree has them now.
         systemPrompt: async () => cellSystemPrompt(await env.homeNow(), pasture),
+        // The birth's entry is context: the model reads it as a message before the first prompt (pasture phase 3).
+        entryProjectors: { [BIRTH_ENTRY]: birthProjector },
       },
       context,
     );
     runtime.harness = harness;
     runtime.lane = await harness.lane("main", context);
     runtime.watch = await runtime.lane.watch(context);
+    // The birth, before the server starts and before this incarnation is anyone's to prompt: the boot holds until it
+    // settles, so the first prompt, over HTTP or the wire, is taken after the entry is on the lane. Only the container's
+    // door (`/pen`) is answered meanwhile, through `#lease`, since the birth's own container dials in now.
+    if (pasture !== undefined && object !== undefined) await this.birth(runtime.lane, env, pasture, object, directory);
     const serverId = await directory.serverId();
     const { host } = await createCellHost({
       serverId,
@@ -257,6 +274,69 @@ export class SessionCell extends DurableObject<Env> {
       .catch((error: unknown) => console.error(`[cell ${this.sessionId}] could not report the task:`, error instanceof Error ? error.message : error));
   }
 
+  /**
+   * The birth (pasture phase 3): once, on the first boot of a cell born
+   * into a pasture with a repository, with an empty workspace, `git clone
+   * --branch <branch> <repo> .` in `/workspace` through the container path,
+   * its tail appended as the `birth` entry, success or failure, and the
+   * fact that it ran recorded so no later boot clones again. Nothing here
+   * throws: a birth that cannot run is an entry that says why, and the
+   * sheep is alive after it either way. The directory sees `running` for
+   * its length, so `sheep ls` says what the sheep is doing.
+   */
+  private async birth(
+    lane: AgentLane,
+    env: CellExecutionEnv,
+    pasture: CellPasture,
+    object: Pick<PastureSecrets, "meta">,
+    directory: { setState(id: string, state: LaneState): Promise<void> },
+  ): Promise<void> {
+    if ((await this.ctx.storage.get<BirthRecord>(BIRTH_ENTRY)) !== undefined) return;
+    let meta: Awaited<ReturnType<PastureSecrets["meta"]>>;
+    try {
+      meta = await object.meta();
+    } catch (error) {
+      console.error(`[cell ${this.sessionId}] could not read the pasture's meta for the birth:`, error instanceof Error ? error.message : error);
+      return;
+    }
+    // A pasture with no repository has no birth; a workspace that is not empty is not born into.
+    if (meta === undefined || meta.repo === null) return;
+    if (env.files.manifest().length !== 0) return;
+    const command = birthCommand(meta.repo, meta.branch);
+    const log = (line: string) => console.info(`[cell ${this.sessionId}] birth: ${line}`);
+    const tell = (state: LaneState) => directory.setState(this.sessionId, state).catch((error: unknown) => console.error(`[cell ${this.sessionId}] could not report ${state}:`, error instanceof Error ? error.message : error));
+    log(`${command} in ${WORKSPACE_ROOT}`);
+    await tell("running");
+    const started = Date.now();
+    let ran: ContainerLineResult;
+    try {
+      ran = await env.containerLine(command, { cwd: WORKSPACE_ROOT, timeout: BIRTH_TIMEOUT_S, maxLines: BIRTH_TAIL_LINES, maxBytes: BIRTH_TAIL_BYTES });
+    } catch (error) {
+      ran = { output: "", truncated: false, end: { error: error instanceof Error ? error.message : String(error) } };
+    }
+    // Pasture phase 4's place: `/pasture/setup.sh`, when the tree has one, runs here after a clone that exited 0, in the
+    // same container, and its output joins this entry's when it fails. This phase leaves the place.
+    const data: BirthData = {
+      pasture: pasture.name,
+      repo: meta.repo,
+      branch: meta.branch,
+      command,
+      cwd: WORKSPACE_ROOT,
+      ...("exit" in ran.end ? { exit: ran.end.exit } : { error: ran.end.error }),
+      output: ran.output,
+      truncated: ran.truncated,
+    };
+    log(`${"exit" in ran.end ? `exit ${ran.end.exit}` : `could not run: ${ran.end.error}`} after ${Date.now() - started} ms, ${env.files.manifest().length} rows`);
+    try {
+      // The entry first, then the record: a cell evicted between the two clones again only into a workspace still empty.
+      await lane.appendCustomEntry(BIRTH_ENTRY, { ...data }, BACKGROUND_CONTEXT);
+      await this.ctx.storage.put<BirthRecord>(BIRTH_ENTRY, { at: started, ...ran.end });
+    } catch (error) {
+      console.error(`[cell ${this.sessionId}] could not record the birth:`, error instanceof Error ? error.message : error);
+    }
+    await tell("idle");
+  }
+
   private async settleWhenCurrent(runtime: Runtime): Promise<void> {
     if (this.#runtime === undefined || (await this.#runtime) !== runtime) return;
     await this.settleAlarm(runtime);
@@ -268,7 +348,7 @@ export class SessionCell extends DurableObject<Env> {
    * Configuration, never the platform: nothing here asks where it runs. A
    * home with none has no tier 2, and the shell does not route.
    */
-  private leaseFor(): PenLease | undefined {
+  private leaseFor(pasture: { name: string; object: PastureSecrets } | undefined): PenLease | undefined {
     const binding = this.env.PEN_CONTAINER;
     const starter: ContainerStarter | undefined =
       this.test.starter ??
@@ -288,18 +368,17 @@ export class SessionCell extends DurableObject<Env> {
     const idleSeconds = parseDuration(this.env.PEN_IDLE, DEFAULT_IDLE);
     const log = (line: string) => console.info(`[cell ${this.sessionId}] pen: ${line}`);
     // The broker answers the container's credential requests from the home's secrets, read at each request; the cell keeps none.
+    // For a sheep in a pasture, the pasture's `GIT_TOKEN` is read first, over RPC, at each request too (pasture phase 3).
     const env = this.env;
-    const broker = new CredentialBroker(
-      homeMinter({
-        get gitToken() {
-          return env.PEN_GIT_TOKEN;
-        },
-        get gitHost() {
-          return env.PEN_GIT_HOST;
-        },
-      }),
-      log,
-    );
+    const home = {
+      get gitToken() {
+        return env.PEN_GIT_TOKEN;
+      },
+      get gitHost() {
+        return env.PEN_GIT_HOST;
+      },
+    };
+    const broker = new CredentialBroker(pasture === undefined ? homeMinter(home) : pastureMinter(pasture.name, pasture.object, home), log);
     return new PenLease({
       sessionId: this.sessionId,
       cellUrl: origin === undefined || origin === "" ? undefined : `${origin.replace(/\/$/, "")}/s/${encodeURIComponent(this.sessionId)}/pen`,
@@ -362,6 +441,8 @@ export class SessionCell extends DurableObject<Env> {
   async evict(): Promise<void> {
     const runtime = this.#runtime;
     this.#runtime = undefined;
+    // The door follows the runtime: a container dialing in after the eviction meets the next incarnation's lease, as before.
+    this.#lease = undefined;
     if (runtime === undefined) return;
     const live = await runtime.catch(() => undefined);
     if (live === undefined) return;
@@ -497,9 +578,15 @@ export class SessionCell extends DurableObject<Env> {
       }
       if (url.pathname === "/pen") {
         // The container's door: the token is the one the lease minted for it, never the home's, and it is spent on use.
+        // Answered through the lease of the incarnation booting or booted, not the runtime: during the birth the boot
+        // holds, and the container it rented is the one dialing in (pasture phase 3).
         if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") return new Response("expected a WebSocket upgrade", { status: 426 });
-        const runtime = await this.runtime();
-        const client = runtime.lease?.admit(url.searchParams.get("token") ?? "");
+        let lease = this.#lease;
+        if (lease === undefined) {
+          await this.runtime();
+          lease = this.#lease;
+        }
+        const client = lease?.admit(url.searchParams.get("token") ?? "");
         if (client === undefined) return new Response("no container is expected with this token", { status: 403 });
         return new Response(null, { status: 101, webSocket: client });
       }

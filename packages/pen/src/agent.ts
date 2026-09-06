@@ -19,6 +19,14 @@
  * `credential` or `error` under the same id settles it. The value goes
  * back to the caller and is held nowhere else: not logged, not kept, and
  * never part of a `stdout` or `stderr` frame.
+ *
+ * Pasture phase 3 gives the agent a second disk, the pasture's, rooted at
+ * `/pasture` beside the checkout. A `manifest` that carries `pasture` is
+ * applied to it after the workspace: files `0444`, directories `0555`,
+ * blobs asked for in the one `need`, and what the manifest no longer
+ * names removed. The sync-out walks the checkout's disk alone, so nothing
+ * written under `/pasture` is ever reported: the two disks are two trees,
+ * as `/workspace` and `/pasture` are in the image.
  */
 import ignore from "ignore";
 import {
@@ -33,6 +41,8 @@ import {
   type EntryKind,
   type ManifestEntry,
   messageBytes,
+  PASTURE_DIR_MODE,
+  PASTURE_FILE_MODE,
   type Refused,
 } from "./protocol.ts";
 
@@ -139,6 +149,23 @@ export function cacheRule(gitignore: string | undefined): (path: string, kind: E
   return (path, kind) => rules.ignores(kind === "directory" ? `${path}/` : path);
 }
 
+/** The entries of a disk with their hashes and sizes, as a sync compares them. */
+async function hashed(disk: Disk, entries: DiskEntry[]): Promise<Map<string, Scanned>> {
+  const state = new Map<string, Scanned>();
+  for (const entry of entries) {
+    if (entry.kind === "directory") {
+      state.set(entry.path, { kind: "directory", mode: entry.mode, hash: null, size: 0 });
+    } else if (entry.kind === "symlink") {
+      const target = encoder.encode(await disk.readlink(entry.path));
+      state.set(entry.path, { kind: "symlink", mode: SYMLINK_MODE, hash: await disk.digest(target), size: target.byteLength });
+    } else {
+      const bytes = await disk.read(entry.path);
+      state.set(entry.path, { kind: "file", mode: entry.mode, hash: await disk.digest(bytes), size: bytes.byteLength });
+    }
+  }
+  return state;
+}
+
 class ProtocolError extends Error {
   readonly code: "malformed" | "mismatch" | "failed";
   /** The frame type the error is about. */
@@ -173,15 +200,27 @@ export interface ServedAgent {
 /** How long the helper waits for the cell's answer before git is told there is none. */
 export const CREDENTIAL_TIMEOUT_MS = 10_000;
 
+export interface ServeAgentOptions {
+  /** Pasture phase 3: the disk rooted at `/pasture`, written read-only from a manifest's second root. Absent, a manifest's `pasture` is ignored. */
+  pasture?: Disk;
+}
+
 /** Wires the agent to a socket. Frames are handled in the order they arrive, one at a time; a run's work is not on that chain. */
-export function serveAgent(socket: AgentSocket, disk: Disk, runner: Runner): ServedAgent {
-  const agent = new Agent(socket, disk, runner);
+export function serveAgent(socket: AgentSocket, disk: Disk, runner: Runner, options: ServeAgentOptions = {}): ServedAgent {
+  const agent = new Agent(socket, disk, runner, options.pasture);
   return { closed: agent.closed, syncOut: (id) => agent.syncOut(id), askCredential: (request, options) => agent.askCredential(request, options) };
+}
+
+/** A sync-in's second root: the pasture's manifest and what its disk had before. */
+interface PastureCheckout {
+  entries: ManifestEntry[];
+  have: Map<string, Scanned>;
 }
 
 class Agent {
   private readonly socket: AgentSocket;
   private readonly disk: Disk;
+  private readonly pasture: Disk | undefined;
   private readonly runner: Runner;
   readonly closed: Promise<void>;
   private isClosed = false;
@@ -190,8 +229,15 @@ class Agent {
   private running: { id: string; handle: RunHandle } | null = null;
   /** What is on disk as far as the last sync said. */
   private known = new Map<string, Known>();
-  /** A sync-in in progress: the manifest and the blobs still to come. */
-  private checkout: { id: string; entries: ManifestEntry[]; have: Map<string, Scanned>; needed: Set<string>; blobs: Map<string, Uint8Array> } | null = null;
+  /** A sync-in in progress: the manifest and the blobs still to come; `pasture` when the manifest carried the second root. */
+  private checkout: {
+    id: string;
+    entries: ManifestEntry[];
+    have: Map<string, Scanned>;
+    needed: Set<string>;
+    blobs: Map<string, Uint8Array>;
+    pasture: PastureCheckout | null;
+  } | null = null;
   /** The `blob` frame whose binary message is next. */
   private expecting: { hash: string; size: number } | null = null;
   /** A sync-out in progress. */
@@ -200,9 +246,10 @@ class Agent {
   private credentials = new Map<string, { settle: (answer: CredentialAnswer | undefined) => void }>();
   private credentialCount = 0;
 
-  constructor(socket: AgentSocket, disk: Disk, runner: Runner) {
+  constructor(socket: AgentSocket, disk: Disk, runner: Runner, pasture: Disk | undefined) {
     this.socket = socket;
     this.disk = disk;
+    this.pasture = pasture;
     this.runner = runner;
     socket.addEventListener("message", (event) => {
       this.tail = this.tail.then(() => this.receive(event.data));
@@ -267,7 +314,7 @@ class Agent {
         this.send(frame.id === undefined ? { type: "pong" } : { type: "pong", id: frame.id });
         return;
       case "manifest":
-        await this.receiveManifest(frame.id, frame.entries);
+        await this.receiveManifest(frame.id, frame.entries, frame.pasture);
         return;
       case "blob":
         if (this.checkout === null || !this.checkout.needed.has(frame.hash)) {
@@ -395,19 +442,12 @@ class Agent {
    */
   private async scan(): Promise<{ state: Map<string, Scanned>; present: Set<string> }> {
     const { kept, present } = await this.listKept();
-    const state = new Map<string, Scanned>();
-    for (const entry of kept) {
-      if (entry.kind === "directory") {
-        state.set(entry.path, { kind: "directory", mode: entry.mode, hash: null, size: 0 });
-      } else if (entry.kind === "symlink") {
-        const target = encoder.encode(await this.disk.readlink(entry.path));
-        state.set(entry.path, { kind: "symlink", mode: SYMLINK_MODE, hash: await this.disk.digest(target), size: target.byteLength });
-      } else {
-        const bytes = await this.disk.read(entry.path);
-        state.set(entry.path, { kind: "file", mode: entry.mode, hash: await this.disk.digest(bytes), size: bytes.byteLength });
-      }
-    }
-    return { state, present };
+    return { state: await hashed(this.disk, kept), present };
+  }
+
+  /** The pasture's disk, whole and hashed: no cache rule applies there, since nothing is ever built under it. */
+  private async scanPasture(pasture: Disk): Promise<Map<string, Scanned>> {
+    return hashed(pasture, await pasture.list());
   }
 
   /** The disk under the cache rule, unhashed: what the rule keeps out of `list()`, and every path that is there. */
@@ -419,18 +459,71 @@ class Agent {
     return { kept: listed.filter((entry) => !cached(entry.path, entry.kind)), present };
   }
 
-  private async receiveManifest(id: string, entries: ManifestEntry[]): Promise<void> {
+  private async receiveManifest(id: string, entries: ManifestEntry[], pastureEntries: ManifestEntry[] | undefined): Promise<void> {
     const { state } = await this.scan();
     const needed = new Set<string>();
-    for (const entry of entries) {
-      if (entry.kind === "directory" || entry.hash === null) continue;
-      const have = state.get(entry.path);
-      if (have !== undefined && have.kind === entry.kind && have.hash === entry.hash) continue;
-      needed.add(entry.hash);
+    const missing = (manifest: ManifestEntry[], have: Map<string, Scanned>) => {
+      for (const entry of manifest) {
+        if (entry.kind === "directory" || entry.hash === null) continue;
+        const had = have.get(entry.path);
+        if (had !== undefined && had.kind === entry.kind && had.hash === entry.hash) continue;
+        needed.add(entry.hash);
+      }
+    };
+    missing(entries, state);
+    // The second root, when the manifest carries it and this agent has a pasture disk: its blobs join the one `need`.
+    let pasture: PastureCheckout | null = null;
+    if (pastureEntries !== undefined && this.pasture !== undefined) {
+      pasture = { entries: pastureEntries, have: await this.scanPasture(this.pasture) };
+      missing(pastureEntries, pasture.have);
     }
-    this.checkout = { id, entries, have: state, needed, blobs: new Map() };
+    this.checkout = { id, entries, have: state, needed, blobs: new Map(), pasture };
     this.send({ type: "need", id, hashes: [...needed] });
     if (needed.size === 0) await this.applyCheckout();
+  }
+
+  /**
+   * The pasture's tree onto its disk, read-only. Directories are made
+   * writable first, so the agent, which need not be root, can write into
+   * them; then every entry the manifest names lands (files `0444`, symlinks
+   * as they are), what it does not name is removed, and every directory,
+   * the root included, is set `0555`, deepest first.
+   */
+  private async applyPasture(disk: Disk, checkout: PastureCheckout, blobs: Map<string, Uint8Array>): Promise<void> {
+    const { entries, have } = checkout;
+    await disk.mkdir("", 0o755);
+    for (const [path, was] of have) if (was.kind === "directory") await disk.chmod(path, 0o755);
+    const named = new Set<string>();
+    for (const entry of entries) {
+      named.add(entry.path);
+      const had = have.get(entry.path);
+      if (entry.kind === "directory") {
+        if (had?.kind === "directory") continue;
+        if (had !== undefined) await disk.remove(entry.path);
+        await disk.mkdir(entry.path, 0o755);
+        continue;
+      }
+      if (had !== undefined && had.kind === entry.kind && had.hash === entry.hash) {
+        if (entry.kind === "file" && had.mode !== PASTURE_FILE_MODE) await disk.chmod(entry.path, PASTURE_FILE_MODE);
+        continue;
+      }
+      const bytes = entry.hash === null ? undefined : blobs.get(entry.hash);
+      if (bytes === undefined) throw new ProtocolError("malformed", "manifest", `no blob for /pasture/${entry.path}`);
+      if (had !== undefined && had.kind !== entry.kind) await disk.remove(entry.path);
+      if (entry.kind === "symlink") await disk.symlink(decoder.decode(bytes), entry.path);
+      else await disk.write(entry.path, bytes, { mode: PASTURE_FILE_MODE });
+    }
+    // What the manifest no longer names goes; what it still names stays, whole.
+    let removed: string | null = null;
+    for (const path of [...have.keys()].sort()) {
+      if (named.has(path)) continue;
+      if (removed !== null && path.startsWith(`${removed}/`)) continue;
+      await disk.remove(path);
+      removed = path;
+    }
+    const directories = entries.filter((entry) => entry.kind === "directory").map((entry) => entry.path);
+    for (const path of directories.sort((a, b) => b.length - a.length)) await disk.chmod(path, PASTURE_DIR_MODE);
+    await disk.chmod("", PASTURE_DIR_MODE);
   }
 
   /** Every blob is here: write the manifest to disk, then delete what it does not name and the rule does not keep. */
@@ -438,6 +531,8 @@ class Agent {
     const checkout = this.checkout;
     if (checkout === null) return;
     this.checkout = null;
+    // The second root first, so a workspace command that follows finds `/pasture` in place; its failure ends the sync like any other.
+    if (checkout.pasture !== null && this.pasture !== undefined) await this.applyPasture(this.pasture, checkout.pasture, checkout.blobs);
     const known = new Map<string, Known>();
     for (const entry of checkout.entries) {
       const have = checkout.have.get(entry.path);

@@ -12,6 +12,7 @@
  */
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
+import type { Dirent } from "node:fs";
 import { chmod, lstat, mkdir, readdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { createServer as createSocketServer } from "node:net";
@@ -22,6 +23,9 @@ import { CELL_URL_ENV, DEFAULT_HELPER_SOCKET, HELPER_SOCKET_ENV, type HelperAnsw
 
 export const WORKSPACE_ENV = "PEN_WORKSPACE";
 export const DEFAULT_WORKSPACE = "/workspace";
+/** Pasture phase 3: where the pasture's tree is written, read-only, beside the checkout (or `PEN_PASTURE`, for a test on a machine without one). */
+export const PASTURE_ENV = "PEN_PASTURE";
+export const DEFAULT_PASTURE = "/pasture";
 /**
  * The one port the image exposes: a health answer, `ok`, for the platform
  * that started the container to see it is up. Cloudflare's local dev
@@ -76,7 +80,15 @@ export function nodeDisk(root: string): Disk {
     },
     async list() {
       const entries: DiskEntry[] = [];
-      for (const dirent of await readdir(root, { recursive: true, withFileTypes: true })) {
+      let listed: Dirent[];
+      try {
+        listed = await readdir(root, { recursive: true, withFileTypes: true });
+      } catch (error) {
+        // A root not yet made (the pasture's, before its first manifest) is an empty tree, not a failed sync.
+        if ((error as { code?: string }).code === "ENOENT") return entries;
+        throw error;
+      }
+      for (const dirent of listed) {
         const absolute = join(dirent.parentPath, dirent.name);
         const path = relative(root, absolute).split("\\").join(posix.sep);
         const kind = dirent.isSymbolicLink() ? "symlink" : dirent.isDirectory() ? "directory" : "file";
@@ -244,8 +256,10 @@ export async function main(env: NodeJS.ProcessEnv = process.env): Promise<number
     socket.addEventListener("error", () => reject(new Error(`pen-agent: could not connect to ${cellUrl}`)), { once: true });
   });
   const root = env[WORKSPACE_ENV] || DEFAULT_WORKSPACE;
+  const pastureRoot = env[PASTURE_ENV] || DEFAULT_PASTURE;
   const helperSocket = env[HELPER_SOCKET_ENV] || DEFAULT_HELPER_SOCKET;
-  const served = serveAgent(socket, nodeDisk(root), nodeRunner(root, { [HELPER_SOCKET_ENV]: helperSocket }));
+  // The second root (pasture phase 3): a disk of its own beside the checkout, so the sync-out's walk cannot reach it.
+  const served = serveAgent(socket, nodeDisk(root), nodeRunner(root, { [HELPER_SOCKET_ENV]: helperSocket }), { pasture: nodeDisk(pastureRoot) });
   let closeHelper: (() => Promise<void>) | undefined;
   try {
     closeHelper = await serveHelper(helperSocket, served);

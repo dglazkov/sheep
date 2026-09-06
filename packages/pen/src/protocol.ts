@@ -37,6 +37,13 @@
  * asked, and is kept by no one: not the agent, not the cell, not a row,
  * and never a `stdout` or `stderr` frame.
  *
+ * Pasture phase 3: a `manifest` may carry a second root, `pasture`, the
+ * pasture's tree with paths relative to `/pasture`. It is read-only on the
+ * container's disk: files are written `0444` and directories `0555`, the
+ * sync-out walk never enters it, and a sync-in removes under it only
+ * what the manifest no longer names. Its blobs travel the same way as the
+ * workspace's, by hash, in the one `need`.
+ *
  * This file must run anywhere: it is imported by the cell (workerd) and
  * by the agent (node). No `node:*`, no globals beyond JSON.
  */
@@ -122,11 +129,19 @@ export interface NeedFrame {
   hashes: string[];
 }
 
+/** The modes the pasture's tree is written with on the container's disk: read-only for everyone, the agent's rule and not the manifest's. */
+export const PASTURE_FILE_MODE = 0o444;
+export const PASTURE_DIR_MODE = 0o555;
+
 /** Frames the cell sends to the container. */
 export type CellFrame =
   | { type: "ping"; id?: string }
-  /** The whole workspace, sorted by path. Anything not in it is deleted from the checkout, except what the cache rule keeps. */
-  | { type: "manifest"; id: string; entries: ManifestEntry[] }
+  /**
+   * The whole workspace, sorted by path. Anything not in it is deleted from the checkout, except what the cache rule keeps.
+   * `pasture`, when present, is the second root (pasture phase 3): the pasture's tree, paths relative to `/pasture`, written
+   * read-only under `/pasture` beside the checkout; anything under `/pasture` it does not name is removed. Absent, `/pasture` is left as it is.
+   */
+  | { type: "manifest"; id: string; entries: ManifestEntry[]; pasture?: ManifestEntry[] }
   | BlobFrame
   | NeedFrame
   /** Runs `command` through the container's own bash under `cwd`; `stdout` and `stderr` frames follow as they happen, then `exit` or `killed`, then `changed`. */

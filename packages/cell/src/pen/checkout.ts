@@ -10,6 +10,13 @@
  * statement and the last. The cell's SQL is synchronous and the object is
  * single-threaded, so a row is either before or after, never between.
  * The kill test in `test/checkout.test.ts` proves that from the outside.
+ *
+ * Pasture phase 3: with a `pasture`, the sync-in's manifest carries a
+ * second root, the pasture's tree as its object has it at that moment,
+ * marked read-only, and the `need` is answered for both roots: a hash the
+ * workspace has comes from the rows, any other from the object by hash.
+ * The sync-out is the workspace's alone; the container never reports
+ * `/pasture`, and nothing here would write it if it did.
  */
 import {
   type CellFrame,
@@ -19,13 +26,30 @@ import {
   encodeFrame,
   type ManifestEntry,
   messageBytes,
+  PASTURE_DIR_MODE,
+  PASTURE_FILE_MODE,
   type Refused,
 } from "@sheep/pen/protocol";
 import { posix } from "node:path";
 import { FilesTable, hashBytes, MAX_FILE_BYTES, WORKSPACE_ROOT } from "../workspace/files.ts";
+import type { PastureSource } from "../workspace/mount.ts";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+
+/** What the checkout asks of a pasture: the tree now, and bytes by hash. The `Pasture` object's stub is one. */
+export type PastureCheckoutSource = Pick<PastureSource, "snapshot" | "readByHash">;
+
+/** The pasture's tree as the manifest's second root: paths relative to `/pasture`, modes the read-only ones the container writes. */
+export async function pastureManifest(source: PastureCheckoutSource): Promise<ManifestEntry[]> {
+  const { tree } = await source.snapshot();
+  return tree.map((entry) => ({
+    path: entry.path,
+    kind: entry.kind,
+    mode: entry.kind === "directory" ? PASTURE_DIR_MODE : entry.kind === "file" ? PASTURE_FILE_MODE : entry.mode,
+    hash: entry.hash,
+  }));
+}
 
 /** The container went away in the middle of a sync. The rows are whole; the sync is not done. */
 export class CheckoutInterrupted extends Error {
@@ -47,10 +71,10 @@ export class CheckoutProtocolError extends Error {
   }
 }
 
-/** One sync in flight: what it does with each frame, and how it ends. */
+/** One sync in flight: what it does with each frame, and how it ends. A frame's handling may wait, as a `need` for the pasture's bytes does. */
 interface Pending {
   id: string;
-  frame(frame: ContainerFrame): void;
+  frame(frame: ContainerFrame): void | Promise<void>;
   bytes(bytes: Uint8Array): void;
   reject(error: Error): void;
 }
@@ -58,11 +82,14 @@ interface Pending {
 export interface CheckoutOptions {
   /** Ids for the frames the cell sends; deterministic by default so transcripts compare. */
   nextId?: () => string;
+  /** Pasture phase 3: the pasture whose tree is the manifest's second root. Absent, the manifest has one root, as before. */
+  pasture?: PastureCheckoutSource;
 }
 
 export class Checkout {
   private readonly socket: WebSocket;
   private readonly files: FilesTable;
+  private readonly pasture: PastureCheckoutSource | undefined;
   private readonly nextId: () => string;
   private pending: Pending | null = null;
   /** A `blob` frame whose bytes are next. */
@@ -75,6 +102,7 @@ export class Checkout {
   constructor(socket: WebSocket, files: FilesTable, options: CheckoutOptions = {}) {
     this.socket = socket;
     this.files = files;
+    this.pasture = options.pasture;
     let counter = 0;
     this.nextId = options.nextId ?? (() => `sync-${++counter}`);
     socket.addEventListener("message", (event) => {
@@ -91,23 +119,35 @@ export class Checkout {
 
   /**
    * Sends the manifest, answers `need` with blobs, and resolves when the
-   * container says `checkout`: the tree is on its disk.
+   * container says `checkout`: the tree is on its disk. With a pasture,
+   * the manifest carries the second root and `need` is answered for both.
    */
-  syncIn(): Promise<void> {
+  async syncIn(): Promise<void> {
+    // The pasture's tree as it is now, one hop, before the manifest goes; a socket gone meanwhile fails at `start`.
+    const pasture = this.pasture === undefined ? undefined : await pastureManifest(this.pasture);
+    const source = this.pasture;
     return this.start<void>((id, resolve, reject) => {
       const entries = this.files.manifest();
       const byHash = new Map<string, ManifestEntry>();
       for (const entry of entries) if (entry.hash !== null && !byHash.has(entry.hash)) byHash.set(entry.hash, entry);
+      const pastureHashes = new Set(pasture?.flatMap((entry) => (entry.hash === null ? [] : [entry.hash])) ?? []);
       const pending: Pending = {
         id,
-        frame: (frame) => {
+        frame: async (frame) => {
           if (frame.type === "need" && frame.id === id) {
             for (const hash of frame.hashes) {
               const entry = byHash.get(hash);
-              if (entry === undefined) throw new CheckoutProtocolError(`the container asked for ${hash}, which the manifest does not carry`);
-              const bytes = entry.kind === "symlink"
-                ? encoder.encode(this.files.readlink(`${WORKSPACE_ROOT}/${entry.path}`))
-                : this.files.readFile(`${WORKSPACE_ROOT}/${entry.path}`);
+              let bytes: Uint8Array | undefined;
+              if (entry !== undefined) {
+                bytes = entry.kind === "symlink"
+                  ? encoder.encode(this.files.readlink(`${WORKSPACE_ROOT}/${entry.path}`))
+                  : this.files.readFile(`${WORKSPACE_ROOT}/${entry.path}`);
+              } else if (source !== undefined && pastureHashes.has(hash)) {
+                // The second root's bytes, from the object by hash; a file changed since the snapshot is a hash it no longer has.
+                bytes = await source.readByHash(hash);
+                if (bytes === undefined) throw new CheckoutProtocolError(`the pasture no longer has ${hash}; it changed during the sync-in`);
+              }
+              if (bytes === undefined) throw new CheckoutProtocolError(`the container asked for ${hash}, which the manifest does not carry`);
               this.send({ type: "blob", hash, size: bytes.byteLength });
               this.sendBytes(bytes);
             }
@@ -126,7 +166,7 @@ export class Checkout {
         reject,
       };
       this.pending = pending;
-      this.send({ type: "manifest", id, entries });
+      this.send(pasture === undefined ? { type: "manifest", id, entries } : { type: "manifest", id, entries, pasture });
     });
   }
 
@@ -302,7 +342,7 @@ export class Checkout {
           if (frame.type === "changed") this.arrived = frame;
           return;
         }
-        this.pending.frame(frame);
+        await this.pending.frame(frame);
       } else {
         const bytes = await messageBytes(data);
         if (bytes === undefined) throw new CheckoutProtocolError("a binary message the cell cannot read");
