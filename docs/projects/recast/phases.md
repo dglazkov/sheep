@@ -18,7 +18,7 @@ rename only. The proof of every phase includes the suites that held on
 
 ---
 
-**Where we are: recast phase 0 CLOSED; phase 1 is next, its three ⚑ steps approved by the shepherd on 6 Sep 2026 (both deploys, and deletion of the old homes after the walk); then phase 2 freezes the legs.** Planned 6 Sep 2026, the day after lamb and pen were walked, when the shepherd said the command is `sheep` and the work from here on is the command. Phase 0 renamed everything in the repo the same morning. Nothing waits on a person.
+**Where we are: recast phases 0 and 1 CLOSED; phase 2 is next, and it needs no one.** Planned 6 Sep 2026, the day after lamb and pen were walked, when the shepherd said the command is `sheep` and the work from here on is the command. Phase 0 renamed everything in the repo the same morning; phase 1 deployed `sheep` and `sheep-pen`, walked journey 1 with a real model, and deleted the old homes, all three ⚑ steps approved by the shepherd that morning. Nothing waits on a person.
 
 The order is dependency order. Phase 0 renames everything in the repo
 and proves it locally, so that the README a reader gets after it is true
@@ -126,9 +126,15 @@ Findings, ids included; `pnpm exec wrangler deployments list` (or the
 dashboard) showing `lamb` and `lamb-pen` absent, or an Open finding
 saying the shepherd kept them.
 
-**Status: NOT STARTED.** 2026-09-06.
+**Status: CLOSED.** 2026-09-06. `sheep` and `sheep-pen` deployed with their secrets, `~/.sheep/config` written, journey 1 steps 3 to 6 walked with a real model, and `lamb`, `lamb-pen`, their container application, and `~/.lamb` deleted.
 
 **Findings:**
+
+- **2026-09-06 — A container application's name is account-wide and bound to one Durable Object namespace.** `wrangler deploy --env pen` refused `pen` as "already deployed … associated with a different durable object namespace"; the new Worker's application is `sheep-pen`. The design's table gained the row.
+- **2026-09-06 — Deleting a Worker leaves its container application behind.** After `wrangler delete --name lamb-pen`, `wrangler containers list` still showed `pen`, ready; `wrangler containers delete <id>` removed it. Only `sheep-pen` remains.
+- **2026-09-06 — The walk, by the conductor as the dog with a real model.** Three sheep minted detached in one command; `ls` showed all three running; `wait` returned three `done` lines, exit 0, in under ten seconds; `log --last 4` showed the write and its result.
+- **2026-09-06 — On `sheep-pen`, a `node -e` line printed `{"SHEEP":"1","node":"v24.20.0"}` from the container**, `LAMB` absent. Both doors answer `sheep`; `sheep config` names the new home with no environment set; the old doors answer 404.
+- **2026-09-06 — Secrets re-put from `.dev.vars` under the new names**, plus `PEN_CELL_ORIGIN`, `PEN_GIT_TOKEN` (expires 13 Sep 2026), and the shepherd's git identity as `PEN_GIT_AUTHOR_*`. `wrangler secret list` on both shows no `LAMB_*`. Cost of the phase: 8 minutes, one failed deploy included.
 
 ## Phase 2: The legs frozen, and the index
 

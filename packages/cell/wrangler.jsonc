@@ -39,7 +39,7 @@
       ],
       "containers": [
         {
-          "name": "pen",
+          "name": "sheep-pen",
           "image": "../pen/Dockerfile",
           "image_build_context": "../pen",
           "class_name": "PenContainer",

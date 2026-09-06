@@ -28,13 +28,17 @@ The command is named for what it handles, the way `git` is.
 | `LAMB_TOKEN`, `LAMB_ANTHROPIC_API_KEY`, `LAMB_MODEL`, `LAMB_PROVIDER`, `LAMB_ALLOW_ANONYMOUS`, `LAMB_TEST_PORT` | the same with `SHEEP_` | the cell's secrets and vars |
 | `LAMB=1` in a container's environment | `SHEEP=1` | what a program in a sheep's container sees |
 | Workers `lamb` and `lamb-pen` | `sheep` and `sheep-pen` | the homes on Cloudflare |
+| the container application `pen` | `sheep-pen` | Cloudflare's name for the container fleet beside a Worker; account-wide, and bound to one Durable Object namespace, so a new Worker needs a new one (found in recast phase 1) |
 | `GET /` answers `lamb` | answers `sheep` | the home's door |
 | `/tmp/lamb/sessions.sqlite`, author `lamb <lamb@example.invalid>` | `/tmp/sheep/…`, `sheep <sheep@example.invalid>` | paths and defaults inside the cell |
 
 Not renamed, and why:
 
-- **Pen.** `PEN_*`, the `pen` wrangler environment, the `pen` container,
-  `packages/pen`, `pen-agent`, `git-credential-pen`. Pen is the name of
+- **Pen.** `PEN_*`, the `pen` wrangler environment, the `pen` image,
+  `packages/pen`, `pen-agent`, `git-credential-pen`. (The container
+  *application* on Cloudflare is the one exception, above: its name is
+  account-wide and bound to the old Worker's namespace, so the new Worker
+  gets `sheep-pen`, the Worker's own name.) Pen is the name of
   a leg and of the thing that leg built, a rented container beside a
   cell. The shepherd has called the name a placeholder; renaming it is a
   decision, not a consequence of this one, and it waits.
