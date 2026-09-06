@@ -2,7 +2,7 @@
 status: partial
 since: 2026-09-05
 see: lamb
-note: "journeys, design and seven phases written 5 Sep 2026 and every phase built the same day; phase 0 (the scaffold) closed by the first deploy to Cloudflare; phase 1 closed the same day: pi's storage and repo conformance suites pass in full in workerd, and pi's own SQLite repo runs in the cell with two small patches; phase 2 closed the same day: pi's four tools run over a workspace table and just-bash in the isolate, journey 4's steps each held by a test in workerd; phase 3 part-done the same day: the cell drives pi's harness, the alarm brings it back, journey 2's eviction test holds at every transition in workerd, and journey 2 walked in full on the deployed home, a turn evicted by a real `wrangler deploy` mid-flight and resumed by the alarm; phase 4 part-done the same day: pi's own client attaches to a cell over a WebSocket through `lamb`, journey 3 holds in workerd, journey 1 walked against a local home with the faux provider and then on the deployed home with a real model as far as one machine can take it, and an exported session opens in pi's Node backend; phase 5 built as git and withdrawn the same day (a twelve-verb facade over isomorphic-git; git is a program and moved to the second leg, pen), re-cut the same evening as the sheepdog's surface, and closed the same night: detach, status, wait, abort, log, and --json over lamb's own client of pi's protocol, journey 5 walked in full on the deployed home by a Claude Code session; phase 6 part-done on one local celld node, journeys 1 and 3 walked there through lamb and pi's client with state surviving a node restart; phase 7 closed, pi's full suite green with the four patches and a fresh pi from the registry running beside lamb. Journeys recast 5 Sep around agents as the actors: a sheepdog runs lamb, sheep are cells, a shepherd watches. celld and journey 6 withdrawn 5 Sep 2026, not yet mature. What waits on a person: a second machine and the TUI half of journey 3. Nothing waits on work. The first leg of a longer walk — pi's harness in a Durable Object with a workspace in rows, an in-isolate shell, pi's own client attached over a WebSocket, and a second home, celld, tried and withdrawn. Execution tiers are pen; sub-agents as cells and multi-user are named as later legs."
+note: "journeys, design and seven phases written 5 Sep 2026 and every phase built the same day; phase 0 (the scaffold) closed by the first deploy to Cloudflare; phase 1 closed the same day: pi's storage and repo conformance suites pass in full in workerd, and pi's own SQLite repo runs in the cell with two small patches; phase 2 closed the same day: pi's four tools run over a workspace table and just-bash in the isolate, journey 4's steps each held by a test in workerd; phase 3 part-done the same day: the cell drives pi's harness, the alarm brings it back, journey 2's eviction test holds at every transition in workerd, and journey 2 walked in full on the deployed home, a turn evicted by a real `wrangler deploy` mid-flight and resumed by the alarm; phase 4 part-done the same day: pi's own client attaches to a cell over a WebSocket through `lamb`, journey 3 holds in workerd, journey 1 walked against a local home with the faux provider and then on the deployed home with a real model as far as one machine can take it, and an exported session opens in pi's Node backend; phase 5 built as git and withdrawn the same day (a twelve-verb facade over isomorphic-git; git is a program and moved to the second leg, pen), re-cut the same evening as the sheepdog's surface, and closed the same night: detach, status, wait, abort, log, and --json over lamb's own client of pi's protocol, journey 5 walked in full on the deployed home by a Claude Code session; phase 6 part-done on one local celld node, journeys 1 and 3 walked there through lamb and pi's client with state surviving a node restart; phase 7 closed, pi's full suite green with the four patches and a fresh pi from the registry running beside lamb. Journeys recast 5 Sep around agents as the actors: a sheepdog runs lamb, sheep are cells, a shepherd watches. celld and journey 6 withdrawn 5 Sep 2026, not yet mature. Journey 3 walked in full on the deployed home the night of 5 Sep, the shepherd's terminal beside the dog's stream: attach, a steered prompt, an abort by Escape, a close the dog did not notice, and a cell with its alarm clear. What waits on a person: a second machine and a night for journey 1. Nothing waits on work. The first leg of a longer walk — pi's harness in a Durable Object with a workspace in rows, an in-isolate shell, pi's own client attached over a WebSocket, and a second home, celld, tried and withdrawn. Execution tiers are pen; sub-agents as cells and multi-user are named as later legs."
 ---
 
 # Lamb — the journeys
@@ -168,10 +168,11 @@ steer.
    same sheep. It renders the whole transcript so far, and then both the
    dog's stream and the shepherd's screen show the same tokens at the same
    time.
-2. The shepherd types a prompt. It is queued behind the running turn, as
-   pi queues a prompt typed mid-turn, and runs when the turn ends. The
-   dog's next read of the transcript shows it as a user message, and the
-   sheep's reply streams to both.
+2. The shepherd types a prompt. pi takes it as pi takes a prompt typed
+   mid-turn: Enter steers it into the running turn at the next tool
+   boundary, Alt+Enter queues it behind the turn. The dog's next read of
+   the transcript shows it as a user message, and the sheep's reply
+   streams to both.
 3. The shepherd presses the abort key. The turn stops for the dog too,
    and the dog's `lamb` reports the abort rather than an error.
 4. The shepherd closes the terminal. The dog notices nothing.
@@ -182,9 +183,9 @@ Acceptance criteria:
 
 - Each attachment is its own, and the cell's `Transcript` subscription is
   per attachment, so a slow terminal never stalls the dog.
-- Step 2 is `AgentController.prompt` over the wire, unchanged from pi's
-  experimental client, queued by pi's own lane rules. Lamb adds no
-  message type.
+- Step 2 is pi's own `steer` or `followUp` over the wire, unchanged
+  from pi's experimental client, placed by pi's own lane rules. Lamb adds
+  no message type.
 - Step 5's hibernation keeps the socket count at zero and the alarm
   cleared. A wake from `lamb attach` rebuilds the router from the sockets
   it has and needs nothing from the terminal beyond the handshake.

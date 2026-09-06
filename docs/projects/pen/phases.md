@@ -11,9 +11,9 @@ never a bare "phase 2".
 
 ---
 
-**Where we are: pen phases 0 to 5 CLOSED, phase 6 WITHDRAWN with celld,
-phase 7 PART-DONE. Nothing in pen waits on work; what is left waits on
-a person.** Planned
+**Where we are: pen phases 0 to 5 and 7 CLOSED, phase 6 WITHDRAWN with
+celld. The leg is walked; nothing in pen waits on work or on a
+person.** Planned
 5 Sep 2026; every phase built the same day. The shepherd enabled the
 Workers Paid plan that evening and scoped a token to a scratch
 repository; `lamb-pen` was deployed with its image, and journeys 1, 2,
@@ -21,8 +21,8 @@ repository; `lamb-pen` was deployed with its image, and journeys 1, 2,
 beside a celld node and reached a real container through it; the walk
 stalled on celld dropping the work a socket message wakes, and the
 shepherd withdrew celld that night. Phase 7 walked lamb's journeys 1, 2,
-4, and 5 on the lamb home with all of pen present and no binding;
-journey 3 waits on a second terminal.
+4, and 5 on the lamb home with all of pen present and no binding, and
+journey 3 the same night with the shepherd at the second terminal.
 
 The order is dependency order and risk order. Phase 1 is the gate: if a
 checkout cannot be synced by hash both ways with the atomicity journey 3
@@ -435,10 +435,11 @@ kill` as the operator's hand in journey 3.
 
 ## Phase 7 — Nothing changed for lamb
 
-**Status: PART-DONE.** 5 Sep 2026. The lamb home redeployed with all of
+**Status: CLOSED.** 5 Sep 2026. The lamb home redeployed with all of
 pen and no binding; lamb's journeys 1, 2, 4, and 5 walked there with a
-real model, its suite green, pi's branch the same four commits. Lamb's journey 3 waits on a person, as lamb's own record says; journey
-6 went with celld, withdrawn.
+real model, and journey 3 with the shepherd at the second terminal; its
+suite green, pi's branch the same four commits. Journey 6 went with
+celld, withdrawn.
 
 **Closes journey 6.**
 
@@ -456,8 +457,10 @@ upstream/main..sheep` in the submodule is the same list it was.
   it was at the start of the day and `upstream/main..sheep` is the same
   four commits; pen's only dependency patch is one export on just-bash.
 - **2026-09-05 — Cost: 8 minutes**, all walks.
-- **2026-09-05 — Open: lamb's journey 3** needs a second terminal, a
-  person's, as lamb's phase 4 says; journey 6 went with celld.
+- **2026-09-05 — Lamb's journey 3 walked on the lamb home** with all of
+  pen present and no binding, the shepherd at the second terminal:
+  attach, a steered prompt, Escape, a close the dog did not notice, the
+  alarm clear. The record is lamb phase 4's. Cost: 20 minutes.
 
 ## What the phases leave open
 

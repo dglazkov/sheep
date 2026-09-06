@@ -50,8 +50,10 @@ isomorphic-git, and git is a program for the second leg's container tier
 ([pen](../pen/phases.md)); the same evening the journeys were recast
 around agents as the actors and lamb phase 5 became the sheepdog's
 surface, now built. celld, and journey 6 with it, was withdrawn on 5 Sep by the shepherd
-after pen phase 6 found it dropping the work a socket wakes. What waits
-on a person: a second machine and the TUI half of journey 3.
+after pen phase 6 found it dropping the work a socket wakes. Journey 3
+walked in full on the deployed home the same night, the shepherd's
+terminal beside the dog's stream. What waits on a person: a second
+machine and a night for journey 1.
 
 The order is dependency order and it is also risk order: phase 1 is the
 gate, because if pi's storage does not run over the cell's SQL nothing
@@ -414,6 +416,8 @@ server runs in the cell over standard WebSockets; the session and server
 services the client expects are pi's own providers, in-process; pi-client
 gained a WebSocket transport and `pi client` a `--connect wss://` route
 (patch 0004); `lamb new`, `-c`, `attach`, `ls`, and `export` exist.
+Journey 3 walked in full on the deployed home the same night; journey
+1's second machine and night still wait on a person.
 Journey 3 holds in workerd with two protocol clients on one cell. Journey
 1 walked against `wrangler dev` with pi's real client: `lamb new -- "…"`
 streamed a reply, `lamb attach` prompted the same cell, `lamb export`
@@ -459,7 +463,8 @@ second dog hours later finding the sheep with `lamb ls` and attaching, a
 third from another machine with only the id. Journey 3 walked with the
 shepherd's terminal beside the dog's stream: both stream, the shepherd
 prompts and aborts, one closes and the other notices nothing, both close
-and the cell hibernates with the alarm clear, checked from the dashboard.
+and the cell hibernates with the alarm clear, checked from the Worker's
+tail (the dashboard shows no per-object alarm).
 
 **Findings:**
 
@@ -512,9 +517,26 @@ and the cell hibernates with the alarm clear, checked from the dashboard.
   exited. Prompt mode calls `agent.prompt` directly; the TUI queues a
   prompt typed mid-turn. Journey 3 step 2 is a TUI claim and still holds
   in workerd; the deployed walk needs two terminals.
-- **2026-09-05 — Open: the deployed walks that need a person.** A real
-  second machine and a real night for journey 1; two terminals, an abort,
-  and the dashboard's hibernation check for journey 3.
+- **2026-09-05 — Open: the deployed walk that needs a person.** A real
+  second machine and a real night for journey 1.
+- **2026-09-05 — Journey 3 walked on the deployed home**, the shepherd's
+  terminal beside the dog's stream: attach rendered the transcript and
+  streamed the same tokens; a prompt typed mid-turn reached the sheep and
+  its answer streamed to both; Escape stopped a fifty-file turn after the
+  ninth; the dog's `lamb` ended with exit 0. Cost: 20 minutes.
+- **2026-09-05 — Enter mid-turn steers; Alt+Enter queues.** pi's screen
+  sends `steer` on Enter while a turn runs, delivered at the next tool
+  boundary, and `followUp` on Alt+Enter; the shepherd's prompt landed
+  between the November and December poems. Both are pi's own calls over
+  the wire; journey 3 step 2 now says so.
+- **2026-09-05 — An aborted prompt ends quietly.** pi's one-shot client
+  resolves `prompt` without an error on an abort, prints the streamed
+  text and exits 0; lamb runs it unmodified. The dog reads the abort from
+  the transcript's `stopReason`, which `lamb log --last 1` shows.
+- **2026-09-05 — The dashboard shows no alarm; the tail does.** Forty
+  seconds of `wrangler tail` after both terminals closed showed no event;
+  one state read woke the cell (three Durable Object events) and thirty
+  seconds after it, none. The Directory's `idle` follows `deleteAlarm`.
 - **2026-09-06 — First real-model turn on a laptop found a wire fault.** pi's
   bash tool opens with a progress update of `details: undefined`; the
   transcript service replicated the `undefined`, pi's strict codec refused
