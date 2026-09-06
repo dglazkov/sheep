@@ -32,10 +32,20 @@ import type { Refused } from "@lamb/pen/protocol";
 import { Bash } from "just-bash/browser";
 import { posix } from "node:path";
 import { Checkout, CheckoutInterrupted } from "../pen/checkout.ts";
-import { ContainerRun, type RunEnd, RunInterrupted } from "../pen/run.ts";
+import { ContainerRun, KillUnanswered, type RunEnd, RunInterrupted } from "../pen/run.ts";
 import { CellFs } from "../workspace/cell-fs.ts";
 import { type FileRow, FilesTable, FsError, isReadable, MAX_FILE_BYTES, normalizePath, TEMP_ROOT, WORKSPACE_ROOT } from "../workspace/files.ts";
-import { annotateCommandNotFound, classify, type Home, INTERRUPTED_DURING_RUN, interruptedDuringSyncOut, refusalLine, type Route, shellNotice } from "./programs.ts";
+import {
+  annotateCommandNotFound,
+  classify,
+  type Home,
+  INTERRUPTED_DURING_RUN,
+  interruptedDuringSyncOut,
+  killUnanswered,
+  refusalLine,
+  type Route,
+  shellNotice,
+} from "./programs.ts";
 
 const MAX_TIMEOUT_MS = 2_147_483_647;
 
@@ -81,11 +91,17 @@ function messageOf(error: unknown): string {
  * the same socket again while it is up. `idle()` says a run has ended
  * and nothing is running, so the home may stop the container after its
  * idle period; the next `rent()` cancels that. Pen phase 3 gives it the
- * Containers binding; the tests give it a function that starts a fake.
+ * Containers binding (`pen/lease.ts`); the tests give it a function that
+ * starts a fake. The two optional members are pen phase 3's: `discard()`
+ * gives up a container that ignored `kill`, and `budgetSpent()` asks
+ * whether the home's container budget is spent, which empties the tier-2
+ * column for the command about to run.
  */
 export interface ContainerLease {
   rent(): Promise<WebSocket>;
   idle(): void;
+  discard?(reason: string): void;
+  budgetSpent?(): Promise<boolean>;
 }
 
 export interface CellExecutionEnvOptions {
@@ -95,6 +111,8 @@ export interface CellExecutionEnvOptions {
   now?: () => number;
   /** Tier 2. Absent, this home has no container: the table's tier-2 column is empty and the shell is lamb's. */
   container?: ContainerLease;
+  /** Milliseconds a container has to answer `kill` before it is given up; absent, the cell waits. */
+  killTimeoutMs?: number;
 }
 
 /** How a command ended, before the capture is settled. */
@@ -112,6 +130,7 @@ export class CellExecutionEnv implements ExecutionEnv {
   readonly fs: CellFs;
   private readonly shellEnv: Record<string, string>;
   private readonly container: ContainerLease | undefined;
+  private readonly killTimeoutMs: number | undefined;
   /** The checkout over the container socket most recently rented; one `Checkout` per socket. */
   private lease: { socket: WebSocket; checkout: Checkout } | undefined;
   private runs = 0;
@@ -122,6 +141,7 @@ export class CellExecutionEnv implements ExecutionEnv {
     this.files.init();
     this.fs = new CellFs(this.files);
     this.container = options.container;
+    this.killTimeoutMs = options.killTimeoutMs;
     this.shellEnv = {
       HOME: WORKSPACE_ROOT,
       PATH: "/usr/local/bin:/usr/bin:/bin",
@@ -131,9 +151,15 @@ export class CellExecutionEnv implements ExecutionEnv {
     };
   }
 
-  /** What this home has, as the table sees it. */
+  /** What this home has, as the table sees it: the static half, without asking about the budget. */
   get home(): Home {
     return { container: this.container !== undefined };
+  }
+
+  /** What this home has right now: the static half plus the budget, asked of the lease. */
+  async homeNow(): Promise<Home> {
+    if (this.container?.budgetSpent === undefined) return this.home;
+    return { container: true, budgetSpent: await this.container.budgetSpent() };
   }
 
   private resolvePath(path: string): string {
@@ -279,8 +305,8 @@ export class CellExecutionEnv implements ExecutionEnv {
       return err(new ExecutionError("unknown", cause.message, cause));
     }
 
-    const home = this.home;
     // No container: lamb's shell, line for line; just-bash's own not-found line, annotated, is the refusal.
+    const home = this.container === undefined ? this.home : await this.homeNow();
     const route: Route = this.container === undefined ? { tier: 0, programs: [] } : classify(command, home);
     const environment = options?.inheritEnv === false ? { ...options.env } : { ...this.shellEnv, ...options?.env };
 
@@ -291,7 +317,7 @@ export class CellExecutionEnv implements ExecutionEnv {
         capture.push(line);
         ran = { full: line, outcome: { exitCode: 127 } };
       } else if (route.tier === 0) {
-        ran = await this.runInShell(command, cwd, environment, options, signal, capture);
+        ran = await this.runInShell(command, cwd, environment, options, signal, capture, home);
       } else {
         ran = await this.runInContainer(command, cwd, environment, options, signal, capture);
       }
@@ -321,6 +347,7 @@ export class CellExecutionEnv implements ExecutionEnv {
     options: ShellExecOptions | undefined,
     signal: AbortSignal | undefined,
     capture: OutputCapture,
+    home: Home,
   ): Promise<Ran> {
     const controller = new AbortController();
     let timedOut = false;
@@ -347,7 +374,7 @@ export class CellExecutionEnv implements ExecutionEnv {
       try {
         const result = await bash.exec(command, { signal: controller.signal, cwd });
         stdout = result.stdout;
-        stderr = annotateCommandNotFound(result.stderr, shellNotice(this.home));
+        stderr = annotateCommandNotFound(result.stderr, shellNotice(home));
         exitCode = result.exitCode;
       } catch (error) {
         // just-bash throws for its own bounds and for aborts; both are the command failing, not the env.
@@ -399,12 +426,15 @@ export class CellExecutionEnv implements ExecutionEnv {
     }
     const checkout = this.checkoutFor(socket);
     try {
+      const syncInStarted = Date.now();
       try {
         await checkout.syncIn();
       } catch (error) {
         if (error instanceof CheckoutInterrupted) return unavailable(error.message, error);
         return { full, outcome: { error: new ExecutionError("unknown", `the sync-in failed: ${messageOf(error)}`) } };
       }
+      // Timings for the findings: what a sync-in costs for this workspace, and the run and sync-out after it.
+      console.info(`[pen] sync-in ${Date.now() - syncInStarted} ms, ${this.files.manifest().length} entries`);
 
       // The container's own PATH and HOME win over lamb's stand-ins; the rest of the environment is what the shell would have seen.
       const { PATH: _path, HOME: _home, ...runEnv } = environment;
@@ -422,6 +452,7 @@ export class CellExecutionEnv implements ExecutionEnv {
             capture.push(data);
           },
         },
+        this.killTimeoutMs === undefined ? {} : { killTimeoutMs: this.killTimeoutMs },
       );
       let timedOut = false;
       let aborted = false;
@@ -437,9 +468,16 @@ export class CellExecutionEnv implements ExecutionEnv {
       };
       signal?.addEventListener("abort", onAbort, { once: true });
       let end: RunEnd;
+      const runStarted = Date.now();
       try {
         end = await run.start();
+        console.info(`[pen] run ${id} ${"exit" in end ? `exit ${end.exit}` : `killed (${end.killed})`} after ${Date.now() - runStarted} ms`);
       } catch (error) {
+        if (error instanceof KillUnanswered) {
+          // The container ignored the kill past its deadline: give it up, and say so instead of a fake exit code.
+          container.discard?.(error.reason);
+          return unavailable(killUnanswered(error.killReason, error.seconds), error);
+        }
         if (error instanceof RunInterrupted) return unavailable(INTERRUPTED_DURING_RUN, error);
         return { full, outcome: { error: new ExecutionError("spawn_error", messageOf(error), error instanceof Error ? error : undefined) } };
       } finally {
@@ -448,8 +486,10 @@ export class CellExecutionEnv implements ExecutionEnv {
       }
 
       let refused: Refused[];
+      const syncOutStarted = Date.now();
       try {
         refused = await checkout.syncOut(id);
+        console.info(`[pen] sync-out ${Date.now() - syncOutStarted} ms, ${refused.length} refused`);
       } catch (error) {
         if (error instanceof CheckoutInterrupted) return unavailable(interruptedDuringSyncOut(end), error);
         return { full, outcome: { error: new ExecutionError("unknown", `the sync-out failed: ${messageOf(error)}`) } };

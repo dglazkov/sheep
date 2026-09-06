@@ -7,3 +7,14 @@ LAMB_TOKEN=
 # The model the cell calls. Leave LAMB_PROVIDER unset for Anthropic; "faux" is the scripted test provider.
 LAMB_ANTHROPIC_API_KEY=
 # LAMB_MODEL=claude-sonnet-5
+
+# Pen, the `pen` environment only (`pnpm dev:pen`, `pnpm deploy:pen`). A container dials this home
+# back at PEN_CELL_ORIGIN, so it must be the home's own origin as seen from the container: the
+# deployed Worker's URL, or from Docker on a Mac, http://host.docker.internal:8787. Note that
+# wrangler reads `.dev.vars.pen` *instead of* this file when it exists; for a local walk pass
+# these with `--var` instead (see README) so the secrets above are not copied.
+# PEN_CELL_ORIGIN=https://lamb-pen.<you>.workers.dev
+# PEN_IDLE=10m                 how long a container stays up after its last activity
+# PEN_START_TIMEOUT=90         seconds a started container has to dial in
+# PEN_KILL_TIMEOUT=10          seconds a container has to answer `kill` before it is given up
+# PEN_BUDGET_MINUTES=          this home's container budget; unset, no budget

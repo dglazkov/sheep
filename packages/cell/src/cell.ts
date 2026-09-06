@@ -30,8 +30,10 @@ import type { SqliteSessionRepo } from "@earendil-works/pi-session-backend-sqlit
 import { DurableObject } from "cloudflare:workers";
 import type { LaneState } from "./directory.ts";
 import { CellExecutionEnv } from "./env/execution-env.ts";
-import { NO_CONTAINER, shellSystemPromptLine } from "./env/programs.ts";
+import { type Home, shellSystemPromptLine } from "./env/programs.ts";
 import { type CellModels, createCellModels, type FauxProgram, isFauxProgram } from "./models.ts";
+import { DEFAULT_IDLE } from "./pen/container.ts";
+import { type ContainerStarter, parseDuration, PenLease } from "./pen/lease.ts";
 import { createCellSessionRepo } from "./storage/sqlite.ts";
 import { createCellHost } from "./wire/host.ts";
 import { WebSocketListener } from "./wire/listener.ts";
@@ -44,6 +46,8 @@ interface Runtime {
   repo: SqliteSessionRepo;
   session: Session;
   env: CellExecutionEnv;
+  /** Tier 2, when this home has a container: the lease the shell rents from and the `/pen` door admits into. */
+  lease: PenLease | undefined;
   models: CellModels;
   harness: AgentHarnessInstance;
   lane: AgentLane;
@@ -78,22 +82,34 @@ export interface TranscriptView extends CellState {
   entries: Entry[];
 }
 
-/** Test seam: the cell increments `step` at each transition and evicts itself when it equals `killAt`. */
+/**
+ * Test seams. The cell increments `step` at each transition and evicts
+ * itself when it equals `killAt`. A `starter` set before the first boot
+ * gives the cell a container it can rent without the Containers binding:
+ * the pool cannot bind a `PenContainer`, so the tests start the fake
+ * through the same lease and the same `/pen` door.
+ */
 export interface EvictionTestHooks {
   step: number;
   killAt: number;
   /** Tool effects observed, by tool name. */
   effects: Record<string, number>;
+  starter?: ContainerStarter;
 }
 
-function systemPrompt(): string {
+function systemPrompt(home: Home): string {
   return [
     "You are a coding agent working in a session that lives in a cell, not on a machine.",
     "Working directory: /workspace",
     "Use the read, write, edit, and bash tools to inspect and change files.",
-    shellSystemPromptLine(NO_CONTAINER),
+    shellSystemPromptLine(home),
     "Keep answers short and technical.",
   ].join("\n");
+}
+
+function seconds(value: string | undefined, fallback: number): number {
+  const parsed = value === undefined || value.trim() === "" ? Number.NaN : Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 export class SessionCell extends DurableObject<Env> {
@@ -120,9 +136,13 @@ export class SessionCell extends DurableObject<Env> {
     const repo = await createCellSessionRepo(this.ctx.storage);
     const existing = (await repo.list(undefined, context)).find((metadata) => metadata.id === this.sessionId);
     const session = existing === undefined ? await repo.create({ id: this.sessionId }, context) : await repo.open(existing, context);
-    const env = new CellExecutionEnv(this.ctx.storage.sql);
+    const lease = this.leaseFor();
+    const env = new CellExecutionEnv(
+      this.ctx.storage.sql,
+      lease === undefined ? {} : { container: lease, killTimeoutMs: seconds(this.env.PEN_KILL_TIMEOUT, 10) * 1000 },
+    );
     const models = createCellModels(this.env, { onProviderCall: () => this.transition(), program: () => this.fauxProgram() });
-    const runtime: Partial<Runtime> = { repo, session, env, models, drives: new Set(), reported: undefined };
+    const runtime: Partial<Runtime> = { repo, session, env, lease, models, drives: new Set(), reported: undefined };
     const { harness, open } = await AgentHarness.create(
       {
         session,
@@ -130,7 +150,8 @@ export class SessionCell extends DurableObject<Env> {
         model: models.model,
         tools: [createReadTool(), createWriteTool(), createEditTool(), createBashTool()].map((tool) => this.observe(tool)),
         toolContext: { env },
-        systemPrompt: systemPrompt(),
+        // Resolved at every model call, so the line says what this home has now: the container, or the budget spent.
+        systemPrompt: async () => systemPrompt(await env.homeNow()),
       },
       context,
     );
@@ -199,6 +220,40 @@ export class SessionCell extends DurableObject<Env> {
   private async settleWhenCurrent(runtime: Runtime): Promise<void> {
     if (this.#runtime === undefined || (await this.#runtime) !== runtime) return;
     await this.settleAlarm(runtime);
+  }
+
+  /**
+   * Tier 2 for this cell, when the home has it: the `PEN_CONTAINER`
+   * binding, or a starter the test set before the first boot. A home with
+   * neither is lamb, and the shell does not route.
+   */
+  private leaseFor(): PenLease | undefined {
+    const binding = this.env.PEN_CONTAINER;
+    const starter: ContainerStarter | undefined =
+      this.test.starter ??
+      (binding === undefined
+        ? undefined
+        : (() => {
+            const stub = binding.getByName(this.sessionId);
+            return {
+              ensure: (args) => stub.ensure(args),
+              renew: () => stub.renew(),
+              destroy: () => stub.destroy(),
+            };
+          })());
+    if (starter === undefined) return undefined;
+    const directory = this.env.DIRECTORY.getByName("home");
+    const origin = this.env.PEN_CELL_ORIGIN;
+    const idleSeconds = parseDuration(this.env.PEN_IDLE, DEFAULT_IDLE);
+    return new PenLease({
+      sessionId: this.sessionId,
+      cellUrl: origin === undefined || origin === "" ? undefined : `${origin.replace(/\/$/, "")}/s/${encodeURIComponent(this.sessionId)}/pen`,
+      starter,
+      ledger: { spent: async () => (await directory.budget()).spent },
+      startTimeoutMs: seconds(this.env.PEN_START_TIMEOUT, 90) * 1000,
+      renewEveryMs: Math.max(1_000, Math.min((idleSeconds * 1000) / 2, 60_000)),
+      log: (line) => console.info(`[cell ${this.sessionId}] pen: ${line}`),
+    });
   }
 
   /** Tells the Directory the lane's state, once per change. */
@@ -378,6 +433,14 @@ export class SessionCell extends DurableObject<Env> {
         const [client, server] = [pair[0], pair[1]];
         server.accept();
         runtime.listener.attach(server);
+        return new Response(null, { status: 101, webSocket: client });
+      }
+      if (url.pathname === "/pen") {
+        // The container's door: the token is the one the lease minted for it, never the home's, and it is spent on use.
+        if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") return new Response("expected a WebSocket upgrade", { status: 426 });
+        const runtime = await this.runtime();
+        const client = runtime.lease?.admit(url.searchParams.get("token") ?? "");
+        if (client === undefined) return new Response("no container is expected with this token", { status: 403 });
         return new Response(null, { status: 101, webSocket: client });
       }
       if (route === "GET /") return Response.json(await this.state());

@@ -8,6 +8,12 @@
  *
  * Frames that are not this run's pass by: the `Checkout` on the same
  * socket sees the sync frames, and this sees the run's.
+ *
+ * A `kill` has a deadline (pen phase 3): a container that answers neither
+ * `killed` nor `exit` within it is not trusted any further. The run
+ * settles as `KillUnanswered`, a kind of interruption, and closes the
+ * socket; the lease that owns the socket sees the close and discards the
+ * container, which on Cloudflare is the platform's to stop.
  */
 import { type CellFrame, type ContainerFrame, decodeFrame, encodeFrame } from "@lamb/pen/protocol";
 
@@ -21,6 +27,26 @@ export class RunInterrupted extends Error {
     this.code = code;
     this.reason = reason;
   }
+}
+
+/** The close code the cell uses when it gives a container up: `kill` unanswered past its deadline. */
+export const DISCARDED_CLOSE_CODE = 4000;
+
+/** The container did not answer `kill` in time; the cell closed the socket and gave the container up. */
+export class KillUnanswered extends RunInterrupted {
+  readonly killReason: string;
+  readonly seconds: number;
+  constructor(killReason: string, seconds: number) {
+    super(DISCARDED_CLOSE_CODE, `no answer to kill (${killReason}) within ${seconds} s`);
+    this.name = "KillUnanswered";
+    this.killReason = killReason;
+    this.seconds = seconds;
+  }
+}
+
+export interface RunOptions {
+  /** Milliseconds after `kill` before the container is given up; absent, the cell waits as pen phase 2 did. */
+  killTimeoutMs?: number;
 }
 
 /** The container could not run the command, and said so. */
@@ -51,17 +77,20 @@ export class ContainerRun {
   private readonly socket: WebSocket;
   private readonly request: RunRequest;
   private readonly listeners: RunListeners;
+  private readonly options: RunOptions;
   private settled = false;
+  private deadline: ReturnType<typeof setTimeout> | undefined;
   private resolve: ((end: RunEnd) => void) | undefined;
   private reject: ((error: Error) => void) | undefined;
   private readonly onMessage = (event: MessageEvent) => this.receive(event.data);
   private readonly onClose = (event: CloseEvent) => this.fail(new RunInterrupted(event.code, event.reason));
   private readonly onError = (event: Event) => this.fail(new RunInterrupted(1006, String((event as { message?: string }).message ?? "socket error")));
 
-  constructor(socket: WebSocket, request: RunRequest, listeners: RunListeners) {
+  constructor(socket: WebSocket, request: RunRequest, listeners: RunListeners, options: RunOptions = {}) {
     this.socket = socket;
     this.request = request;
     this.listeners = listeners;
+    this.options = options;
   }
 
   /** Sends `run` and resolves at `exit` or `killed`; rejects when the container goes away or refuses. */
@@ -77,10 +106,25 @@ export class ContainerRun {
     });
   }
 
-  /** Asks the container to end the run. The answer is `killed`, or the `exit` that beat it. */
+  /**
+   * Asks the container to end the run. The answer is `killed`, or the `exit`
+   * that beat it; past the deadline, when there is one, the container is
+   * given up: the socket is closed and the run settles as `KillUnanswered`.
+   */
   kill(reason: string): void {
     if (this.settled) return;
     this.send({ type: "kill", id: this.request.id, reason });
+    const killTimeoutMs = this.options.killTimeoutMs;
+    if (killTimeoutMs === undefined || this.deadline !== undefined) return;
+    this.deadline = setTimeout(() => {
+      const failure = new KillUnanswered(reason, killTimeoutMs / 1000);
+      try {
+        this.socket.close(DISCARDED_CLOSE_CODE, failure.reason);
+      } catch {
+        // Already closed: the close event settles the run if this does not.
+      }
+      this.fail(failure);
+    }, killTimeoutMs);
   }
 
   private send(frame: CellFrame): void {
@@ -123,6 +167,8 @@ export class ContainerRun {
 
   private detach(): void {
     this.settled = true;
+    if (this.deadline !== undefined) clearTimeout(this.deadline);
+    this.deadline = undefined;
     this.socket.removeEventListener("message", this.onMessage);
     this.socket.removeEventListener("close", this.onClose);
     this.socket.removeEventListener("error", this.onError);

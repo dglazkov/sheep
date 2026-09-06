@@ -11,12 +11,14 @@ never a bare "phase 2".
 
 ---
 
-**Where we are: pen phases 0, 1, and 2 CLOSED, phases 3 to 7 NOT
-STARTED.** Planned 5 Sep 2026; the scaffold, the checkout, and the
-router built the same day. The next thing to do is pen phase 3, a real
-machine. Lamb phase 5, the sheepdog's surface whose `--detach`, `wait`,
-and `log` the walk uses, closed on 5 Sep, so pen phase 3 waits on one
-thing: the Workers Paid plan, a ⚑ step asked when it begins.
+**Where we are: pen phases 0, 1, and 2 CLOSED, phase 3 PART-DONE,
+phases 4 to 7 NOT STARTED. The next thing to do is pen phase 4, the
+repository and the broker.** Planned 5 Sep 2026; the scaffold, the
+checkout, the router, and the real machine built the same day. Pen
+phase 3 is built and walked on a local rig, `wrangler dev` with Docker
+and a real model, journeys 1 and 3 both; its deployed walk waits on the
+Workers Paid plan, a ⚑ step for the shepherd. Pen phase 4's local half
+needs no one; its walk waits on a fine-grained token, another ⚑.
 
 The order is dependency order and risk order. Phase 1 is the gate: if a
 checkout cannot be synced by hash both ways with the atomicity journey 3
@@ -216,7 +218,9 @@ no binding. Journey 1 steps 1 to 4 hold against the fake.
 
 ## Phase 3 — A real machine
 
-**Status: NOT STARTED.**
+**Status: PART-DONE.** 5 Sep 2026. Built and walked on a local rig:
+`wrangler dev --env pen` with Docker, a real model, journeys 1 and 3
+as written. The deployed walk waits on the Workers Paid plan (⚑).
 
 **Closes journey 1 and journey 3 on Cloudflare.**
 
@@ -236,6 +240,36 @@ changed, and the container gone an hour later. Journey 3 walked with the
 container killed from the dashboard mid-run. The Findings record start
 time, sync time for a workspace of a hundred files, and what an idle
 minute costs.
+
+**Findings:**
+
+- **2026-09-05 — Two homes from one config.** The top level is lamb;
+  `env.pen` is `lamb-pen` with the `containers` entry, the binding, and
+  the migrations repeated, since nothing is inherited.
+- **2026-09-05 — A real container answers in 1.2 s** under `wrangler dev`
+  with Docker; sync-in 40 ms for six entries, 150 ms for a hundred; `npm
+  install` of one package 1.7 s. An idle `basic` minute is about 0.0005
+  USD at the published rates.
+- **2026-09-05 — The agent is PID 1** and ignored SIGTERM, so the idle
+  stop never ended it; now it closes with 1000 and exits. Local dev
+  insists on an exposed port; the agent answers `ok` on 8080.
+- **2026-09-05 — Journeys 1 and 3 walked locally with a real model:**
+  `node_modules` on the container's disk and not in the rows, the
+  container gone after `PEN_IDLE`, `docker kill` mid-run giving an error
+  result with the output so far and the sentence, `lamb wait` back in
+  12 s, a new container for the rerun.
+- **2026-09-05 — The sentence is the instruction.** Given the honest
+  interruption the model retried on its own; "Report this to the user
+  and stop" in the same sentence made it stop and say so.
+- **2026-09-05 — The model folds commands**, so `find … && pnpm ls` ran
+  whole in the container and listed `node_modules`; one command per turn,
+  tier 0 lists none.
+- **2026-09-05 — `lamb wait` mid-stream hit the strict codec again**, on
+  an invoke result; fixed. Cost: 61 minutes, 43 the builder's.
+- **2026-09-05 — Open: the deployed walk** needs the Workers Paid plan,
+  5 USD a month, and a dashboard kill for journey 3. The shepherd's.
+- **2026-09-05 — Open: `.dev.vars.pen` replaces `.dev.vars`**; the local
+  walk passes `PEN_*` with `--var`. The wrapper rule is still undecided.
 
 ## Phase 4 — A repository, and the broker
 

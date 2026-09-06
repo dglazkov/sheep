@@ -1,11 +1,15 @@
 /**
  * The Worker: the door and the router. A bearer token per home guards
  * everything; `/sessions` is the Directory's; `/s/<id>/...` is that cell's.
+ * One route is not the home token's: `/s/<id>/pen`, the WebSocket a
+ * container dials with the token its cell minted for it, which the cell
+ * checks itself. Nothing else reaches a cell without the home's token.
  */
 import { type FauxProgram, isFauxProgram } from "./models.ts";
 
 export { SessionCell } from "./cell.ts";
 export { Directory } from "./directory.ts";
+export { PenContainer } from "./pen/container.ts";
 
 function unauthorized(reason: string): Response {
   return new Response(reason, { status: 401 });
@@ -22,14 +26,27 @@ function admitted(request: Request, env: Env): Response | undefined {
   return undefined;
 }
 
+const PEN_DOOR = /^\/s\/([^/]+)\/pen$/;
+
 export default {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname === "/" && request.method === "GET") return new Response("lamb\n");
+    const directory = env.DIRECTORY.getByName("home");
+
+    // The container's door, before the home's: the cell checks the minted token, and only this path passes.
+    const door = PEN_DOOR.exec(url.pathname);
+    if (door && request.method === "GET") {
+      const id = decodeURIComponent(door[1]!);
+      if ((await directory.get(id)) === undefined) return new Response("unknown session", { status: 404 });
+      const inner = new URL(request.url);
+      inner.pathname = "/pen";
+      return env.SESSION_CELL.getByName(id).fetch(new Request(inner, request));
+    }
+
     const refused = admitted(request, env);
     if (refused) return refused;
 
-    const directory = env.DIRECTORY.getByName("home");
     if (url.pathname === "/sessions" && request.method === "POST") {
       const body = ((await request.json().catch(() => ({}))) ?? {}) as { name?: unknown };
       const name = typeof body.name === "string" && body.name.length > 0 ? body.name : null;
@@ -39,7 +56,10 @@ export default {
       return Response.json(summary, { status: 201 });
     }
     if (url.pathname === "/sessions" && request.method === "GET") return Response.json(await directory.list());
-    if (url.pathname === "/home" && request.method === "GET") return Response.json({ serverId: await directory.serverId() });
+    if (url.pathname === "/home" && request.method === "GET") {
+      const budget = await directory.budget();
+      return Response.json({ serverId: await directory.serverId(), container: env.PEN_CONTAINER !== undefined, ...budget });
+    }
     if (url.pathname === "/faux" && request.method === "POST" && env.LAMB_PROVIDER === "faux") {
       // Test-only: the program every cell without one of its own answers from.
       const program: unknown = await request.json();

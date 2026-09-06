@@ -19,4 +19,6 @@ COPY src /opt/pen/src
 RUN mkdir -p /workspace
 WORKDIR /workspace
 
+# The health port (`ok`), the one thing the platform connects to; the agent connects out to the cell.
+EXPOSE 8080
 CMD ["node", "/opt/pen/bin/pen-agent.mjs"]

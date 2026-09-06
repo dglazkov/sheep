@@ -139,7 +139,9 @@ that container's lifetime, and everything else is messages on it:
 - `credential {kind, scope}` from the container's helper; `credential
   {value, expires}` from the cell, after the cell asks the home.
 
-The cell never connects to the container. The container never holds a
+The cell never connects to the container; the platform that started it
+checks one health port the agent answers `ok` on, and nothing else
+connects. The container never holds a
 home secret. A container that loses its socket stops its command and
 exits; the cell sees the close and settles the command as interrupted,
 which is journey 3.

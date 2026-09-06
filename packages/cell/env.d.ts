@@ -2,6 +2,8 @@ declare namespace Cloudflare {
   interface Env {
     SESSION_CELL: DurableObjectNamespace<import("./src/cell.ts").SessionCell>;
     DIRECTORY: DurableObjectNamespace<import("./src/directory.ts").Directory>;
+    /** Pen: the Containers binding, bound only in the `pen` environment. Absent, this home has no container and is lamb. */
+    PEN_CONTAINER?: DurableObjectNamespace<import("./src/pen/container.ts").PenContainer>;
     /** Bearer token every request must carry. */
     LAMB_TOKEN?: string;
     /** "1" allows requests with no token, for local use only. */
@@ -11,6 +13,16 @@ declare namespace Cloudflare {
     LAMB_MODEL?: string;
     LAMB_ANTHROPIC_API_KEY?: string;
     ANTHROPIC_API_KEY?: string;
+    /** Pen: this home's own origin, which a container dials back to (`https://lamb-pen.<you>.workers.dev`; locally `http://host.docker.internal:8787`). */
+    PEN_CELL_ORIGIN?: string;
+    /** Pen: how long a container stays up after its last activity, `"10m"`, `"30s"`, `"1h"`. Default ten minutes. */
+    PEN_IDLE?: string;
+    /** Pen: seconds a started container has to dial in. Default 90. */
+    PEN_START_TIMEOUT?: string;
+    /** Pen: seconds a container has to answer `kill` before it is given up. Default 10. */
+    PEN_KILL_TIMEOUT?: string;
+    /** Pen: this home's container budget in minutes. Unset, no budget. */
+    PEN_BUDGET_MINUTES?: string;
   }
 }
 interface Env extends Cloudflare.Env {}

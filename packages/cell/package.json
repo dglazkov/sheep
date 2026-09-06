@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
+    "dev:pen": "wrangler dev --env pen",
     "deploy": "wrangler deploy",
+    "deploy:pen": "wrangler deploy --env pen",
     "deploy:celld": "celld deploy",
     "typecheck": "tsc --noEmit",
     "test": "vitest --run",
@@ -14,12 +16,13 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.22.0",
     "@cloudflare/workers-types": "^5.20260905.0",
+    "esbuild": "^0.28.0",
     "typescript": "^5.9.0",
     "vitest": "^4.1.0",
-    "wrangler": "^4.0.0",
-    "esbuild": "^0.28.0"
+    "wrangler": "^4.0.0"
   },
   "dependencies": {
+    "@cloudflare/containers": "0.3.7",
     "@earendil-works/chord": "link:../../vendor/pi/packages/chord",
     "@earendil-works/pi-agent-core": "link:../../vendor/pi/packages/agent",
     "@earendil-works/pi-ai": "link:../../vendor/pi/packages/ai",

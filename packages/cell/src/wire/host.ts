@@ -66,9 +66,12 @@ export async function createCellHost(options: CellHostOptions): Promise<{ host: 
       const scope: WorkerServiceScope = { serverConnectionId: "cell", attachmentId: crypto.randomUUID() };
       const key = scopeKey(scope);
       return {
-        invokeService(call, publish, context) {
+        async invokeService(call, publish, context) {
           publishers.set(key, publish);
-          return sessionServices.invoke(call, scope, context);
+          // The same rule for an invoke's result as for a publish: a client that attaches while a container
+          // command streams hydrates from a snapshot carrying the live bash update, `details: { truncation: undefined }`
+          // inside, and the strict codec would drop the connection on it (pen phase 3, journey 1's `lamb wait`).
+          return toStrictJson(await sessionServices.invoke(call, scope, context));
         },
         release() {
           publishers.delete(key);
@@ -98,5 +101,7 @@ export async function createCellHost(options: CellHostOptions): Promise<{ host: 
 }
 
 function toStrictJson<T>(value: T): T {
+  // A void result (`requestAbort`, `attach`) is not JSON at all and passes as it is.
+  if (value === undefined) return value;
   return JSON.parse(JSON.stringify(value)) as T;
 }

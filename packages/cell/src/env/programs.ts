@@ -24,12 +24,23 @@
  */
 import { type CommandNode, getCommandNames, parse, type ScriptNode, type SimpleCommandNode, type WordNode } from "just-bash/browser";
 
-/** What a home has: whether a container can be rented for a command. */
+/**
+ * What a home has: whether a container can be rented for a command, and,
+ * when it has one, whether its container budget is spent. A spent budget
+ * empties the tier-2 column: the router refuses as it would with no
+ * container, but the sentence names the budget.
+ */
 export interface Home {
   container: boolean;
+  budgetSpent?: boolean;
 }
 
 export const NO_CONTAINER: Home = { container: false };
+
+/** Whether tier 2 can be chosen for this home right now. */
+export function hasContainer(home: Home): boolean {
+  return home.container && home.budgetSpent !== true;
+}
 
 /** A class of program, as the prompt speaks of it. */
 export type ProgramClass = "interpreter" | "package manager" | "version control";
@@ -107,22 +118,29 @@ function list(items: readonly string[]): string {
 }
 
 function spoken(kind: ProgramClass, home: Home): string[] {
-  return PROGRAMS.filter((program) => program.class === kind && (!home.container || !program.container)).map((program) => program.name);
+  return PROGRAMS.filter((program) => program.class === kind && (!hasContainer(home) || !program.container)).map((program) => program.name);
 }
+
+/** The sentence for a home whose container budget is spent: the refusal and the prompt both say it, byte for byte. */
+export const BUDGET_SPENT_NOTICE =
+  "this home's container budget is spent, so no container can be rented until the shepherd raises it; this shell runs inside the session, with no interpreters or package managers";
 
 /**
  * The one sentence a refusal carries when no program-specific one applies:
  * with no container it is lamb's, byte for byte, and the same for every
- * program, since nothing outside tier 0 runs anywhere.
+ * program, since nothing outside tier 0 runs anywhere. With a container
+ * whose budget is spent it names the budget, and it is likewise the same
+ * for every program.
  */
 export function shellNotice(home: Home): string {
   if (!home.container) return "this shell runs inside the session; no interpreters or package managers are installed";
+  if (home.budgetSpent === true) return BUDGET_SPENT_NOTICE;
   return "this shell runs inside the session; a line that names a program the shell lacks runs in the container instead";
 }
 
 /** The sentence for refusing one program: which tier would have it, and whether this home has one. */
 export function refusalSentence(program: string, home: Home): string {
-  if (!home.container) return shellNotice(home);
+  if (!hasContainer(home)) return shellNotice(home);
   const row = programNamed(program);
   if (row !== undefined && !row.container) {
     return `${program} is installed nowhere this session can reach: not in the shell and not in the container's image`;
@@ -137,6 +155,13 @@ export function shellSystemPromptLine(home: Home): string {
     return (
       opening +
       `There are no interpreters (no ${list(spoken("interpreter", home))}) and no package managers (no ${list(spoken("package manager", home))}): ${shellNotice(home)}. ` +
+      `Say so plainly when asked for something the shell cannot do, rather than pretending it ran.`
+    );
+  }
+  if (home.budgetSpent === true) {
+    return (
+      opening +
+      `A container is normally rented beside the session for the programs the shell lacks (${list(containerPrograms())}), but not now: ${shellNotice(home)}. ` +
       `Say so plainly when asked for something the shell cannot do, rather than pretending it ran.`
     );
   }
@@ -166,12 +191,20 @@ export function refusalLine(program: string, home: Home): string {
 }
 
 /** The sentences for a container that went away; journey 3 step 3. Beside the others so nothing drifts. */
+/** What the model is told to do with an interruption: it is the dog who decides to run again (journey 3 steps 3 and 4). */
+const REPORT_AND_STOP = "Report this to the user and stop; do not run the command again unless asked.";
+
 export const INTERRUPTED_DURING_RUN =
-  "the container went away while the command was running; its output up to that point is above, and it may have partly run";
+  `the container went away while the command was running; its output up to that point is above, and it may have partly run. ${REPORT_AND_STOP}`;
 
 export function interruptedDuringSyncOut(end: { exit: number } | { killed: string }): string {
   const how = "exit" in end ? `ran to exit ${end.exit}` : `was killed (${end.killed})`;
-  return `the command ${how} and the container went away while its changes were syncing back; the workspace may hold part of them`;
+  return `the command ${how} and the container went away while its changes were syncing back; the workspace may hold part of them. ${REPORT_AND_STOP}`;
+}
+
+/** The sentence for a container that did not answer `kill` in time and was discarded; pen phase 3's deadline. */
+export function killUnanswered(reason: string, seconds: number): string {
+  return `the container did not answer the kill (${reason}) within ${seconds} s and was discarded; its output up to that point is above, and nothing it changed after the last sync came back. ${REPORT_AND_STOP}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -288,7 +321,7 @@ export function classify(command: string, home: Home): Route {
   const outside = found.filter((name) => name === null || !tier0.has(name));
   if (outside.length === 0) return { tier: 0, programs };
   const named = outside.filter((name): name is string => name !== null);
-  if (!home.container) {
+  if (!hasContainer(home)) {
     // Nothing outside tier 0 runs anywhere; a name the shell expands is the shell's to resolve, as in lamb.
     const first = named[0];
     if (first === undefined) return { tier: 0, programs };

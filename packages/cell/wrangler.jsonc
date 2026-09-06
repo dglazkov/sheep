@@ -16,5 +16,41 @@
   ],
   "vars": {
     "LAMB_MODEL": "claude-sonnet-5"
+  },
+  // The top level is lamb: no container, so a home deployed from it is journey 6's. The `pen`
+  // environment is the same Worker with a container beside each cell (`wrangler dev --env pen`,
+  // `wrangler deploy --env pen`, the Worker `lamb-pen`). Bindings, vars, and containers are not
+  // inherited into a named environment, so they are repeated; migrations are inheritable but are
+  // repeated too, so that `v3`, which adds `PenContainer`, exists only where the class is bound.
+  "env": {
+    "pen": {
+      "name": "lamb-pen",
+      "durable_objects": {
+        "bindings": [
+          { "name": "SESSION_CELL", "class_name": "SessionCell" },
+          { "name": "DIRECTORY", "class_name": "Directory" },
+          { "name": "PEN_CONTAINER", "class_name": "PenContainer" }
+        ]
+      },
+      "migrations": [
+        { "tag": "v1", "new_sqlite_classes": ["SessionCell"] },
+        { "tag": "v2", "new_sqlite_classes": ["Directory"] },
+        { "tag": "v3", "new_sqlite_classes": ["PenContainer"] }
+      ],
+      "containers": [
+        {
+          "name": "pen",
+          "image": "../pen/Dockerfile",
+          "image_build_context": "../pen",
+          "class_name": "PenContainer",
+          "instance_type": "basic",
+          "max_instances": 3
+        }
+      ],
+      "vars": {
+        "LAMB_MODEL": "claude-sonnet-5",
+        "PEN_IDLE": "10m"
+      }
+    }
   }
 }

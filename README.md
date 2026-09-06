@@ -143,6 +143,34 @@ lamb --home <url> ...                    # a different home for one command
 shell if you like. With a prompt after `--` the reply streams and the
 command exits; without one you get pi's full terminal.
 
+### A home with a container: pen
+
+The second leg, [pen](docs/projects/pen/design.md), gives each cell a
+container it rents for the length of a command that needs one (`pnpm`,
+`node`, `python`, `git`). The same Worker deploys twice: the top level is
+lamb, with no container, and the `pen` environment is `lamb-pen`, with
+one. Cloudflare Containers need the Workers Paid plan, and Docker Desktop
+locally, where `wrangler dev` builds and runs the image
+(`packages/pen/Dockerfile`).
+
+```sh
+# locally: the container dials the home back at PEN_CELL_ORIGIN, which from Docker on a Mac is
+# host.docker.internal; PEN_IDLE is how long a container stays up after its last command.
+cd packages/cell
+pnpm exec wrangler dev --env pen --var PEN_CELL_ORIGIN:http://host.docker.internal:8787 --var PEN_IDLE:1m
+
+# deployed: the Worker lamb-pen, its own origin as PEN_CELL_ORIGIN, and the same two secrets
+pnpm run deploy:pen                           # from the repo root
+cd packages/cell
+pnpm exec wrangler secret put PEN_CELL_ORIGIN --env pen      # https://lamb-pen.<you>.workers.dev
+grep ^LAMB_TOKEN= .dev.vars | cut -d= -f2 | pnpm exec wrangler secret put LAMB_TOKEN --env pen
+grep ^LAMB_ANTHROPIC_API_KEY= .dev.vars | cut -d= -f2 | pnpm exec wrangler secret put LAMB_ANTHROPIC_API_KEY --env pen
+```
+
+`PEN_BUDGET_MINUTES` is the home's container budget; when the minutes
+reach it, the sheep's shell says so instead of renting. `GET /home`
+reports the minutes and the budget.
+
 ### The same cell on celld
 
 The same Wrangler project runs on a celld node, which keeps every cell's

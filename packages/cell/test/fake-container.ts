@@ -133,15 +133,19 @@ function notFound(request: RunRequest): Script {
   return { steps: [{ stderr: `bash: ${program}: command not found\n` }], exit: 127 };
 }
 
-/** A runner that plays scripts. A kill ends the run at the next step, as SIGKILL ends a process between writes. */
-export function scriptRunner(disk: MemoryDisk, scriptFor: ScriptFor): Runner {
+/**
+ * A runner that plays scripts. A kill ends the run at the next step, as
+ * SIGKILL ends a process between writes; a `deaf` runner ignores it, as a
+ * stuck container would, which is what pen phase 3's kill deadline is for.
+ */
+export function scriptRunner(disk: MemoryDisk, scriptFor: ScriptFor, options: { deaf?: boolean } = {}): Runner {
   return {
     run(request, output) {
       const script = scriptFor(request) ?? notFound(request);
       let killed: string | null = null;
       let wake: (() => void) | null = null;
       const kill = (reason: string) => {
-        if (killed !== null) return;
+        if (killed !== null || options.deaf) return;
         killed = reason;
         wake?.();
       };
@@ -197,16 +201,29 @@ export interface FakeContainerOptions {
   stopAfter?: number;
   /** What a `run` does. Without one, every program is one the image lacks. */
   script?: ScriptFor;
+  /** Ignore `kill`, as a stuck container would. */
+  deaf?: boolean;
 }
 
+/** The fake over a socket pair made here; the cell's end is returned. */
 export function startFakeContainer(options: FakeContainerOptions = {}): FakeContainer {
-  const disk = options.disk ?? memoryDisk();
-  const transcript: TranscriptEntry[] = [];
   const pair = new WebSocketPair();
   const cellEnd = pair[0];
   const agentEnd = pair[1];
   cellEnd.accept();
   agentEnd.accept();
+  return { ...serveFakeOn(agentEnd, options), socket: cellEnd };
+}
+
+/**
+ * The fake over a socket the test already holds: the client end a real
+ * `GET /s/<id>/pen?token=…` upgrade returned, accepted. This is what pen
+ * phase 3's stub starter does in place of starting a container: the
+ * container's half of the dial-in is the agent over that socket.
+ */
+export function serveFakeOn(agentEnd: WebSocket, options: FakeContainerOptions = {}): Omit<FakeContainer, "socket"> {
+  const disk = options.disk ?? memoryDisk();
+  const transcript: TranscriptEntry[] = [];
 
   let stopped = false;
   const closeListeners: Array<(event: unknown) => void> = [];
@@ -251,9 +268,8 @@ export function startFakeContainer(options: FakeContainerOptions = {}): FakeCont
     },
   };
   agentEnd.addEventListener("close", (event) => stop(event.reason));
-  const served = serveAgent(wrapped, disk, scriptRunner(disk, options.script ?? (() => undefined)));
+  const served = serveAgent(wrapped, disk, scriptRunner(disk, options.script ?? (() => undefined), { deaf: options.deaf ?? false }));
   return {
-    socket: cellEnd,
     disk,
     transcript,
     syncOut: (id) => served.syncOut(id),

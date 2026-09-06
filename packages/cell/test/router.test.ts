@@ -12,13 +12,16 @@ import { Bash, parse } from "just-bash/browser";
 import { describe, expect, it } from "vitest";
 import { CellExecutionEnv, type ContainerLease } from "../src/env/execution-env.ts";
 import {
+  BUDGET_SPENT_NOTICE,
   classify,
   containerPrograms,
+  hasContainer,
   INTERRUPTED_DURING_RUN,
   interruptedDuringSyncOut,
   NO_CONTAINER,
   PROGRAMS,
   programsOf,
+  refusalLine,
   refusalSentence,
   SHELL_NOTICE,
   shellNotice,
@@ -221,6 +224,32 @@ describe("the table", () => {
     expect(shellSystemPromptLine(NO_CONTAINER)).toContain(shellNotice(NO_CONTAINER));
     expect(shellSystemPromptLine(WITH_CONTAINER)).not.toBe(shellSystemPromptLine(NO_CONTAINER));
     for (const tool of TEXT_TOOLS_SHOWN) expect(shellSystemPromptLine(WITH_CONTAINER)).toContain(tool);
+  });
+
+  it("a spent budget empties the tier-2 column: every container program is refused with the budget's sentence, and the prompt says the same words", () => {
+    const spent = { container: true, budgetSpent: true };
+    expect(hasContainer(spent)).toBe(false);
+    expect(hasContainer(WITH_CONTAINER)).toBe(true);
+    expect(hasContainer({ container: true, budgetSpent: false })).toBe(true);
+    expect(shellNotice(spent)).toBe(BUDGET_SPENT_NOTICE);
+    for (const program of PROGRAMS) {
+      for (const name of [program.name, ...(program.also ?? [])]) {
+        expect(classify(`${name} --version`, spent)).toMatchObject({ refused: name, sentence: BUDGET_SPENT_NOTICE });
+        expect(refusalLine(name, spent)).toBe(`bash: ${name}: command not found (${BUDGET_SPENT_NOTICE})\n`);
+      }
+    }
+    // A name the shell would expand is the shell's again, as with no container.
+    expect(classify("\"$RUNNER\" --version", spent)).toMatchObject({ tier: 0 });
+    expect(classify("ls | wc -l", spent)).toMatchObject({ tier: 0 });
+    const line = shellSystemPromptLine(spent);
+    expect(line).toContain(BUDGET_SPENT_NOTICE);
+    expect(line).toContain("budget");
+    for (const tool of TEXT_TOOLS_SHOWN) expect(line).toContain(tool);
+    expect(line).not.toBe(shellSystemPromptLine(WITH_CONTAINER));
+    expect(line).not.toBe(shellSystemPromptLine(NO_CONTAINER));
+    // Lamb's strings did not move.
+    expect(shellNotice(NO_CONTAINER)).toBe(SHELL_NOTICE);
+    expect(refusalSentence("pnpm", { container: true, budgetSpent: false })).toBe(shellNotice(WITH_CONTAINER));
   });
 });
 

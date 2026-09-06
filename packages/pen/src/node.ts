@@ -10,6 +10,7 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmod, lstat, mkdir, readdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { constants as osConstants } from "node:os";
 import { dirname, join, posix, relative } from "node:path";
 import { type AgentSocket, type Disk, type DiskEntry, type RunHandle, type RunOutcome, type Runner, type RunRequest, serveAgent } from "./agent.ts";
@@ -17,6 +18,15 @@ import { CELL_URL_ENV, TOKEN_ENV, TOKEN_PARAM } from "./protocol.ts";
 
 export const WORKSPACE_ENV = "PEN_WORKSPACE";
 export const DEFAULT_WORKSPACE = "/workspace";
+/**
+ * The one port the image exposes: a health answer, `ok`, for the platform
+ * that started the container to see it is up. Cloudflare's local dev
+ * refuses an image with no exposed port, and the Container class waits
+ * for one to listen before it calls the container started. Nothing else
+ * ever connects to it: the container is a client of the cell.
+ */
+export const HEALTH_PORT_ENV = "PEN_HEALTH_PORT";
+export const DEFAULT_HEALTH_PORT = 8080;
 
 /**
  * Node 24's global `WebSocket`, in the shape this process uses. `@types/node`
@@ -152,6 +162,14 @@ export async function main(env: NodeJS.ProcessEnv = process.env): Promise<number
     process.stderr.write(`pen-agent: ${CELL_URL_ENV} and ${TOKEN_ENV} must be set\n`);
     return 2;
   }
+  // The health port, unref'd so the process still ends with its socket; `0` turns it off.
+  const healthPort = env[HEALTH_PORT_ENV] === undefined || env[HEALTH_PORT_ENV] === "" ? DEFAULT_HEALTH_PORT : Number(env[HEALTH_PORT_ENV]);
+  if (healthPort > 0) {
+    const health = createServer((_request, response) => response.end("ok\n"));
+    health.on("error", (error) => process.stderr.write(`pen-agent: health port ${healthPort} not listening: ${error.message}\n`));
+    health.listen(healthPort);
+    health.unref();
+  }
   const socket = new NodeWebSocket(cellAddress(cellUrl, token));
   socket.binaryType = "arraybuffer";
   const opened = new Promise<void>((resolve, reject) => {
@@ -160,12 +178,30 @@ export async function main(env: NodeJS.ProcessEnv = process.env): Promise<number
   });
   const root = env[WORKSPACE_ENV] || DEFAULT_WORKSPACE;
   const served = serveAgent(socket, nodeDisk(root), nodeRunner(root));
+  // The process is PID 1 in the image, which ignores SIGTERM unless it listens; the platform's idle
+  // stop is a SIGTERM. Close the socket (1000: a client may send only that or 3000-4999) so the cell
+  // sees the close, and exit within a second whatever the socket does, since PID 1 leaving ends
+  // the container and everything running in it.
+  const stopped = new Promise<void>((resolve) => {
+    for (const signal of ["SIGTERM", "SIGINT"] as const) {
+      process.on(signal, () => {
+        process.stderr.write(`pen-agent: ${signal}, exiting\n`);
+        try {
+          (socket as unknown as { close(code?: number, reason?: string): void }).close(1000, signal);
+        } catch {
+          // Not open; nothing to close.
+        }
+        setTimeout(() => process.exit(0), 1_000).unref();
+        resolve();
+      });
+    }
+  });
   try {
     await opened;
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     return 1;
   }
-  await served.closed;
+  await Promise.race([served.closed, stopped]);
   return 0;
 }
