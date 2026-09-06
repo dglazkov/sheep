@@ -296,7 +296,7 @@ two deploys above, asked with the price first.
 **Findings:**
 
 - **2026-09-06 — Deployed at 12:32, both homes; `GET /pastures` answered `[]` on both before the walk.** Journey 4 on `sheep`: the pastureless sheep unchanged, a notes pasture with a herd of one, the repository pasture refused with the sentence.
-- **2026-09-06 — Journeys 1 to 3 on `sheep-pen`, as written:** two sheep born into clones pushed branches with the pasture's token and named them in the tree; a note read across sheep by path; the refusals, the changed brief, the removed note; setup at birth, no secret in the container's environment, the broken script stopping the command after the idle.
+- **2026-09-06 — Journeys 1 to 3 on `sheep-pen`, as written:** two sheep born into clones pushed branches with the pasture's token and named them in the tree; a note read across sheep by path; the refusals, the changed brief; setup at birth, no secret in the container's environment, the broken script stopping the command after the idle.
 - **2026-09-06 — The first journey 3 birth was refused: `max_instances` is 3, and three idle sheep held theirs for the ten-minute `PEN_IDLE`.** The entry said so, the sheep lived, a fresh sheep was born once they stopped.
 - **2026-09-06 — `wrangler tail` dropped the second rent's setup line;** step 5's rerun on the deployed home rests on step 6's failure there, the fake's count, and the local rig's log.
 - **2026-09-06 — Open: a GitHub App in place of tokens.** `pastureMinter` in `broker.ts` is the one function it replaces. A project of its own.
