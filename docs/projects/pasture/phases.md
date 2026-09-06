@@ -177,7 +177,7 @@ empty. Suites unchanged. **⚑** none.
 - **2026-09-06 — Pi's bash tool trims stderr's trailing newline before its exit line and renders empty stdout as `(no output)`;** a test reading exit codes through the tool normalises both. just-bash's stdin is a latin1 byte string, so `put` rebuilds bytes and a multibyte character lands as UTF-8.
 - **2026-09-06 — A line naming both `pasture` and a container program runs whole in the container, which has no `pasture` binary.** The brief tells a sheep to write a file and `put` it on its own line; a helper in the image is pasture phase 3's call.
 - **2026-09-06 — The Open finding of pasture phase 0 is paid:** every case in `main`'s `try` in `cli.ts` is `return await`.
-- **2026-09-06 — The walk, by the conductor on a local home with a real model:** two sheep born with tasks; `sheep pasture <name>` showed both rows with their tasks; a sheep asked who else was there ran `pasture` and named its sibling and the sibling's task; a sheep's `put` was the dog's `cat` at once. Cost: 19 minutes of a subagent, 9 of verification.
+- **2026-09-06 — The walk, by the conductor on a local home with a real model:** two sheep born with tasks and shown by `sheep pasture <name>`; a sheep asked who else was there ran `pasture` and named its sibling's task; a sheep's `put` was the dog's `cat` at once. Cost: 19 minutes of a subagent, 9 of verification.
 
 ## Phase 3: Birth, and the credential
 
