@@ -1,5 +1,13 @@
 # Lamb
 
+**Frozen 6 Sep 2026.** This leg is done. The command it calls `lamb`
+throughout has been `sheep` since recast phase 1 ([recast](../recast/design.md)):
+`node packages/cli/bin/sheep.js`, `~/.sheep/config`, `SHEEP_*`, and the
+homes `sheep` and `sheep-pen`. Everything below is as it was built and as
+it ran, and nothing below this line changes. Lamb's one unwalked step, a
+second machine and a night for journey 1, is carried by recast's Open
+roster, not owed here.
+
 **5 September 2026.** Design. Nothing built. The project's status lives in
 [journey.md](journey.md)'s front matter. The journeys are the acceptance
 suite, this doc is the argument, and [phases.md](phases.md) is the walk.

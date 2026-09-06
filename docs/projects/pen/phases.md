@@ -1,5 +1,12 @@
 # Pen: implementation phases
 
+**Frozen 6 Sep 2026.** This leg is done. The command it calls `lamb`
+throughout has been `sheep` since recast phase 1 ([recast](../recast/design.md)):
+`node packages/cli/bin/sheep.js`, `~/.sheep/config`, `SHEEP_*`, the homes
+`sheep` and `sheep-pen`, and the container application `sheep-pen`.
+Everything below is as it was built and as it ran, and nothing below this
+line changes.
+
 [`design.md`](design.md) is the argument; [`journey.md`](journey.md) is the
 acceptance suite. Each phase names the journey it closes, and a phase that
 claims one closes only when the journey is walked for real. The rules are

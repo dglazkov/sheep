@@ -18,7 +18,7 @@ rename only. The proof of every phase includes the suites that held on
 
 ---
 
-**Where we are: recast phases 0 and 1 CLOSED; phase 2 is next, and it needs no one.** Planned 6 Sep 2026, the day after lamb and pen were walked, when the shepherd said the command is `sheep` and the work from here on is the command. Phase 0 renamed everything in the repo the same morning; phase 1 deployed `sheep` and `sheep-pen`, walked journey 1 with a real model, and deleted the old homes, all three ⚑ steps approved by the shepherd that morning. Nothing waits on a person.
+**Where we are: recast phases 0, 1, and 2 CLOSED. The project is done; nothing in it waits on work or on a person.** Planned 6 Sep 2026, the day after lamb and pen were walked, when the shepherd said the command is `sheep` and the work from here on is the command. Phase 0 renamed everything in the repo the same morning; phase 1 deployed `sheep` and `sheep-pen`, walked journey 1 with a real model, and deleted the old homes, all three ⚑ steps approved by the shepherd; phase 2 froze lamb and pen and finished the index. The Open roster carries two debts for later projects: lamb journey 1's second machine and night, and publishing.
 
 The order is dependency order. Phase 0 renames everything in the repo
 and proves it locally, so that the README a reader gets after it is true
@@ -172,6 +172,10 @@ none new (the conductor runs them before and after and diffs);
 first paragraphs and lamb's front matter; `head -12` of each of the six
 frozen docs shows the freeze line. **⚑** none.
 
-**Status: NOT STARTED.** 2026-09-06.
+**Status: CLOSED.** 2026-09-06. Six docs frozen above their first paragraph, lamb's journey `done`, the index and the pi-bump record finished, the Open roster carrying the two debts.
 
 **Findings:**
+
+- **2026-09-06 — The freeze line is the whole change below the title.** `git diff --stat` on the two legs touches six files, one paragraph each plus lamb's front matter; the status script reports no new lint on lamb or pen. Cost: 6 minutes.
+- **2026-09-06 — Open: lamb journey 1's second machine and a night.** A sheep left overnight on `sheep`, then attached from another machine; the walk needs the shepherd's second machine and a night, and belongs to the next project that touches attach.
+- **2026-09-06 — Open: `@sheep/cli` is not published.** Every pi dependency is a `link:` into `vendor/pi` and attach mode spawns pi's client from `.ts` source there; shipping means deciding how the fork ships. Waits on a project of its own.

@@ -174,14 +174,18 @@ Never skip it. macOS has no `timeout`; run the walk bare.
 
 ## Record
 
-In `docs/projects/lamb/phases.md`, phase 7 Findings, one dated line: the
-upstream commit moved to, how many conflicts, how long it took. Phase 7
-left "what a bump costs" unmeasured on purpose; each bump is a data point.
-If the bump broke sheep itself, the phase that owns the broken piece gets
-its own finding and the fix; phase 7 records only the cost. The first
-bump's launcher fix went to phase 4, the wire and the terminal.
-Then commit the superproject (the submodule pointer, the finding) and push
-to `main`, per the house rule.
+Lamb is frozen (recast, 6 Sep 2026), so a bump's cost is recorded here,
+one dated line in the list below: the upstream commit moved to, how many
+conflicts, how long it took. The argument goes in the bump's commit
+message. If the bump broke sheep itself, the fix is its own commit and
+the line here says what broke. Then commit the superproject (the
+submodule pointer, this file) and push to `main`, per the house rule.
+
+Bumps so far:
+
+- **2026-09-05 — upstream `9841914` to `da840b6` (v0.85.1).** One
+  conflict, about ten minutes; pi's `pi client` had left the published
+  CLI, so the launcher moved to pi's source entrypoint (lamb phase 4).
 
 ## Things that have gone wrong before
 

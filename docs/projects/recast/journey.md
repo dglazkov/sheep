@@ -1,8 +1,8 @@
 ---
-status: partial
+status: done
 since: 2026-09-06
 see: recast
-note: "written 6 Sep 2026, the day after lamb and pen were walked: the command the dog runs is renamed from `lamb` to `sheep`, the home with it, and the first two legs are frozen as history. Recast phase 0 closed the same morning: every name in the repo is sheep, every suite holds unchanged, journey 1 steps 1 and 2 hold locally. Recast phase 1 closed the same morning: `sheep` and `sheep-pen` deployed, journey 1 walked in full with a real model by the conductor as the dog, `lamb` and `lamb-pen` deleted. Journey 2 waits on phase 2."
+note: "written 6 Sep 2026, the day after lamb and pen were walked: the command the dog runs is renamed from `lamb` to `sheep`, the home with it, and the first two legs are frozen as history. Recast phase 0 closed the same morning: every name in the repo is sheep, every suite holds unchanged, journey 1 steps 1 and 2 hold locally. Recast phase 1 closed the same morning: `sheep` and `sheep-pen` deployed, journey 1 walked in full with a real model by the conductor as the dog, `lamb` and `lamb-pen` deleted. Recast phase 2 closed the same morning: lamb and pen frozen above their first paragraphs, the index finished, journey 2 walked by reading. Done."
 ---
 
 # Recast — the journeys
