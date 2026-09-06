@@ -11,15 +11,18 @@ never a bare "phase 2".
 
 ---
 
-**Where we are: pen phases 0, 1, 2, 3, and 5 CLOSED, phases 4 and 6
-PART-DONE, phase 7 NOT STARTED. Next: pen phase 7, nothing changed for
-lamb.** Planned 5 Sep 2026; every phase built the same day. The shepherd
-enabled the Workers Paid plan that evening; `lamb-pen` was deployed with
-its image, and journeys 1, 3, and 4 walked there with a real model.
-Phase 4 is proved with real git in Node; its walk waits on a
-fine-grained token, the shepherd's. Phase 6 built the starter beside a
-celld node and reached a real container through it; the walk stalled on
-celld dropping the work a socket message wakes, which is written down.
+**Where we are: pen phases 0, 1, 2, 3, and 5 CLOSED, phases 4, 6, and 7
+PART-DONE. Nothing in pen waits on work; what is left waits on a
+person.** Planned 5 Sep 2026; every phase built the same day. The
+shepherd enabled the Workers Paid plan that evening; `lamb-pen` was
+deployed with its image, and journeys 1, 3, and 4 walked there with a
+real model. Phase 4 is proved with real git in Node; its walk waits on a
+fine-grained token. Phase 6 built the starter beside a celld node and
+reached a real container through it; the walk stalled on celld dropping
+the work a socket message wakes, a decision left open. Phase 7 walked
+lamb's journeys 1, 2, 4, and 5 on the lamb home with all of pen present
+and no binding; journeys 3 and 6 wait on lamb's own list: a second
+terminal and a two-node fleet.
 
 The order is dependency order and risk order. Phase 1 is the gate: if a
 checkout cannot be synced by hash both ways with the atomicity journey 3
@@ -434,13 +437,29 @@ kill` as the operator's hand in journey 3.
 
 ## Phase 7 — Nothing changed for lamb
 
-**Status: NOT STARTED.**
+**Status: PART-DONE.** 5 Sep 2026. The lamb home redeployed with all of
+pen and no binding; lamb's journeys 1, 2, 4, and 5 walked there with a
+real model, its suite green, pi's branch the same four commits. Lamb's
+journeys 3 and 6 wait on a person, as lamb's own record says.
 
 **Closes journey 6.**
 
 **Proof:** Every lamb journey walked against a home with no container
 binding, unchanged. Lamb's suite green. No pi patch added. `git log
 upstream/main..sheep` in the submodule is the same list it was.
+
+**Findings:**
+
+- **2026-09-05 — The lamb home is lamb with all of pen in it.** No
+  binding, no loader: `npm`, `git`, and `node` refused with lamb's one
+  sentence; journeys 1, 5, and 2 held, the last with a deploy mid-turn:
+  fifteen writes, fifteen distinct, one interruption mark, fifteen files.
+- **2026-09-05 — No pi patch was added.** The submodule pointer is what
+  it was at the start of the day and `upstream/main..sheep` is the same
+  four commits; pen's only dependency patch is one export on just-bash.
+- **2026-09-05 — Cost: 8 minutes**, all walks.
+- **2026-09-05 — Open: lamb's journeys 3 and 6** need a second terminal
+  and a two-node celld fleet, a person's, as lamb's phases 4 and 6 say.
 
 ## What the phases leave open
 
