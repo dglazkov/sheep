@@ -18,11 +18,7 @@ rename only. The proof of every phase includes the suites that held on
 
 ---
 
-**Where we are: nothing built. Recast phase 0 is next; then phase 1
-needs the shepherd for two ⚑ deploys and one deletion, and phase 2
-freezes the legs.** Planned 6 Sep 2026, the day after lamb and pen were
-walked, when the shepherd said the command is `sheep` and the work from
-here on is the command. Nothing waits on work.
+**Where we are: recast phase 0 CLOSED; phase 1 is next, its three ⚑ steps approved by the shepherd on 6 Sep 2026 (both deploys, and deletion of the old homes after the walk); then phase 2 freezes the legs.** Planned 6 Sep 2026, the day after lamb and pen were walked, when the shepherd said the command is `sheep` and the work from here on is the command. Phase 0 renamed everything in the repo the same morning. Nothing waits on a person.
 
 The order is dependency order. Phase 0 renames everything in the repo
 and proves it locally, so that the README a reader gets after it is true
@@ -83,9 +79,14 @@ prints nothing; `grep -n -i lamb README.md AGENTS.md` prints only the
 lines that name the leg and link its docs; `git status --short` shows
 `packages/lamb/*` as renames, not deletes and adds. **⚑** none.
 
-**Status: NOT STARTED.** 2026-09-06.
+**Status: CLOSED.** 2026-09-06. Every name in the repo is sheep; every suite that held on 5 Sep holds unchanged, the cell's in workerd and journey 5 through `bin/sheep.js` against a real `wrangler dev`.
 
 **Findings:**
+
+- **2026-09-06 — The rename was mechanical except in comments.** 52 files, 311 lines, no behaviour change; `pnpm test` exit 0 with the cell's 106 tests in workerd and journey 5 against a real local home in 19 s; `pnpm -r typecheck` exit 0. Cost: 8 minutes of a subagent, 15 of verification.
+- **2026-09-06 — Lamb was two names in the cell: the command, and a home with no container.** The first became sheep by substitution; the second was rewritten as "a home with no container" or "before pen" in eleven comments and two test names, because sheep is not a kind of home.
+- **2026-09-06 — The gitignored `.dev.vars` carried commented author placeholders from an early lamb phase** that nothing reads (pen uses `PEN_GIT_AUTHOR_*`); the conductor deleted the two lines so the proof grep is empty. Nothing tracked was touched.
+- **2026-09-06 — `/pi-bump` still records a bump's cost in lamb phase 7's Findings.** A frozen doc cannot take new findings; recast phase 2 gives the record a new home in the skill itself.
 
 ## Phase 1: The home, renamed
 
@@ -144,7 +145,11 @@ by recast's Open roster; pen's stays `done`. Lamb's and pen's index rows
 in `docs/projects/README.md` reworded to frozen, in their own words;
 recast's row to where it stands. The index's rule that a project is
 short, checked against its own wording. The `/conduct` skill's examples
-may keep naming lamb and pen; nothing there runs `lamb`. Then the
+may keep naming lamb and pen; nothing there runs `lamb`. The `/pi-bump`
+skill's Record section sends a bump's cost to lamb phase 7's Findings;
+a frozen doc takes no new findings, so the skill keeps its own dated
+list of bumps (the first, 5 Sep 2026, to upstream v0.85.1, one
+conflict, ten minutes) and the argument goes in the bump's commit. Then the
 record: recast's Open roster carries lamb journey 1's second machine and
 night, and the publishing debt, each one dated line naming who or what
 it waits on. Finally the sheepdog's memory outside the repo, per journey

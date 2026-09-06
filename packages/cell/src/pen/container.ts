@@ -18,11 +18,11 @@
  * the checkout or the image carries an identity. Journey 2 step 4.
  */
 import { Container } from "@cloudflare/containers";
-import { CELL_URL_ENV, TOKEN_ENV } from "@lamb/pen/protocol";
+import { CELL_URL_ENV, TOKEN_ENV } from "@sheep/pen/protocol";
 
 export const DEFAULT_IDLE = "10m";
 /** Who commits when the home says nothing: a name that is plainly nobody's, so a commit never fails for want of one. */
-export const DEFAULT_AUTHOR = { name: "lamb", email: "lamb@example.invalid" } as const;
+export const DEFAULT_AUTHOR = { name: "sheep", email: "sheep@example.invalid" } as const;
 
 /** The author and committer as git reads them from the environment. */
 export function authorEnv(env: { PEN_GIT_AUTHOR_NAME?: string | undefined; PEN_GIT_AUTHOR_EMAIL?: string | undefined }): Record<string, string> {

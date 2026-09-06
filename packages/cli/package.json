@@ -1,10 +1,10 @@
 {
-  "name": "@lamb/lamb",
+  "name": "@sheep/cli",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "bin": {
-    "lamb": "./bin/lamb.js"
+    "sheep": "./bin/sheep.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

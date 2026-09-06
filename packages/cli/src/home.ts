@@ -1,5 +1,5 @@
 import type { Entry } from "@earendil-works/pi-agent-core";
-import type { LambConfig } from "./config.js";
+import type { SheepConfig } from "./config.js";
 
 /** What a cell last told the Directory its lane was doing. */
 export type LaneState = "idle" | "running" | "waiting";
@@ -27,8 +27,8 @@ export class Home {
   readonly url: URL;
   readonly token: string | undefined;
 
-  constructor(config: LambConfig) {
-    if (config.home === undefined) throw new Error("no home configured; pass --home <url>, set LAMB_HOME, or write ~/.lamb/config");
+  constructor(config: SheepConfig) {
+    if (config.home === undefined) throw new Error("no home configured; pass --home <url>, set SHEEP_HOME, or write ~/.sheep/config");
     this.url = new URL(config.home);
     this.token = config.token;
   }
@@ -71,7 +71,7 @@ export class Home {
     return (await (await this.request(`/s/${encodeURIComponent(id)}/export`)).json()) as Record<string, Record<string, unknown>[]>;
   }
 
-  /** The WebSocket address of one cell, which lamb's client and the bridge dial. */
+  /** The WebSocket address of one cell, which sheep's client and the bridge dial. */
   socketUrl(id: string, _serverId: string): string {
     const url = new URL(`/s/${encodeURIComponent(id)}/ws`, this.url);
     url.protocol = url.protocol === "http:" ? "ws:" : "wss:";

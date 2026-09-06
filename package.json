@@ -6,7 +6,7 @@
   "scripts": {
     "build": "pnpm -r build",
     "test": "pnpm -r --workspace-concurrency=1 test",
-    "deploy": "pnpm --filter @lamb/cell run deploy",
-    "deploy:pen": "pnpm --filter @lamb/cell run deploy:pen"
+    "deploy": "pnpm --filter @sheep/cell run deploy",
+    "deploy:pen": "pnpm --filter @sheep/cell run deploy:pen"
   }
 }

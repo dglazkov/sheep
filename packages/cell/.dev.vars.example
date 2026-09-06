@@ -1,19 +1,19 @@
 # Copy to .dev.vars (gitignored). Read by `pnpm dev` (wrangler).
 # For a deployed home, set the same names with `wrangler secret put <NAME>` instead.
 
-# The bearer token every lamb request must carry. Any long random string.
-LAMB_TOKEN=
+# The bearer token every sheep request must carry. Any long random string.
+SHEEP_TOKEN=
 
-# The model the cell calls. Leave LAMB_PROVIDER unset for Anthropic; "faux" is the scripted test provider.
-LAMB_ANTHROPIC_API_KEY=
-# LAMB_MODEL=claude-sonnet-5
+# The model the cell calls. Leave SHEEP_PROVIDER unset for Anthropic; "faux" is the scripted test provider.
+SHEEP_ANTHROPIC_API_KEY=
+# SHEEP_MODEL=claude-sonnet-5
 
 # Pen, the `pen` environment only (`pnpm dev:pen`, `pnpm deploy:pen`). A container dials this home
 # back at PEN_CELL_ORIGIN, so it must be the home's own origin as seen from the container: the
 # deployed Worker's URL, or from Docker on a Mac, http://host.docker.internal:8787. Note that
 # wrangler reads `.dev.vars.pen` *instead of* this file when it exists; for a local walk pass
 # these with `--var` instead (see README) so the secrets above are not copied.
-# PEN_CELL_ORIGIN=https://lamb-pen.<you>.workers.dev
+# PEN_CELL_ORIGIN=https://sheep-pen.<you>.workers.dev
 # PEN_IDLE=10m                 how long a container stays up after its last activity
 # PEN_START_TIMEOUT=90         seconds a started container has to dial in
 # PEN_KILL_TIMEOUT=10          seconds a container has to answer `kill` before it is given up
@@ -24,5 +24,5 @@ LAMB_ANTHROPIC_API_KEY=
 #                              contents read and write. The container's helper asks for it at push time and
 #                              it lives nowhere but here; unset, a push is refused by name.
 # PEN_GIT_HOST=github.com      the one host the token is for
-# PEN_GIT_AUTHOR_NAME=lamb     who the container's commits are by
-# PEN_GIT_AUTHOR_EMAIL=lamb@example.invalid
+# PEN_GIT_AUTHOR_NAME=sheep    who the container's commits are by
+# PEN_GIT_AUTHOR_EMAIL=sheep@example.invalid

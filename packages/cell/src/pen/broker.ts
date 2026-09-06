@@ -18,7 +18,7 @@
  * whoever reads `expires` treats it as a thing for this push and not a
  * thing to keep. A GitHub App that mints per push is Identity's.
  */
-import { type CellFrame, type ContainerFrame, type CredentialAnswer, type CredentialRequest, decodeFrame, encodeFrame } from "@lamb/pen/protocol";
+import { type CellFrame, type ContainerFrame, type CredentialAnswer, type CredentialRequest, decodeFrame, encodeFrame } from "@sheep/pen/protocol";
 
 export const DEFAULT_GIT_HOST = "github.com";
 /** What GitHub wants beside a token; the fixture in the tests wants the same. */

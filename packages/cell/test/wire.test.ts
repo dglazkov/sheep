@@ -15,12 +15,12 @@ import { adoptedSocketTransport } from "./ws-transport.ts";
 const headers = { authorization: "Bearer test-token", "content-type": "application/json" };
 
 function api(path: string, init?: RequestInit): Promise<Response> {
-  return SELF.fetch(`https://lamb.test${path}`, { ...init, headers: { ...headers, ...(init?.headers ?? {}) } });
+  return SELF.fetch(`https://sheep.test${path}`, { ...init, headers: { ...headers, ...(init?.headers ?? {}) } });
 }
 
 /** A terminal, as pi's experimental client builds one, minus the rendering. */
 async function attachTerminal(sessionId: string, serverId: string) {
-  const response = await SELF.fetch(`https://lamb.test/s/${sessionId}/ws?token=test-token`, { headers: { upgrade: "websocket" } });
+  const response = await SELF.fetch(`https://sheep.test/s/${sessionId}/ws?token=test-token`, { headers: { upgrade: "websocket" } });
   expect(response.status).toBe(101);
   const socket = response.webSocket!;
   socket.accept();
@@ -123,7 +123,7 @@ describe("journey 3: two terminals on one session, over pi's protocol on a WebSo
 
   it("refuses the upgrade without the token", async () => {
     const summary = (await (await api("/sessions", { method: "POST", body: "{}" })).json()) as { id: string };
-    const response = await SELF.fetch(`https://lamb.test/s/${summary.id}/ws`, { headers: { upgrade: "websocket" } });
+    const response = await SELF.fetch(`https://sheep.test/s/${summary.id}/ws`, { headers: { upgrade: "websocket" } });
     expect(response.status).toBe(401);
   });
 });

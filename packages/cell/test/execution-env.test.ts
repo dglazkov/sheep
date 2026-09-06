@@ -89,17 +89,17 @@ describe("CellExecutionEnv: the four tools over the workspace table", () => {
     });
   });
 
-  it("pen journey 6: with no container the table generates lamb's two sentences byte for byte", () => {
-    // Lamb's strings as they were in shell-notice.ts the day it became the table; literals here, never imported.
-    const lambNotice = "this shell runs inside the session; no interpreters or package managers are installed";
-    const lambLine =
+  it("pen journey 6: with no container the table generates the no-container shell's two sentences byte for byte", () => {
+    // The strings as they were in shell-notice.ts the day it became the table; literals here, never imported.
+    const noContainerNotice = "this shell runs inside the session; no interpreters or package managers are installed";
+    const noContainerLine =
       "The bash tool runs a shell interpreter inside the session with the usual text tools (ls, cat, grep, sed, awk, find, sort, jq, diff, tar) over the workspace at /workspace. " +
       "There are no interpreters (no python, node) and no package managers (no npm, pip, cargo): this shell runs inside the session; no interpreters or package managers are installed. " +
       "Say so plainly when asked for something the shell cannot do, rather than pretending it ran.";
-    expect(shellNotice(NO_CONTAINER)).toBe(lambNotice);
-    expect(shellSystemPromptLine(NO_CONTAINER)).toBe(lambLine);
-    expect(SHELL_NOTICE).toBe(lambNotice);
-    expect(SHELL_SYSTEM_PROMPT_LINE).toBe(lambLine);
+    expect(shellNotice(NO_CONTAINER)).toBe(noContainerNotice);
+    expect(shellSystemPromptLine(NO_CONTAINER)).toBe(noContainerLine);
+    expect(SHELL_NOTICE).toBe(noContainerNotice);
+    expect(SHELL_SYSTEM_PROMPT_LINE).toBe(noContainerLine);
   });
 
   it("journey 4 step 5: a runaway loop stops at the shell's own bound, and a timeout stops a slow one", async () => {

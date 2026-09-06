@@ -1,5 +1,5 @@
 /**
- * A smart-HTTP git server for the tests: lamb's fifty lines of `git
+ * A smart-HTTP git server for the tests: the first leg's fifty lines of `git
  * http-backend` as CGI in Node, revived for pen phase 4, on a free port,
  * serving one bare fixture repository seeded with a typo in two files.
  * A push (`git-receive-pack`, the ref advertisement and the pack alike)

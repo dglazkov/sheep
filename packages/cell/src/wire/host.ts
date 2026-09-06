@@ -70,7 +70,7 @@ export async function createCellHost(options: CellHostOptions): Promise<{ host: 
           publishers.set(key, publish);
           // The same rule for an invoke's result as for a publish: a client that attaches while a container
           // command streams hydrates from a snapshot carrying the live bash update, `details: { truncation: undefined }`
-          // inside, and the strict codec would drop the connection on it (pen phase 3, journey 1's `lamb wait`).
+          // inside, and the strict codec would drop the connection on it (pen phase 3, journey 1's `sheep wait`).
           return toStrictJson(await sessionServices.invoke(call, scope, context));
         },
         release() {

@@ -15,7 +15,7 @@ export interface Output {
 }
 
 function fail(output: Output, message: string): number {
-  output.err(`lamb: ${message}\n`);
+  output.err(`sheep: ${message}\n`);
   return 2;
 }
 
@@ -71,9 +71,9 @@ function printAssistant(output: Output, snapshot: LaneTranscriptSnapshot): void 
 }
 
 /**
- * Prompt mode over lamb's own client. An idle lane takes the prompt as an
+ * Prompt mode over sheep's own client. An idle lane takes the prompt as an
  * operation, whose reply streams until the operation ends. A busy lane
- * queues it as pi's follow-up, taken up when the running turn ends; `lamb`
+ * queues it as pi's follow-up, taken up when the running turn ends; `sheep`
  * says so and exits, or with `wait` streams the queued turn when it starts.
  */
 export async function runPrompt(home: Home, id: string, prompt: string, options: { wait: boolean }, output: Output): Promise<number> {
@@ -139,7 +139,7 @@ export async function runWait(home: Home, ids: readonly string[], options: { tim
         if (controller.signal.aborted) timedOut = true;
         else {
           failed = true;
-          output.err(`lamb: ${id}: ${error instanceof Error ? error.message : String(error)}\n`);
+          output.err(`sheep: ${id}: ${error instanceof Error ? error.message : String(error)}\n`);
         }
         return;
       }
@@ -157,7 +157,7 @@ export async function runWait(home: Home, ids: readonly string[], options: { tim
   );
   clearTimeout(timer);
   if (output.json) output.out(`${JSON.stringify(results)}\n`);
-  if (timedOut) output.err(`lamb: timed out; ${results.length === 0 && !output.json ? "the lines above are" : "printed"} the sheep that finished\n`);
+  if (timedOut) output.err(`sheep: timed out; ${results.length === 0 && !output.json ? "the lines above are" : "printed"} the sheep that finished\n`);
   return timedOut ? 124 : failed ? 2 : 0;
 }
 

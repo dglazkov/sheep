@@ -1,5 +1,5 @@
 /**
- * lamb's own client for the one-shot commands: pi's `Client` over a
+ * sheep's own client for the one-shot commands: pi's `Client` over a
  * WebSocket to one cell, with pi's own services activated the way pi's
  * experimental client activates them. A program reads the transcript
  * replica and calls the agent controller; nothing here is a new message

@@ -230,7 +230,7 @@ export class SessionCell extends DurableObject<Env> {
    * Tier 2 for this cell, when the home has it: the `PEN_CONTAINER`
    * binding when bound, else a starter the test set before the first boot.
    * Configuration, never the platform: nothing here asks where it runs. A
-   * home with none is lamb, and the shell does not route.
+   * home with none has no tier 2, and the shell does not route.
    */
   private leaseFor(): PenLease | undefined {
     const binding = this.env.PEN_CONTAINER;
@@ -287,7 +287,7 @@ export class SessionCell extends DurableObject<Env> {
 
   /** With the faux provider: this cell's own program, else the home's default, else none. */
   private async fauxProgram(): Promise<FauxProgram | undefined> {
-    if (this.env.LAMB_PROVIDER !== "faux") return undefined;
+    if (this.env.SHEEP_PROVIDER !== "faux") return undefined;
     const own = await this.ctx.storage.get<FauxProgram>("faux-program");
     return own ?? (await this.env.DIRECTORY.getByName("home").fauxProgram());
   }
@@ -427,7 +427,7 @@ export class SessionCell extends DurableObject<Env> {
 
   /**
    * Every row pi's schema holds for this session, as JSON. A Durable Object
-   * exposes no database file; `lamb export` rebuilds one from these rows.
+   * exposes no database file; `sheep export` rebuilds one from these rows.
    */
   async exportRows(): Promise<Record<string, Record<string, unknown>[]>> {
     await this.runtime();
@@ -486,7 +486,7 @@ export class SessionCell extends DurableObject<Env> {
       }
       if (route === "POST /abort") return Response.json(await this.abort());
       if (route === "GET /export") return Response.json(await this.exportRows());
-      if (route === "POST /faux" && this.env.LAMB_PROVIDER === "faux") {
+      if (route === "POST /faux" && this.env.SHEEP_PROVIDER === "faux") {
         // Test-only: the program this cell's faux model answers from.
         const program: unknown = await request.json();
         if (!isFauxProgram(program)) return new Response("a faux program is { steps: [{ text | tool: { name, args }, delayMs? }, …] }", { status: 400 });

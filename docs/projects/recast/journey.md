@@ -1,8 +1,8 @@
 ---
-status: planned
+status: partial
 since: 2026-09-06
 see: recast
-note: "written 6 Sep 2026, the day after lamb and pen were walked: the command the dog runs is renamed from `lamb` to `sheep`, the home with it, and the first two legs are frozen as history. Nothing built yet."
+note: "written 6 Sep 2026, the day after lamb and pen were walked: the command the dog runs is renamed from `lamb` to `sheep`, the home with it, and the first two legs are frozen as history. Recast phase 0 closed the same morning: every name in the repo is sheep, every suite holds unchanged, journey 1 steps 1 and 2 hold locally. The home is not yet deployed under the new name."
 ---
 
 # Recast — the journeys

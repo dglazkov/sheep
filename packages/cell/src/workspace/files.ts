@@ -7,7 +7,7 @@
  */
 import { createHash } from "node:crypto";
 import { posix } from "node:path";
-import type { ManifestEntry } from "@lamb/pen/protocol";
+import type { ManifestEntry } from "@sheep/pen/protocol";
 
 export type FileKind = "file" | "directory" | "symlink";
 

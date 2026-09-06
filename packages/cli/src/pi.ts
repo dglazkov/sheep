@@ -19,7 +19,7 @@ export function piCliArgs(): string[] {
 
 /**
  * Runs an unmodified `pi client` against one cell, through a local Unix
- * socket bridged to the cell's WebSocket. The terminal is pi's; lamb only
+ * socket bridged to the cell's WebSocket. The terminal is pi's; sheep only
  * chooses the route. Interactive when stdin and stdout are terminals,
  * otherwise `prompt` is sent and the reply streamed, as pi does.
  */
@@ -27,7 +27,7 @@ export async function runPiClient(options: { socketUrl: string; serverId: string
   const bridge = await startBridge({
     socketUrl: options.socketUrl,
     serverId: options.serverId,
-    onError: (error) => process.stderr.write(`lamb: ${error.message}\n`),
+    onError: (error) => process.stderr.write(`sheep: ${error.message}\n`),
   });
   try {
     const args = [...piCliArgs(), "client", "--connect", `unix://${bridge.path}`, "--session-id", options.sessionId];

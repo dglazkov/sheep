@@ -1,13 +1,13 @@
 ---
 name: pi-bump
-description: Check, update, and verify the pinned pi dependency in vendor/pi. Use when asked to bump pi, check whether upstream pi moved, rebase the sheep branch, or when a lamb change needs a new commit on the pi fork.
+description: Check, update, and verify the pinned pi dependency in vendor/pi. Use when asked to bump pi, check whether upstream pi moved, rebase the sheep branch, or when a sheep change needs a new commit on the pi fork.
 ---
 
 # pi-bump: check, update, verify the pi dependency
 
 `vendor/pi` is a git submodule tracking the `sheep` branch of
 `https://github.com/dglazkov/pi`, a fork of `earendil-works/pi`. The branch
-is upstream `main` plus a few small commits that lamb needs. This skill
+is upstream `main` plus a few small commits that sheep needs. This skill
 keeps that true. Read `docs/projects/lamb/phases.md` phase 7 for the
 history and the findings that explain each commit.
 
@@ -48,28 +48,28 @@ git -C $PI rev-parse --short HEAD                         # the commit the super
 git -C $PI rev-parse --short origin/sheep                 # must equal HEAD; if not, the pin is stale
 BASE=$(git -C $PI merge-base upstream/main HEAD); git -C $PI rev-parse --short $BASE   # the upstream commit the branch sits on
 git -C $PI rev-parse --short upstream/main                # if different from BASE, upstream moved
-git -C $PI log --oneline upstream/main..HEAD              # lamb's commits; expect a handful, all small
+git -C $PI log --oneline upstream/main..HEAD              # sheep's commits; expect a handful, all small
 git -C $PI log --oneline --no-merges HEAD..upstream/main | wc -l   # how far behind
 ```
 
-Say plainly: how many commits lamb carries, how many upstream commits
-are unpicked, and whether anything upstream touched the files lamb's
+Say plainly: how many commits sheep carries, how many upstream commits
+are unpicked, and whether anything upstream touched the files sheep's
 commits touch:
 
 ```sh
-git -C $PI diff --name-only $BASE..HEAD | sort -u > /tmp/lamb-touches            # from the base, not upstream/main, or upstream's own changes leak in
-git -C $PI log --name-only --format= HEAD..upstream/main | sort -u | comm -12 - /tmp/lamb-touches
+git -C $PI diff --name-only $BASE..HEAD | sort -u > /tmp/sheep-touches            # from the base, not upstream/main, or upstream's own changes leak in
+git -C $PI log --name-only --format= HEAD..upstream/main | sort -u | comm -12 - /tmp/sheep-touches
 ```
 
 A non-empty intersection means the rebase will likely conflict; say
 which files.
 
-Then the surface: files lamb depends on but does not modify. The first
-bump conflicted in one file and broke lamb in another that no commit on
+Then the surface: files sheep depends on but does not modify. The first
+bump conflicted in one file and broke sheep in another that no commit on
 the branch touches: upstream moved `pi client` out of the published CLI
-and stopped compiling `src/experimental` into `dist/`. Lamb spawns pi's
+and stopped compiling `src/experimental` into `dist/`. Sheep spawns pi's
 development entrypoint from source and imports `experimental/services/*`,
-so a change to any of these is a change to lamb:
+so a change to any of these is a change to sheep:
 
 ```sh
 git -C $PI log --oneline HEAD..upstream/main -- \
@@ -85,7 +85,7 @@ the walk, not the suites, to be the test that notices.
 
 ## Update
 
-Two reasons to be here: upstream moved, or lamb needs a new commit on pi.
+Two reasons to be here: upstream moved, or sheep needs a new commit on pi.
 
 **Rebase onto upstream:**
 
@@ -94,10 +94,10 @@ git -C $PI rebase upstream/main
 ```
 
 On a conflict, resolve it by hand in the submodule, `git add`, `git rebase
---continue`. Each of lamb's commits is small and its commit message says
+--continue`. Each of sheep's commits is small and its commit message says
 why it exists; keep the intent, not the exact lines. Never resolve by
-dropping a lamb commit without saying so. When upstream moves something
-lamb links against, move lamb to follow rather than re-adding what
+dropping a sheep commit without saying so. When upstream moves something
+sheep links against, move sheep to follow rather than re-adding what
 upstream removed: the first bump kept the `./experimental/*` export but
 pointed it at `.ts` source once upstream made its own experimental
 entrypoints source-only, instead of putting `src/experimental` back into
@@ -105,12 +105,12 @@ the build. The cell's bundler and `tsc` read `.ts` through an export map
 without any `conditions` setup; that keeps the fork to one line of
 intent per change.
 
-**Add a new commit** (a change lamb needs in pi): edit in `$PI`, then one
+**Add a new commit** (a change sheep needs in pi): edit in `$PI`, then one
 commit with a message that says what it is for. Keep it additive and in a
 slow-moving file where possible; pi's `packages/*/src/experimental/` is
-churn and lamb has kept off it since 6 Sep.
+churn and sheep has kept off it since 6 Sep.
 
-**Rebuild the packages the cell and lamb link to**, because the workspace
+**Rebuild the packages the cell and the CLI link to**, because the workspace
 depends on `dist/`:
 
 ```sh
@@ -140,8 +140,8 @@ Both suites, then the walk. Nothing is done until these pass.
 ```sh
 cd /Users/dimitriglazkov/Documents/code/sheep
 pnpm install                     # picks up any dependency change in pi's packages
-pnpm test                        # the cell's suite runs in workerd; lamb's in Node
-(cd packages/cell && pnpm typecheck) && (cd packages/lamb && pnpm typecheck)   # the suites do not type-check
+pnpm test                        # the cell's suite runs in workerd; the CLI's in Node
+(cd packages/cell && pnpm typecheck) && (cd packages/cli && pnpm typecheck)   # the suites do not type-check
 (cd vendor/pi && npm test --workspaces --if-present > /tmp/pi-test.log 2>&1; echo "pi exit=$?")   # three minutes
 grep -n "FAIL\|Test Files" /tmp/pi-test.log
 ```
@@ -158,15 +158,15 @@ Then the real-client walk against a local home, which proves the bridge
 and an unmodified `pi client` still agree with the cell:
 
 ```sh
-cd packages/cell && (pnpm exec wrangler dev --port 8790 --local > /tmp/lamb-dev.log 2>&1 &)
+cd packages/cell && (pnpm exec wrangler dev --port 8790 --local > /tmp/sheep-dev.log 2>&1 &)
 until curl -s -o /dev/null http://127.0.0.1:8790/; do sleep 1; done
-LAMB_HOME=http://127.0.0.1:8790 LAMB_TOKEN=$(grep ^LAMB_TOKEN= .dev.vars | cut -d= -f2) \
-  node ../lamb/bin/lamb.js new -- "run ls, then reply with the single word ok"
+SHEEP_HOME=http://127.0.0.1:8790 SHEEP_TOKEN=$(grep ^SHEEP_TOKEN= .dev.vars | cut -d= -f2) \
+  node ../cli/bin/sheep.js new -- "run ls, then reply with the single word ok"
 lsof -ti :8790 | xargs kill
 ```
 
 A reply that ends in `ok` with no `Byte transport closed` is a pass. Ask
-for a tool call on purpose: the first real-model failure lamb ever had
+for a tool call on purpose: the first real-model failure sheep ever had
 only showed up when the model called `bash`. The walk is the only check
 that exercises pi's CLI surface; the first bump passed both suites and
 both typechecks and then failed here with `Unknown option: --connect`.
@@ -177,7 +177,7 @@ Never skip it. macOS has no `timeout`; run the walk bare.
 In `docs/projects/lamb/phases.md`, phase 7 Findings, one dated line: the
 upstream commit moved to, how many conflicts, how long it took. Phase 7
 left "what a bump costs" unmeasured on purpose; each bump is a data point.
-If the bump broke lamb itself, the phase that owns the broken piece gets
+If the bump broke sheep itself, the phase that owns the broken piece gets
 its own finding and the fix; phase 7 records only the cost. The first
 bump's launcher fix went to phase 4, the wire and the terminal.
 Then commit the superproject (the submodule pointer, the finding) and push
@@ -193,7 +193,7 @@ to `main`, per the house rule.
   failed. The pipe and the task both hide the suite's status.
 - A stale `dist/experimental` from the previous build made the cell look
   fine against a tree that no longer built it. Clean before building.
-- Two suites and two typechecks passed while `lamb new` was broken, because
+- Two suites and two typechecks passed while `sheep new` was broken, because
   the break was in pi's CLI, which only the walk runs.
 - pi's `dist/` is gitignored inside the submodule, so a fresh clone has
   nothing to link against until the build step runs.

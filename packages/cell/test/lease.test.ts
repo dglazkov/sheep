@@ -39,7 +39,7 @@ const invocation = {
 };
 
 function api(path: string, init?: RequestInit): Promise<Response> {
-  return SELF.fetch(`https://lamb.test${path}`, { ...init, headers: { ...headers, ...(init?.headers ?? {}) } });
+  return SELF.fetch(`https://sheep.test${path}`, { ...init, headers: { ...headers, ...(init?.headers ?? {}) } });
 }
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -185,7 +185,7 @@ describe("the lease and the door", () => {
       const socket = await lease.rent();
       expect(socket).toBe(lease.socket);
       expect(stub.ensures.length).toBe(1);
-      expect(stub.ensures[0]!.cellUrl).toBe(`https://lamb.test/s/${id}/pen`);
+      expect(stub.ensures[0]!.cellUrl).toBe(`https://sheep.test/s/${id}/pen`);
       // The rent resolves inside the door's handling, before the 101 returns to the dialer; let it land.
       await until(() => stub.dials.length === 1);
       expect(stub.dials).toEqual([101]);
@@ -205,7 +205,7 @@ describe("the lease and the door", () => {
     });
   });
 
-  it("the door: a wrong token is 403, the home's LAMB_TOKEN is 403, no upgrade is 426, an unknown session is 404, and the other routes still need the home's token", async () => {
+  it("the door: a wrong token is 403, the home's SHEEP_TOKEN is 403, no upgrade is 426, an unknown session is 404, and the other routes still need the home's token", async () => {
     const { id, stub } = await sessionWith("door", { script: projectScript });
     await inCell(id, async (cell) => {
       const runtime = await cell.runtime();
@@ -217,7 +217,7 @@ describe("the lease and the door", () => {
       expect((await SELF.fetch(`${cellUrl}?token=test-token`, { headers: { upgrade: "websocket" } })).status).toBe(403);
       expect((await SELF.fetch(`${cellUrl}?token=test-token`, { headers: { upgrade: "websocket", authorization: "Bearer test-token" } })).status).toBe(403);
       expect((await SELF.fetch(`${cellUrl}?token=${stub.ensures[0]!.token}`)).status).toBe(426);
-      expect((await SELF.fetch(`https://lamb.test/s/nobody/pen?token=x`, { headers: { upgrade: "websocket" } })).status).toBe(404);
+      expect((await SELF.fetch(`https://sheep.test/s/nobody/pen?token=x`, { headers: { upgrade: "websocket" } })).status).toBe(404);
       // The right one, from the stub, is the one that opened the door.
       await pending;
       await until(() => stub.dials.length === 1);
@@ -225,9 +225,9 @@ describe("the lease and the door", () => {
       runtime.lease!.idle();
     });
     // The pen door opens nothing else: the cell's other routes still want the home's token.
-    expect((await SELF.fetch(`https://lamb.test/s/${id}/transcript`)).status).toBe(401);
-    expect((await SELF.fetch(`https://lamb.test/s/${id}/transcript?token=wrong`)).status).toBe(401);
-    expect((await SELF.fetch(`https://lamb.test/s/${id}/`)).status).toBe(401);
+    expect((await SELF.fetch(`https://sheep.test/s/${id}/transcript`)).status).toBe(401);
+    expect((await SELF.fetch(`https://sheep.test/s/${id}/transcript?token=wrong`)).status).toBe(401);
+    expect((await SELF.fetch(`https://sheep.test/s/${id}/`)).status).toBe(401);
   });
 
   it("a socket close, then a rent, mints a new token and starts again; a container that never dials in fails the rent at the start deadline", async () => {
@@ -339,7 +339,7 @@ describe("pen journey 1 steps 1 to 3 over the lease, through the home's HTTP fac
   });
 });
 
-describe("lamb wait over the wire, attached while a container command streams", () => {
+describe("sheep wait over the wire, attached while a container command streams", () => {
   it("a client that attaches mid-stream gets the hydrated snapshot with the live bash update, and the turn's end", { timeout: 30_000 }, async () => {
     const { id } = await sessionWith("wire", { script: projectScript });
     const program: FauxProgram = {
@@ -347,11 +347,11 @@ describe("lamb wait over the wire, attached while a container command streams", 
     };
     expect((await api(`/s/${id}/faux`, { method: "POST", body: JSON.stringify(program) })).status).toBe(200);
     await api(`/s/${id}/prompt`, { method: "POST", body: JSON.stringify({ text: "Run the chatty script." }) });
-    // Let the container be rented and the output start streaming, then attach as `lamb wait` does.
+    // Let the container be rented and the output start streaming, then attach as `sheep wait` does.
     await sleep(400);
 
     const { serverId } = (await (await api("/home")).json()) as { serverId: string };
-    const response = await SELF.fetch(`https://lamb.test/s/${id}/ws?token=test-token`, { headers: { upgrade: "websocket" } });
+    const response = await SELF.fetch(`https://sheep.test/s/${id}/ws?token=test-token`, { headers: { upgrade: "websocket" } });
     const socket = response.webSocket!;
     socket.accept();
     const client = await Client.connect({ serverId, transportFactory: adoptedSocketTransport(socket) });

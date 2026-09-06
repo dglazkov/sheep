@@ -14,11 +14,11 @@
  * the loader and no container is up.
  *
  * With no container configured the tier-2 column is empty, and the table
- * generates lamb's sentence and lamb's prompt line byte for byte; a test
+ * generates the no-container sentence and prompt line byte for byte; a test
  * holds those strings as literals and checks. That is journey 6. The
- * shell then does not route: the line runs in just-bash as lamb ran it,
+ * shell then does not route: the line runs in just-bash as it did before pen,
  * and the refusal is just-bash's own not-found line with the sentence
- * appended by `annotateCommandNotFound`, as lamb's always was.
+ * appended by `annotateCommandNotFound`, as it always was.
  * `classify` still answers for that home, so the table can be tested,
  * but `exec` consults it only when a container is configured; the
  * up-front refusal exists only for a program the table marks absent from
@@ -89,7 +89,7 @@ export const TIER0_BUILTINS: readonly string[] = [
   "true", "type", "typeset", "ulimit", "umask", "unalias", "unset", "wait",
 ];
 
-/** The text tools the prompt names as examples; lamb's list, kept so the line is lamb's. */
+/** The text tools the prompt names as examples; the list from before pen, kept so the line does not move. */
 export const TEXT_TOOLS_SHOWN: readonly string[] = ["ls", "cat", "grep", "sed", "awk", "find", "sort", "jq", "diff", "tar"];
 
 let tier0: Set<string> | undefined;
@@ -133,15 +133,15 @@ export const BUDGET_SPENT_NOTICE =
 
 /**
  * The one sentence a refusal carries when no program-specific one applies:
- * with no container it is lamb's, byte for byte, and the same for every
+ * with no container it is the sentence from before pen, byte for byte, and the same for every
  * program, since nothing outside tier 0 runs anywhere. With a container
  * whose budget is spent it names the budget, and it is likewise the same
  * for every program.
  */
 export function shellNotice(home: Home): string {
   if (!home.container) {
-    const lamb = "this shell runs inside the session; no interpreters or package managers are installed";
-    return home.isolate === true ? `${lamb}, except that ${ISOLATE_TAKES} runs in a fresh isolate with no network` : lamb;
+    const notice = "this shell runs inside the session; no interpreters or package managers are installed";
+    return home.isolate === true ? `${notice}, except that ${ISOLATE_TAKES} runs in a fresh isolate with no network` : notice;
   }
   if (home.budgetSpent === true) return BUDGET_SPENT_NOTICE;
   return "this shell runs inside the session; a line that names a program the shell lacks runs in the container instead";
@@ -206,11 +206,11 @@ export function refusalSentence(program: string, home: Home): string {
   return shellNotice(home);
 }
 
-/** The line the system prompt says about the shell. Lamb's, byte for byte, when the home has no container. */
+/** The line the system prompt says about the shell. The line from before pen, byte for byte, when the home has no container. */
 export function shellSystemPromptLine(home: Home): string {
   const opening = `The bash tool runs a shell interpreter inside the session with the usual text tools (${list(TEXT_TOOLS_SHOWN)}) over the workspace at /workspace. `;
   if (!home.container) {
-    // Lamb's line, byte for byte; with the isolate, the one exception is said in its own sentence.
+    // The line from before pen, byte for byte; with the isolate, the one exception is said in its own sentence.
     const isolate = home.isolate === true ? `One thing runs outside the shell: ${ISOLATE_TAKES}; ${ISOLATE_DESCRIBED}. ` : "";
     return (
       opening +
@@ -242,13 +242,13 @@ export function shellSystemPromptLine(home: Home): string {
   );
 }
 
-/** Lamb's two strings, as the table generates them with no container. Lamb's tests import these by name. */
+/** The no-container shell's two strings, as the table generates them. The cell's tests import these by name. */
 export const SHELL_NOTICE = shellNotice(NO_CONTAINER);
 export const SHELL_SYSTEM_PROMPT_LINE = shellSystemPromptLine(NO_CONTAINER);
 
 /**
  * Rewrites just-bash's `X: command not found` lines to carry the notice:
- * one string for every program, lamb's way, or a function of the
+ * one string for every program, as before pen, or a function of the
  * program's name, which is how a `node` line tier 1 could not take gets
  * its own sentence.
  */
@@ -256,7 +256,7 @@ export function annotateCommandNotFound(text: string, notice: string | ((program
   return text.replace(/^.*?([^\s:]+): command not (?:found|available)(?:[^\n(]*)?$/gm, (line, program: string) => `${line} (${typeof notice === "string" ? notice : notice(program)})`);
 }
 
-/** The refusal as the shell prints it: lamb's line, with the sentence for the program. */
+/** The refusal as the shell prints it: just-bash's not-found line, with the sentence for the program. */
 export function refusalLine(program: string, home: Home): string {
   return `bash: ${program}: command not found (${refusalSentence(program, home)})\n`;
 }
@@ -412,7 +412,7 @@ export function programsOf(script: ScriptNode): Array<string | null> {
  * parse goes to just-bash, which reports it as it does today.
  *
  * With no container the answer is what the table says, for the tests;
- * the shell does not ask, and runs the line in just-bash as lamb did,
+ * the shell does not ask, and runs the line in just-bash as it did before pen,
  * except for the tier-1 line, which the shell does take.
  */
 export function classify(command: string, home: Home, exists?: (file: string) => boolean): Route {
@@ -433,7 +433,7 @@ export function classify(command: string, home: Home, exists?: (file: string) =>
   }
   const named = outside.filter((name): name is string => name !== null);
   if (!hasContainer(home)) {
-    // Nothing outside tier 0 runs anywhere; a name the shell expands is the shell's to resolve, as in lamb.
+    // Nothing outside tier 0 runs anywhere; a name the shell expands is the shell's to resolve, as before pen.
     const first = named[0];
     if (first === undefined) return { tier: 0, programs };
     return { refused: first, sentence: refusalSentence(first, home), programs };

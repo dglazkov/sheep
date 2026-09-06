@@ -2,7 +2,7 @@
  * The home's list of sessions: id, name, when it was made, and what its
  * lane was last seen doing. One singleton object per deployment.
  * Everything about a session other than this row lives in its cell; the
- * lane state is the cell's report, kept here so `lamb ls` never wakes a
+ * lane state is the cell's report, kept here so `sheep ls` never wakes a
  * hibernated cell to ask.
  *
  * Pen phase 3 adds the home's container minutes: a running total of the

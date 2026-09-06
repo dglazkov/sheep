@@ -7,7 +7,7 @@ import { setFauxScript } from "../src/models.ts";
 const headers = { authorization: "Bearer test-token", "content-type": "application/json" };
 
 function api(path: string, init?: RequestInit): Promise<Response> {
-  return SELF.fetch(`https://lamb.test${path}`, { ...init, headers: { ...headers, ...(init?.headers ?? {}) } });
+  return SELF.fetch(`https://sheep.test${path}`, { ...init, headers: { ...headers, ...(init?.headers ?? {}) } });
 }
 
 /** A turn that writes a file when asked, then says it did. Decided from the transcript, not call order. */
@@ -22,7 +22,7 @@ function scriptedTurn() {
 
 describe("the home's door and directory", () => {
   it("refuses without the token and answers with it", async () => {
-    expect((await SELF.fetch("https://lamb.test/sessions")).status).toBe(401);
+    expect((await SELF.fetch("https://sheep.test/sessions")).status).toBe(401);
     const created = await api("/sessions", { method: "POST", body: JSON.stringify({ name: "scratch" }) });
     expect(created.status).toBe(201);
     const summary = (await created.json()) as { id: string; name: string };

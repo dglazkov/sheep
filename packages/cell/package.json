@@ -1,5 +1,5 @@
 {
-  "name": "@lamb/cell",
+  "name": "@sheep/cell",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -29,7 +29,7 @@
     "@earendil-works/pi-protocol": "link:../../vendor/pi/packages/protocol",
     "@earendil-works/pi-server": "link:../../vendor/pi/packages/server",
     "@earendil-works/pi-session-backend-sqlite-node": "link:../../vendor/pi/packages/session-backends/sqlite-node",
-    "@lamb/pen": "workspace:*",
+    "@sheep/pen": "workspace:*",
     "just-bash": "3.4.2"
   }
 }

@@ -20,7 +20,7 @@ import { adoptedSocketTransport } from "./ws-transport.ts";
 const headers = { authorization: "Bearer test-token", "content-type": "application/json" };
 
 function api(path: string, init?: RequestInit): Promise<Response> {
-  return SELF.fetch(`https://lamb.test${path}`, { ...init, headers: { ...headers, ...(init?.headers ?? {}) } });
+  return SELF.fetch(`https://sheep.test${path}`, { ...init, headers: { ...headers, ...(init?.headers ?? {}) } });
 }
 
 async function mint(name: string, program?: FauxProgram): Promise<string> {
@@ -107,7 +107,7 @@ describe("the Directory knows each lane's state without waking the cell", () => 
   it("a turn driven over the wire reports and arms the heartbeat the same way", { timeout: 30_000 }, async () => {
     const id = await mint("tests", { steps: [{ text: "hello over the wire", delayMs: 600 }] });
     const { serverId } = (await (await api("/home")).json()) as { serverId: string };
-    const response = await SELF.fetch(`https://lamb.test/s/${id}/ws?token=test-token`, { headers: { upgrade: "websocket" } });
+    const response = await SELF.fetch(`https://sheep.test/s/${id}/ws?token=test-token`, { headers: { upgrade: "websocket" } });
     const socket = response.webSocket!;
     socket.accept();
     const client = await Client.connect({ serverId, transportFactory: adoptedSocketTransport(socket) });

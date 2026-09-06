@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "lamb",
+  "name": "sheep",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-22",
   "compatibility_flags": ["nodejs_compat"],
@@ -15,16 +15,16 @@
     { "tag": "v2", "new_sqlite_classes": ["Directory"] }
   ],
   "vars": {
-    "LAMB_MODEL": "claude-sonnet-5"
+    "SHEEP_MODEL": "claude-sonnet-5"
   },
-  // The top level is lamb: no container, so a home deployed from it is journey 6's. The `pen`
+  // The top level is the Worker `sheep`: no container, so a home deployed from it is journey 6's. The `pen`
   // environment is the same Worker with a container beside each cell (`wrangler dev --env pen`,
-  // `wrangler deploy --env pen`, the Worker `lamb-pen`). Bindings, vars, and containers are not
+  // `wrangler deploy --env pen`, the Worker `sheep-pen`). Bindings, vars, and containers are not
   // inherited into a named environment, so they are repeated; migrations are inheritable but are
   // repeated too, so that `v3`, which adds `PenContainer`, exists only where the class is bound.
   "env": {
     "pen": {
-      "name": "lamb-pen",
+      "name": "sheep-pen",
       "durable_objects": {
         "bindings": [
           { "name": "SESSION_CELL", "class_name": "SessionCell" },
@@ -47,10 +47,10 @@
           "max_instances": 3
         }
       ],
-      // Pen phase 5: tier 1, the fresh isolate. Pen's only: the top level is journey 6's lamb home and has no loader.
+      // Pen phase 5: tier 1, the fresh isolate. Pen's only: the top level is journey 6's home with no container and has no loader.
       "worker_loaders": [{ "binding": "LOADER" }],
       "vars": {
-        "LAMB_MODEL": "claude-sonnet-5",
+        "SHEEP_MODEL": "claude-sonnet-5",
         "PEN_IDLE": "10m"
       }
     }

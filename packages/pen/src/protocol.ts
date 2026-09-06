@@ -2,7 +2,7 @@
  * The container protocol: every message that crosses the one WebSocket
  * between a cell and the container it rented. The container is the
  * client. It opens `PEN_CELL_URL` with the cell's token as the `token`
- * query parameter (the same shape as lamb's own socket address), and
+ * query parameter (the same shape as the cell's own socket address), and
  * from then on everything is frames on that socket.
  *
  * A frame is one JSON object per text message with a `type` field. Blob

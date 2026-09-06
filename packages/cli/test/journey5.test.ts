@@ -1,7 +1,7 @@
 /**
  * Journey 5 through the built CLI against a local home: `wrangler dev` on
  * a free port with the faux provider, scripted over its test-only route,
- * and `bin/lamb.js` driven as a child process through steps 1 to 7. Skips,
+ * and `bin/sheep.js` driven as a child process through steps 1 to 7. Skips,
  * with a message, when the home cannot be started here.
  */
 import { type ChildProcess, execFile, spawn } from "node:child_process";
@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
 
-const bin = new URL("../bin/lamb.js", import.meta.url).pathname;
+const bin = new URL("../bin/sheep.js", import.meta.url).pathname;
 const cellDir = new URL("../../cell/", import.meta.url).pathname;
 const TOKEN = "journey-5-token";
 
@@ -40,12 +40,12 @@ async function startHome(): Promise<LocalHome | string> {
   let port: number;
   let inspector: number;
   try {
-    // LAMB_TEST_PORT pins the home's port, which is how the skip path is exercised: point it at a port in use.
-    [port, inspector] = await Promise.all([process.env.LAMB_TEST_PORT ? Number(process.env.LAMB_TEST_PORT) : freePort(), freePort()]);
+    // SHEEP_TEST_PORT pins the home's port, which is how the skip path is exercised: point it at a port in use.
+    [port, inspector] = await Promise.all([process.env.SHEEP_TEST_PORT ? Number(process.env.SHEEP_TEST_PORT) : freePort(), freePort()]);
   } catch (error) {
     return `no port could be bound: ${error instanceof Error ? error.message : String(error)}`;
   }
-  const persist = await mkdtemp(join(tmpdir(), "lamb-home-"));
+  const persist = await mkdtemp(join(tmpdir(), "sheep-home-"));
   const child = spawn(
     process.execPath,
     [
@@ -58,9 +58,9 @@ async function startHome(): Promise<LocalHome | string> {
       "--persist-to",
       persist,
       "--var",
-      `LAMB_TOKEN:${TOKEN}`,
+      `SHEEP_TOKEN:${TOKEN}`,
       "--var",
-      "LAMB_PROVIDER:faux",
+      "SHEEP_PROVIDER:faux",
       "--log-level",
       "error",
       "--show-interactive-dev-session=false",
@@ -76,7 +76,7 @@ async function startHome(): Promise<LocalHome | string> {
     if (child.exitCode !== null) break;
     try {
       const response = await fetch(url, { signal: AbortSignal.timeout(1_000) });
-      if (response.ok && (await response.text()).startsWith("lamb")) return { url, child, persist };
+      if (response.ok && (await response.text()).startsWith("sheep")) return { url, child, persist };
     } catch {
       // not up yet
     }
@@ -100,9 +100,9 @@ interface Result {
 }
 
 /** Runs the built CLI against the local home; never throws on a nonzero exit. */
-async function lamb(...args: string[]): Promise<Result> {
+async function sheep(...args: string[]): Promise<Result> {
   if (typeof home === "string") throw new Error(home);
-  const env = { ...process.env, LAMB_HOME: home.url, LAMB_TOKEN: TOKEN, LAMB_CONFIG: join(home.persist, "no-config"), NODE_NO_WARNINGS: "1" };
+  const env = { ...process.env, SHEEP_HOME: home.url, SHEEP_TOKEN: TOKEN, SHEEP_CONFIG: join(home.persist, "no-config"), NODE_NO_WARNINGS: "1" };
   try {
     const { stdout, stderr } = await run(process.execPath, [bin, ...args], { env, maxBuffer: 16 * 1024 * 1024 });
     return { stdout, stderr, code: 0 };
@@ -125,7 +125,7 @@ const TURN = {
   steps: [{ tool: { name: "bash", args: { command: "echo herding > note.txt && cat note.txt" } } }, { text: "done: note.txt written", delayMs: 2_500 }],
 };
 
-describe.skipIf(typeof home === "string")("journey 5: a dog and its flock, through lamb against a local home", () => {
+describe.skipIf(typeof home === "string")("journey 5: a dog and its flock, through sheep against a local home", () => {
   afterAll(async () => {
     if (typeof home === "string") return;
     home.child.kill("SIGTERM");
@@ -140,7 +140,7 @@ describe.skipIf(typeof home === "string")("journey 5: a dog and its flock, throu
     const started = Date.now();
     const ids: string[] = [];
     for (const name of ["docs", "tests", "types"]) {
-      const result = await lamb("new", "--name", name, "--detach", "--", `write the ${name}`);
+      const result = await sheep("new", "--name", name, "--detach", "--", `write the ${name}`);
       expect(result.code).toBe(0);
       expect(result.stdout).toMatch(/^[0-9a-f-]{36}\n$/);
       ids.push(result.stdout.trim());
@@ -149,7 +149,7 @@ describe.skipIf(typeof home === "string")("journey 5: a dog and its flock, throu
     expect(Date.now() - started).toBeLessThan(TURN.steps[1]!.delayMs!);
 
     // Step 2: one record per line, tab separated, with the lane state; --json is the Directory's array.
-    const ls = await lamb("ls");
+    const ls = await sheep("ls");
     expect(ls.code).toBe(0);
     const rows = ls.stdout.trimEnd().split("\n").map((line) => line.split("\t"));
     for (const id of ids) {
@@ -159,18 +159,18 @@ describe.skipIf(typeof home === "string")("journey 5: a dog and its flock, throu
       expect(Number.isNaN(Date.parse(row![2]!))).toBe(false);
       expect(row![3]).toBe("running");
     }
-    const lsJson = JSON.parse((await lamb("ls", "--json")).stdout) as Array<{ id: string; name: string; createdAt: number; state: string }>;
+    const lsJson = JSON.parse((await sheep("ls", "--json")).stdout) as Array<{ id: string; name: string; createdAt: number; state: string }>;
     expect(lsJson.find((session) => session.id === docs)).toMatchObject({ name: "docs", state: "running" });
 
     // Step 3: status on a running sheep: the open operation, the last tool call, tokens so far; --json is pi's lane snapshot.
-    const status = await lamb("status", docs);
+    const status = await sheep("status", docs);
     expect(status.code).toBe(0);
     expect(status.stdout).toMatch(/^id: /m);
     expect(status.stdout).toMatch(/^state: running$/m);
     expect(status.stdout).toMatch(/^operation: [0-9a-f-]{36} run started \d{4}-/m);
     expect(status.stdout).toMatch(/^tool: bash \{"command":"echo herding/m);
     expect(status.stdout).toMatch(/^tokens: input=\d+ output=\d+ cacheRead=\d+ cacheWrite=\d+$/m);
-    const snapshot = JSON.parse((await lamb("status", docs, "--json")).stdout) as {
+    const snapshot = JSON.parse((await sheep("status", docs, "--json")).stdout) as {
       lane: string;
       operation: { id: string; kind: string; startedAt: number } | null;
       transcript: Array<{ type: string }>;
@@ -181,32 +181,32 @@ describe.skipIf(typeof home === "string")("journey 5: a dog and its flock, throu
     expect(snapshot.transcript.length).toBeGreaterThan(0);
     expect(typeof snapshot.stats.usage.input).toBe("number");
 
-    // Step 4: a prompt to a running sheep queues behind the turn; lamb says so and exits 0. --json is pi's queue response.
-    const queued = await lamb("attach", docs, "--", "and again");
+    // Step 4: a prompt to a running sheep queues behind the turn; sheep says so and exits 0. --json is pi's queue response.
+    const queued = await sheep("attach", docs, "--", "and again");
     expect(queued.code).toBe(0);
     expect(queued.stdout).toBe("");
     expect(queued.stderr).toContain(`queued ${docs}`);
-    const queuedJson = await lamb("attach", tests, "--json", "--", "and again too");
+    const queuedJson = await sheep("attach", tests, "--json", "--", "and again too");
     expect(queuedJson.code).toBe(0);
     expect(JSON.parse(queuedJson.stdout)).toMatchObject({ accepted: true, error: null });
     expect(JSON.parse(queuedJson.stdout).entryId).toMatch(ID);
     // With --wait, the queued turn streams when it starts.
-    const waited = await lamb("attach", types, "--wait", "--", "and once more");
+    const waited = await sheep("attach", types, "--wait", "--", "and once more");
     expect(waited.code).toBe(0);
     expect(waited.stderr).toContain(`queued ${types}`);
     expect(waited.stdout).toBe("done: note.txt written\n");
 
     // Step 5: wait on all three; each line is one sheep's last assistant message.
-    const wait = await lamb("wait", "--timeout", "60", docs, tests, types);
+    const wait = await sheep("wait", "--timeout", "60", docs, tests, types);
     expect(wait.code).toBe(0);
     const results = wait.stdout.trimEnd().split("\n").map((line) => line.split("\t"));
     expect(results.map((row) => row[0]).sort()).toEqual([...ids].sort());
     for (const row of results) expect(row[1]).toBe("done: note.txt written");
-    const waitJson = JSON.parse((await lamb("wait", "--json", docs, tests)).stdout) as Array<{ id: string; message: { type: string; message: { role: string } } }>;
+    const waitJson = JSON.parse((await sheep("wait", "--json", docs, tests)).stdout) as Array<{ id: string; message: { type: string; message: { role: string } } }>;
     expect(waitJson.map((entry) => entry.id).sort()).toEqual([docs, tests].sort());
     for (const entry of waitJson) expect(entry.message).toMatchObject({ type: "message", message: { role: "assistant" } });
     // The queued prompts ran after the turn: user, assistant, toolResult, assistant, twice.
-    const docsRoles = (await lamb("log", docs, "--json")).stdout
+    const docsRoles = (await sheep("log", docs, "--json")).stdout
       .trimEnd()
       .split("\n")
       .map((line) => JSON.parse(line) as { type: string; message?: { role: string } })
@@ -215,22 +215,22 @@ describe.skipIf(typeof home === "string")("journey 5: a dog and its flock, throu
 
     // Step 6: a sheep going wrong is aborted; the transcript says so and the lane is idle.
     await script(`/s/${types}/faux`, { steps: [{ text: "this takes forever", delayMs: 60_000 }] });
-    const slow = await lamb("attach", types, "--detach", "--", "go slow");
+    const slow = await sheep("attach", types, "--detach", "--", "go slow");
     expect(slow.code).toBe(0);
     expect(slow.stdout).toBe(`${types}\n`);
-    expect((await lamb("status", types)).stdout).toMatch(/^state: running$/m);
-    const abort = await lamb("abort", types);
+    expect((await sheep("status", types)).stdout).toMatch(/^state: running$/m);
+    const abort = await sheep("abort", types);
     expect(abort.code).toBe(0);
     expect(abort.stdout).toMatch(new RegExp(`^${types}\taborted [0-9a-f-]{36}\n$`));
-    expect(JSON.parse((await lamb("abort", types, "--json")).stdout)).toEqual({ id: types, aborted: false });
-    expect((await lamb("status", types)).stdout).toMatch(/^state: idle$/m);
-    const abortedEntries = (await lamb("log", types, "--json", "--last", "1")).stdout.trimEnd().split("\n").map((line) => JSON.parse(line) as { message: { role: string; stopReason?: string } });
+    expect(JSON.parse((await sheep("abort", types, "--json")).stdout)).toEqual({ id: types, aborted: false });
+    expect((await sheep("status", types)).stdout).toMatch(/^state: idle$/m);
+    const abortedEntries = (await sheep("log", types, "--json", "--last", "1")).stdout.trimEnd().split("\n").map((line) => JSON.parse(line) as { message: { role: string; stopReason?: string } });
     expect(abortedEntries[0]!.message).toMatchObject({ role: "assistant", stopReason: "aborted" });
-    expect((await lamb("ls")).stdout).toContain(`${types}\ttypes\t`);
-    expect((await lamb("ls", "--json")).stdout).toContain(`"id":"${types}","name":"types","createdAt":`);
+    expect((await sheep("ls")).stdout).toContain(`${types}\ttypes\t`);
+    expect((await sheep("ls", "--json")).stdout).toContain(`"id":"${types}","name":"types","createdAt":`);
 
     // Step 7: the transcript as text, oldest first, one block per entry, with the tool calls and their results.
-    const log = await lamb("log", docs);
+    const log = await sheep("log", docs);
     expect(log.code).toBe(0);
     expect(log.stdout.endsWith("\n")).toBe(true);
     const blocks = log.stdout.trimEnd().split("\n\n");
@@ -239,35 +239,35 @@ describe.skipIf(typeof home === "string")("journey 5: a dog and its flock, throu
     expect(blocks[2]).toMatch(/^\[result bash\] [0-9a-f-]{36} .*\nherding$/);
     expect(blocks[3]).toMatch(/^\[assistant\] [0-9a-f-]{36} .*\ndone: note.txt written$/);
     expect(blocks).toHaveLength(8);
-    const last = await lamb("log", docs, "--last", "2");
+    const last = await sheep("log", docs, "--last", "2");
     expect(last.stdout.trimEnd().split("\n\n")).toHaveLength(2);
-    const entries = (await lamb("log", docs, "--json")).stdout.trimEnd().split("\n").map((line) => JSON.parse(line) as { id: string; seq: number; timestamp: number });
+    const entries = (await sheep("log", docs, "--json")).stdout.trimEnd().split("\n").map((line) => JSON.parse(line) as { id: string; seq: number; timestamp: number });
     expect(entries.map((entry) => entry.seq)).toEqual([...entries.map((entry) => entry.seq)].sort((a, b) => a - b));
-    const sinceId = (await lamb("log", docs, "--since", entries[3]!.id, "--json")).stdout.trimEnd().split("\n").map((line) => JSON.parse(line) as { id: string });
+    const sinceId = (await sheep("log", docs, "--since", entries[3]!.id, "--json")).stdout.trimEnd().split("\n").map((line) => JSON.parse(line) as { id: string });
     expect(sinceId.map((entry) => entry.id)).toEqual(entries.slice(4).map((entry) => entry.id));
-    const sinceTime = (await lamb("log", docs, "--since", new Date(entries[4]!.timestamp).toISOString(), "--json")).stdout.trimEnd().split("\n");
+    const sinceTime = (await sheep("log", docs, "--since", new Date(entries[4]!.timestamp).toISOString(), "--json")).stdout.trimEnd().split("\n");
     expect(sinceTime.length).toBeGreaterThanOrEqual(4);
-    expect((await lamb("log", docs, "--since", "yesterday")).code).toBe(2);
+    expect((await sheep("log", docs, "--since", "yesterday")).code).toBe(2);
 
     // Prompt mode on an idle sheep prints the whole reply, first character included, and exits.
-    const reply = await lamb("attach", docs, "--", "hello");
+    const reply = await sheep("attach", docs, "--", "hello");
     expect(reply.code).toBe(0);
     expect(reply.stdout).toBe("done: note.txt written\n");
-    const replyJson = JSON.parse((await lamb("attach", docs, "--json", "--", "hello json")).stdout) as { type: string; message: { role: string; content: Array<{ text: string }> } };
+    const replyJson = JSON.parse((await sheep("attach", docs, "--json", "--", "hello json")).stdout) as { type: string; message: { role: string; content: Array<{ text: string }> } };
     expect(replyJson.type).toBe("message");
     expect(replyJson.message.role).toBe("assistant");
     expect(replyJson.message.content[0]!.text).toBe("done: note.txt written");
-    // `lamb new` without --detach still says which session on stderr, and streams.
-    const fresh = await lamb("new", "--name", "plain", "--", "hi there");
+    // `sheep new` without --detach still says which session on stderr, and streams.
+    const fresh = await sheep("new", "--name", "plain", "--", "hi there");
     expect(fresh.code).toBe(0);
     expect(fresh.stderr).toMatch(/^session [0-9a-f-]{36}\n/);
     expect(fresh.stdout).toBe("done: note.txt written\n");
 
     // A wait that runs out exits 124 with what had finished.
-    await lamb("attach", types, "--detach", "--", "go slow again");
-    const timedOut = await lamb("wait", "--timeout", "2", types, docs);
+    await sheep("attach", types, "--detach", "--", "go slow again");
+    const timedOut = await sheep("wait", "--timeout", "2", types, docs);
     expect(timedOut.code).toBe(124);
     expect(timedOut.stdout).toBe(`${docs}\tdone: note.txt written\n`);
-    expect((await lamb("abort", types)).code).toBe(0);
+    expect((await sheep("abort", types)).code).toBe(0);
   });
 });

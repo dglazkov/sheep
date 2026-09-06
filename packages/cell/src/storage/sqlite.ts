@@ -21,7 +21,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 /** Where the cell tells pi its one database lives. A marker, not a file. */
-export const CELL_DATABASE_PATH = "/tmp/lamb/sessions.sqlite";
+export const CELL_DATABASE_PATH = "/tmp/sheep/sessions.sqlite";
 
 /**
  * Statements pi's backend issues for a file-backed connection that the

@@ -59,7 +59,7 @@ describe("the fake container is the agent over a socket pair", () => {
 });
 
 describe("the manifest: every workspace row with its hash", () => {
-  it("is what lamb's tools wrote, hashed; an edit changes the hash; a directory has none", async () => {
+  it("is what pi's tools wrote, hashed; an edit changes the hash; a directory has none", async () => {
     await inCell("manifest", async (cell) => {
       await tools.write.execute("w", { path: "src/a.txt", content: "alpha\nbeta\n" }, noUpdate, { env: cell }, invocation, context);
       getOrThrow(await cell.writeFile("/tmp/scratch.txt", "not in the manifest", context));

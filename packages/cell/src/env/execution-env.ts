@@ -5,8 +5,8 @@
  * minus the process plumbing a cell does not have.
  *
  * `exec` is the seam. With no container configured it does not route at
- * all: the line runs in just-bash over the rows exactly as lamb ran it,
- * and the table's sentence reaches the output the way lamb's always did,
+ * all: the line runs in just-bash over the rows exactly as it did before pen,
+ * and the table's sentence reaches the output the way it always did,
  * appended by `annotateCommandNotFound` to just-bash's own not-found
  * line. That is journey 6, byte for byte. With a container, the table is
  * consulted: a line whose programs are all tier 0 still runs in
@@ -30,7 +30,7 @@ import {
   type ShellExecOptions,
   type ShellExecResult,
 } from "@earendil-works/pi-agent-core";
-import type { Refused } from "@lamb/pen/protocol";
+import type { Refused } from "@sheep/pen/protocol";
 import { Bash } from "just-bash/browser";
 import { posix } from "node:path";
 import { Checkout, CheckoutInterrupted } from "../pen/checkout.ts";
@@ -115,7 +115,7 @@ export interface CellExecutionEnvOptions {
   /** Default variables the shell sees when `inheritEnv` is true. */
   shellEnv?: Record<string, string>;
   now?: () => number;
-  /** Tier 2. Absent, this home has no container: the table's tier-2 column is empty and the shell is lamb's. */
+  /** Tier 2. Absent, this home has no container: the table's tier-2 column is empty and the shell is just-bash over the rows. */
   container?: ContainerLease;
   /** Milliseconds a container has to answer `kill` before it is given up; absent, the cell waits. */
   killTimeoutMs?: number;
@@ -160,7 +160,7 @@ export class CellExecutionEnv implements ExecutionEnv {
       HOME: WORKSPACE_ROOT,
       PATH: "/usr/local/bin:/usr/bin:/bin",
       TMPDIR: TEMP_ROOT,
-      LAMB: "1",
+      SHEEP: "1",
       ...options.shellEnv,
     };
   }
@@ -335,7 +335,7 @@ export class CellExecutionEnv implements ExecutionEnv {
       return err(new ExecutionError("unknown", cause.message, cause));
     }
 
-    // No container: lamb's shell, line for line; just-bash's own not-found line, annotated, is the refusal.
+    // No container: the shell of a home with no container, line for line; just-bash's own not-found line, annotated, is the refusal.
     // The one exception, on a home with the loader, is the tier-1 line, which the table is asked for either way.
     const home = this.container === undefined ? this.home : await this.homeNow();
     let route: Route = { tier: 0, programs: [] };
@@ -376,7 +376,7 @@ export class CellExecutionEnv implements ExecutionEnv {
     }
   }
 
-  /** Tier 0: just-bash over the rows, as lamb ran it. */
+  /** Tier 0: just-bash over the rows, as the shell always ran it. */
   private async runInShell(
     command: string,
     cwd: string,
@@ -534,7 +534,7 @@ export class CellExecutionEnv implements ExecutionEnv {
       // Timings for the findings: what a sync-in costs for this workspace, and the run and sync-out after it.
       console.info(`[pen] sync-in ${Date.now() - syncInStarted} ms, ${this.files.manifest().length} entries`);
 
-      // The container's own PATH and HOME win over lamb's stand-ins; the rest of the environment is what the shell would have seen.
+      // The container's own PATH and HOME win over the cell shell's stand-ins; the rest of the environment is what the shell would have seen.
       const { PATH: _path, HOME: _home, ...runEnv } = environment;
       const id = `run-${++this.runs}`;
       const run = new ContainerRun(

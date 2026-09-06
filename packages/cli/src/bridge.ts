@@ -82,7 +82,7 @@ function connectPeer(socket: Socket, socketUrl: string, onError: (error: Error) 
 
 /** Starts a bridge for one cell. Every connection to the socket becomes one WebSocket to the cell. */
 export async function startBridge(options: { socketUrl: string; serverId: string; onError?: (error: Error) => void }): Promise<Bridge> {
-  const dir = await mkdtemp(join(tmpdir(), "lamb-"));
+  const dir = await mkdtemp(join(tmpdir(), "sheep-"));
   const path = join(dir, `${options.serverId}.sock`);
   const onError = options.onError ?? (() => {});
   const server: Server = createServer((socket) => connectPeer(socket, options.socketUrl, onError));

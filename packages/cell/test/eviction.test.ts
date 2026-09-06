@@ -7,7 +7,7 @@ import { setFauxScript } from "../src/models.ts";
 const headers = { authorization: "Bearer test-token", "content-type": "application/json" };
 
 function api(path: string, init?: RequestInit): Promise<Response> {
-  return SELF.fetch(`https://lamb.test${path}`, { ...init, headers: { ...headers, ...(init?.headers ?? {}) } });
+  return SELF.fetch(`https://sheep.test${path}`, { ...init, headers: { ...headers, ...(init?.headers ?? {}) } });
 }
 
 /**

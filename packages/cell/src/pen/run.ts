@@ -15,7 +15,7 @@
  * socket; the lease that owns the socket sees the close and discards the
  * container, which on Cloudflare is the platform's to stop.
  */
-import { type CellFrame, type ContainerFrame, decodeFrame, encodeFrame } from "@lamb/pen/protocol";
+import { type CellFrame, type ContainerFrame, decodeFrame, encodeFrame } from "@sheep/pen/protocol";
 
 /** The container went away while the command was running. Whatever ran, ran; no exit code exists. */
 export class RunInterrupted extends Error {

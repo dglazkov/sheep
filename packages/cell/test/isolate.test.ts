@@ -239,7 +239,7 @@ describe("what the isolate is loaded with", () => {
     expect(code.limits).toEqual({ cpuMs: 1234, subRequests: 0 });
     expect(code.mainModule).toBe(ENTRY_MODULE);
     const dumped = JSON.stringify(code);
-    for (const secret of [env.LAMB_TOKEN, env.PEN_GIT_TOKEN, "LAMB_TOKEN", "PEN_GIT_TOKEN", "SESSION_CELL", "DIRECTORY"]) expect(dumped).not.toContain(secret);
+    for (const secret of [env.SHEEP_TOKEN, env.PEN_GIT_TOKEN, "SHEEP_TOKEN", "PEN_GIT_TOKEN", "SESSION_CELL", "DIRECTORY"]) expect(dumped).not.toContain(secret);
   });
 });
 
@@ -370,8 +370,8 @@ describe("pen journey 4 step 3 and the acceptance criteria: what the isolate lac
         "looks.mjs": [
           'import { env } from "cloudflare:workers";',
           "const seen = {",
-          "  globalToken: globalThis.LAMB_TOKEN,",
-          "  processToken: process.env.LAMB_TOKEN,",
+          "  globalToken: globalThis.SHEEP_TOKEN,",
+          "  processToken: process.env.SHEEP_TOKEN,",
           "  gitToken: process.env.PEN_GIT_TOKEN,",
           "  processEnv: Object.keys(process.env),",
           "  bindings: Object.keys(env),",
@@ -395,7 +395,7 @@ describe("pen journey 4 step 3 and the acceptance criteria: what the isolate lac
       expect(timed.startsWith(`Error: ${isolateScopeRefused(cell.home)}\n`)).toBe(true);
       const looked = JSON.parse((await bash(cell, "node looks.mjs")).text) as Record<string, unknown>;
       expect(looked).toEqual({ processEnv: [], bindings: [], cell: "undefined", loader: "undefined" });
-      for (const secret of [env.LAMB_TOKEN, env.PEN_GIT_TOKEN]) expect(JSON.stringify(looked)).not.toContain(secret);
+      for (const secret of [env.SHEEP_TOKEN, env.PEN_GIT_TOKEN]) expect(JSON.stringify(looked)).not.toContain(secret);
     });
   });
 

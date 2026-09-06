@@ -1,7 +1,7 @@
 /**
  * pen phase 2: the router and the sentence, against the fake container in
  * workerd. The table's decisions for a dozen lines; journey 6, a home
- * with no container, which is lamb; journey 1 steps 1 to 4 through pi's
+ * with no container, whose shell does not route; journey 1 steps 1 to 4 through pi's
  * real bash tool, output streaming as the fake prints it; journey 3 step
  * 3, the fake stopped mid-run and the tool error honest about it; and
  * the timeout, the abort, and a run's edits coming back to the rows.
@@ -199,7 +199,7 @@ describe("the table", () => {
   it("the refusal, the prompt, and the table agree on every program, with and without a container", () => {
     for (const program of PROGRAMS) {
       for (const name of [program.name, ...(program.also ?? [])]) {
-        // No container: nothing outside tier 0 runs, and the sentence is lamb's for every one of them.
+        // No container: nothing outside tier 0 runs, and the sentence is the no-container shell's for every one of them.
         const without = classify(`${name} --version`, NO_CONTAINER);
         expect(without).toMatchObject({ refused: name, sentence: SHELL_NOTICE });
         expect(refusalSentence(name, NO_CONTAINER)).toBe(SHELL_NOTICE);
@@ -247,18 +247,18 @@ describe("the table", () => {
     for (const tool of TEXT_TOOLS_SHOWN) expect(line).toContain(tool);
     expect(line).not.toBe(shellSystemPromptLine(WITH_CONTAINER));
     expect(line).not.toBe(shellSystemPromptLine(NO_CONTAINER));
-    // Lamb's strings did not move.
+    // The no-container shell's strings did not move.
     expect(shellNotice(NO_CONTAINER)).toBe(SHELL_NOTICE);
     expect(refusalSentence("pnpm", { container: true, budgetSpent: false })).toBe(shellNotice(WITH_CONTAINER));
   });
 });
 
-describe("pen journey 6: a home with no container is lamb", () => {
-  it("does not route: four lines through pi's bash tool give lamb's exact output, hi before the not-found and exit 0 after echo b", async () => {
+describe("pen journey 6: a home with no container keeps the shell it had before pen", () => {
+  it("does not route: four lines through pi's bash tool give the no-container shell's exact output, hi before the not-found and exit 0 after echo b", async () => {
     await inCell("j6", undefined, async (cell) => {
       expect(cell.home).toEqual({ container: false, isolate: false, containerUp: false });
       getOrThrow(await cell.writeFile("package.json", '{"name":"p"}\n', context));
-      // Lamb's outputs, taken from lamb's tree with pen's changes stashed; the notice is the one part the table generates.
+      // The shell's outputs before pen, taken from the tree with pen's changes stashed; the notice is the one part the table generates.
       const thrown = async (command: string) => {
         try {
           await bash(cell, command);
@@ -578,7 +578,7 @@ describe("timeout, abort, and the edits that come back", () => {
       // The run got the env the shell would have, minus the stand-ins the container's own values replace.
       const run = home.runs()[0]!.frame as { env: Record<string, string>; cwd: string };
       expect(run.cwd).toBe("/workspace");
-      expect(run.env).toMatchObject({ LAMB: "1", TMPDIR: "/tmp", PWD: "/workspace" });
+      expect(run.env).toMatchObject({ SHEEP: "1", TMPDIR: "/tmp", PWD: "/workspace" });
       expect(run.env).not.toHaveProperty("PATH");
       expect(run.env).not.toHaveProperty("HOME");
     });

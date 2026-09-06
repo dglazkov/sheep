@@ -95,7 +95,7 @@ export interface CellModelHooks {
 }
 
 export function createCellModels(env: Env, hooks: CellModelHooks = {}): CellModels {
-  if (env.LAMB_PROVIDER === "faux") {
+  if (env.SHEEP_PROVIDER === "faux") {
     const faux = fauxProvider();
     // The faux provider consumes one queued step per call; one factory that
     // re-queues itself answers every call from the program or the script.
@@ -111,7 +111,7 @@ export function createCellModels(env: Env, hooks: CellModelHooks = {}): CellMode
     return { models, model: faux.getModel(), faux };
   }
   const secrets: Record<string, string | undefined> = {
-    ANTHROPIC_API_KEY: env.LAMB_ANTHROPIC_API_KEY ?? env.ANTHROPIC_API_KEY,
+    ANTHROPIC_API_KEY: env.SHEEP_ANTHROPIC_API_KEY ?? env.ANTHROPIC_API_KEY,
   };
   const models = createModels({
     authContext: {
@@ -125,7 +125,7 @@ export function createCellModels(env: Env, hooks: CellModelHooks = {}): CellMode
     },
   });
   models.setProvider(anthropicProvider());
-  const wanted = env.LAMB_MODEL ?? DEFAULT_MODEL;
+  const wanted = env.SHEEP_MODEL ?? DEFAULT_MODEL;
   const model = models.getModel("anthropic", wanted) ?? models.getModels("anthropic")[0];
   if (model === undefined) throw new Error("No Anthropic model available");
   return { models, model };

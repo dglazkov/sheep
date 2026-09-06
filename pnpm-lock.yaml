@@ -45,7 +45,7 @@ importers:
       '@earendil-works/pi-session-backend-sqlite-node':
         specifier: link:../../vendor/pi/packages/session-backends/sqlite-node
         version: link:../../vendor/pi/packages/session-backends/sqlite-node
-      '@lamb/pen':
+      '@sheep/pen':
         specifier: workspace:*
         version: link:../pen
       just-bash:
@@ -71,7 +71,7 @@ importers:
         specifier: ^4.0.0
         version: 4.129.0(@cloudflare/workers-types@5.20260905.1)
 
-  packages/lamb:
+  packages/cli:
     dependencies:
       '@earendil-works/chord':
         specifier: link:../../vendor/pi/packages/chord

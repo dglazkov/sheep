@@ -20,7 +20,7 @@ import {
   type ManifestEntry,
   messageBytes,
   type Refused,
-} from "@lamb/pen/protocol";
+} from "@sheep/pen/protocol";
 import { posix } from "node:path";
 import { FilesTable, hashBytes, MAX_FILE_BYTES, WORKSPACE_ROOT } from "../workspace/files.ts";
 

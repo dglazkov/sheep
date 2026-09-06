@@ -6,18 +6,18 @@ export default defineConfig({
     cloudflareTest({
       wrangler: { configPath: "./wrangler.jsonc" },
       miniflare: {
-        // Pen phase 5's Worker Loader, bound here and not in the top-level config, which is journey 6's lamb home
+        // Pen phase 5's Worker Loader, bound here and not in the top-level config, which is journey 6's home with no container
         // and must have none: miniflare's `workerLoaders` is a record keyed by binding name, each value `{}`.
         workerLoaders: { LOADER: {} },
-        // The top-level config is lamb: no container binding. The `PEN_*` values apply only to a
+        // The top-level config has no container binding. The `PEN_*` values apply only to a
         // cell with a test-provided starter (`test/lease.test.ts`); without one they change nothing.
         // The timeouts are short so the deadlines can be seen to fire; the budget is two minutes. The git token
         // is the broker test's fixture, a string that looks like nothing else, so a grep for it is exact.
         // The isolate's CPU limit is short so a test can name it; the local runtime does not enforce it.
         bindings: {
-          LAMB_TOKEN: "test-token",
-          LAMB_PROVIDER: "faux",
-          PEN_CELL_ORIGIN: "https://lamb.test",
+          SHEEP_TOKEN: "test-token",
+          SHEEP_PROVIDER: "faux",
+          PEN_CELL_ORIGIN: "https://sheep.test",
           PEN_START_TIMEOUT: "2",
           PEN_KILL_TIMEOUT: "1",
           PEN_BUDGET_MINUTES: "2",

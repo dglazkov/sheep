@@ -1,6 +1,6 @@
 /**
  * The fake container every pen test talks to: the real agent from
- * `@lamb/pen/agent`, served over one end of a `WebSocketPair` in workerd,
+ * `@sheep/pen/agent`, served over one end of a `WebSocketPair` in workerd,
  * with its checkout in a `Map`. Not a second agent; the agent over a
  * different disk. The test holds the other end, which is what the cell
  * holds, and `stop()` is the shepherd's hand: the container going away
@@ -16,7 +16,7 @@
  * the run is the agent's own. A command with no script is answered as the
  * container's bash would answer a program the image lacks.
  */
-import { type Disk, type DiskEntry, type Runner, type RunOutcome, type RunRequest, serveAgent } from "@lamb/pen/agent";
+import { type Disk, type DiskEntry, type Runner, type RunOutcome, type RunRequest, serveAgent } from "@sheep/pen/agent";
 import {
   type CellFrame,
   type ContainerFrame,
@@ -28,7 +28,7 @@ import {
   type Frame,
   messageBytes,
   type Refused,
-} from "@lamb/pen/protocol";
+} from "@sheep/pen/protocol";
 import { hashBytes } from "../src/workspace/files.ts";
 
 export type MemoryEntry =

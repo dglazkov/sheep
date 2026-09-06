@@ -8,31 +8,31 @@ import { runPiClient } from "./pi.js";
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };
 
-const USAGE = `lamb — pi, running in a cell
+const USAGE = `sheep — pi, running in a cell
 
 usage:
-  lamb new [--name <name>] [--detach] [--wait] [-- <prompt>]   mint a session at the home; attach pi's terminal, or send the prompt
-  lamb -c | --continue [--detach] [--wait] [-- <prompt>]       the same, on the newest session
-  lamb attach <id> [--detach] [--wait] [-- <prompt>]           the same, on a named session; a second terminal on the same cell
-  lamb ls                                  the home's sessions: id, name, created, lane state; one per line, tab separated
-  lamb status <id>                         the lane now: open operation, last tool call, tokens so far
-  lamb wait [--timeout <seconds>] <id>...  block until every named session is idle; print each one's last assistant message
-  lamb abort <id>                          stop the open operation
-  lamb log [--since <entry id | ISO time>] [--last <n>] <id>   the transcript as text, oldest first, one block per entry
-  lamb export <id> [file]                  write the session as a pi SQLite file (default <id>.sqlite)
-  lamb config                              print the resolved home (never the token)
-  lamb --version
+  sheep new [--name <name>] [--detach] [--wait] [-- <prompt>]   mint a session at the home; attach pi's terminal, or send the prompt
+  sheep -c | --continue [--detach] [--wait] [-- <prompt>]       the same, on the newest session
+  sheep attach <id> [--detach] [--wait] [-- <prompt>]           the same, on a named session; a second terminal on the same cell
+  sheep ls                                  the home's sessions: id, name, created, lane state; one per line, tab separated
+  sheep status <id>                         the lane now: open operation, last tool call, tokens so far
+  sheep wait [--timeout <seconds>] <id>...  block until every named session is idle; print each one's last assistant message
+  sheep abort <id>                          stop the open operation
+  sheep log [--since <entry id | ISO time>] [--last <n>] <id>   the transcript as text, oldest first, one block per entry
+  sheep export <id> [file]                  write the session as a pi SQLite file (default <id>.sqlite)
+  sheep config                              print the resolved home (never the token)
+  sheep --version
 
 options:
-  --home <url>    which home; also LAMB_HOME or ~/.lamb/config ({"home": "...", "token": "..."})
+  --home <url>    which home; also SHEEP_HOME or ~/.sheep/config ({"home": "...", "token": "..."})
   --json          machine output, pi's shapes: entries are pi entries, status is pi's lane snapshot,
                   a queued prompt is pi's queue response, a detached prompt is pi's operation response
   --detach        with a prompt: send it and exit before the first token; the id is the first line of stdout
   --wait          with a prompt to a busy session: stream the queued turn when it starts
 
-With a prompt after --, the reply streams and lamb exits when the turn ends. A prompt to a busy session is
-queued behind the running turn, as pi queues a prompt typed mid-turn; lamb prints "queued <id>" and exits 0.
-Without a prompt, lamb attaches pi's interactive terminal. wait exits 124 on timeout, with what had finished.
+With a prompt after --, the reply streams and sheep exits when the turn ends. A prompt to a busy session is
+queued behind the running turn, as pi queues a prompt typed mid-turn; sheep prints "queued <id>" and exits 0.
+Without a prompt, sheep attaches pi's interactive terminal. wait exits 124 on timeout, with what had finished.
 `;
 
 interface Parsed {
@@ -84,7 +84,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     return 0;
   }
   if (command === "--version" || command === "-v") {
-    process.stdout.write(`lamb ${version}\n`);
+    process.stdout.write(`sheep ${version}\n`);
     return 0;
   }
   const config = await loadConfig({ home: parsed.home });
@@ -111,7 +111,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       case "-c":
       case "--continue": {
         const newest = (await home.list())[0];
-        if (newest === undefined) return fail("no sessions at this home; run `lamb new`");
+        if (newest === undefined) return fail("no sessions at this home; run `sheep new`");
         return parsed.detach ? detach(home, newest.id, parsed) : attach(home, newest.id, parsed, output);
       }
       case "attach": {
@@ -173,7 +173,7 @@ async function detach(home: Home, sessionId: string, parsed: Parsed): Promise<nu
   return 0;
 }
 
-/** With a prompt, lamb's own client; without one, pi's terminal through the bridge. */
+/** With a prompt, sheep's own client; without one, pi's terminal through the bridge. */
 async function attach(home: Home, sessionId: string, parsed: Parsed, output: Parameters<typeof runPrompt>[4]): Promise<number> {
   if (parsed.prompt !== undefined) return runPrompt(home, sessionId, parsed.prompt, { wait: parsed.wait }, output);
   const serverId = await home.serverId();
@@ -181,6 +181,6 @@ async function attach(home: Home, sessionId: string, parsed: Parsed, output: Par
 }
 
 function fail(message: string): number {
-  process.stderr.write(`lamb: ${message}\n`);
+  process.stderr.write(`sheep: ${message}\n`);
   return 2;
 }
