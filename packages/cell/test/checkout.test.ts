@@ -4,6 +4,7 @@
  * could die. Every expected value is the test's own arithmetic over a
  * generated fixture; nothing is a snapshot of what the code produced.
  */
+import type { ManifestEntry } from "@sheep/pen/protocol";
 import { env, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { Checkout, CheckoutInterrupted } from "../src/pen/checkout.ts";
@@ -235,7 +236,7 @@ interface Run {
   transcript: TranscriptEntry[];
   rows: Snapshot;
   disk: Snapshot;
-  syncIn: PromiseSettledResult<void>;
+  syncIn: PromiseSettledResult<ManifestEntry[] | undefined>;
   syncOut: PromiseSettledResult<unknown>;
   agentSyncOut: PromiseSettledResult<unknown>;
   timing: { syncInMs: number; syncOutMs: number };

@@ -120,13 +120,17 @@ export class Checkout {
   /**
    * Sends the manifest, answers `need` with blobs, and resolves when the
    * container says `checkout`: the tree is on its disk. With a pasture,
-   * the manifest carries the second root and `need` is answered for both.
+   * the manifest carries the second root and `need` is answered for both,
+   * and the second root as it was sent is what the sync-in resolves to,
+   * so the caller knows what the container's `/pasture` holds now without
+   * a second hop (pasture phase 4 asks it for `setup.sh`); without a
+   * pasture it resolves to nothing, as before.
    */
-  async syncIn(): Promise<void> {
+  async syncIn(): Promise<ManifestEntry[] | undefined> {
     // The pasture's tree as it is now, one hop, before the manifest goes; a socket gone meanwhile fails at `start`.
     const pasture = this.pasture === undefined ? undefined : await pastureManifest(this.pasture);
     const source = this.pasture;
-    return this.start<void>((id, resolve, reject) => {
+    return this.start<ManifestEntry[] | undefined>((id, resolve, reject) => {
       const entries = this.files.manifest();
       const byHash = new Map<string, ManifestEntry>();
       for (const entry of entries) if (entry.hash !== null && !byHash.has(entry.hash)) byHash.set(entry.hash, entry);
@@ -155,7 +159,7 @@ export class Checkout {
           }
           if (frame.type === "checkout" && frame.id === id) {
             this.pending = null;
-            resolve();
+            resolve(pasture);
             return;
           }
           throw new CheckoutProtocolError(`unexpected ${frame.type} frame during sync-in ${id}`);

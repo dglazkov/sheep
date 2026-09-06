@@ -163,4 +163,20 @@ export class Pasture extends DurableObject<Env> {
   secret(name: string): string | undefined {
     return this.ctx.storage.sql.exec<{ value: string }>("SELECT value FROM secrets WHERE name = ?", name).toArray()[0]?.value;
   }
+
+  /**
+   * Setup's environment (pasture phase 4): every secret but `GIT_TOKEN`,
+   * name to value, read at the moment of the setup run and sent to that
+   * one `run` frame. `GIT_TOKEN` is the broker's and is never environment.
+   */
+  secrets(): Record<string, string> {
+    const environment: Record<string, string> = {};
+    for (const row of this.ctx.storage.sql.exec<{ name: string; value: string }>("SELECT name, value FROM secrets WHERE name <> ? ORDER BY name", SETUP_EXCLUDED_SECRET).toArray()) {
+      environment[row.name] = row.value;
+    }
+    return environment;
+  }
 }
+
+/** The one secret setup does not get: the broker's credential, `GIT_TOKEN` (`PASTURE_GIT_TOKEN` in `pen/broker.ts`). */
+export const SETUP_EXCLUDED_SECRET = "GIT_TOKEN";

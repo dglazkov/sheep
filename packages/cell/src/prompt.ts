@@ -20,16 +20,15 @@
  *
  * pi's pieces reach the cell by path into its built files: the package's
  * root export is a Node bundle (a terminal, child processes) a Worker
- * cannot load. `parseFrontmatter` and `createSyntheticSourceInfo` are leaf
- * modules and are imported. `formatSkillsForPrompt` is not: its module
- * imports pi's `config.js`, whose top level runs
- * `fileURLToPath(import.meta.url)`, and a Worker has no `import.meta.url`,
- * so a bundle that carries it fails to boot. `skillsBlock` below is that
- * function's output, byte for byte, pinned by a test that loads pi's own
- * (vitest can, wrangler cannot); a pi commit that moves the function to a
- * leaf module makes this one import.
+ * cannot load. `parseFrontmatter`, `createSyntheticSourceInfo`, and, since
+ * pasture phase 4's fork commit, `formatSkillsForPrompt` are leaf modules
+ * and are imported: the formatter's old home, `core/skills.js`, imports
+ * pi's `config.js`, whose top level runs `fileURLToPath(import.meta.url)`,
+ * and a Worker has no `import.meta.url`, so a bundle that carried it
+ * failed to boot; `core/skills-prompt.js` is the formatter and the `Skill`
+ * it lists, and nothing else.
  */
-import type { Skill } from "../../../vendor/pi/packages/coding-agent/dist/core/skills.js";
+import { formatSkillsForPrompt, type Skill } from "../../../vendor/pi/packages/coding-agent/dist/core/skills-prompt.js";
 import { createSyntheticSourceInfo } from "../../../vendor/pi/packages/coding-agent/dist/core/source-info.js";
 import { parseFrontmatter } from "../../../vendor/pi/packages/coding-agent/dist/utils/frontmatter.js";
 import { type Home, shellSystemPromptLine } from "./env/programs.ts";
@@ -93,37 +92,8 @@ export async function pasturePrompt(name: string, call: PastureCall): Promise<st
     if ("skill" in parsed) skills.push(parsed.skill);
     else faults.push(skillFault(row.path, parsed.fault));
   }
-  return paragraph + (brief === undefined ? "" : `\n\n${brief}`) + skillsBlock(skills) + (faults.length === 0 ? "" : `\n\n${faults.join("\n")}`);
-}
-
-/**
- * pi's `formatSkillsForPrompt(skills, "read")`, as the Agent Skills standard
- * has it: the three lines of guidance and the `<available_skills>` block,
- * or nothing when no skill may be listed. A test holds it equal to pi's.
- */
-export function skillsBlock(skills: readonly Skill[]): string {
-  const visible = skills.filter((skill) => !skill.disableModelInvocation);
-  if (visible.length === 0) return "";
-  const lines = [
-    "\n\nThe following skills provide specialized instructions for specific tasks.",
-    "Use the read tool to load a skill's file when the task matches its description.",
-    "When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.",
-    "",
-    "<available_skills>",
-  ];
-  for (const skill of visible) {
-    lines.push("  <skill>");
-    lines.push(`    <name>${escapeXml(skill.name)}</name>`);
-    lines.push(`    <description>${escapeXml(skill.description)}</description>`);
-    lines.push(`    <location>${escapeXml(skill.filePath)}</location>`);
-    lines.push("  </skill>");
-  }
-  lines.push("</available_skills>");
-  return lines.join("\n");
-}
-
-function escapeXml(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+  // pi's own block, as the Agent Skills standard has it: the guidance for `read` and `<available_skills>`, or nothing when no skill may be listed.
+  return paragraph + (brief === undefined ? "" : `\n\n${brief}`) + formatSkillsForPrompt(skills, "read") + (faults.length === 0 ? "" : `\n\n${faults.join("\n")}`);
 }
 
 const MAX_NAME_LENGTH = 64;

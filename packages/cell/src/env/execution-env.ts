@@ -25,6 +25,9 @@
  * with the `pasture` command (`env/pasture-command.ts`) over that run's
  * mount, and the router counts the name as tier 0. Without one, just-bash
  * is made as it always was and `pasture` is its not-found line.
+ * Pasture phase 4: with a pasture whose tree has `setup.sh`, the container
+ * path runs it once per container, after the sync-in and before the
+ * command, with the pasture's other secrets in that run alone.
  */
 import type { Context } from "@earendil-works/pi-agent-core";
 import {
@@ -40,7 +43,7 @@ import {
   type ShellExecOptions,
   type ShellExecResult,
 } from "@earendil-works/pi-agent-core";
-import type { Refused } from "@sheep/pen/protocol";
+import type { ManifestEntry, Refused } from "@sheep/pen/protocol";
 import { Bash } from "just-bash/browser";
 import { posix } from "node:path";
 import { Checkout, CheckoutInterrupted } from "../pen/checkout.ts";
@@ -72,6 +75,9 @@ const MAX_TIMEOUT_MS = 2_147_483_647;
 /** The sentence a line run whole in the container gets on a home that has none. */
 export const NO_CONTAINER_NOTICE = "this home has no container";
 
+/** How a setup run ended (pasture phase 4): the script's exit code, or the sentence when it could not run to one. */
+export type SetupEnd = { exit: number } | { error: string };
+
 /** What a line run whole in the container came to (pasture phase 3): the output's tail, bounded, and how it ended. */
 export interface ContainerLineResult {
   /** The tail of the output, within the caller's limits. */
@@ -79,7 +85,12 @@ export interface ContainerLineResult {
   /** Whether the whole output was more than the tail. */
   truncated: boolean;
   end: { exit: number } | { error: string };
+  /** How setup ended when it ran after the line (pasture phase 4); absent when it did not run. */
+  setup?: SetupEnd;
 }
+
+/** When setup runs around a line in the container: before it, as a tool's line has it; after it, as a birth's clone does; or not at all. */
+export type SetupWhen = "before" | "after" | "none";
 
 export interface ContainerLineOptions {
   cwd?: string;
@@ -88,6 +99,24 @@ export interface ContainerLineOptions {
   /** The tail to keep: lines and bytes. */
   maxLines?: number;
   maxBytes?: number;
+  /** Default `before`. */
+  setup?: SetupWhen;
+}
+
+/** Pasture phase 4: the setup script's path in the tree, and the line that runs it in `/workspace` of a fresh container. */
+export const SETUP_PATH = "setup.sh";
+export const SETUP_COMMAND = `sh ${PASTURE_ROOT}/${SETUP_PATH}`;
+/** Seconds a setup run may take before it is killed; a warm-up that needs longer is a finding. */
+export const SETUP_TIMEOUT_S = 10 * 60;
+
+/** The first line of a tool result when setup failed before the command; setup's output follows it. */
+export function setupFailedLine(exit: number): string {
+  return `setup.sh failed (exit ${exit}); the command did not run:`;
+}
+
+/** The line before setup's output in a birth's entry when it failed after the clone. */
+export function setupFailedAfterLine(exit: number): string {
+  return `setup.sh failed (exit ${exit}) after the clone:`;
 }
 
 /** just-bash's bounds for one command. Generous for real work, fatal for `while true`. */
@@ -151,6 +180,11 @@ export interface ContainerLease {
   budgetSpent?(): Promise<boolean>;
 }
 
+/** What setup asks of the pasture's object at the moment of its run (pasture phase 4): every secret but `GIT_TOKEN`, name to value. The `Pasture` stub is one. */
+export interface SetupSecrets {
+  secrets(): Promise<Record<string, string>>;
+}
+
 export interface CellExecutionEnvOptions {
   cwd?: string;
   /** Default variables the shell sees when `inheritEnv` is true. */
@@ -164,8 +198,8 @@ export interface CellExecutionEnvOptions {
   containerUp?: () => boolean;
   /** Tier 1. Absent, this home has no Worker Loader: `node` is the container's or nobody's, and the table says so. */
   isolate?: Isolate;
-  /** The pasture this sheep was born into, as the cell reaches its object. Absent, there is no `/pasture` and no second backing. */
-  pasture?: PastureSource;
+  /** The pasture this sheep was born into, as the cell reaches its object. Absent, there is no `/pasture`, no second backing, and no setup. */
+  pasture?: PastureSource & SetupSecrets;
   /** The program's needs, for a sheep with a pasture: its name, this sheep's id, the object, and the directory's herd. Absent, the shell has no `pasture`. */
   pastureProgram?: PastureProgram;
 }
@@ -173,10 +207,21 @@ export interface CellExecutionEnvOptions {
 /** How a command ended, before the capture is settled. */
 type Outcome = { exitCode: number } | { error: ExecutionError };
 
-/** A command's whole output, for the spill file, and how it ended. */
+/** A command's whole output, for the spill file, and how it ended; with `setup`, how the setup after it ended (pasture phase 4). */
 interface Ran {
   full: string;
   outcome: Outcome;
+  setup?: SetupEnd;
+}
+
+/** How a setup run went: nothing to run, or how it ended, with the `Ran` a tool call returns in the command's place when it did not exit 0. */
+type Warmed = { skipped: true } | { skipped: false; end: SetupEnd; failed?: Ran };
+
+/** The record for one container socket: its checkout, and whether setup has run on it. Per container, never in the rows. */
+interface Lease {
+  socket: WebSocket;
+  checkout: Checkout;
+  warmed: boolean;
 }
 
 export class CellExecutionEnv implements ExecutionEnv {
@@ -185,7 +230,7 @@ export class CellExecutionEnv implements ExecutionEnv {
   /** The shell's file system over the rows alone; a shell run with a pasture gets a `CellFs` of its own, with that call's mount. */
   readonly fs: CellFs;
   /** The second backing, or `undefined` for a pastureless cell, which has none anywhere. */
-  readonly pasture: PastureSource | undefined;
+  readonly pasture: (PastureSource & SetupSecrets) | undefined;
   /** The program, or `undefined` for a pastureless cell, whose shell is made without it. */
   readonly pastureProgram: PastureProgram | undefined;
   private readonly shellEnv: Record<string, string>;
@@ -193,8 +238,8 @@ export class CellExecutionEnv implements ExecutionEnv {
   private readonly containerUp: (() => boolean) | undefined;
   private readonly isolate: Isolate | undefined;
   private readonly killTimeoutMs: number | undefined;
-  /** The checkout over the container socket most recently rented; one `Checkout` per socket. */
-  private lease: { socket: WebSocket; checkout: Checkout } | undefined;
+  /** The record for the container socket most recently rented; one per socket, so per container. */
+  private lease: Lease | undefined;
   private runs = 0;
 
   constructor(sql: SqlStorage, options: CellExecutionEnvOptions = {}) {
@@ -634,21 +679,23 @@ export class CellExecutionEnv implements ExecutionEnv {
     return { full: output, outcome: { exitCode: result.exitCode } };
   }
 
-  /** The checkout over this socket, made once per socket; with a pasture, its tree is the manifest's second root (pasture phase 3). */
-  private checkoutFor(socket: WebSocket): Checkout {
+  /** The record for this socket, made once per socket: its checkout, with the pasture's tree as the manifest's second root (pasture phase 3), and whether setup ran on it (pasture phase 4). */
+  private leaseFor(socket: WebSocket): Lease {
     if (this.lease?.socket !== socket) {
-      this.lease = { socket, checkout: new Checkout(socket, this.files, this.pasture === undefined ? {} : { pasture: this.pasture }) };
+      this.lease = { socket, checkout: new Checkout(socket, this.files, this.pasture === undefined ? {} : { pasture: this.pasture }), warmed: false };
     }
-    return this.lease.checkout;
+    return this.lease;
   }
 
   /**
    * One line in the container, whole, outside any tool call: pasture phase
-   * 3's birth, `git clone` before the first prompt, and from pasture phase
-   * 4 the setup script. Rented, synced in, run, synced out, as a tool's
-   * tier-2 line is; the output is kept as a bounded tail rather than
-   * streamed, and how it ended is said instead of thrown. A home with no
-   * container, or one whose budget is spent, is an `error` that says so.
+   * 3's birth, `git clone` before the first prompt. Rented, synced in, run,
+   * synced out, as a tool's tier-2 line is; the output is kept as a bounded
+   * tail rather than streamed, and how it ended is said instead of thrown.
+   * A home with no container, or one whose budget is spent, is an `error`
+   * that says so. Setup (pasture phase 4) runs as it would for a tool's
+   * line unless `setup` says otherwise: the birth asks for `after`, so the
+   * script runs on the clone, and how it ended is said in `setup`.
    */
   async containerLine(command: string, options: ContainerLineOptions = {}): Promise<ContainerLineResult> {
     const home = await this.homeNow();
@@ -666,10 +713,16 @@ export class CellExecutionEnv implements ExecutionEnv {
         options.timeout === undefined ? undefined : { timeout: options.timeout },
         undefined,
         capture,
+        options.setup ?? "before",
       );
       capture.finish();
       const view = capture.snapshot();
-      return { output: view.text, truncated: view.truncation.truncated, end: "error" in ran.outcome ? { error: ran.outcome.error.message } : { exit: ran.outcome.exitCode } };
+      return {
+        output: view.text,
+        truncated: view.truncation.truncated,
+        end: "error" in ran.outcome ? { error: ran.outcome.error.message } : { exit: ran.outcome.exitCode },
+        ...(ran.setup === undefined ? {} : { setup: ran.setup }),
+      };
     } finally {
       capture.dispose();
     }
@@ -679,7 +732,11 @@ export class CellExecutionEnv implements ExecutionEnv {
    * Tier 2: rent, sync in, run with the output streamed into the capture
    * as it arrives, sync out, and name what the sync refused. The socket
    * closing at any point settles the command as interrupted, with the
-   * output so far and no exit code, which is journey 3.
+   * output so far and no exit code, which is journey 3. With a pasture
+   * whose tree has `setup.sh`, the script runs after the sync-in into a
+   * container that has not run it and before the command, or after the
+   * command for a birth's clone; a setup that fails is returned in the
+   * command's place (pasture phase 4).
    */
   private async runInContainer(
     command: string,
@@ -688,6 +745,7 @@ export class CellExecutionEnv implements ExecutionEnv {
     options: ShellExecOptions | undefined,
     signal: AbortSignal | undefined,
     capture: OutputCapture,
+    setup: SetupWhen = "before",
   ): Promise<Ran> {
     const container = this.container;
     if (container === undefined) throw new Error("runInContainer without a container");
@@ -700,11 +758,13 @@ export class CellExecutionEnv implements ExecutionEnv {
     } catch (error) {
       return unavailable(`no container could be rented: ${messageOf(error)}`, error instanceof Error ? error : undefined);
     }
-    const checkout = this.checkoutFor(socket);
+    const lease = this.leaseFor(socket);
+    const { checkout } = lease;
     try {
       const syncInStarted = Date.now();
+      let tree: ManifestEntry[] | undefined;
       try {
-        await checkout.syncIn();
+        tree = await checkout.syncIn();
       } catch (error) {
         if (error instanceof CheckoutInterrupted) return unavailable(error.message, error);
         return { full, outcome: { error: new ExecutionError("unknown", `the sync-in failed: ${messageOf(error)}`) } };
@@ -712,58 +772,27 @@ export class CellExecutionEnv implements ExecutionEnv {
       // Timings for the findings: what a sync-in costs for this workspace, and the run and sync-out after it.
       console.info(`[pen] sync-in ${Date.now() - syncInStarted} ms, ${this.files.manifest().length} entries`);
 
-      // Pasture phase 4's place: `/pasture/setup.sh`, when the tree has one, runs here, once per fresh container and
-      // before this container's first command, with the pasture's other secrets in its environment; a setup that
-      // fails is a tool result that says so, and the command below is not run. This phase leaves the place.
+      // Setup, before this container's first command: a failure is the tool result, and the command does not run.
+      if (setup === "before") {
+        const warmed = await this.warm(lease, tree, signal, capture, setupFailedLine);
+        if (!warmed.skipped && warmed.failed !== undefined) return warmed.failed;
+      }
 
       // The container's own PATH and HOME win over the cell shell's stand-ins; the rest of the environment is what the shell would have seen.
       const { PATH: _path, HOME: _home, ...runEnv } = environment;
       const id = `run-${++this.runs}`;
-      const run = new ContainerRun(
+      const frame = await this.runFrame(
         socket,
         { id, command, cwd, env: { ...runEnv, PWD: cwd }, ...(options?.timeout === undefined ? {} : { timeout: options.timeout }) },
-        {
-          stdout: (data) => {
-            full += data;
-            capture.push(data);
-          },
-          stderr: (data) => {
-            full += data;
-            capture.push(data);
-          },
+        signal,
+        (data) => {
+          full += data;
+          capture.push(data);
         },
-        this.killTimeoutMs === undefined ? {} : { killTimeoutMs: this.killTimeoutMs },
+        () => full,
       );
-      let timedOut = false;
-      let aborted = false;
-      const timeoutId = options?.timeout === undefined
-        ? undefined
-        : setTimeout(() => {
-            timedOut = true;
-            run.kill("timeout");
-          }, options.timeout * 1000);
-      const onAbort = () => {
-        aborted = true;
-        run.kill("aborted");
-      };
-      signal?.addEventListener("abort", onAbort, { once: true });
-      let end: RunEnd;
-      const runStarted = Date.now();
-      try {
-        end = await run.start();
-        console.info(`[pen] run ${id} ${"exit" in end ? `exit ${end.exit}` : `killed (${end.killed})`} after ${Date.now() - runStarted} ms`);
-      } catch (error) {
-        if (error instanceof KillUnanswered) {
-          // The container ignored the kill past its deadline: give it up, and say so instead of a fake exit code.
-          container.discard?.(error.reason);
-          return unavailable(killUnanswered(error.killReason, error.seconds), error);
-        }
-        if (error instanceof RunInterrupted) return unavailable(INTERRUPTED_DURING_RUN, error);
-        return { full, outcome: { error: new ExecutionError("spawn_error", messageOf(error), error instanceof Error ? error : undefined) } };
-      } finally {
-        if (timeoutId !== undefined) clearTimeout(timeoutId);
-        signal?.removeEventListener("abort", onAbort);
-      }
+      if ("failed" in frame) return frame.failed;
+      const { end } = frame;
 
       let refused: Refused[];
       const syncOutStarted = Date.now();
@@ -780,17 +809,141 @@ export class CellExecutionEnv implements ExecutionEnv {
         capture.push(line);
       }
 
-      if (timedOut) return { full, outcome: { error: new ExecutionError("timeout", `timeout:${options?.timeout}`) } };
-      if (aborted || signal?.aborted) return { full, outcome: { error: new ExecutionError("aborted", "aborted") } };
+      if (frame.timedOut) return { full, outcome: { error: new ExecutionError("timeout", `timeout:${options?.timeout}`) } };
+      if (frame.aborted || signal?.aborted) return { full, outcome: { error: new ExecutionError("aborted", "aborted") } };
       if ("killed" in end) {
         // Ended by the container's own hand: its backstop timer, or a reason of its own.
         if (end.killed === "timeout") return { full, outcome: { error: new ExecutionError("timeout", `timeout:${options?.timeout}`) } };
         return { full, outcome: { error: new ExecutionError("unknown", `the container ended the command: ${end.killed}`) } };
       }
+
+      // Setup after the line, for a birth: on the clone, in the same container; how it ended is said beside the clone's.
+      if (setup === "after" && end.exit === 0) {
+        const warmed = await this.warm(lease, tree, signal, capture, setupFailedAfterLine);
+        if (!warmed.skipped) {
+          if (warmed.failed !== undefined) full += warmed.failed.full;
+          return { full, outcome: { exitCode: end.exit }, setup: warmed.end };
+        }
+      }
       return { full, outcome: { exitCode: end.exit } };
     } finally {
       container.idle();
     }
+  }
+
+  /**
+   * One `run` frame on the socket: sent, its output handed on as it
+   * arrives, settled on `exit` or `killed`. A timeout or an abort kills
+   * it; the container ignoring the kill past its deadline, or going away,
+   * is a `failed` `Ran` for the caller to return as the command's.
+   */
+  private async runFrame(
+    socket: WebSocket,
+    request: { id: string; command: string; cwd: string; env: Record<string, string>; timeout?: number },
+    signal: AbortSignal | undefined,
+    output: (data: string) => void,
+    full: () => string,
+  ): Promise<{ end: RunEnd; timedOut: boolean; aborted: boolean } | { failed: Ran }> {
+    const container = this.container;
+    if (container === undefined) throw new Error("runFrame without a container");
+    const run = new ContainerRun(socket, request, { stdout: output, stderr: output }, this.killTimeoutMs === undefined ? {} : { killTimeoutMs: this.killTimeoutMs });
+    let timedOut = false;
+    let aborted = false;
+    const timeoutId = request.timeout === undefined
+      ? undefined
+      : setTimeout(() => {
+          timedOut = true;
+          run.kill("timeout");
+        }, request.timeout * 1000);
+    const onAbort = () => {
+      aborted = true;
+      run.kill("aborted");
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    const started = Date.now();
+    try {
+      const end = await run.start();
+      console.info(`[pen] run ${request.id} ${"exit" in end ? `exit ${end.exit}` : `killed (${end.killed})`} after ${Date.now() - started} ms`);
+      return { end, timedOut, aborted };
+    } catch (error) {
+      const unavailable = (message: string, cause: Error): Ran => ({ full: full(), outcome: { error: new ExecutionError("shell_unavailable", message, cause) } });
+      if (error instanceof KillUnanswered) {
+        // The container ignored the kill past its deadline: give it up, and say so instead of a fake exit code.
+        container.discard?.(error.reason);
+        return { failed: unavailable(killUnanswered(error.killReason, error.seconds), error) };
+      }
+      if (error instanceof RunInterrupted) return { failed: unavailable(INTERRUPTED_DURING_RUN, error) };
+      return { failed: { full: full(), outcome: { error: new ExecutionError("spawn_error", messageOf(error), error instanceof Error ? error : undefined) } } };
+    } finally {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+      signal?.removeEventListener("abort", onAbort);
+    }
+  }
+
+  /**
+   * Setup (pasture phase 4): `sh /pasture/setup.sh` in `/workspace`, once
+   * per container, when the tree the sync-in just sent has the script and
+   * this socket's record says it has not run. Its `run` frame carries the
+   * pasture's secrets, all but `GIT_TOKEN`, read from the object now; no
+   * other frame does. Its output is buffered, not streamed: on exit 0 it
+   * goes nowhere but a log line with the duration, and the record is
+   * marked; otherwise it becomes the `failed` `Ran`, `line(exit)` first,
+   * pushed into the capture for the caller to return. The run is synced
+   * out like any other, so what setup wrote to the checkout is rows.
+   */
+  private async warm(lease: Lease, tree: ManifestEntry[] | undefined, signal: AbortSignal | undefined, capture: OutputCapture, line: (exit: number) => string): Promise<Warmed> {
+    const pasture = this.pasture;
+    if (lease.warmed || pasture === undefined) return { skipped: true };
+    if (!tree?.some((entry) => entry.path === SETUP_PATH && entry.kind === "file")) return { skipped: true };
+    const { checkout } = lease;
+    let output = "";
+    const failed = (outcome: Outcome): Ran => {
+      const full = "error" in outcome ? output : `${line(outcome.exitCode)}\n${output}`;
+      capture.push(full);
+      return { full, outcome };
+    };
+    const unavailable = (message: string, cause?: Error): Warmed => ({ skipped: false, end: { error: message }, failed: failed({ error: new ExecutionError("shell_unavailable", message, cause) }) });
+
+    let secrets: Record<string, string>;
+    try {
+      secrets = await pasture.secrets();
+    } catch (error) {
+      const message = `the pasture's secrets could not be read for setup: ${messageOf(error)}`;
+      return { skipped: false, end: { error: message }, failed: failed({ error: new ExecutionError("unknown", message) }) };
+    }
+    const { PATH: _path, HOME: _home, ...runEnv } = this.shellEnv;
+    const id = `setup-${++this.runs}`;
+    const started = Date.now();
+    const frame = await this.runFrame(
+      lease.socket,
+      { id, command: SETUP_COMMAND, cwd: WORKSPACE_ROOT, env: { ...runEnv, ...secrets, PWD: WORKSPACE_ROOT }, timeout: SETUP_TIMEOUT_S },
+      signal,
+      (data) => {
+        output += data;
+      },
+      () => output,
+    );
+    if ("failed" in frame) {
+      const { outcome } = frame.failed;
+      return { skipped: false, end: "error" in outcome ? { error: outcome.error.message } : { exit: outcome.exitCode }, failed: failed(outcome) };
+    }
+    const { end } = frame;
+    try {
+      await checkout.syncOut(id);
+    } catch (error) {
+      if (error instanceof CheckoutInterrupted) return unavailable(interruptedDuringSyncOut(end), error);
+      const message = `the sync-out after setup failed: ${messageOf(error)}`;
+      return { skipped: false, end: { error: message }, failed: failed({ error: new ExecutionError("unknown", message) }) };
+    }
+    if (frame.aborted || signal?.aborted) return { skipped: false, end: { error: "aborted" }, failed: failed({ error: new ExecutionError("aborted", "aborted") }) };
+    if ("killed" in end) {
+      const message = end.killed === "timeout" ? `setup ran for ${SETUP_TIMEOUT_S} s without ending and was killed` : `the container ended setup: ${end.killed}`;
+      return { skipped: false, end: { error: message }, failed: failed({ error: new ExecutionError(end.killed === "timeout" ? "timeout" : "unknown", message) }) };
+    }
+    console.info(`[pen] setup exit ${end.exit} after ${Date.now() - started} ms, ${output.length} bytes of output`);
+    if (end.exit !== 0) return { skipped: false, end: { exit: end.exit }, failed: failed({ exitCode: end.exit }) };
+    lease.warmed = true;
+    return { skipped: false, end: { exit: 0 } };
   }
 
   /** The whole output to a file under `/tmp` when the view was truncated, as pi's bash renderer expects. */

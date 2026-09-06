@@ -21,7 +21,7 @@ tree would do, has left the design.
 
 ---
 
-**Where we are: pasture phases 0 to 3 CLOSED; phase 4 NOT STARTED.** Planned 6 Sep 2026, the morning recast closed, from a brainstorm with the shepherd; the shepherd's calls are in the journey's front matter. Phase 0 built the same morning: the object, the columns, the routes, the verbs. Phase 1: the read-only mount and the prompt. Phase 2: the `pasture` program and the herd. Phase 3: birth in the container, `/pasture` as the checkout's second root, and the broker reading the pasture's token, walked on the local rig against the scratch repository with a real model. The next phase is pasture phase 4, setup and skills, which also pays the fork commit. Nothing waits on a person before pasture phase 5.
+**Where we are: pasture phases 0 to 4 CLOSED; phase 5, the walk, NOT STARTED and waiting on the shepherd for two ⚑ deploys.** Planned 6 Sep 2026, the morning recast closed, from a brainstorm with the shepherd; the shepherd's calls are in the journey's front matter. Phases 0 to 4 built and walked locally the same day: the object and the verbs, the read-only mount and the prompt, the `pasture` program and the herd, birth and the credential, setup and skills, the last two on the local rig against the scratch repository with a real model, and the fork commit paid. The next phase is pasture phase 5: deploy `sheep` and `sheep-pen` with the `Pasture` class, then the four journeys on them.
 
 The order is dependency order. Phase 0 is the object, the directory's
 two columns, the routes, and the dog's verbs, so that every later phase
@@ -253,9 +253,14 @@ steps 3 to 7 against a repository with a lockfile, the idle period set
 to a minute, `env` in the container printed by the sheep and showing no
 secret. Suites unchanged. **⚑** none.
 
-**Status: NOT STARTED.**
+**Status: CLOSED.** 2026-09-06. Setup once per fresh container with the pasture's secrets in that run alone, the birth's setup after the clone, and pi's skills formatter imported from the fork's new leaf; proved through the fake in workerd and walked by the conductor on the local rig with a real model, journey 3 steps 3 to 7.
 
 **Findings:**
+
+- **2026-09-06 — Setup is a `run` frame like any other, with its own environment, so the protocol did not change.** The per-container memory is the env's per-socket record beside the checkout; a failed setup leaves it unmarked, so the next command retries.
+- **2026-09-06 — `env` alone is a text tool and runs in the cell's shell.** A sheep prints the container's environment only with a line naming a container program, `node -e 0 && env`; the test and the walk both use it.
+- **2026-09-06 — The fork commit owed by pasture phase 1 is paid: `996849eef`, `formatSkillsForPrompt` and `Skill` in a leaf module,** pi's own importers unchanged; the cell imports it and its own block is gone. Upstream is three commits ahead of the base, not rebased this phase; the bump is recorded in `/pi-bump`.
+- **2026-09-06 — The walk, by the conductor on the local rig with a real model:** setup ran at birth after the clone with the dummy secret and printed nothing to the sheep; the container's environment named neither secret; the script broken and the container idled, the next command stopped at the first line; the skill was read when asked. Cost: 24 minutes of a subagent, 12 of verification.
 
 ## Phase 5: The walk
 

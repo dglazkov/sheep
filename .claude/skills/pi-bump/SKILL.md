@@ -204,3 +204,4 @@ Bumps so far:
 - `git status` in the superproject shows `vendor/pi` as modified only when
   the pointer moved; `.gitmodules` sets `ignore = dirty` so the built
   `dist/` does not count.
+- **2026-09-06 — a new commit, `996849eef`, on the same upstream `da840b6`.** `formatSkillsForPrompt` and `Skill` moved to a leaf module, `core/skills-prompt.ts`, because `core/skills.ts` drags in `config.ts`, whose top level calls `fileURLToPath(import.meta.url)` and kills a Worker bundle (pasture phase 1); no conflicts, about fourteen minutes. Upstream was three commits ahead and was not rebased.

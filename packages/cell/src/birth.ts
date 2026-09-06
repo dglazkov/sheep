@@ -9,7 +9,9 @@
  * model has it through the projector below, as a message before the first
  * prompt; `sheep log` prints it as the entry it is. A birth that fails is
  * the same entry saying so, the workspace left as the failure left it,
- * and the sheep alive to be asked about it.
+ * and the sheep alive to be asked about it. From pasture phase 4 the
+ * clone is followed by `setup.sh` in the same container when the tree has
+ * one, and the entry says how that ended too.
  *
  * A birth runs once. The cell records that it ran in its own storage,
  * whatever the outcome, and a second boot does not clone again; the
@@ -17,6 +19,7 @@
  * sync-out and the record.
  */
 import { createCustomMessage, type CustomEntry, type EntryProjector } from "@earendil-works/pi-agent-core";
+import { SETUP_COMMAND, type SetupEnd } from "./env/execution-env.ts";
 import { WORKSPACE_ROOT } from "./workspace/files.ts";
 
 /** The entry's `customType`, and the key of the record in the cell's storage. */
@@ -41,6 +44,8 @@ export interface BirthData {
   /** The output's tail; `truncated` when the whole was more. */
   output: string;
   truncated: boolean;
+  /** Pasture phase 4: how `setup.sh` ended after a clone that exited 0; absent when the tree had none, or the clone failed. */
+  setup?: SetupEnd;
 }
 
 /** What the cell keeps once the birth has run: when, and how it ended. */
@@ -72,9 +77,26 @@ export function birthText(data: BirthData): string {
   if (data.exit === 0) head = `This session was born into the pasture ${data.pasture}: \`${data.command}\` ran ${where} and exited 0, so ${data.cwd} is a clone of ${data.repo} on branch ${data.branch}.`;
   else if (data.exit !== undefined) head = `The birth of this session into the pasture ${data.pasture} failed: \`${data.command}\` ran ${where} and exited ${data.exit}. ${data.cwd} is as the failure left it.`;
   else head = `The birth of this session into the pasture ${data.pasture} failed: \`${data.command}\` could not run ${where}: ${data.error ?? "no reason was given"}. ${data.cwd} is as the failure left it.`;
+  if (data.setup !== undefined) head += ` ${setupSentence(data.setup)}`;
   const output = data.output.replace(/\n$/, "");
   if (output === "") return head;
   return `${head}\n\n${data.truncated ? "The last of its output:" : "Its output:"}\n${output}`;
+}
+
+/** The sentence after the clone's, for how setup went (pasture phase 4): once, in the same container, on the clone. */
+export function setupSentence(setup: SetupEnd): string {
+  if ("error" in setup) return `Then \`${SETUP_COMMAND}\` could not run in the same container: ${setup.error}.`;
+  if (setup.exit === 0) return `Then \`${SETUP_COMMAND}\` ran in the same container and exited 0.`;
+  return `Then \`${SETUP_COMMAND}\` ran in the same container and exited ${setup.exit}, so the checkout is not warmed up; its output is below.`;
+}
+
+/** How setup ended, read back off an entry's data; nothing when the shape is not one. */
+function setupOf(value: unknown): SetupEnd | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const record = value as Record<string, unknown>;
+  if (typeof record.exit === "number") return { exit: record.exit };
+  if (typeof record.error === "string") return { error: record.error };
+  return undefined;
 }
 
 /** Reads the data back off an entry; an entry with none, or with the wrong shape, projects to nothing. */
@@ -83,6 +105,7 @@ export function birthData(entry: CustomEntry): BirthData | undefined {
   if (typeof data !== "object" || data === null || Array.isArray(data)) return undefined;
   const record = data as Record<string, unknown>;
   if (typeof record.command !== "string" || typeof record.output !== "string" || typeof record.pasture !== "string") return undefined;
+  const setup = setupOf(record.setup);
   return {
     pasture: record.pasture,
     repo: typeof record.repo === "string" ? record.repo : "",
@@ -93,6 +116,7 @@ export function birthData(entry: CustomEntry): BirthData | undefined {
     ...(typeof record.error === "string" ? { error: record.error } : {}),
     output: record.output,
     truncated: record.truncated === true,
+    ...(setup === undefined ? {} : { setup }),
   };
 }
 

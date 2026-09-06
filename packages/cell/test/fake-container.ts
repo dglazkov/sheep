@@ -152,9 +152,10 @@ function notFound(request: RunRequest): Script {
  * SIGKILL ends a process between writes; a `deaf` runner ignores it, as a
  * stuck container would, which is what pen phase 3's kill deadline is for.
  */
-export function scriptRunner(disk: MemoryDisk, scriptFor: ScriptFor, options: { deaf?: boolean } = {}): Runner {
+export function scriptRunner(disk: MemoryDisk, scriptFor: ScriptFor, options: { deaf?: boolean; runs?: RunRequest[] } = {}): Runner {
   return {
     run(request, output) {
+      options.runs?.push(request);
       const script = scriptFor(request) ?? notFound(request);
       let killed: string | null = null;
       let wake: (() => void) | null = null;
@@ -203,6 +204,8 @@ export interface FakeContainer {
   pasture: MemoryDisk;
   /** Every frame the agent received or sent, in order, as it saw them. */
   transcript: TranscriptEntry[];
+  /** Pasture phase 4: every `run` the runner was handed, in order, with the environment each carried; a test counts setup's and reads the secrets off it. */
+  runs: RunRequest[];
   /** The agent's sync-out, in place of the `run` a later phase ends with one. */
   syncOut(id: string): Promise<Refused[]>;
   /** The helper's path, called as the helper's socket would call it: workerd has no processes, so the request comes from the test. */
@@ -245,6 +248,7 @@ export function serveFakeOn(agentEnd: WebSocket, options: FakeContainerOptions =
   const disk = options.disk ?? memoryDisk();
   const pasture = options.pasture ?? memoryDisk();
   const transcript: TranscriptEntry[] = [];
+  const runs: RunRequest[] = [];
 
   let stopped = false;
   const closeListeners: Array<(event: unknown) => void> = [];
@@ -289,11 +293,12 @@ export function serveFakeOn(agentEnd: WebSocket, options: FakeContainerOptions =
     },
   };
   agentEnd.addEventListener("close", (event) => stop(event.reason));
-  const served = serveAgent(wrapped, disk, scriptRunner(disk, options.script ?? (() => undefined), { deaf: options.deaf ?? false }), { pasture });
+  const served = serveAgent(wrapped, disk, scriptRunner(disk, options.script ?? (() => undefined), { deaf: options.deaf ?? false, runs }), { pasture });
   return {
     disk,
     pasture,
     transcript,
+    runs,
     syncOut: (id) => served.syncOut(id),
     askCredential: (request, options) => served.askCredential(request, options),
     stop(reason = "container stopped") {

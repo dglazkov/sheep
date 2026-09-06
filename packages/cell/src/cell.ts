@@ -279,7 +279,8 @@ export class SessionCell extends DurableObject<Env> {
    * into a pasture with a repository, with an empty workspace, `git clone
    * --branch <branch> <repo> .` in `/workspace` through the container path,
    * its tail appended as the `birth` entry, success or failure, and the
-   * fact that it ran recorded so no later boot clones again. Nothing here
+   * fact that it ran recorded so no later boot clones again; from pasture
+   * phase 4, `setup.sh` follows a clone that exited 0. Nothing here
    * throws: a birth that cannot run is an entry that says why, and the
    * sheep is alive after it either way. The directory sees `running` for
    * its length, so `sheep ls` says what the sheep is doing.
@@ -310,12 +311,12 @@ export class SessionCell extends DurableObject<Env> {
     const started = Date.now();
     let ran: ContainerLineResult;
     try {
-      ran = await env.containerLine(command, { cwd: WORKSPACE_ROOT, timeout: BIRTH_TIMEOUT_S, maxLines: BIRTH_TAIL_LINES, maxBytes: BIRTH_TAIL_BYTES });
+      // Setup after the clone (pasture phase 4): `/pasture/setup.sh`, when the tree has one, runs on the clone in the same
+      // container through the same path a tool's line takes, and its output joins this entry's when it fails.
+      ran = await env.containerLine(command, { cwd: WORKSPACE_ROOT, timeout: BIRTH_TIMEOUT_S, maxLines: BIRTH_TAIL_LINES, maxBytes: BIRTH_TAIL_BYTES, setup: "after" });
     } catch (error) {
       ran = { output: "", truncated: false, end: { error: error instanceof Error ? error.message : String(error) } };
     }
-    // Pasture phase 4's place: `/pasture/setup.sh`, when the tree has one, runs here after a clone that exited 0, in the
-    // same container, and its output joins this entry's when it fails. This phase leaves the place.
     const data: BirthData = {
       pasture: pasture.name,
       repo: meta.repo,
@@ -325,8 +326,10 @@ export class SessionCell extends DurableObject<Env> {
       ...("exit" in ran.end ? { exit: ran.end.exit } : { error: ran.end.error }),
       output: ran.output,
       truncated: ran.truncated,
+      ...(ran.setup === undefined ? {} : { setup: ran.setup }),
     };
-    log(`${"exit" in ran.end ? `exit ${ran.end.exit}` : `could not run: ${ran.end.error}`} after ${Date.now() - started} ms, ${env.files.manifest().length} rows`);
+    const setupEnded = ran.setup === undefined ? "" : `, setup ${"exit" in ran.setup ? `exit ${ran.setup.exit}` : `could not run: ${ran.setup.error}`}`;
+    log(`${"exit" in ran.end ? `exit ${ran.end.exit}` : `could not run: ${ran.end.error}`}${setupEnded} after ${Date.now() - started} ms, ${env.files.manifest().length} rows`);
     try {
       // The entry first, then the record: a cell evicted between the two clones again only into a workspace still empty.
       await lane.appendCustomEntry(BIRTH_ENTRY, { ...data }, BACKGROUND_CONTEXT);

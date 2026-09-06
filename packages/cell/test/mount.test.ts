@@ -19,10 +19,9 @@ import type { SessionSummary } from "../src/directory.ts";
 import type { CellExecutionEnv } from "../src/env/execution-env.ts";
 import { shellNotice } from "../src/env/programs.ts";
 import { setFauxScript } from "../src/models.ts";
-import { parseSkill, pastureParagraph, skillFault, skillsBlock, systemPrompt } from "../src/prompt.ts";
-// pi's own formatter, loaded here to pin the cell's block to it: vitest gives this module the `import.meta.url` its
-// import chain needs at load, which a Worker bundle does not have, and which is why the cell does not import it.
-import { formatSkillsForPrompt } from "../../../vendor/pi/packages/coding-agent/dist/core/skills.js";
+import { parseSkill, pastureParagraph, skillFault, systemPrompt } from "../src/prompt.ts";
+// pi's own formatter, from the leaf pasture phase 4's fork commit made of it, which is the module the cell imports.
+import { formatSkillsForPrompt } from "../../../vendor/pi/packages/coding-agent/dist/core/skills-prompt.js";
 import { PASTURE_READ_ONLY, PASTURE_ROOT } from "../src/workspace/mount.ts";
 
 const headers = { authorization: "Bearer test-token", "content-type": "application/json" };
@@ -266,20 +265,25 @@ describe("pasture phase 1: the mount", () => {
     expect(prompt).toContain("The skill at /pasture/skills/mute/SKILL.md is not listed: its frontmatter has no description.");
     expect(prompt).toMatch(/The skill at \/pasture\/skills\/broken\/SKILL\.md is not listed: its frontmatter does not parse \(.+\)\./);
     expect(prompt).not.toContain("notes.md");
-    // The block is pi's `formatSkillsForPrompt`, byte for byte, for skills with every character it escapes, one it hides, and none.
+    // The block is pi's `formatSkillsForPrompt`, whole, for a sample with every character it escapes and one it hides: the
+    // prompt built for a pasture holding the sample contains pi's own output for it, byte for byte.
     const sample = [
       "---\nname: review\ndescription: How to review a change in this repository.\n---\n",
       "---\nname: odd-chars\ndescription: '\"Quotes\", <tags>, & ''apostrophes'''\n---\n",
       "---\nname: hidden\ndescription: Not for the model.\ndisable-model-invocation: true\n---\n",
-    ].map((text, index) => {
+    ];
+    const skills = sample.map((text, index) => {
       const parsed = parseSkill(text, `/pasture/skills/s${index}/SKILL.md`);
       if (!("skill" in parsed)) throw new Error(parsed.fault);
       return parsed.skill;
     });
-    expect(skillsBlock(sample)).toBe(formatSkillsForPrompt(sample));
-    expect(skillsBlock(sample)).toContain("&quot;Quotes&quot;, &lt;tags&gt;, &amp; &apos;apostrophes&apos;");
-    expect(skillsBlock([sample[2]!])).toBe(formatSkillsForPrompt([sample[2]!]));
-    expect(skillsBlock([])).toBe("");
+    await pasture("sampled");
+    for (const [index, text] of sample.entries()) await env.PASTURE.getByName("sampled").put(`skills/s${index}/SKILL.md`, encode(text));
+    const sampled = await promptOf((await born("sampler", "sampled")).id, "what skills?");
+    const block = formatSkillsForPrompt(skills, "read");
+    expect(block).toContain("&quot;Quotes&quot;, &lt;tags&gt;, &amp; &apos;apostrophes&apos;");
+    expect(block).not.toContain("hidden");
+    expect(sampled).toBe(`${PROMPT_NO_CONTAINER_WITH_ISOLATE}\n${pastureParagraph("sampled", null, "main")}${block}`);
 
     // Journey 2 step 4: the brief changes while the sheep lives; its next turn has the new one.
     await object.put("BRIEF.md", encode("# The brief, second edition\n\nRun nothing.\n"));
