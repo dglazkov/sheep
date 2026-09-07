@@ -20,7 +20,7 @@ the machine's kennel has left the design.
 
 ---
 
-**Where we are: kennel phases 0 and 1 CLOSED; the project is done. Next: nothing here; station phase 1 takes the name rule and walks journey 3.** Planned 7 Sep 2026, the evening station was planned, from a conversation with the shepherd; the shepherd's calls are in the journey's front matter. Both phases were built and walked the same afternoon: two directories on this laptop, two homes, a real model in one; the name rule proved pure and the field read and kept. No ⚑ steps: nothing in this project touches an account. Nothing waits on a person; journey 3's walk on the account is station phase 1's, carried in the Open roster.
+**Where we are: kennel phases 0 and 1 CLOSED; the project is done. Next: nothing here; station phase 1 took the name rule and walked journey 3.** Planned 7 Sep 2026, the evening station was planned, from a conversation with the shepherd; the shepherd's calls are in the journey's front matter. Both phases were built and walked the same afternoon: two directories on this laptop, two homes, a real model in one; the name rule proved pure and the field read and kept. No ⚑ steps: nothing in this project touches an account. Nothing waits on a person; journey 3 walked on the account by station phase 1 the same night.
 
 The order is dependency order. Phase 0 is the directory: discovery,
 the config and the local home under it, setup making it and guarding
@@ -109,4 +109,4 @@ counter against a set holding Workers and container applications, and
 - **2026-09-07 — `--home` does not clear `name`.** The name is the kennel's record of its station, not a property of the address; an address override drops the `local` marker and keeps the name.
 - **2026-09-07 — The counter is applied after the fifty-character cut.** A fifty-character base with a collision mints fifty-plus-two; Cloudflare's ceiling is longer, so fifty leaves room, and the test says so.
 - **2026-09-07 — `mintName` does not validate `wanted`.** An empty or invalid `--name` comes back as it went in; station's deploy refuses those itself, and compares `config.name` to `--name` before minting.
-- **2026-09-07 — Open: journey 3 steps 1 to 4 walked on the account.** Station phase 1: `mintName(kennelName(), taken, --name)` with Workers and container applications in one set, the name written beside `home` and `token`, and removed with them by delete.
+- **2026-09-07 — Journey 3 steps 1 to 4 walked on the account, by station phase 1.** `mintName` over the account's Workers and container applications minted `sheep-2` from `~/.sheep`, `sheep` being the checkout's; the name written beside `home` and `token`, and removed with them by `sheep home delete`.

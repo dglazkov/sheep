@@ -7,7 +7,7 @@
  * kennel's. There is no environment override: the working directory and
  * `HOME` are the whole rule, which is what a ring walks.
  */
-import { statSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -70,6 +70,27 @@ export function kennelDir(from: string = process.cwd()): string {
 
 export function configPath(): string {
   return join(sheepDir(), "config");
+}
+
+/**
+ * The config file as written, or nothing when it is absent or not JSON:
+ * what `sheep home local` and `sheep home deploy` read before they write,
+ * so a key one of them does not own survives the other's rewrite.
+ */
+export function readConfigFile(): (SheepConfig & Record<string, unknown>) | undefined {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(configPath(), "utf8"));
+    return parsed && typeof parsed === "object" ? (parsed as SheepConfig & Record<string, unknown>) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The config file, whole, mode 600: it holds the home's token. */
+export function writeConfigFile(config: Record<string, unknown>): void {
+  mkdirSync(dirname(configPath()), { recursive: true });
+  writeFileSync(configPath(), `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+  chmodSync(configPath(), 0o600);
 }
 
 /**

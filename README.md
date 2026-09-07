@@ -167,34 +167,25 @@ node packages/cli/bin/sheep.js new                                              
 
 #### Deploy a home on Cloudflare
 
-Once, log Wrangler in; it opens a browser tab to authorize:
+From the installed command, with a Cloudflare API token (Workers Scripts,
+Durable Objects, Containers, Workers Subdomain, Account Settings read,
+Billing read) and the Anthropic key in the shell, on an account with the
+Workers Paid plan:
 
 ```sh
-cd packages/cell
-pnpm exec wrangler login
+export CLOUDFLARE_API_TOKEN=...  ANTHROPIC_API_KEY=...
+sheep home deploy [--name <worker>] [--subdomain <name>]   # the pen home, a container beside every cell; prints the address
+sheep home delete                                          # ends it, after its name is typed
 ```
 
-Deploy, and set the two secrets from your `.dev.vars`:
-
-```sh
-pnpm run deploy                               # from the repo root; prints https://sheep.<you>.workers.dev
-cd packages/cell
-grep ^SHEEP_TOKEN= .dev.vars | cut -d= -f2 | pnpm exec wrangler secret put SHEEP_TOKEN
-grep ^SHEEP_ANTHROPIC_API_KEY= .dev.vars | cut -d= -f2 | pnpm exec wrangler secret put SHEEP_ANTHROPIC_API_KEY
-```
-
-The first deploy asks you to pick a `workers.dev` subdomain. Redeploying
-is `pnpm run deploy` again; sessions and secrets survive it. (Bare `pnpm deploy` is pnpm's own workspace-deploy command and shadows the script.) `pnpm exec wrangler
-delete` removes everything.
-
-Point `sheep` at the home so it needs no environment variables. The config
-is the kennel's: `.sheep/config` in the directory you work in, or
-`~/.sheep/config` when that directory has no kennel above it.
-
-```json
-// <dir>/.sheep/config, or ~/.sheep/config outside a kennel
-{ "home": "https://sheep.<you>.workers.dev", "token": "<your SHEEP_TOKEN>" }
-```
+Without the two variables it prints what it needs and costs, and makes
+nothing. The first deploy from a directory mints the Worker's name from
+the directory's, records it in the kennel's config (`.sheep/config`, or
+`~/.sheep/config` outside a kennel) with the address and the token it
+generated, and sets the secrets through `wrangler secret put` on stdin;
+run again, it redeploys the same Worker from the package it runs from and
+keeps them. `--subdomain` registers a `workers.dev` subdomain when the
+account has none.
 
 #### Use it
 

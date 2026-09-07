@@ -43,6 +43,8 @@ directories herds its own sheep and shares nothing but the command.
 - **A model key**: ask them to `export ANTHROPIC_API_KEY` in the shell
   `sheep` runs in, never to paste it into the chat.
 - **An account for a deployed home**: a home on this machine needs none;
-  one in the cloud is a later project.
+  `sheep home deploy` needs `CLOUDFLARE_API_TOKEN` and `ANTHROPIC_API_KEY`
+  exported in the shell, and prints what to ask for when they are not;
+  `sheep home delete` needs the station's name typed at their terminal.
 - **A hand at a terminal**: `sheep attach <id>` with no prompt opens pi's
   interactive terminal, theirs to use, not yours.

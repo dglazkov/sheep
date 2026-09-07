@@ -90,8 +90,11 @@ real account.
    the deploy would fail later and worse. Register the subdomain if
    there is none.
 3. **The deploy.** wrangler from `~/.sheep/tools`, `deploy --env pen
-   --config <package>/home/wrangler.jsonc --name <worker>`, the container
-   application named after the Worker. The image line in the shipped
+   --config <kennel>/deploy/wrangler.jsonc`: the package's config with `main`
+   absolute and the Worker's name set three times, the top level's, the
+   environment's, and the container application's, since wrangler names
+   the application `<worker>-pencontainer-pen` when the config does not
+   (station phase 1). The image line in the shipped
    config already names the registry image at the release's commit, so
    the deploy pulls the image the release built.
 4. **The secrets.** `SHEEP_TOKEN`, generated once and kept in
@@ -100,8 +103,10 @@ real account.
    `wrangler secret put --env pen` on stdin. `PEN_GIT_TOKEN` is not set:
    the credential is a pasture's, since pasture phase 3.
 5. **The config.** `~/.sheep/config` names the station and drops the
-   `local` marker. The report: the address, the stamp, the plan, and
-   the next sentence.
+   `local` marker. Then the wait: a container instance of the
+   application healthy, which `wrangler deploy` does not wait for
+   (station phase 1). The report: the address, the stamp, the plan, the
+   healthy instances, and the next sentence.
 
 Run again, it redeploys the same Worker from the package it runs from,
 keeps every secret, and reports the stamp moving. That is the upgrade,

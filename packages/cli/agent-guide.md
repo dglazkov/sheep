@@ -46,8 +46,13 @@ The home stops with `sheep home stop` and is started again by the next
 verb that needs it, which says so on stderr. `sheep home` reports which
 kennel it found, which home the config names, and whether it answers;
 `sheep config` prints the resolved home and the kennel. `--home <url>` or
-`SHEEP_HOME` selects another home for one command. A home in the cloud,
-shared between machines, needs an account and is a later project.
+`SHEEP_HOME` selects another home for one command. `sheep home deploy` puts
+this package's home on the shepherd's Cloudflare account, a container
+beside every cell: with `CLOUDFLARE_API_TOKEN` and `ANTHROPIC_API_KEY` in
+the shell you run in it deploys, prints the address, and writes the
+kennel's config; without them it prints what it needs and costs, and the
+one sentence to ask the shepherd with, and makes nothing. `sheep home
+delete` ends that station after its name is typed at a terminal.
 
 ## The kennel
 

@@ -1,4 +1,5 @@
 import { kennelDir, loadConfig, sheepDir, type SheepConfig } from "./config.js";
+import { deleteStation, deploy, Refusal } from "./deploy.js";
 import { writeSessionFile } from "./export.js";
 import { runAbort, runLog, runPrompt, runStatus, runWait } from "./herd.js";
 import { Home } from "./home.js";
@@ -47,6 +48,15 @@ usage:
                                             writes the kennel's config when there is none; the report says whether a model
                                             key is held (from ANTHROPIC_API_KEY), or that the faux provider answers instead
   sheep home stop                           stop this kennel's local home
+  sheep home deploy [--name <worker>] [--subdomain <name>] [--json]
+                                            the station: this package's home on the shepherd's Cloudflare account, a
+                                            container beside every cell. Nothing without CLOUDFLARE_API_TOKEN and
+                                            ANTHROPIC_API_KEY in the environment: absent, it prints what it needs and
+                                            costs and exits 2. The name is the kennel's, minted at the first deploy and
+                                            recorded in the config; run again, it redeploys the same Worker from this
+                                            package and keeps its secrets
+  sheep home delete [--name <worker>]       end the station: the Worker, its objects, and its container application,
+                                            after the name is typed at a terminal (one line of stdin without one)
   sheep home                                which kennel, which home the config names, its station's name once minted,
                                             whether it answers, and its build stamp beside this command's, with one line
                                             on stderr when they differ
@@ -72,7 +82,9 @@ options:
   --pasture <name>  with new: the pasture to be born into; with ls: only that herd
   --detach        with a prompt: send it and exit before the first token; the id is the first line of stdout
   --wait          with a prompt to a busy session: stream the queued turn when it starts
-  --faux          with home local: the scripted model that answers "ok", for a look at the plumbing without a key
+  --faux          with home local: the scripted model that answers "ok", for a look at the plumbing without a key;
+                  with home deploy: the same provider set as the station's var, the account ring's flag
+  --subdomain <name>  with home deploy: the workers.dev subdomain to register when the account has none
   --no-install    with setup: report the command missing rather than installing it
 
 The kennel is .sheep/ at or above the working directory, found the way git finds .git, and ~/.sheep when there is
@@ -92,6 +104,7 @@ interface Parsed {
   pasture?: string;
   repo?: string;
   branch?: string;
+  subdomain?: string;
   prompt?: string;
   json: boolean;
   detach: boolean;
@@ -113,6 +126,7 @@ function parse(argv: readonly string[]): Parsed {
     "--pasture": (value) => (parsed.pasture = value),
     "--repo": (value) => (parsed.repo = value),
     "--branch": (value) => (parsed.branch = value),
+    "--subdomain": (value) => (parsed.subdomain = value),
     "--since": (value) => (parsed.since = value),
     "--last": (value) => (parsed.last = value),
     "--timeout": (value) => (parsed.timeout = value),
@@ -256,7 +270,11 @@ async function dispatch(command: string, parsed: Parsed, config: SheepConfig, ou
 }
 
 /**
- * `sheep home local [--faux]`, `sheep home stop`, `sheep home [--json]`.
+ * `sheep home local [--faux]`, `sheep home stop`, `sheep home [--json]`,
+ * and station phase 1's `sheep home deploy [--name] [--subdomain] [--faux]
+ * [--json]` and `sheep home delete [--name] [--json]` (`deploy.ts`): a
+ * refusal that made nothing is exit 2, a failure after the account was
+ * touched is exit 1.
  * The report names states and paths, never a value from the secrets file.
  * Station phase 0: a home that answers is asked its build stamp, printed
  * beside this command's (`--json`: `build: { home, cli }`), and skew is one
@@ -300,7 +318,39 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
       output.out(record === undefined ? "no local home has been started here\n" : stopped ? `stopped the local home at ${record.url}\n` : `the local home at ${record.url} was not running\n`);
       return 0;
     }
-    if (sub !== undefined) return fail(`unknown home command: ${sub}; sheep home [local [--faux] | stop]`);
+    if (sub === "deploy") {
+      const report = await deploy({ name: parsed.name, subdomain: parsed.subdomain, faux: parsed.faux, say: output.err });
+      if (parsed.json) {
+        output.out(`${JSON.stringify(report)}\n`);
+        return 0;
+      }
+      const skew = report.build.home === null ? undefined : skewLine(report.build.home, report.build.cli, false);
+      if (skew !== undefined) output.err(skew);
+      const builds = report.build.home === null ? "" : `home build: ${describeBuild(report.build.home)}\ncli build: ${describeBuild(report.build.cli)}\n`;
+      const { containers } = report;
+      const containersLine =
+        containers.healthy >= 1
+          ? `containers: ${containers.healthy} healthy (${containers.seconds}s)\n`
+          : `containers: none healthy yet after ${containers.seconds}s (${containers.starting} starting, ${containers.scheduling} scheduling); \`sheep new\` may have to wait\n`;
+      output.out(
+        `home: ${report.home} (${report.state}; ${report.answers ? "answers" : "not answering yet; a fresh Worker takes a moment"})\n` +
+          `name: ${report.name}\n` +
+          `account: ${report.account.name} (${report.account.id}), ${report.plan.id} ${report.plan.state}, ${report.plan.price}; subdomain ${report.subdomain.name}${report.subdomain.registered ? " (registered now)" : ""}\n` +
+          `image: ${report.image}${report.faux ? "; the faux provider answers every prompt, no model is spent" : ""}\n` +
+          `kennel: ${kennel}\n` +
+          `config: ${report.config.path} names the station\n` +
+          builds +
+          containersLine +
+          `next: ${report.next}\n`,
+      );
+      return 0;
+    }
+    if (sub === "delete") {
+      const report = await deleteStation({ name: parsed.name, say: parsed.json ? () => {} : output.out });
+      if (parsed.json) output.out(`${JSON.stringify(report)}\n`);
+      return 0;
+    }
+    if (sub !== undefined) return fail(`unknown home command: ${sub}; sheep home [local [--faux] | stop | deploy [--name <worker>] [--subdomain <name>] | delete [--name <worker>]]`);
 
     // Which home the config names, and whether it answers. The station's name (kennel phase 1) is the config's record of the
     // first deploy from this kennel: null in JSON until there is one, and a `name:` line in prose only when there is.
@@ -347,6 +397,11 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
     output.out(`kennel: ${kennel}\n${nameLine}${lines}`);
     return 0;
   } catch (error) {
+    // A deploy or delete that failed after the account was touched is exit 1, so a dog can tell it from a refusal that made nothing.
+    if ((sub === "deploy" || sub === "delete") && error instanceof Error && !(error instanceof Refusal)) {
+      process.stderr.write(`sheep: ${error.message}\n`);
+      return 1;
+    }
     return fail(error instanceof Error ? error.message : String(error));
   }
 }

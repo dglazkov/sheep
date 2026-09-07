@@ -33,9 +33,9 @@ import { randomBytes } from "node:crypto";
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { configPath, sheepDir, type SheepConfig } from "./config.js";
+import { configPath, readConfigFile, sheepDir, writeConfigFile } from "./config.js";
 
 /** The release's build stamp, `sheep` in the manifest beside the code; absent in a checkout. */
 export interface BuildStamp {
@@ -265,29 +265,14 @@ function writeDevVars(faux: boolean | undefined): { token: string; key: "held" |
   return { token: vars.get("SHEEP_TOKEN")!, key, changed };
 }
 
-/** The config file as written, or nothing when it is absent or not JSON. */
-function readConfigFile(): (SheepConfig & Record<string, unknown>) | undefined {
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(configPath(), "utf8"));
-    return parsed && typeof parsed === "object" ? (parsed as SheepConfig & Record<string, unknown>) : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function writeConfigFile(config: Record<string, unknown>): void {
-  mkdirSync(dirname(configPath()), { recursive: true });
-  writeFileSync(configPath(), `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
-  chmodSync(configPath(), 0o600);
-}
-
 /**
- * The wrangler the daemon runs: the checkout's own when there is no
- * stamp, else the manifest's pinned version under `~/.sheep/tools/`,
- * installed there once with `npm install` and reused after. Returns the
- * path of `wrangler.js` and whether this call installed it.
+ * The wrangler the daemon runs, and the one `sheep home deploy` runs
+ * (station phase 1): the checkout's own when there is no stamp, else the
+ * manifest's pinned version under `~/.sheep/tools/`, installed there once
+ * with `npm install` and reused after. Returns the path of `wrangler.js`
+ * and whether this call installed it.
  */
-function ensureWrangler(stamp: BuildStamp | undefined, say: (text: string) => void): { bin: string; installed: boolean } {
+export function ensureWrangler(stamp: BuildStamp | undefined, say: (text: string) => void): { bin: string; installed: boolean } {
   if (stamp === undefined) {
     const bin = join(packageDir, "..", "cell", "node_modules", "wrangler", "bin", "wrangler.js");
     if (!existsSync(bin)) throw new Error(`this is a checkout and wrangler is not installed at ${bin}; run pnpm install`);
