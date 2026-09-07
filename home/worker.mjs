@@ -103309,7 +103309,7 @@ var CHECKOUT_BUILD = { commit: "0.0.0-checkout", builtAt: null };
 function homeBuild() {
   if (false) return CHECKOUT_BUILD;
   try {
-    const parsed = JSON.parse('{"commit":"05be181","builtAt":"2026-09-07T22:52:22Z"}');
+    const parsed = JSON.parse('{"commit":"2b71e46","builtAt":"2026-09-07T23:23:44Z"}');
     if (typeof parsed.commit === "string" && parsed.commit !== "") return { commit: parsed.commit, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
   } catch {
   }
