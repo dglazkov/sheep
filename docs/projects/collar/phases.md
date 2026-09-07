@@ -22,7 +22,7 @@ carries them.
 
 ---
 
-**Where we are: collar phases 0 to 3 CLOSED; collar phase 4 PART-DONE. Next: collar phase 4's run from the spec, then the record.** Planned 7 Sep 2026, the day after pasture closed, from a brainstorm with the shepherd; the shepherd's calls are in the journey's front matter. Phases 0 to 2 built and verified the same morning. Phase 3 closed in the afternoon after the shepherd's yes: `release` is on GitHub, built by the workflow, and the install from the spec walks. Phase 4's dog ring held in repo mode with a real key and is running from the spec; the shepherd authorized the tokens.
+**Where we are: collar phases 0 to 4 CLOSED. The project is done; nothing in it waits on work or on a person.** Planned 7 Sep 2026, the day after pasture closed, from a brainstorm with the shepherd; the shepherd's calls are in the journey's front matter. Phases 0 to 2 built and verified the same morning. Phase 3 closed in the afternoon after the shepherd's yes: `release` is on GitHub, built by the workflow, and the install from the spec walks. Phase 4 closed the same afternoon: the dog ring, authorized by the shepherd, walked journey 1 twice with a real dog and a real model. The Open roster is empty; the deployed home from the package is the next project.
 
 The order is dependency order. Phase 0 is the release itself, the two
 bundles and the Worker in a tree npm can install, and the package ring
@@ -263,13 +263,14 @@ output. `.claude/skills/conduct/status.sh collar` prints `clean`.
 **⚑** the dog ring spends the shepherd's tokens, on the order of a
 dollar or two per run, asked with the estimate.
 
-**Status: PART-DONE.** 2026-09-07. The dog ring built and dry-run: the image with Claude Code 2.1.263, the probe, the skill added by name, the README's spec redirected to the ref inside the container, the exact `claude -p` command printed and stopped before; the run itself and journey 1's real walk wait on the shepherd's key and the tokens it spends.
+**Status: CLOSED.** 2026-09-07. The dog ring ran twice with the shepherd's key: in repo mode against the local ref, then from `github:dglazkov/sheep#release`; both times Claude Code, given only the skill and journey 1's sentence, installed sheep, started the local home, herded sheep against a real model, and left every after-assertion green. Journey 1 walked for real.
 
 **Findings:**
 
-- **2026-09-07 — Claude Code 2.1.263 refuses `--dangerously-skip-permissions` and `bypassPermissions` as root, and the dog ring runs as root anyway:** `--allowedTools Bash,Read,Edit,Write,Glob,Grep` works as root, and `--permission-prompts none` denies and reports anything that would prompt, so print mode cannot hang.
-- **2026-09-07 — In repo mode a git `insteadOf` rule makes the README's spec install the ref:** `url.file:///src.git.insteadOf https://github.com/dglazkov/sheep.git` in the container's `~/.gitconfig`, so `npx github:dglazkov/sheep#release setup` reported that spec and the ref's stamp; the ring's "not checked" says so.
+- **2026-09-07 — Claude Code 2.1.263 refuses to skip permissions as root, and the dog ring runs as root anyway:** `--allowedTools Bash,Read,Edit,Write,Glob,Grep` works as root, and `--permission-prompts none` denies and reports anything that would prompt, so print mode cannot hang.
+- **2026-09-07 — In repo mode a git `insteadOf` rule makes the README's spec install the ref:** `url.file:///src.git.insteadOf https://github.com/dglazkov/sheep.git` in the container's `~/.gitconfig`, so setup reported that spec and the ref's stamp.
 - **2026-09-07 — Collar phase 3's stop debt is paid: a zombie counts as gone.** `kill(pid, 0)` succeeds on a zombie on macOS too; `alive()` reads `/proc/<pid>/stat` or `ps -o stat=`, and the post-SIGKILL wait is three seconds, then `unreaped` is reported. A test makes a zombie with `exec sleep`.
-- **2026-09-07 — `npm install -g @anthropic-ai/claude-code` leaves 97 MB in `~/.npm`,** which the fresh-`HOME` probe would have refused; the Dockerfile's agent layer removes it. The skills CLI copies the skill into `.claude/skills/sheep` as a real directory, so setup's doorway there is kept, not linked. Cost: 19 minutes of a subagent, 10 of verification.
+- **2026-09-07 — `npm install -g @anthropic-ai/claude-code` leaves 97 MB in `~/.npm`,** which the fresh-`HOME` probe would have refused; the agent layer removes it. Cost: 19 minutes of a subagent, 10 of verification, and two runs of about two minutes and half a dollar each.
 - **2026-09-07 — The skill moved to the repo root, so `npx skills add dglazkov/sheep` finds it alone.** It had listed `conduct` and `pi-bump` too, the repo's own workflow, which the shepherd said a dog must never receive; the skills CLI stops at a root `SKILL.md` unless asked for `--full-depth`.
-- **2026-09-07 — Open: the dog ring's run, and journey 1's real walk.** Waits on the shepherd's key in the environment and a yes to the tokens: one Claude Code session in print mode, on the order of a dollar or two, capped at five; `pnpm hermetic --ring dog github:dglazkov/sheep#release` once `release` is pushed.
+- **2026-09-07 — Journey 1 walked by a real dog from the spec: 25 turns, 123 seconds, 54 cents, no denials.** Claude Code ran setup by `npx`, read the guide, started the home, minted sheep, waited on two detached ones, exported one, and made a pasture unasked. The repo-mode run before it: 20 turns, 52 cents, one `WebFetch` denied.
+- **2026-09-07 — The dog echoed the key into its own tool log in the repo-mode run and said so;** the ring's scrubber replaced it, and the value is in neither log.
