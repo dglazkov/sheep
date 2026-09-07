@@ -161,7 +161,14 @@ The release builds `packages/pen`'s image and pushes it to Docker Hub as
 shepherd puts in the repository's secrets: one ⚑ step, once. The release
 script rewrites the shipped config's image line to that reference, so
 the package and the image name the same commit, and a station deployed
-from a package runs the container its bundle was tested with. Docker Hub
+from a package runs the container its bundle was tested with. The push
+comes before the release in the workflow, so the release knows the
+digest the registry gave the tag: the shipped config names the image by
+that digest, `docker.io/dglazkov2/sheep-pen@sha256:…`, and the Worker
+carries the same reference beside its stamp for `GET /home` to report,
+since nothing on the platform tells a container its own digest. A
+release built by hand, with no push before it, names the tag and says
+so (station phase 2). Docker Hub
 does not cache on Cloudflare's side and rate-limits anonymous pulls;
 the account ring records the pull time, and a private registry is a
 finding if it bites.
