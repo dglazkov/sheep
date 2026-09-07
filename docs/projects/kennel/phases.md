@@ -20,7 +20,7 @@ the machine's kennel has left the design.
 
 ---
 
-**Where we are: kennel phase 0 NOT STARTED. Next: kennel phase 0, the kennel.** Planned 7 Sep 2026, the evening station was planned, from a conversation with the shepherd; the shepherd's calls are in the journey's front matter. This project lands before station phase 1, which takes kennel phase 1's name rule. No ⚑ steps: nothing in this project touches an account.
+**Where we are: kennel phase 0 CLOSED. Next: kennel phase 1, the name.** Planned 7 Sep 2026, the evening station was planned, from a conversation with the shepherd; the shepherd's calls are in the journey's front matter. Kennel phase 0 was built and walked the same afternoon: two directories on this laptop, two homes, a real model in one. This project lands before station phase 1, which takes kennel phase 1's name rule. No ⚑ steps: nothing in this project touches an account. Nothing waits on a person.
 
 The order is dependency order. Phase 0 is the directory: discovery,
 the config and the local home under it, setup making it and guarding
@@ -67,7 +67,18 @@ unseen by `git status`, wrangler fetched once, nothing under the ring's
 unchanged. Then the walk: this laptop, two directories, journey 1 with
 a real model in one of them. **⚑** none.
 
-**Status: NOT STARTED.**
+**Status: CLOSED 2026-09-07.** `sheepDir()` is the one rule; `sheep setup` makes the kennel and its ignore entry; the package ring walks two kennels; journey 1 walked on this laptop with a real model.
+
+**Findings:**
+
+- **2026-09-07 — Setup makes the kennel before it resolves the home, or a fresh directory reports the machine's.** `main()` loads the config first; `setup()` now takes the `--home` override, makes `.sheep/`, then loads, so a new directory says "none configured".
+- **2026-09-07 — The kennel is a realpath and `HOME` is not.** `sheepDir()` resolves from `process.cwd()`, so macOS says `/private/var` where the ring's own names say `/var`; every ring comparison takes either form.
+- **2026-09-07 — An empty ignored directory is invisible to `git status --ignored`.** A just-made `.sheep/` proves nothing; the ring and the test write a config into it first, which is what journey 2 step 1 asks about.
+- **2026-09-07 — Two kennels, two daemons, one toolchain, walked.** `blog` on 63908 with a real key and a real model's reply, `pi` on 64048 faux, different tokens; wrangler fetched once into `~/.sheep/tools`; `sheep home` from `/tmp` named `~/.sheep` and the deployed station.
+- **2026-09-07 — Retiring `SHEEP_CONFIG` and `SHEEP_LOCAL` cost the tests nothing.** `HOME` plus a working directory isolates every CLI test, and is stricter: the old knob moved the config file, not the home directory.
+- **2026-09-07 — Running the suite makes the checkout a kennel.** `setup.test.ts` runs setup at the repo root; the empty `.sheep/` is ignored, and a developer's `sheep home local` in the checkout now lands in `<repo>/.sheep/local`.
+- **2026-09-07 — The machine ring's last line named images that do not exist**, `images.map(ringTag)` passing the index as the tag prefix; fixed in passing.
+- **2026-09-07 — Open: setup in a subdirectory of a kennel makes a second one that shadows the first.** The design says "there"; whether setup should say a kennel exists above waits on a walk that trips over it.
 
 ## Phase 1: The name
 

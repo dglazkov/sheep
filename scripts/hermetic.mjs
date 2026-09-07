@@ -38,7 +38,10 @@
  * file) and nothing else of this machine. Inside, this script's other
  * half (`--inside`) adds the skill to a fresh working directory under the
  * container's HOME with `npx skills add dglazkov/sheep --skill sheep` (the
- * root SKILL.md, the one skill a bare `skills add` finds),
+ * root SKILL.md, the one skill a bare `skills add` finds). That directory
+ * becomes a kennel when the dog runs setup in it, the way any directory
+ * does, and the assertions after the run read the kennel `sheep home
+ * --json` names rather than assuming `~/.sheep`. The ring
  * prints the exact `claude -p` command, and runs it with journey 1's
  * sentence and no steps: `--allowedTools` for Bash, Read, Edit, Write,
  * Glob, and Grep, `--permission-prompts none` so nothing can ask and
@@ -55,28 +58,44 @@
  * shepherd's tokens and says so before the image is built, waiting for a
  * `y` unless `--yes`; `--dry-run` needs neither the key nor the yes.
  *
- * The package ring makes one temp directory and points five variables
- * inside it: `npm_config_prefix`, `npm_config_cache`, `HOME`,
- * `SHEEP_CONFIG`, and `SHEEP_LOCAL`, asserted before anything runs. It
- * puts the prefix's `bin` first on PATH with this checkout's directories
- * stripped from it, and walks journey 1 with the installed `sheep`, never
- * `bin/sheep.js`. One line per step; the first failure prints its command
- * and output and exits 1; the end names what was not checked.
+ * The package ring makes one temp directory and points three variables
+ * inside it: `npm_config_prefix`, `npm_config_cache`, and `HOME`,
+ * asserted before anything runs. Kennel phase 0 retired the other two:
+ * `SHEEP_CONFIG` and `SHEEP_LOCAL` are gone, and the ring reads the config
+ * where `sheep setup` wrote it, in the kennel each working directory
+ * became. A fresh `HOME` and a fresh working directory are the whole
+ * override now, which is the discovery a dog does. It puts the prefix's
+ * `bin` first on PATH with this checkout's directories stripped from it,
+ * and walks with the installed `sheep`, never `bin/sheep.js`. One line per
+ * step; the first failure prints its command and output and exits 1; the
+ * end names what was not checked.
  *
- * The walk is journey 1 steps 1 to 7 with the faux provider. Step 1 is
- * `npx <spec> setup --json` in a scratch working directory under the ring,
+ * Two working directories under the ring, `blog` (a git work tree) and
+ * `pi` (not one), walk kennel's journey 1 steps 1 to 5 and journey 2 steps
+ * 1 and 2 between them: two kennels, two homes on two ports with two
+ * tokens, each `sheep ls` its own sheep, a subdirectory finding its
+ * parent's home, one home stopped while the other runs, and a walk from
+ * outside both falling back to `~/.sheep`. Journey 2's half is git's: the
+ * `.gitignore` gains one line, `.sheep/` is ignored and never untracked,
+ * and the directory outside git gets no `.gitignore` at all. Wrangler is
+ * fetched once, into `~/.sheep/tools`, and the second kennel finds it
+ * there; nothing else is ever under the ring's `HOME/.sheep`.
+ *
+ * Collar's own walk is journey 1 steps 1 to 7 with the faux provider, from
+ * `blog`. Step 1 is `npx <spec> setup --json` in that directory,
  * with `SHEEP_INSTALL_SPEC` naming the ring's ref as `git+file://<this
  * repo>#<sha>`, so setup's own `npm install -g` runs npm's git installer,
  * where isocan's #47 lived, against the ring's prefix and cache, never a
  * tarball and never GitHub, whose branch collar phase 3 pushes. The ring
  * then reads the install the way phase 0 did, and the report: the command
  * at the prefix's bin, the skill and its doorway in the working directory,
- * no home, and the next sentence. Step 2's `sheep home local --faux`
- * starts the home under the ring's `SHEEP_LOCAL`
- * (wrangler fetched into the ring's `~/.sheep/tools` at the manifest's
- * pin, through the ring's npm cache) and writes the ring's `SHEEP_CONFIG`;
- * every later command finds the home through that config, with no
- * `SHEEP_HOME` or `SHEEP_TOKEN` in the environment. `ps` is read while the
+ * the kennel made there with its ignore entry, no home, and the next
+ * sentence. Step 2's `sheep home local --faux` starts the home under
+ * `blog/.sheep/local` (wrangler fetched into the ring's `~/.sheep/tools`
+ * at the manifest's pin, through the ring's npm cache) and writes
+ * `blog/.sheep/config`; every later command run in that directory finds
+ * the home through that config, with no `SHEEP_HOME` or `SHEEP_TOKEN` in
+ * the environment. `ps` is read while the
  * home runs, and polled for the whole walk, to see that the token is in
  * no process's arguments: the daemon gets its secrets from `.dev.vars`,
  * mode 600, through `--env-file`. Step 5 is `sheep --agent-help`, which
@@ -231,14 +250,19 @@ function psLines() {
   return spawnSync("ps", ["-Ao", "pid=,args="], { encoding: "utf8" }).stdout.split("\n").map((line) => line.trim()).filter(Boolean);
 }
 
-/** `ps` over every process, polled while something runs; the first line holding `needle` is kept, and the samples counted. */
+/**
+ * `ps` over every process, polled while something runs; the first line
+ * holding any of the needles is kept, and the samples counted. Two tokens
+ * (one per kennel) are two needles, watched by one timer.
+ */
 function watchPs(needle, everyMs = 15) {
+  const needles = Array.isArray(needle) ? needle : [needle];
   let seen;
   let samples = 0;
   const timer = setInterval(() => {
     samples++;
     if (seen) return;
-    const line = psLines().find((candidate) => candidate.includes(needle));
+    const line = psLines().find((candidate) => needles.some((one) => candidate.includes(one)));
     if (line) seen = line;
   }, everyMs);
   return { stop: () => clearInterval(timer), line: () => seen, samples: () => samples };
@@ -283,15 +307,40 @@ class Ring {
     this.prefix = join(this.dir, "prefix");
     this.cache = join(this.dir, "npm-cache");
     this.home = join(this.dir, "home");
-    this.local = join(this.home, ".sheep", "local");
-    this.config = join(this.home, ".sheep", "config");
-    for (const dir of [this.prefix, this.cache, this.home, this.local]) mkdirSync(dir, { recursive: true });
-    this.work = join(this.dir, "work");
-    mkdirSync(this.work);
+    // Two dogs, two directories: `blog` is a git work tree (journey 2 step 1), `pi` is not (step 2). Neither is a kennel yet; setup makes them.
+    this.blog = join(this.dir, "blog");
+    this.pi = join(this.dir, "pi");
+    // A subdirectory of blog, where journey 1 step 3 stands: it has no kennel of its own and must find blog's.
+    this.deep = join(this.blog, "posts", "2026");
+    for (const dir of [this.prefix, this.cache, this.home, this.blog, this.pi, this.deep]) mkdirSync(dir, { recursive: true });
+    gitIn(this.blog)("init", "--quiet");
     this.lines = [];
     this.unchecked = [];
-    this.localHome = undefined;
-    this.tokenWatch = undefined;
+    // Each kennel's running home, by directory: what `stopLocalHome` ends.
+    this.homes = new Map();
+    this.watches = [];
+  }
+
+  /** The kennel `sheep setup` made in a working directory: `<dir>/.sheep`, where the config and the local home live. */
+  kennel(dir) {
+    return join(dir, ".sheep");
+  }
+
+  /**
+   * The `kennel:` line as the installed command prints it: the path it
+   * resolved from its working directory, which on macOS is the realpath
+   * under `/private/var` where the ring's own name says `/var`.
+   */
+  kennelLine(dir) {
+    return `kennel: ${realpathSync(this.kennel(dir))}\n`;
+  }
+
+  configOf(dir) {
+    return join(this.kennel(dir), "config");
+  }
+
+  localOf(dir) {
+    return join(this.kennel(dir), "local");
   }
 
   /** The directories stripped from PATH: where this script lives and the repository the ring installs from; never the filesystem root. */
@@ -299,7 +348,7 @@ class Ring {
     return [...new Set([root, this.repo].filter((dir) => dir && dir !== sep))];
   }
 
-  /** The environment every command in the ring runs with: the five variables, and a PATH with this checkout stripped. */
+  /** The environment every command in the ring runs with: the three variables, and a PATH with this checkout stripped. */
   env() {
     const inherited = {};
     for (const [key, value] of Object.entries(process.env)) {
@@ -315,8 +364,6 @@ class Ring {
       npm_config_prefix: this.prefix,
       npm_config_cache: this.cache,
       HOME: this.home,
-      SHEEP_CONFIG: this.config,
-      SHEEP_LOCAL: this.local,
       PATH: [join(this.prefix, "bin"), ...path].join(":"),
       npm_config_update_notifier: "false",
       npm_config_fund: "false",
@@ -327,32 +374,34 @@ class Ring {
 
   assertFresh() {
     const env = this.env();
-    const five = ["npm_config_prefix", "npm_config_cache", "HOME", "SHEEP_CONFIG", "SHEEP_LOCAL"];
-    for (const key of five) {
+    const three = ["npm_config_prefix", "npm_config_cache", "HOME"];
+    for (const key of three) {
       const value = env[key];
       if (!value || !(value === this.dir || value.startsWith(this.dir + sep))) throw new Error(`${key}=${value} is not inside the ring ${this.dir}`);
-      const dir = key === "SHEEP_CONFIG" ? dirname(value) : value;
-      if (!existsSync(dir) || !statSync(dir).isDirectory()) throw new Error(`${key}: ${dir} is not a fresh directory`);
+      if (!existsSync(value) || !statSync(value).isDirectory()) throw new Error(`${key}: ${value} is not a fresh directory`);
     }
-    // Fresh means empty, except that HOME holds the empty `.sheep/local` skeleton the ring made for SHEEP_LOCAL.
+    // Fresh means empty: no `.sheep` anywhere, not in HOME and not in either working directory. Setup makes the kennels; nothing here does.
     const onlyHolds = (dir, names) => {
       const found = readdirSync(dir);
       if (found.some((name) => !names.includes(name))) throw new Error(`${dir} is not empty: ${found.join(", ")}`);
     };
     onlyHolds(this.prefix, []);
     onlyHolds(this.cache, []);
-    onlyHolds(this.home, [".sheep"]);
-    onlyHolds(join(this.home, ".sheep"), ["local"]);
-    onlyHolds(this.local, []);
-    onlyHolds(this.work, []);
+    onlyHolds(this.home, []);
+    onlyHolds(this.blog, [".git", "posts"]);
+    onlyHolds(this.pi, []);
     for (const entry of env.PATH.split(":")) {
       for (const dir of this.stripped()) {
         if (entry === dir || entry.startsWith(dir + sep)) throw new Error(`PATH still reaches ${dir}: ${entry}`);
       }
     }
-    if (existsSync(this.config)) throw new Error(`${this.config} exists before the walk`);
+    for (const dir of [this.home, this.blog, this.pi]) {
+      if (existsSync(this.kennel(dir))) throw new Error(`${this.kennel(dir)} exists before the walk`);
+    }
+    if (existsSync(join(this.blog, ".gitignore"))) throw new Error(`${join(this.blog, ".gitignore")} exists before the walk`);
     console.log(`ring: ${this.dir}`);
-    for (const key of five) console.log(`  ${key}=${env[key]}`);
+    for (const key of three) console.log(`  ${key}=${env[key]}`);
+    console.log(`  kennels: none yet; ${this.blog} (a git work tree) and ${this.pi} (not one) become two when setup runs in them`);
     console.log(`  PATH=${join(this.prefix, "bin")}:… (${this.stripped().join(" and ")} stripped)`);
   }
 
@@ -370,9 +419,11 @@ class Ring {
   }
 
   /**
-   * Journey 1 step 1: `npx <spec> setup --json` in the ring's scratch
-   * working directory. Setup installs the command with npm's git installer
-   * and the skill into that directory; the ring reads both, and the report.
+   * Journey 1 step 1: `npx <spec> setup --json` in the ring's `blog`
+   * directory. Setup installs the command with npm's git installer, the
+   * skill into that directory, and the kennel `.sheep/` with the
+   * `.gitignore` entry a git work tree needs; the ring reads all three,
+   * and the report.
    */
   async install() {
     const spec = this.spec;
@@ -381,7 +432,7 @@ class Ring {
     const env = spec === INSTALL_SPEC ? this.env() : { ...this.env(), SHEEP_INSTALL_SPEC: spec };
     const versions = { node: spawnSync("node", ["--version"], { env, encoding: "utf8" }).stdout.trim(), npm: spawnSync("npm", ["--version"], { env, encoding: "utf8" }).stdout.trim() };
     const command = `npx ${spec} setup --json`;
-    const result = await run("npx", [spec, "setup", "--json"], { env, cwd: this.work });
+    const result = await run("npx", [spec, "setup", "--json"], { env, cwd: this.blog });
     const seconds = ((Date.now() - started) / 1000).toFixed(0);
     if (result.code !== 0) this.fail("step 1", command, result);
     let report;
@@ -423,13 +474,23 @@ class Ring {
 
     // The report: three states, and the next sentence.
     const version = `sheep ${this.stamp.commit} (${this.stamp.builtAt})`;
-    const skillDir = join(this.work, ".agents", "skills", "sheep");
-    const doorway = join(this.work, ".claude", "skills", "sheep");
+    const skillDir = join(this.blog, ".agents", "skills", "sheep");
+    const doorway = join(this.blog, ".claude", "skills", "sheep");
     const expected = { cli: { state: "installed", path: bin, version, spec }, skill: { state: "installed", path: skillDir, doorway: { path: doorway, state: "linked" } }, home: { state: "none", home: null }, checkout: null, next: "sheep home local" };
     const wrong = [];
     if (report.cli?.state !== expected.cli.state || !this.samePath(report.cli?.path, bin) || report.cli?.version !== version || report.cli?.spec !== spec) wrong.push("cli");
     if (report.skill?.state !== "installed" || !this.samePath(report.skill?.path, skillDir) || report.skill?.doorway?.state !== "linked" || !this.samePath(report.skill?.doorway?.path, doorway)) wrong.push("skill");
     if (report.home?.state !== "none" || report.home?.home !== null) wrong.push("home");
+    // The kennel: made here, with the entry appended to a .gitignore this directory did not have, and nothing of it tracked.
+    if (
+      report.kennel?.state !== "made" ||
+      !this.samePath(report.kennel?.path, this.kennel(this.blog)) ||
+      report.kennel?.gitignore?.state !== "added" ||
+      !this.samePath(report.kennel?.gitignore?.path, join(this.blog, ".gitignore")) ||
+      report.kennel?.tracked !== false
+    ) {
+      wrong.push("kennel");
+    }
     if (report.checkout !== null) wrong.push("checkout");
     if (report.next !== expected.next) wrong.push("next");
     if (wrong.length > 0) this.fail("step 1", command, { ...result, stderr: `${result.stderr}\n${wrong.join(", ")} not as expected: ${JSON.stringify(expected)}` });
@@ -447,19 +508,38 @@ class Ring {
     if (!link.isSymbolicLink() || readlinkSync(doorway) !== "../../.agents/skills/sheep" || !statSync(doorway).isDirectory() || readFileSync(join(doorway, "SKILL.md"), "utf8") !== shipped) {
       this.fail("step 1", `ls -l ${doorway}`, { stdout: link.isSymbolicLink() ? readlinkSync(doorway) : "not a symlink", stderr: "expected a relative symlink ../../.agents/skills/sheep leading to the copy", code: 1 });
     }
-    // Nothing else appeared in the working directory, and nothing in HOME beyond the skeleton: setup makes no home.
-    const inWork = readdirSync(this.work).sort();
-    if (JSON.stringify(inWork) !== JSON.stringify([".agents", ".claude"])) this.fail("step 1", `ls -a ${this.work}`, { stdout: inWork.join("\n"), stderr: "expected .agents and .claude only", code: 1 });
-    if (existsSync(this.config) || readdirSync(this.local).length > 0) this.fail("step 1", `ls -a ${join(this.home, ".sheep")}`, { stdout: readdirSync(join(this.home, ".sheep")).join("\n"), stderr: "setup wrote a config or touched the local home", code: 1 });
+    // Nothing else appeared in the working directory, and nothing at all in HOME: setup makes no home and fetches no tool.
+    const inWork = readdirSync(this.blog).sort();
+    const expectedInWork = [".agents", ".claude", ".git", ".gitignore", ".sheep", "posts"];
+    if (JSON.stringify(inWork) !== JSON.stringify(expectedInWork)) this.fail("step 1", `ls -a ${this.blog}`, { stdout: inWork.join("\n"), stderr: `expected ${expectedInWork.join(", ")}`, code: 1 });
+    if (readdirSync(this.kennel(this.blog)).length > 0) this.fail("step 1", `ls -a ${this.kennel(this.blog)}`, { stdout: readdirSync(this.kennel(this.blog)).join("\n"), stderr: "the kennel setup made is not empty", code: 1 });
+    if (existsSync(join(this.home, ".sheep"))) this.fail("step 1", `ls -a ${this.home}`, { stdout: readdirSync(this.home).join("\n"), stderr: "setup touched HOME/.sheep", code: 1 });
+    // Journey 2 step 1: the .gitignore is one line, and git sees nothing under .sheep.
+    const ignore = readFileSync(join(this.blog, ".gitignore"), "utf8");
+    if (ignore !== ".sheep/\n") this.fail("step 1", `cat ${join(this.blog, ".gitignore")}`, { stdout: ignore, stderr: 'expected exactly ".sheep/"', code: 1 });
+    const status = this.git0(this.blog, "status", "--porcelain");
+    if (status.includes(".sheep")) this.fail("k2.1", `git status --porcelain in ${this.blog}`, { stdout: status, stderr: "git sees something under .sheep", code: 1 });
     this.ok("step 1", command, `${seconds}s, node ${versions.node}, npm ${versions.npm}; ${installed.length} packages beside sheep; no *.ts under *earendil*`);
-    this.ok("step 1", "the report", `cli installed at <ring>/prefix/bin/sheep (${version}); skill installed at <work>/.agents/skills/sheep, .claude/skills/sheep linked; home none; next "${report.next}"`);
+    this.ok("step 1", "the report", `cli installed at <ring>/prefix/bin/sheep (${version}); skill installed at <blog>/.agents/skills/sheep, .claude/skills/sheep linked; kennel <blog>/.sheep made; home none; next "${report.next}"`);
+    this.ok("k2.1", `cat <blog>/.gitignore; git status --porcelain`, `one line, ".sheep/"; untracked: ${status.trim().split("\n").join(" ") || "(none)"}; nothing under .sheep`);
     if (spec !== INSTALL_SPEC) this.unchecked.push(`journey 1 step 1: the spec ${JSON.stringify(INSTALL_SPEC)}; the ring installed ${spec} through SHEEP_INSTALL_SPEC (CI's second job installs the user's string)`);
     if (this.sha === undefined) this.unchecked.push(`journey 1 step 1: that the installed skill and guide are the ref's: the ring had a spec and no repository, so it read them from the install`);
   }
 
-  /** The installed `sheep`, first on PATH, finding its home through the ring's config file and nothing in the environment. */
+  /**
+   * The installed `sheep`, first on PATH, finding its kennel by walking up
+   * from `cwd` and its home through the config it finds there, with
+   * nothing in the environment. Every step names the directory it stands
+   * in; `blog` is the default, as the dog that opened there.
+   */
   sheep(args, options = {}) {
-    return run("sheep", args, { env: this.env(), cwd: this.dir, ...options });
+    return run("sheep", args, { env: this.env(), cwd: this.blog, ...options });
+  }
+
+  /** `git` in a directory of the ring, for reading: the output, whatever the exit code. */
+  git0(dir, ...args) {
+    const done = spawnSync("git", args, { cwd: dir, encoding: "utf8" });
+    return done.stdout ?? "";
   }
 
   ok(step, command, note) {
@@ -481,9 +561,49 @@ class Ring {
     throw error;
   }
 
-  /** `home.json` under the ring's SHEEP_LOCAL, as the installed command wrote it. */
-  record() {
-    return JSON.parse(readFileSync(join(this.local, "home.json"), "utf8"));
+  /** `home.json` under a kennel's `local/`, as the installed command wrote it. */
+  record(dir) {
+    return JSON.parse(readFileSync(join(this.localOf(dir), "home.json"), "utf8"));
+  }
+
+  /**
+   * `sheep home local --faux --json` in a kennel: the report, the address
+   * answering, and the two files that are the kennel's own — the config
+   * with its token and the local marker, and `.dev.vars` mode 600 holding
+   * that same token, the faux provider, and no key. Returns what the
+   * caller compares between kennels.
+   */
+  async startHome(dir, step, expectState) {
+    const command = `sheep home local --faux --json (in ${dir === this.blog ? "blog" : "pi"})`;
+    const started = await this.sheep(["home", "local", "--faux", "--json"], { cwd: dir });
+    let report;
+    try {
+      report = JSON.parse(started.stdout);
+    } catch {
+      this.fail(step, command, started);
+    }
+    if (started.code !== 0 || report.state !== expectState || report.key !== "faux" || typeof report.pid !== "number") this.fail(step, command, started);
+    const url = report.home;
+    if (!/^http:\/\/127\.0\.0\.1:\d+$/.test(url) || !(await answers(url))) this.fail(step, `curl ${url}/`, { ...started, stderr: `${started.stderr}\n${url} does not answer sheep`, code: 1 });
+    // The report names the kennel it found, and it is this directory's.
+    if (!this.samePath(report.kennel, this.kennel(dir))) this.fail(step, command, { ...started, stderr: `${started.stderr}\nthe report names kennel ${report.kennel}; expected ${this.kennel(dir)}` });
+    // The config, in the kennel and nowhere else: the address, a token, and the local marker.
+    const configPath = this.configOf(dir);
+    if (!existsSync(configPath)) this.fail(step, `cat ${configPath}`, { stdout: "", stderr: "no config was written in the kennel", code: 1 });
+    const config = JSON.parse(readFileSync(configPath, "utf8"));
+    if (config.home !== url || typeof config.token !== "string" || config.token.length < 32 || config.local !== true) {
+      this.fail(step, `cat ${configPath}`, { stdout: JSON.stringify({ ...config, token: "…" }), stderr: `expected {home: ${url}, token, local: true}`, code: 1 });
+    }
+    // The secrets file: mode 600, the config's token and the provider in it, no key.
+    const devVars = join(this.localOf(dir), ".dev.vars");
+    const mode = statSync(devVars).mode & 0o777;
+    if (mode !== 0o600) this.fail(step, `stat ${devVars}`, { stdout: mode.toString(8), stderr: "expected mode 600", code: 1 });
+    const secrets = readFileSync(devVars, "utf8");
+    if (!secrets.includes(`SHEEP_TOKEN=${config.token}\n`) || !secrets.includes("SHEEP_PROVIDER=faux\n") || secrets.includes("SHEEP_ANTHROPIC_API_KEY")) {
+      this.fail(step, `cat ${devVars}`, { stdout: secrets.replace(/=.*/g, "=…"), stderr: "expected the config's token, the faux provider, and no key", code: 1 });
+    }
+    this.homes.set(dir, { url, pid: report.pid });
+    return { url, report, token: config.token, port: report.port };
   }
 
   async walk() {
@@ -499,63 +619,74 @@ class Ring {
     if (version.code !== 0 || version.stdout !== expected || version.stderr !== "") this.fail("step 7", "sheep --version", { ...version, stderr: `${version.stderr}\nexpected ${JSON.stringify(expected)} and an empty stderr` });
     this.ok("step 7", "sheep --version", `${version.stdout.trim()}; nothing on stderr`);
 
-    // Step 2: the local home, under the ring's SHEEP_LOCAL, with the faux provider in place of a key.
-    const startedAt = Date.now();
-    const started = await this.sheep(["home", "local", "--faux", "--json"]);
-    const seconds = ((Date.now() - startedAt) / 1000).toFixed(0);
-    let report;
+    // Journey 2 step 2, before the homes: the second dog's directory, which is in no git work tree, becomes a kennel with no .gitignore.
+    const piSetup = await this.sheep(["setup", "--json"], { cwd: this.pi });
+    let piReport;
     try {
-      report = JSON.parse(started.stdout);
+      piReport = JSON.parse(piSetup.stdout);
     } catch {
-      this.fail("step 2", "sheep home local --faux --json", started);
+      this.fail("k2.2", "sheep setup --json (in pi)", piSetup);
     }
-    if (started.code !== 0 || report.state !== "started" || report.key !== "faux" || typeof report.pid !== "number") this.fail("step 2", "sheep home local --faux --json", started);
-    const url = report.home;
-    if (!/^http:\/\/127\.0\.0\.1:\d+$/.test(url) || !(await answers(url))) this.fail("step 2", `curl ${url}/`, { ...started, stderr: `${started.stderr}\n${url} does not answer sheep`, code: 1 });
-    this.localHome = { url, pid: report.pid };
+    if (
+      piSetup.code !== 0 ||
+      piReport.cli?.state !== "on-path" ||
+      piReport.kennel?.state !== "made" ||
+      !this.samePath(piReport.kennel?.path, this.kennel(this.pi)) ||
+      piReport.kennel?.gitignore?.state !== "not-git" ||
+      piReport.kennel?.gitignore?.path !== null ||
+      piReport.kennel?.tracked !== false ||
+      piReport.home?.state !== "none" ||
+      piReport.skill?.state !== "installed"
+    ) {
+      this.fail("k2.2", "sheep setup --json (in pi)", { ...piSetup, stderr: `${piSetup.stderr}\nexpected cli on-path, the kennel made, no .gitignore outside a git work tree, home none` });
+    }
+    if (existsSync(join(this.pi, ".gitignore"))) this.fail("k2.2", `ls -a ${this.pi}`, { stdout: readdirSync(this.pi).join("\n"), stderr: "a .gitignore was written outside a git work tree", code: 1 });
+    this.ok("k2.2", "sheep setup --json (in pi)", `cli on-path; skill installed; kennel <pi>/.sheep made; no .gitignore (not a git work tree); home none`);
+
+    // Step 2 / journey 1 step 1: the local home under blog's kennel, with the faux provider in place of a key.
+    const startedAt = Date.now();
+    const blog = await this.startHome(this.blog, "step 2", "started");
+    const seconds = ((Date.now() - startedAt) / 1000).toFixed(0);
+    const { url, report } = blog;
+    this.token = blog.token;
+    const devVars = join(this.localOf(this.blog), ".dev.vars");
     // The record: pid, port, and the stamp the install's manifest carries.
-    const record = this.record();
+    const record = this.record(this.blog);
     if (record.pid !== report.pid || record.url !== url || JSON.stringify(record.stamp) !== JSON.stringify(stamp)) {
-      this.fail("step 2", `cat ${join(this.local, "home.json")}`, { stdout: JSON.stringify(record), stderr: `expected pid ${report.pid}, url ${url}, stamp ${JSON.stringify(stamp)}`, code: 1 });
+      this.fail("step 2", `cat ${join(this.localOf(this.blog), "home.json")}`, { stdout: JSON.stringify(record), stderr: `expected pid ${report.pid}, url ${url}, stamp ${JSON.stringify(stamp)}`, code: 1 });
     }
-    // The config, written in the ring's HOME: the address, a token, and the local marker.
-    if (!existsSync(this.config)) this.fail("step 2", `cat ${this.config}`, { stdout: "", stderr: "no config was written", code: 1 });
-    const config = JSON.parse(readFileSync(this.config, "utf8"));
-    if (config.home !== url || typeof config.token !== "string" || config.token.length < 32 || config.local !== true) {
-      this.fail("step 2", `cat ${this.config}`, { stdout: JSON.stringify({ ...config, token: "…" }), stderr: `expected {home: ${url}, token, local: true}`, code: 1 });
-    }
-    this.token = config.token;
-    // The secrets file: mode 600, the token and the provider in it, no key.
-    const devVars = join(this.local, ".dev.vars");
-    const mode = statSync(devVars).mode & 0o777;
-    if (mode !== 0o600) this.fail("step 2", `stat ${devVars}`, { stdout: mode.toString(8), stderr: "expected mode 600", code: 1 });
-    const secrets = readFileSync(devVars, "utf8");
-    if (!secrets.includes(`SHEEP_TOKEN=${this.token}\n`) || !secrets.includes("SHEEP_PROVIDER=faux\n") || secrets.includes("SHEEP_ANTHROPIC_API_KEY")) {
-      this.fail("step 2", `cat ${devVars}`, { stdout: secrets.replace(/=.*/g, "=…"), stderr: "expected the config's token, the faux provider, and no key", code: 1 });
-    }
-    // The tool: wrangler at the manifest's pin, under the ring's ~/.sheep/tools, and nowhere in the release's tree.
+    // The tool: wrangler at the manifest's pin, under the ring's ~/.sheep/tools (the machine's, not the kennel's), and nowhere in the release's tree.
     const tools = join(this.home, ".sheep", "tools");
     const wranglerPkg = join(tools, "node_modules", "wrangler", "package.json");
     const wranglerVersion = existsSync(wranglerPkg) ? JSON.parse(readFileSync(wranglerPkg, "utf8")).version : undefined;
     if (wranglerVersion !== stamp.wrangler) this.fail("step 2", `cat ${wranglerPkg}`, { stdout: String(wranglerVersion), stderr: `expected wrangler ${stamp.wrangler} in ${tools}`, code: 1 });
     if (existsSync(join(this.pkg, "node_modules", "wrangler"))) this.fail("step 2", `ls ${join(this.pkg, "node_modules")}`, { stdout: "", stderr: "wrangler was installed into the release's tree", code: 1 });
+    if (report.wrangler?.installed !== true) this.fail("step 2", "sheep home local --faux --json", { stdout: JSON.stringify(report.wrangler), stderr: "expected the first home to have fetched wrangler", code: 1 });
+    // Nothing of the kennel is in HOME: the tools alone, which are the machine's.
     const dotSheep = readdirSync(join(this.home, ".sheep")).sort();
-    if (JSON.stringify(dotSheep) !== JSON.stringify(["config", "local", "tools"])) this.fail("step 2", `ls ${join(this.home, ".sheep")}`, { stdout: dotSheep.join("\n"), stderr: "expected config, local, tools", code: 1 });
+    if (JSON.stringify(dotSheep) !== JSON.stringify(["tools"])) this.fail("step 2", `ls ${join(this.home, ".sheep")}`, { stdout: dotSheep.join("\n"), stderr: "expected tools alone under HOME/.sheep: the config and the home are the kennel's", code: 1 });
     // ps: the daemon runs from the tools directory over the release's config with the secrets file's path, and no process's arguments carry the token.
-    // Paths as the daemon saw them: the bundle resolves its own through realpath (on macOS /var is /private/var), the ring's variables do not.
-    const either = (line, path) => line.includes(path) || line.includes(realpathSync(path));
+    // Paths as the daemon saw them: it resolves its kennel from its own working directory, so on macOS its paths are realpaths under
+    // /private/var where the ring's names say /var. Every comparison takes either form, and never realpaths a string that is not a path.
+    const real = (path) => {
+      try {
+        return realpathSync(path);
+      } catch {
+        return path;
+      }
+    };
+    const either = (line, path) => line.includes(path) || line.includes(real(path));
+    const flagged = (line, flag, path) => line.includes(`${flag} ${path}`) || line.includes(`${flag} ${real(path)}`);
     const lines = psLines();
     const daemon = lines.find((line) => line.startsWith(`${report.pid} `));
     const pkgConfig = join(this.pkg, "home", "wrangler.jsonc");
-    if (!daemon || !either(daemon, join(tools, "node_modules", "wrangler")) || !(daemon.includes(`--config ${pkgConfig}`) || daemon.includes(`--config ${realpathSync(pkgConfig)}`)) || !either(daemon, `--env-file ${devVars}`)) {
-      this.fail("step 2", `ps -Ao pid=,args= | grep ^${report.pid}`, { stdout: daemon ?? "", stderr: "expected the ring's wrangler over the release's home/wrangler.jsonc with --env-file the ring's .dev.vars", code: 1 });
+    if (!daemon || !either(daemon, join(tools, "node_modules", "wrangler")) || !flagged(daemon, "--config", pkgConfig) || !flagged(daemon, "--env-file", devVars)) {
+      this.fail("step 2", `ps -Ao pid=,args= | grep ^${report.pid}`, { stdout: daemon ?? "", stderr: "expected the ring's wrangler over the release's home/wrangler.jsonc with --env-file blog's .dev.vars", code: 1 });
     }
     const leaked = lines.filter((line) => line.includes(this.token));
     if (leaked.length > 0) this.fail("step 2", "ps -Ao pid=,args=", { stdout: leaked.join("\n"), stderr: "the token is in a process's arguments", code: 1 });
-    // From here to the end of the walk, ps is polled for the token.
-    this.tokenWatch = watchPs(this.token, 25);
     // A second call reports the running home at the same address.
-    const again = await this.sheep(["home", "local", "--faux", "--json"]);
+    const again = await this.sheep(["home", "local", "--faux", "--json"], { cwd: this.blog });
     let againReport;
     try {
       againReport = JSON.parse(again.stdout);
@@ -563,17 +694,107 @@ class Ring {
       this.fail("step 2", "sheep home local --faux --json (again)", again);
     }
     if (again.code !== 0 || againReport.state !== "running" || againReport.home !== url || againReport.pid !== report.pid) this.fail("step 2", "sheep home local --faux --json (again)", again);
-    this.ok("step 2", "sheep home local --faux", `${url}, pid ${report.pid}, ${seconds}s with wrangler ${stamp.wrangler} fetched into ~/.sheep/tools; config written; .dev.vars mode 600; again: running`);
+    this.ok("step 2", "sheep home local --faux (in blog)", `${url}, pid ${report.pid}, ${seconds}s with wrangler ${stamp.wrangler} fetched into ~/.sheep/tools; <blog>/.sheep/config written; .dev.vars mode 600; again: running`);
     this.ok("step 2", "ps", `${daemon.slice(0, 96)}… --env-file ${devVars.replace(this.dir, "<ring>")}; ${lines.length} processes, none with the token in its arguments`);
-    this.unchecked.push("journey 1 step 2: a key from ANTHROPIC_API_KEY held in .dev.vars, and a real model answering; the ring's home ran the faux provider");
+    this.unchecked.push("journey 1 step 2: a key from ANTHROPIC_API_KEY held in .dev.vars, and a real model answering; the ring's homes ran the faux provider");
+    this.unchecked.push("kennel journey 2 step 3: the warning said when `git ls-files .sheep` names something; the ring's blog never committed its kennel, and packages/cli/test/setup.test.ts drives that line from setup and from `sheep home`");
 
-    // Step 3: a sheep is minted, the reply streams, and ls lists it; the home came from the config, nothing from the environment.
-    const created = await this.sheep(["new", "--", "hello"]);
+    // Step 3: a sheep is minted, the reply streams, and ls lists it; the home came from the kennel's config, nothing from the environment.
+    const created = await this.sheep(["new", "--", "hello"], { cwd: this.blog });
     const id = /^session ([0-9a-f-]{36})\n/.exec(created.stderr)?.[1];
     if (created.code !== 0 || created.stdout !== `${FAUX_REPLY}\n` || !id) this.fail("step 3", "sheep new -- hello", created);
-    const listed = await this.sheep(["ls"]);
+    const listed = await this.sheep(["ls"], { cwd: this.blog });
     if (listed.code !== 0 || !listed.stdout.split("\n").some((line) => line.startsWith(`${id}\t`))) this.fail("step 3", "sheep ls", listed);
-    this.ok("step 3", "sheep new -- hello; sheep ls", `${FAUX_REPLY}; session ${id} listed`);
+    this.ok("step 3", "sheep new -- hello; sheep ls (in blog)", `${FAUX_REPLY}; session ${id} listed`);
+
+    // Kennel journey 1 step 2: the second dog's home, in its own directory. A different port, a different token, and the tool already fetched.
+    const pi = await this.startHome(this.pi, "k1.2", "started");
+    if (pi.url === url) this.fail("k1.2", "sheep home local --faux --json (in pi)", { stdout: pi.url, stderr: `pi's home is at blog's address ${url}: two kennels must run two daemons`, code: 1 });
+    if (pi.token === this.token) this.fail("k1.2", `cat ${this.configOf(this.pi)}`, { stdout: "(the token)", stderr: "pi's token is blog's: each kennel generates its own", code: 1 });
+    if (pi.report.wrangler?.installed !== false || pi.report.wrangler?.version !== stamp.wrangler) {
+      this.fail("k1.2", "sheep home local --faux --json (in pi)", { stdout: JSON.stringify(pi.report.wrangler), stderr: `expected wrangler ${stamp.wrangler} already there, installed false: the tools are the machine's`, code: 1 });
+    }
+    // Both daemons run, and neither token is in any process's arguments. From here the poll watches for both.
+    const twoLines = psLines();
+    const bothLeaked = twoLines.filter((line) => line.includes(this.token) || line.includes(pi.token));
+    if (bothLeaked.length > 0) this.fail("k1.2", "ps -Ao pid=,args=", { stdout: bothLeaked.join("\n"), stderr: "a token is in a process's arguments", code: 1 });
+    this.tokenWatch = watchPs([this.token, pi.token], 25);
+    const stillDotSheep = readdirSync(join(this.home, ".sheep")).sort();
+    if (JSON.stringify(stillDotSheep) !== JSON.stringify(["tools"])) this.fail("k1.2", `ls ${join(this.home, ".sheep")}`, { stdout: stillDotSheep.join("\n"), stderr: "the second home put something under HOME/.sheep", code: 1 });
+
+    // A sheep in pi, and then each `sheep ls` lists exactly its own kennel's.
+    const piCreated = await this.sheep(["new", "--", "hello"], { cwd: this.pi });
+    const piId = /^session ([0-9a-f-]{36})\n/.exec(piCreated.stderr)?.[1];
+    if (piCreated.code !== 0 || piCreated.stdout !== `${FAUX_REPLY}\n` || !piId) this.fail("k1.2", "sheep new -- hello (in pi)", piCreated);
+    const ids = async (cwd, step) => {
+      const result = await this.sheep(["ls", "--json"], { cwd });
+      let rows;
+      try {
+        rows = JSON.parse(result.stdout);
+      } catch {
+        this.fail(step, `sheep ls --json (in ${cwd})`, result);
+      }
+      if (result.code !== 0 || !Array.isArray(rows)) this.fail(step, `sheep ls --json (in ${cwd})`, result);
+      return rows.map((row) => row.id);
+    };
+    const inPi = await ids(this.pi, "k1.2");
+    const inBlog = await ids(this.blog, "k1.2");
+    if (JSON.stringify(inPi) !== JSON.stringify([piId])) this.fail("k1.2", `sheep ls --json (in pi)`, { stdout: inPi.join("\n"), stderr: `expected exactly ${piId}, the sheep minted from this kennel`, code: 1 });
+    if (JSON.stringify(inBlog) !== JSON.stringify([id])) this.fail("k1.2", `sheep ls --json (in blog)`, { stdout: inBlog.join("\n"), stderr: `expected exactly ${id}, the sheep minted from this kennel`, code: 1 });
+    this.ok("k1.2", "sheep home local --faux; sheep new; sheep ls (in pi)", `${pi.url} (blog: ${url}), a token of its own, wrangler ${stamp.wrangler} already there; pi lists ${piId} alone, blog lists ${id} alone`);
+
+    // Journey 1 step 3: a working directory under blog with no kennel of its own finds blog's, as git status finds the repository.
+    const deepLs = await ids(this.deep, "k1.3");
+    if (JSON.stringify(deepLs) !== JSON.stringify([id])) this.fail("k1.3", `sheep ls --json (in blog/posts/2026)`, { stdout: deepLs.join("\n"), stderr: `expected blog's ${id}`, code: 1 });
+    const deepHome = await this.sheep(["home", "--json"], { cwd: this.deep });
+    let deepReport;
+    try {
+      deepReport = JSON.parse(deepHome.stdout);
+    } catch {
+      this.fail("k1.3", "sheep home --json (in blog/posts/2026)", deepHome);
+    }
+    if (deepHome.code !== 0 || deepReport.home !== url || deepReport.running !== true || !this.samePath(deepReport.kennel, this.kennel(this.blog))) {
+      this.fail("k1.3", "sheep home --json (in blog/posts/2026)", { ...deepHome, stderr: `${deepHome.stderr}\nexpected kennel ${this.kennel(this.blog)}, home ${url}, running` });
+    }
+    const deepProse = await this.sheep(["home"], { cwd: this.deep });
+    if (!deepProse.stdout.includes(this.kennelLine(this.blog).trim())) {
+      this.fail("k1.3", "sheep home (in blog/posts/2026)", { ...deepProse, stderr: `${deepProse.stderr}\nexpected the prose to name blog's kennel` });
+    }
+    this.ok("k1.3", "sheep ls; sheep home (in blog/posts/2026)", `${id} listed; kennel <blog>/.sheep, home ${url}, running`);
+
+    // Journey 1 step 4: pi's dog stops its home; blog's is untouched, and its next `sheep ls` says nothing about pi.
+    const piStopped = await this.sheep(["home", "stop"], { cwd: this.pi });
+    if (piStopped.code !== 0 || piStopped.stdout !== `stopped the local home at ${pi.url}\n`) this.fail("k1.4", "sheep home stop (in pi)", piStopped);
+    this.homes.delete(this.pi);
+    if (await answers(pi.url)) this.fail("k1.4", `curl ${pi.url}/`, { stdout: "", stderr: "pi's home still answers after sheep home stop", code: 1 });
+    if (!(await answers(url))) this.fail("k1.4", `curl ${url}/`, { stdout: "", stderr: "stopping pi's home stopped blog's", code: 1 });
+    const afterStop = await ids(this.blog, "k1.4");
+    if (JSON.stringify(afterStop) !== JSON.stringify([id])) this.fail("k1.4", "sheep ls --json (in blog)", { stdout: afterStop.join("\n"), stderr: `expected blog's ${id} alone, and nothing of pi's`, code: 1 });
+    const piDown = await this.sheep(["home"], { cwd: this.pi });
+    if (piDown.code !== 0 || piDown.stdout !== `home: ${pi.url} (local, stopped)\n${this.kennelLine(this.pi)}`) this.fail("k1.4", "sheep home (in pi)", { ...piDown, stderr: `${piDown.stderr}\nexpected "home: ${pi.url} (local, stopped)" and ${this.kennelLine(this.pi).trim()}` });
+    this.ok("k1.4", "sheep home stop (in pi); sheep ls (in blog)", `pi's ${pi.url} stopped and says so; blog's ${url} still answers and lists ${id} alone`);
+
+    // Journey 1 step 5: a terminal in neither directory falls back to ~/.sheep, which holds no home, and says which kennel that is.
+    const outside = await this.sheep(["home", "--json"], { cwd: this.dir });
+    let outsideReport;
+    try {
+      outsideReport = JSON.parse(outside.stdout);
+    } catch {
+      this.fail("k1.5", `sheep home --json (in ${this.dir})`, outside);
+    }
+    if (outside.code !== 0 || outsideReport.home !== null || !this.samePath(outsideReport.kennel, join(this.home, ".sheep"))) {
+      this.fail("k1.5", `sheep home --json (outside both kennels)`, { ...outside, stderr: `${outside.stderr}\nexpected home null and kennel ${join(this.home, ".sheep")}, the fallback` });
+    }
+    this.ok("k1.5", "sheep home --json (outside both kennels)", `kennel ~/.sheep, the fallback; home none, and neither dog's home named`);
+
+    // Journey 2 step 1, after the home ran: the token and the key are under .sheep, and git sees neither.
+    const ignoreNow = readFileSync(join(this.blog, ".gitignore"), "utf8");
+    const statusNow = this.git0(this.blog, "status", "--porcelain");
+    const ignored = this.git0(this.blog, "status", "--porcelain", "--ignored");
+    if (ignoreNow !== ".sheep/\n" || statusNow.includes(".sheep") || !ignored.includes("!! .sheep/")) {
+      this.fail("k2.1", `git status --porcelain --ignored in ${this.blog}`, { stdout: `${statusNow}${ignored}`, stderr: 'expected .gitignore still one line, nothing under .sheep untracked, and "!! .sheep/" ignored', code: 1 });
+    }
+    this.ok("k2.1", "git status --porcelain [--ignored] (in blog, the home running)", `.gitignore one line; untracked: ${statusNow.trim().split("\n").join(" ")}; ignored: !! .sheep/, holding the config and .dev.vars`);
 
     // Step 4, first half: a prompt to the sheep, streamed by sheep's own client inside the bundle.
     const again4 = await this.sheep(["attach", id, "--", "again"]);
@@ -602,7 +823,7 @@ class Ring {
     for (const said of ["sheep home local", "ANTHROPIC_API_KEY", "sheep wait", "A hand at a terminal"]) {
       if (!shipped.includes(said)) this.fail("step 5", "sheep --agent-help", { ...guide, stderr: `the guide does not say ${JSON.stringify(said)}`, code: 1 });
     }
-    const setupAgain = await this.sheep(["setup", "--json"], { cwd: this.work });
+    const setupAgain = await this.sheep(["setup", "--json"], { cwd: this.blog });
     let second;
     try {
       second = JSON.parse(setupAgain.stdout);
@@ -617,27 +838,32 @@ class Ring {
       second.cli.version === expected.trim() &&
       second.skill?.state === "current" &&
       second.skill.doorway?.state === "current" &&
+      // Idempotent: the kennel is there, the entry is there, and no second line was added.
+      second.kennel?.state === "present" &&
+      second.kennel.gitignore?.state === "present" &&
+      second.kennel.tracked === false &&
       second.home?.state === "local" &&
       second.home.home === url &&
       second.home.running === true &&
       second.home.pid === report.pid &&
       second.checkout === null &&
       second.next === "sheep --agent-help";
-    if (!current) this.fail("step 5", "sheep setup --json (again)", { ...setupAgain, stderr: `${setupAgain.stderr}\nexpected cli on-path at ${bin}, skill current, doorway current, home ${url} local and running under pid ${report.pid}, next "sheep --agent-help"` });
-    this.ok("step 5", "sheep --agent-help; sheep setup --json (again)", `${shipped.split(/\s+/).length} words, the ref's dist/agent-guide.md; again: cli on-path, skill current, doorway current, home local running, next "${second.next}"`);
+    if (!current) this.fail("step 5", "sheep setup --json (again)", { ...setupAgain, stderr: `${setupAgain.stderr}\nexpected cli on-path at ${bin}, skill current, doorway current, kennel present with its entry already there, home ${url} local and running under pid ${report.pid}, next "sheep --agent-help"` });
+    if (readFileSync(join(this.blog, ".gitignore"), "utf8") !== ".sheep/\n") this.fail("step 5", `cat ${join(this.blog, ".gitignore")}`, { stdout: readFileSync(join(this.blog, ".gitignore"), "utf8"), stderr: "a second setup added a second line", code: 1 });
+    this.ok("step 5", "sheep --agent-help; sheep setup --json (again)", `${shipped.split(/\s+/).length} words, the ref's dist/agent-guide.md; again: cli on-path, skill current, doorway current, kennel present and .gitignore unchanged, home local running, next "${second.next}"`);
 
     // Step 6: the home stops; the next command starts it and says so; the sheep is still there; `sheep home` reports each state.
-    const stopped = await this.sheep(["home", "stop"]);
+    const stopped = await this.sheep(["home", "stop"], { cwd: this.blog });
     if (stopped.code !== 0 || stopped.stdout !== `stopped the local home at ${url}\n`) this.fail("step 6", "sheep home stop", stopped);
     if (await answers(url)) this.fail("step 6", `curl ${url}/`, { stdout: "", stderr: "the home still answers after sheep home stop", code: 1 });
-    if (this.record().pid !== null) this.fail("step 6", `cat ${join(this.local, "home.json")}`, { stdout: JSON.stringify(this.record()), stderr: "the pid was not cleared", code: 1 });
-    const down = await this.sheep(["home"]);
-    if (down.code !== 0 || down.stdout !== `home: ${url} (local, stopped)\n`) this.fail("step 6", "sheep home", down);
-    const morning = await this.sheep(["ls"]);
+    if (this.record(this.blog).pid !== null) this.fail("step 6", `cat ${join(this.localOf(this.blog), "home.json")}`, { stdout: JSON.stringify(this.record(this.blog)), stderr: "the pid was not cleared", code: 1 });
+    const down = await this.sheep(["home"], { cwd: this.blog });
+    if (down.code !== 0 || down.stdout !== `home: ${url} (local, stopped)\n${this.kennelLine(this.blog)}`) this.fail("step 6", "sheep home", { ...down, stderr: `${down.stderr}\nexpected "home: ${url} (local, stopped)" and ${this.kennelLine(this.blog).trim()}` });
+    const morning = await this.sheep(["ls"], { cwd: this.blog });
     if (morning.code !== 0 || !morning.stderr.includes("sheep: the local home is not running; starting it\n") || !morning.stdout.split("\n").some((line) => line.startsWith(`${id}\t`))) {
       this.fail("step 6", "sheep ls (the home stopped)", morning);
     }
-    const up = await this.sheep(["home", "--json"]);
+    const up = await this.sheep(["home", "--json"], { cwd: this.blog });
     let upReport;
     try {
       upReport = JSON.parse(up.stdout);
@@ -647,12 +873,12 @@ class Ring {
     if (up.code !== 0 || upReport.running !== true || upReport.home !== url || typeof upReport.pid !== "number" || upReport.pid === report.pid || JSON.stringify(upReport.stamp) !== JSON.stringify(stamp)) {
       this.fail("step 6", "sheep home --json", { ...up, stderr: `${up.stderr}\nexpected running at ${url} under a new pid with stamp ${JSON.stringify(stamp)}` });
     }
-    this.localHome = { url, pid: upReport.pid };
+    this.homes.set(this.blog, { url, pid: upReport.pid });
     this.ok("step 6", "sheep home stop; sheep home; sheep ls; sheep home --json", `stopped; "(local, stopped)"; started on demand, pid ${report.pid} → ${upReport.pid}, ${id} listed; stamp ${upReport.stamp.commit} (${upReport.stamp.builtAt}), wrangler ${upReport.stamp.wrangler}`);
 
     // Step 7, first half: the export is a SQLite file with the tables the command reports.
     const file = join(this.dir, `${id}.sqlite`);
-    const exported = await this.sheep(["export", id, file]);
+    const exported = await this.sheep(["export", id, file], { cwd: this.blog });
     if (exported.code !== 0 || !existsSync(file)) this.fail("step 7", `sheep export ${id} ${file}`, exported);
     const counts = Object.fromEntries(exported.stdout.trim().split("\t")[1].split(" ").map((pair) => pair.split("=")));
     // Counted in a child Node told the SQLite warning is known, so the only ExperimentalWarning that can appear in this ring's output is the CLI's.
@@ -669,36 +895,43 @@ class Ring {
     this.ok("step 7", `sheep export ${id}`, `${exported.stdout.trim().split("\t")[1]}; opened with node:sqlite, counts match`);
     this.unchecked.push("journey 1 step 7: pi's own session backend opening the export; node:sqlite opened it and counted");
 
-    // The whole walk: the token was in no process's arguments in any sample.
+    // The whole walk: neither kennel's token was in any process's arguments in any sample.
     this.tokenWatch.stop();
     const leak = this.tokenWatch.line();
-    if (leak) this.fail("walk", "ps -Ao pid=,args= (polled)", { stdout: leak, stderr: "the token was seen in a process's arguments during the walk", code: 1 });
-    this.ok("walk", "ps (polled every 25 ms from step 2)", `${this.tokenWatch.samples()} samples, the token in no process's arguments`);
+    if (leak) this.fail("walk", "ps -Ao pid=,args= (polled)", { stdout: leak, stderr: "a token was seen in a process's arguments during the walk", code: 1 });
+    this.ok("walk", "ps (polled every 25 ms from k1.2)", `${this.tokenWatch.samples()} samples, neither kennel's token in any process's arguments`);
+    // What the ring's HOME holds after everything: the tools, and nothing else. The kennels hold the rest.
+    const homeAfter = existsSync(join(this.home, ".sheep")) ? readdirSync(join(this.home, ".sheep")).sort() : [];
+    if (JSON.stringify(homeAfter) !== JSON.stringify(["tools"])) {
+      this.fail("walk", `ls -a ${join(this.home, ".sheep")}`, { stdout: homeAfter.join("\n"), stderr: "expected tools alone under the ring's HOME/.sheep", code: 1 });
+    }
+    this.ok("walk", `ls ~/.sheep`, `tools alone (wrangler ${stamp.wrangler}, fetched once for both kennels); the configs and both homes are in <blog>/.sheep and <pi>/.sheep`);
   }
 
-  /** The home the walk started: stopped with the installed command, unless kept; whatever is left is signalled. */
+  /** Every home the walk started, one per kennel: stopped with the installed command, unless kept; whatever is left is signalled. */
   async stopLocalHome() {
     this.tokenWatch?.stop();
-    if (!this.localHome) return;
     if (this.keep) return;
-    const stopped = await this.sheep(["home", "stop"]).catch(() => undefined);
-    if (stopped?.code !== 0) console.error(`hermetic: sheep home stop exited ${stopped?.code ?? "?"}: ${(stopped?.stderr ?? "").trim()}`);
-    let pid = this.localHome.pid;
-    try {
-      pid = this.record().pid ?? pid;
-    } catch {
-      // no record
-    }
-    if (pid !== null) {
-      for (const target of [-pid, pid]) {
-        try {
-          process.kill(target, "SIGTERM");
-        } catch {
-          // gone
+    for (const [dir, home] of [...this.homes]) {
+      const stopped = await this.sheep(["home", "stop"], { cwd: dir }).catch(() => undefined);
+      if (stopped?.code !== 0) console.error(`hermetic: sheep home stop in ${dir} exited ${stopped?.code ?? "?"}: ${(stopped?.stderr ?? "").trim()}`);
+      let pid = home.pid;
+      try {
+        pid = this.record(dir).pid ?? pid;
+      } catch {
+        // no record
+      }
+      if (pid !== null) {
+        for (const target of [-pid, pid]) {
+          try {
+            process.kill(target, "SIGTERM");
+          } catch {
+            // gone
+          }
         }
       }
+      this.homes.delete(dir);
     }
-    this.localHome = undefined;
   }
 
   report(failure) {
@@ -721,11 +954,15 @@ class Ring {
     }
     if (this.keep) {
       console.log(`kept: ${this.dir}`);
-      if (this.localHome) {
-        console.log(`  the local home is still running at ${this.localHome.url} (pid ${this.localHome.pid}); journey 5's file runs against it with`);
-        console.log(`    SHEEP_TEST_HOME=${this.localHome.url} SHEEP_TEST_TOKEN=${this.token} pnpm --filter @sheep/cli exec vitest --run test/journey5.test.ts`);
+      const blogHome = this.homes.get(this.blog);
+      if (blogHome) {
+        console.log(`  blog's local home is still running at ${blogHome.url} (pid ${blogHome.pid}); journey 5's file runs against it with`);
+        console.log(`    SHEEP_TEST_HOME=${blogHome.url} SHEEP_TEST_TOKEN=${this.token} pnpm --filter @sheep/cli exec vitest --run test/journey5.test.ts`);
         console.log(`  and stops with`);
-        console.log(`    HOME=${this.home} SHEEP_LOCAL=${this.local} SHEEP_CONFIG=${this.config} ${join(this.prefix, "bin", "sheep")} home stop`);
+        console.log(`    (cd ${this.blog} && HOME=${this.home} ${join(this.prefix, "bin", "sheep")} home stop)`);
+      }
+      for (const [dir, home] of this.homes) {
+        if (dir !== this.blog) console.log(`  ${dir}'s home is still running at ${home.url} (pid ${home.pid}); (cd ${dir} && HOME=${this.home} ${join(this.prefix, "bin", "sheep")} home stop)`);
       }
     }
   }
@@ -871,7 +1108,8 @@ async function machineRing({ ref, repo, images, keep }) {
   }
   console.log("\nnot checked by the machine ring (the package ring's own list is above, per image):");
   for (const item of unchecked) console.log(`  - ${item}`);
-  console.log(`images kept: ${images.map(ringTag).join(", ")} (docker image rm to drop them)`);
+  // `map(ringTag)` would hand the index in as the tag's prefix, and name two images that do not exist.
+  console.log(`images kept: ${images.map((image) => ringTag(image)).join(", ")} (docker image rm to drop them)`);
   if (failures.length > 0) {
     console.log(`\nmachine ring: FAILED: ${failures.join("; ")}`);
     process.exit(1);
@@ -1208,17 +1446,20 @@ async function dogInside({ dryRun, redirect, expect, budget }) {
   }
   if (homed.code !== 0 || report.local !== true || report.running !== true || !/^http:\/\/127\.0\.0\.1:\d+$/.test(report.home) || typeof report.pid !== "number") fail("after", "sheep home --json", { ...homed, stderr: `${homed.stderr}\nexpected the local home running` });
   if (expect && !expect.startsWith(report.stamp?.commit ?? "")) fail("after", "sheep home --json", { ...homed, stderr: `the home's stamp is ${report.stamp?.commit}; expected a build of ${expect}` });
-  const devVars = join(home, ".sheep", "local", ".dev.vars");
+  // The secrets are the kennel's, wherever the dog made one: the report names it, so nothing here guesses at ~/.sheep.
+  const kennel = typeof report.kennel === "string" ? report.kennel : join(home, ".sheep");
+  const devVars = join(kennel, "local", ".dev.vars");
   const names = existsSync(devVars) ? readFileSync(devVars, "utf8").split("\n").map((line) => line.split("=")[0].trim()).filter(Boolean) : [];
   const mode = existsSync(devVars) ? statSync(devVars).mode & 0o777 : undefined;
   if (!names.includes("SHEEP_ANTHROPIC_API_KEY") || names.includes("SHEEP_PROVIDER") || mode !== 0o600) fail("after", `stat ${tilde(devVars)}`, { stdout: `${names.join(", ")}; mode ${mode?.toString(8)}`, stderr: "expected SHEEP_ANTHROPIC_API_KEY held, no SHEEP_PROVIDER, mode 600: the key from the environment, a real model", code: 1 });
-  ok("after", "sheep home --json", `${report.home} running, pid ${report.pid}, stamp ${report.stamp?.commit}; ${tilde(devVars)} mode ${mode.toString(8)} holds ${names.join(", ")}`);
+  ok("after", "sheep home --json", `${report.home} running, pid ${report.pid}, stamp ${report.stamp?.commit}; kennel ${tilde(kennel)}; ${tilde(devVars)} mode ${mode.toString(8)} holds ${names.join(", ")}`);
   const stopStarted = Date.now();
   const stopped = await sheep(["home", "stop"]);
   const stopSeconds = ((Date.now() - stopStarted) / 1000).toFixed(1);
   if (stopped.code !== 0 || stopped.stdout !== `stopped the local home at ${report.home}\n`) fail("after", "sheep home stop", stopped);
   ok("after", "sheep home stop", `${stopped.stdout.trim()} in ${stopSeconds}s${stopped.stderr.trim() ? `; stderr: ${stopped.stderr.trim()}` : ""}`);
-  print(`after: ${tilde(work)}: ${readdirSync(work).sort().join(", ")}; ${tilde(join(home, ".sheep"))}: ${readdirSync(join(home, ".sheep")).sort().join(", ")}`);
+  const machineSheep = existsSync(join(home, ".sheep")) ? readdirSync(join(home, ".sheep")).sort().join(", ") : "(none)";
+  print(`after: ${tilde(work)}: ${readdirSync(work).sort().join(", ")}; ${tilde(join(home, ".sheep"))}: ${machineSheep}; the kennel ${tilde(kennel)}: ${existsSync(kennel) ? readdirSync(kennel).sort().join(", ") : "(none)"}`);
   if (dogFailed) {
     print(`\nFAIL  dog: claude exited ${dog.code}${result ? `, ${result.subtype}${result.is_error ? ", is_error" : ""}` : ", no result event"}; the assertions after it held`);
     process.exit(1);

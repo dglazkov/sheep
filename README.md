@@ -32,16 +32,25 @@ Nothing is on npm. The first five minutes, as the dog walks them:
 
    which puts `sheep` on PATH (`npm install -g github:dglazkov/sheep#release`),
    installs the skill into the current directory under `.agents/skills/sheep`
-   with a `.claude/skills/sheep` doorway, reports that no home is configured,
-   and prints the one sentence to run next. It is idempotent; `--json` gives
-   the same report to a program.
+   with a `.claude/skills/sheep` doorway, makes this directory's kennel
+   `.sheep/` (adding it to the `.gitignore` here when you are in a git work
+   tree), reports that no home is configured, and prints the one sentence to
+   run next. It is idempotent; `--json` gives the same report to a program.
 
-2. `sheep home local` starts a home on the machine, under `~/.sheep/local`,
-   and writes `~/.sheep/config`. It says the home has no model key; the dog
-   asks you for an Anthropic key, which you export as `ANTHROPIC_API_KEY`,
-   and `sheep home local` again reports the key held, and where. No account
-   is needed. (`--faux` runs a scripted model instead, for a look at the
-   plumbing without a key.)
+2. `sheep home local` starts a home on the machine, under the kennel's
+   `local/`, and writes the kennel's `config`. It says the home has no model
+   key; the dog asks you for an Anthropic key, which you export as
+   `ANTHROPIC_API_KEY`, and `sheep home local` again reports the key held,
+   and where. No account is needed. (`--faux` runs a scripted model instead,
+   for a look at the plumbing without a key.)
+
+   The **kennel** is `.sheep/` at or above the working directory, found the
+   way git finds `.git`, and `~/.sheep` when there is none: this directory's
+   config, its token, and its own local home. Open a dog in each of several
+   directories and each is its own — its own sheep, its own port, its own
+   home to start and stop — with nothing shared but the command and the
+   runtime under `~/.sheep/tools`. `cd` is the switch; there is no variable
+   to set. `sheep config` and `sheep home` print which kennel they found.
 
 3. `sheep new -- "What can you see in the workspace?"` mints a sheep and
    streams its reply. `sheep ls` lists it; `sheep status <id>` and
@@ -178,10 +187,12 @@ The first deploy asks you to pick a `workers.dev` subdomain. Redeploying
 is `pnpm run deploy` again; sessions and secrets survive it. (Bare `pnpm deploy` is pnpm's own workspace-deploy command and shadows the script.) `pnpm exec wrangler
 delete` removes everything.
 
-Point `sheep` at the home so it needs no environment variables:
+Point `sheep` at the home so it needs no environment variables. The config
+is the kennel's: `.sheep/config` in the directory you work in, or
+`~/.sheep/config` when that directory has no kennel above it.
 
 ```json
-// ~/.sheep/config
+// <dir>/.sheep/config, or ~/.sheep/config outside a kennel
 { "home": "https://sheep.<you>.workers.dev", "token": "<your SHEEP_TOKEN>" }
 ```
 

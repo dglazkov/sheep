@@ -10,7 +10,17 @@
  *    from the package root's `SKILL.md`, and a relative symlink at
  *    `.claude/skills/sheep`, never over a real directory. Inside a checkout
  *    of sheep itself: nothing, and the report says why.
- * 3. The home: reported, not made. None configured, the local home and
+ * 3. The kennel: `.sheep/` here, empty, so the directory is a dog's from
+ *    then on and nothing later has to guess (kennel phase 0). In a git
+ *    work tree the `.gitignore` here gains `.sheep/`, because the config
+ *    will hold a token and the local home a model key, and the entry has
+ *    to travel with a clone so a teammate's dog does not commit theirs
+ *    either. Outside git, nothing, and the report says so. A `.sheep`
+ *    already tracked means a token is in the repository: one line on
+ *    stderr, and setup goes on. The kennel is made before the home is
+ *    resolved, so the home reported is this kennel's and not the
+ *    machine's.
+ * 4. The home: reported, not made. None configured, the local home and
  *    whether it runs, or another address and whether it answers. `sheep
  *    home local` is the next sentence when there is none.
  *
@@ -24,10 +34,10 @@
  * upgrades the words; the skill is a doorway that says to read them.
  */
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { SheepConfig } from "./config.js";
+import { loadConfig, type SheepConfig } from "./config.js";
 import { localStatus, readStamp, whoAnswers } from "./local.js";
 import { findOnPath, globalBinDir } from "./onpath.js";
 
@@ -151,11 +161,70 @@ export function installSkill(dir: string, source: string = skillSource()): Skill
   return { path: dest, state, doorway: { path: doorway, state: doorwayState } };
 }
 
+export type KennelState = "made" | "present";
+/** The entry: appended, already there, or no git work tree here at all, which needs none. */
+export type IgnoreState = "added" | "present" | "not-git";
+
+export interface KennelReport {
+  /** `<dir>/.sheep` */
+  path: string;
+  state: KennelState;
+  /** The `.gitignore` beside the kennel; `path` is null outside a git work tree, where none is written. */
+  gitignore: { path: string | null; state: IgnoreState };
+  /** `git ls-files .sheep` named something: a token is in the repository already, and only a person can decide about that. */
+  tracked: boolean;
+}
+
+/** Is `dir` in a git work tree? A git that is not installed, or a directory that is not in one, answer the same. */
+function inGitWorkTree(dir: string): boolean {
+  const done = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd: dir, encoding: "utf8" });
+  return done.status === 0 && done.stdout.trim() !== "";
+}
+
+/** `git ls-files .sheep` from `dir`: non-empty means the kennel, and so a token, is in the repository. */
+export function kennelTracked(dir: string): boolean {
+  const done = spawnSync("git", ["ls-files", ".sheep"], { cwd: dir, encoding: "utf8" });
+  return done.status === 0 && done.stdout.trim() !== "";
+}
+
+/**
+ * Make `<dir>/.sheep`, and in a git work tree append `.sheep/` to the
+ * `.gitignore` beside it, creating that file if there is none. Idempotent:
+ * a kennel that is there is `present`, and an entry that is there (as
+ * `.sheep/` or `.sheep`) adds no second line.
+ */
+export function makeKennel(dir: string): KennelReport {
+  const path = join(dir, ".sheep");
+  const there = existsSync(path);
+  if (there && !statSync(path).isDirectory()) throw new Error(`${path} is not a directory; a kennel is`);
+  if (!there) mkdirSync(path, { recursive: true });
+  const state: KennelState = there ? "present" : "made";
+
+  let gitignore: KennelReport["gitignore"] = { path: null, state: "not-git" };
+  if (inGitWorkTree(dir)) {
+    const ignorePath = join(dir, ".gitignore");
+    const before = existsSync(ignorePath) ? readFileSync(ignorePath, "utf8") : "";
+    if (before.split("\n").some((line) => line.trim() === ".sheep/" || line.trim() === ".sheep")) gitignore = { path: ignorePath, state: "present" };
+    else {
+      writeFileSync(ignorePath, `${before === "" || before.endsWith("\n") ? before : `${before}\n`}.sheep/\n`);
+      gitignore = { path: ignorePath, state: "added" };
+    }
+  }
+  return { path, state, gitignore, tracked: kennelTracked(dir) };
+}
+
+/** The one line said when a kennel is already in a repository; the person decides what to do about it. */
+export function trackedWarning(dir: string): string {
+  return `sheep: git tracks .sheep in ${dir}, so a token is in the repository; nothing here changes that (git rm -r --cached .sheep does)\n`;
+}
+
 export type CliState = "on-path" | "installed" | "checkout" | "not-installed" | "failed";
 
 export interface SetupReport {
   cli: { state: CliState; path: string | null; version: string | null; spec: string; bin?: string };
   skill: (SkillReport & { checkout?: undefined }) | { checkout: string; path: null; state: "checkout"; doorway: null };
+  /** The directory this dog holds: made here, with the ignore entry it needs. */
+  kennel: KennelReport;
   home: { state: "none"; home: null } | { state: "local"; home: string | null; running: boolean; pid: number | null } | { state: "other"; home: string; answers: boolean };
   /** The checkout of sheep this command runs from, or runs in; null for an install in some other directory. */
   checkout: string | null;
@@ -210,20 +279,29 @@ async function setupHome(config: SheepConfig): Promise<SetupReport["home"]> {
 }
 
 export interface SetupOptions {
-  /** Where the skill goes: the current working directory. */
+  /** Where the skill and the kennel go: the current working directory. */
   dir: string;
   install: boolean;
   say: (text: string) => void;
+  /** `--home <url>`, when one was typed: the home to report instead of the kennel's. */
+  home?: string;
 }
 
-export async function setup(config: SheepConfig, options: SetupOptions): Promise<SetupReport> {
+/**
+ * The home is resolved here, after the kennel is made, and never handed
+ * in: `sheep setup` in a fresh directory must report that directory's
+ * home (none), not whatever the machine's `~/.sheep/config` names.
+ */
+export async function setup(options: SetupOptions): Promise<SetupReport> {
   const cli = setupCli(options);
   const checkout = checkoutRoot(options.dir) ?? (cli.state === "checkout" ? checkoutRoot(cli.path!) ?? null : null);
   const skill: SetupReport["skill"] =
     checkoutRoot(options.dir) !== undefined
       ? { checkout: checkoutRoot(options.dir)!, path: null, state: "checkout", doorway: null }
       : installSkill(options.dir);
-  const home = await setupHome(config);
+  const kennel = makeKennel(options.dir);
+  if (kennel.tracked) options.say(trackedWarning(options.dir));
+  const home = await setupHome(await loadConfig(options.home === undefined ? {} : { home: options.home }));
   const next =
     cli.state === "not-installed" || cli.state === "failed"
       ? `npm install -g ${cli.spec}`
@@ -232,12 +310,12 @@ export async function setup(config: SheepConfig, options: SetupOptions): Promise
         : home.state === "none"
           ? "sheep home local"
           : "sheep --agent-help";
-  return { cli, skill, home, checkout, next };
+  return { cli, skill, kennel, home, checkout, next };
 }
 
 /** The report as prose: one line per thing, its state and where, then the next sentence. */
 export function formatSetup(report: SetupReport, dir: string): string {
-  const { cli, skill, home } = report;
+  const { cli, skill, kennel, home } = report;
   const version = cli.version === null ? "" : ` (${cli.version})`;
   const cliLine =
     cli.state === "on-path"
@@ -264,11 +342,18 @@ export function formatSetup(report: SetupReport, dir: string): string {
                 ? "is something else and was left alone"
                 : "could not be linked; the .agents copy stands"
         }`;
+  const kennelLine = `kennel: ${rel(kennel.path)}/ ${kennel.state === "made" ? "made" : "already here"}; ${
+    kennel.gitignore.state === "added"
+      ? `${rel(kennel.gitignore.path!)} gained .sheep/`
+      : kennel.gitignore.state === "present"
+        ? `${rel(kennel.gitignore.path!)} already ignores it`
+        : "not a git work tree, so no .gitignore"
+  }${kennel.tracked ? "; git tracks it, so a token is in the repository" : ""}`;
   const homeLine =
     home.state === "none"
       ? "home: none configured"
       : home.state === "local"
         ? `home: ${home.home ?? "(none)"} (local, ${home.running ? `running, pid ${home.pid}` : "stopped; started on demand"})`
         : `home: ${home.home} (${home.answers ? "answers" : "does not answer"})`;
-  return `${cliLine}\n${skillLine}\n${homeLine}\nnext: ${report.next}\n`;
+  return `${cliLine}\n${skillLine}\n${kennelLine}\n${homeLine}\nnext: ${report.next}\n`;
 }

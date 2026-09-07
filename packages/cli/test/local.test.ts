@@ -1,14 +1,18 @@
 /**
- * The local home's bookkeeping, driven through `bin/sheep.js` with a temp
- * `SHEEP_LOCAL` and `SHEEP_CONFIG`: the pid file, the port check, and the
- * config sentence. Collar phase 1. The ring proves the home a user gets,
+ * The local home's bookkeeping, driven through `bin/sheep.js` in a temp
+ * directory that is a kennel, with `HOME` pointed there too: the pid file,
+ * the port check, and the config sentence. Collar phase 1; kennel phase 0
+ * retired the two variables that used to make this world, so the world is
+ * now a working directory holding `.sheep/` and nothing else.
+ *
+ * The ring proves the home a user gets,
  * from the install; these hold the rules a record is judged by, which no
  * ring walks (a dead daemon, a port taken by something else), and the one
  * start, stop, and start on demand the checkout can do with its own
  * wrangler over `packages/cell`.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { createServer as createTcpServer } from "node:net";
@@ -21,17 +25,26 @@ const cellWrangler = new URL("../../cell/node_modules/wrangler/bin/wrangler.js",
 
 interface World {
   dir: string;
+  kennel: string;
   local: string;
   config: string;
   sheep: (...args: string[]) => Promise<Result>;
 }
 
-/** A fresh `SHEEP_LOCAL` and `SHEEP_CONFIG`, and the CLI run against them with no home in the environment. */
+/**
+ * A fresh kennel: a temp directory holding `.sheep/`, run in as the
+ * working directory, with `HOME` pointed at it as well so the fallback is
+ * the same empty place and nothing of this machine's is read. The path is
+ * a real one: on macOS the CLI's own `process.cwd()` is the realpath under
+ * `/private/var`, and the report prints what it resolved.
+ */
 async function world(): Promise<World> {
-  const dir = await mkdtemp(join(tmpdir(), "sheep-local-"));
-  const local = join(dir, "local");
-  const config = join(dir, "config");
-  const env = { ...process.env, SHEEP_LOCAL: local, SHEEP_CONFIG: config, NODE_NO_WARNINGS: "1" };
+  const dir = realpathSync(await mkdtemp(join(tmpdir(), "sheep-local-")));
+  const kennel = join(dir, ".sheep");
+  await mkdir(kennel);
+  const local = join(kennel, "local");
+  const config = join(kennel, "config");
+  const env = { ...process.env, HOME: dir, NODE_NO_WARNINGS: "1" };
   delete env.SHEEP_HOME;
   delete env.SHEEP_TOKEN;
   const sheep = (...args: string[]): Promise<Result> =>
@@ -44,7 +57,7 @@ async function world(): Promise<World> {
       child.once("error", reject);
       child.once("close", (code) => resolve({ stdout: Buffer.concat(out).toString("utf8"), stderr: Buffer.concat(err).toString("utf8"), code: code ?? -1 }));
     });
-  return { dir, local, config, sheep };
+  return { dir, kennel, local, config, sheep };
 }
 
 function freePort(): Promise<number> {
@@ -126,7 +139,7 @@ describe("the local home's record", () => {
     const status = await w.sheep("home", "--json");
     expect(status.code).toBe(0);
     expect(JSON.parse(status.stdout)).toMatchObject({ home: url, local: true, running: false, pid: null });
-    expect((await w.sheep("home")).stdout).toBe(`home: ${url} (local, stopped)\n`);
+    expect((await w.sheep("home")).stdout).toBe(`home: ${url} (local, stopped)\nkennel: ${w.kennel}\n`);
 
     const stop = await w.sheep("home", "stop");
     expect(stop.code).toBe(0);
@@ -174,7 +187,7 @@ describe("the local home's record", () => {
       const url = await record(w, { pid: process.pid, port: sheepish.port });
       const status = JSON.parse((await w.sheep("home", "--json")).stdout) as { running: boolean; pid: number };
       expect(status).toMatchObject({ home: url, running: true, pid: process.pid });
-      expect((await w.sheep("home")).stdout).toBe(`home: ${url} (local, running, pid ${process.pid})\n`);
+      expect((await w.sheep("home")).stdout).toBe(`home: ${url} (local, running, pid ${process.pid})\nkennel: ${w.kennel}\n`);
     } finally {
       sheepish.server.close();
     }
@@ -185,18 +198,18 @@ describe("the local home's record", () => {
     worlds.push(w);
     const none = await w.sheep("home", "--json");
     expect(none.code).toBe(0);
-    expect(JSON.parse(none.stdout)).toEqual({ home: null, local: false, answers: false });
-    expect((await w.sheep("home")).stdout).toBe("home: (none); run `sheep home local`, or pass --home <url>\n");
+    expect(JSON.parse(none.stdout)).toEqual({ home: null, kennel: w.kennel, local: false, answers: false });
+    expect((await w.sheep("home")).stdout).toBe(`home: (none); run \`sheep home local\`, or pass --home <url>\nkennel: ${w.kennel}\n`);
 
     const sheepish = await listen("sheep\n");
     try {
       const url = `http://127.0.0.1:${sheepish.port}`;
       await writeFile(w.config, JSON.stringify({ home: url, token: "t" }));
-      expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toEqual({ home: url, local: false, answers: true });
-      expect((await w.sheep("home")).stdout).toBe(`home: ${url} (answers)\n`);
+      expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toEqual({ home: url, kennel: w.kennel, local: false, answers: true });
+      expect((await w.sheep("home")).stdout).toBe(`home: ${url} (answers)\nkennel: ${w.kennel}\n`);
       // A --home overrides a local config, and is never the local home.
       await writeFile(w.config, JSON.stringify({ home: "http://127.0.0.1:1", token: "t", local: true }));
-      expect(JSON.parse((await w.sheep("--home", url, "home", "--json")).stdout)).toEqual({ home: url, local: false, answers: true });
+      expect(JSON.parse((await w.sheep("--home", url, "home", "--json")).stdout)).toEqual({ home: url, kennel: w.kennel, local: false, answers: true });
     } finally {
       sheepish.server.close();
     }
@@ -216,6 +229,7 @@ describe.skipIf(!existsSync(cellWrangler))("sheep home local, in a checkout", ()
     expect(started.code).toBe(0);
     const url = /^local home: (http:\/\/127\.0\.0\.1:\d+) \(started, pid (\d+)\)$/m.exec(started.stdout)?.[1];
     expect(url).toBeDefined();
+    expect(started.stdout).toContain(`kennel: ${w.kennel}\nfiles: ${w.local}\n`);
     expect(started.stdout).toContain(`config: ${w.config} names https://elsewhere.example; --home ${url} selects the local home for one command`);
     expect(started.stdout).toContain('key: the faux provider answers every prompt with "ok"; no key is used');
     expect(await readFile(w.config, "utf8")).toBe(foreign);

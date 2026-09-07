@@ -57,7 +57,7 @@ export class Home {
   readonly token: string | undefined;
 
   constructor(config: SheepConfig) {
-    if (config.home === undefined) throw new Error("no home configured; pass --home <url>, set SHEEP_HOME, or write ~/.sheep/config");
+    if (config.home === undefined) throw new Error("no home configured; pass --home <url>, set SHEEP_HOME, or run `sheep home local` to write this kennel's config");
     this.url = new URL(config.home);
     this.token = config.token;
   }

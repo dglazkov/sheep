@@ -1,13 +1,15 @@
 /**
- * `sheep setup`, the skill, and the guide in the checkout: what no ring
- * walks. The PATH lookup that distrusts npx's cache (isocan #48); the
- * skill copied once with its relative doorway, never over a real
- * directory; a checkout of sheep left alone; and `--agent-help` printing
- * the file beside the code, with nothing on stderr. Collar phase 2. The
- * ring proves the same command from an install, where it installs.
+ * `sheep setup`, the skill, the kennel, and the guide in the checkout:
+ * what no ring walks. The PATH lookup that distrusts npx's cache (isocan
+ * #48); the skill copied once with its relative doorway, never over a real
+ * directory; the kennel made with its ignore entry, in a git work tree and
+ * outside one; a checkout of sheep left alone; and `--agent-help` printing
+ * the file beside the code, with nothing on stderr. Collar phase 2, kennel
+ * phase 0. The ring proves the same command from an install, where it
+ * installs.
  */
-import { spawn } from "node:child_process";
-import { existsSync, lstatSync, readlinkSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync, lstatSync, mkdtempSync, readlinkSync, realpathSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,9 +22,19 @@ const repoRoot = new URL("../../../", import.meta.url).pathname.replace(/\/$/, "
 const guide = new URL("../agent-guide.md", import.meta.url).pathname;
 const skill = join(repoRoot, "SKILL.md");
 
-/** The checkout's CLI, run in `cwd` with a config file that does not exist and no home in the environment. */
+/** An empty HOME for every run here: the fallback kennel is under it, so nothing of this machine's `~/.sheep` is read. */
+const isolatedHome = realpathSync(mkdtempSync(join(tmpdir(), "sheep-setup-home-")));
+
+/** A directory that is a git work tree, with nothing committed: enough for `git rev-parse` and `git ls-files`. */
+async function gitDir(): Promise<string> {
+  const dir = realpathSync(await mkdtemp(join(tmpdir(), "sheep-setup-git-")));
+  spawnSync("git", ["init", "-q"], { cwd: dir });
+  return dir;
+}
+
+/** The checkout's CLI, run in `cwd` with an empty HOME and no home in the environment. */
 function sheep(cwd: string, args: string[], extra: Record<string, string> = {}): Promise<Result> {
-  const env = { ...process.env, SHEEP_CONFIG: join(cwd, "no-such-config"), ...extra };
+  const env = { ...process.env, HOME: isolatedHome, ...extra };
   delete env.SHEEP_HOME;
   delete env.SHEEP_TOKEN;
   delete env.NODE_NO_WARNINGS;
@@ -65,7 +77,7 @@ describe("a checkout of sheep", () => {
     }
   });
 
-  it("gets no skill and no doorway from setup, which says it is a checkout and installs nothing", async () => {
+  it("gets no skill and no doorway from setup, which says it is a checkout, installs nothing, and still makes the kennel", async () => {
     const before = existsSync(join(repoRoot, ".claude", "skills", SKILL_NAME));
     const json = await sheep(repoRoot, ["setup", "--json"]);
     expect(json.code).toBe(0);
@@ -73,16 +85,31 @@ describe("a checkout of sheep", () => {
     expect(report.checkout).toBe(repoRoot);
     expect(report.cli).toMatchObject({ state: "checkout", version: "sheep 0.0.0-checkout", spec: "github:dglazkov/sheep#release" });
     expect(report.skill).toEqual({ checkout: repoRoot, path: null, state: "checkout", doorway: null });
+    // The kennel is made even here, and this repository's own .gitignore already ignores it, so nothing is appended.
+    expect(report.kennel).toMatchObject({ path: join(repoRoot, ".sheep"), gitignore: { path: join(repoRoot, ".gitignore"), state: "present" }, tracked: false });
+    expect(existsSync(join(repoRoot, ".sheep"))).toBe(true);
     expect(report.home).toEqual({ state: "none", home: null });
     expect(report.next).toBe("sheep home local");
     expect(existsSync(join(repoRoot, ".claude", "skills", SKILL_NAME))).toBe(before);
     expect(json.stderr).toBe("");
 
-    const prose = await sheep(join(repoRoot, "packages"), ["setup"]);
-    expect(prose.code).toBe(0);
-    expect(prose.stdout).toContain("running from a checkout");
-    expect(prose.stdout).toContain(`inside a checkout of sheep (${repoRoot})`);
-    expect(prose.stdout).toContain("home: none configured\nnext: sheep home local\n");
+    // The prose, from inside a checkout that is not this one, so no directory of this repository is written to.
+    const fake = realpathSync(await mkdtemp(join(tmpdir(), "sheep-setup-checkout-")));
+    try {
+      await writeFile(join(fake, "package.json"), JSON.stringify({ name: "sheep", workspaces: ["packages/*"] }));
+      await mkdir(join(fake, "packages", "cli"), { recursive: true });
+      const prose = await sheep(join(fake, "packages", "cli"), ["setup"]);
+      expect(prose.code).toBe(0);
+      expect(prose.stdout).toContain("running from a checkout");
+      expect(prose.stdout).toContain(`inside a checkout of sheep (${fake})`);
+      expect(prose.stdout).toContain("kennel: .sheep/ made; not a git work tree, so no .gitignore\n");
+      expect(prose.stdout).toContain("home: none configured\nnext: sheep home local\n");
+      // The kennel is the directory setup ran in, not the checkout's root: setup readies where it stands.
+      expect(existsSync(join(fake, "packages", "cli", ".sheep"))).toBe(true);
+      expect(existsSync(join(fake, ".sheep"))).toBe(false);
+    } finally {
+      await rm(fake, { recursive: true, force: true });
+    }
   });
 });
 
@@ -124,7 +151,7 @@ describe("the skill", () => {
   });
 
   it("is installed by setup into a directory that is not a checkout, with the home reported and never started", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "sheep-setup-"));
+    const dir = realpathSync(await mkdtemp(join(tmpdir(), "sheep-setup-")));
     try {
       const first = await sheep(dir, ["setup", "--json", "--no-install"]);
       expect(first.code).toBe(0);
@@ -136,18 +163,86 @@ describe("the skill", () => {
       expect(existsSync(join(dir, ".agents", "skills", SKILL_NAME, "SKILL.md"))).toBe(true);
       expect(readlinkSync(join(dir, ".claude", "skills", SKILL_NAME))).toBe("../../.agents/skills/sheep");
 
-      // Another home in the config, answering nobody: reported as such, nothing started, and the next sentence is the guide.
-      const config = join(dir, "config");
-      await writeFile(config, JSON.stringify({ home: "http://127.0.0.1:9", token: "t" }));
-      const again = await sheep(dir, ["setup", "--no-install"], { SHEEP_CONFIG: config });
+      // The kennel was made here, empty, and this directory is in no git work tree, so it gets no .gitignore.
+      expect(report.kennel).toEqual({ path: join(dir, ".sheep"), state: "made", gitignore: { path: null, state: "not-git" }, tracked: false });
+      expect(existsSync(join(dir, ".gitignore"))).toBe(false);
+
+      // Another home in that kennel's config, answering nobody: reported as such, nothing started, and the next sentence is the guide.
+      await writeFile(join(dir, ".sheep", "config"), JSON.stringify({ home: "http://127.0.0.1:9", token: "t" }));
+      const again = await sheep(dir, ["setup", "--no-install"]);
       expect(again.code).toBe(0);
       expect(again.stdout).toBe(
         `sheep: running from a checkout, ${bin}; nothing installed\n` +
           `skill: .agents/skills/sheep current; .claude/skills/sheep already links to it\n` +
+          `kennel: .sheep/ already here; not a git work tree, so no .gitignore\n` +
           `home: http://127.0.0.1:9 (does not answer)\n` +
           `next: sheep --agent-help\n`,
       );
-      expect(existsSync(join(dir, "local"))).toBe(false);
+      expect(existsSync(join(dir, ".sheep", "local"))).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("the kennel", () => {
+  it("is made with the ignore entry in a git work tree, adds no second line, and leaves nothing under .sheep for git to see", async () => {
+    const dir = await gitDir();
+    try {
+      const first = JSON.parse((await sheep(dir, ["setup", "--json", "--no-install"])).stdout);
+      expect(first.kennel).toEqual({ path: join(dir, ".sheep"), state: "made", gitignore: { path: join(dir, ".gitignore"), state: "added" }, tracked: false });
+      expect(await readFile(join(dir, ".gitignore"), "utf8")).toBe(".sheep/\n");
+
+      // Journey 2 step 1: the one line changed, and nothing under .sheep is untracked, once there is something under it to see.
+      await writeFile(join(dir, ".sheep", "config"), JSON.stringify({ home: "http://127.0.0.1:9", token: "a-token" }));
+      const status = spawnSync("git", ["status", "--porcelain"], { cwd: dir, encoding: "utf8" }).stdout;
+      expect(status).toContain("?? .gitignore\n");
+      expect(status).not.toContain(".sheep");
+      expect(spawnSync("git", ["status", "--porcelain", "--ignored"], { cwd: dir, encoding: "utf8" }).stdout).toContain("!! .sheep/\n");
+
+      // Idempotent: the kennel is there, the entry is there, and the file is untouched.
+      const again = JSON.parse((await sheep(dir, ["setup", "--json", "--no-install"])).stdout);
+      expect(again.kennel).toMatchObject({ state: "present", gitignore: { state: "present" } });
+      expect(await readFile(join(dir, ".gitignore"), "utf8")).toBe(".sheep/\n");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("appends the entry on its own line to a .gitignore that has one already, whether or not it ends in a newline", async () => {
+    const dir = await gitDir();
+    try {
+      await writeFile(join(dir, ".gitignore"), "node_modules/\n*.log");
+      const report = JSON.parse((await sheep(dir, ["setup", "--json", "--no-install"])).stdout);
+      expect(report.kennel.gitignore.state).toBe("added");
+      expect(await readFile(join(dir, ".gitignore"), "utf8")).toBe("node_modules/\n*.log\n.sheep/\n");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("says in one line on stderr, from setup and from sheep home, that a tracked .sheep puts a token in the repository, and goes on", async () => {
+    const dir = await gitDir();
+    try {
+      await mkdir(join(dir, ".sheep"));
+      await writeFile(join(dir, ".sheep", "config"), JSON.stringify({ home: "http://127.0.0.1:9", token: "t" }));
+      // The shepherd committed it once: staged is enough for `git ls-files .sheep` to name it.
+      expect(spawnSync("git", ["add", "-f", ".sheep"], { cwd: dir, encoding: "utf8" }).status).toBe(0);
+
+      const setup = await sheep(dir, ["setup", "--json", "--no-install"]);
+      expect(setup.code).toBe(0);
+      expect(setup.stderr.trimEnd().split("\n")).toHaveLength(1);
+      expect(setup.stderr).toContain(`git tracks .sheep in ${dir}`);
+      expect(setup.stderr).toContain("a token is in the repository");
+      expect(JSON.parse(setup.stdout).kennel).toMatchObject({ state: "present", tracked: true });
+
+      // Nothing was fixed: the file is still tracked, and `sheep home` says the same line and answers all the same.
+      expect(spawnSync("git", ["ls-files", ".sheep"], { cwd: dir, encoding: "utf8" }).stdout.trim()).toBe(".sheep/config");
+      const home = await sheep(dir, ["home"]);
+      expect(home.code).toBe(0);
+      expect(home.stderr.trimEnd().split("\n")).toHaveLength(1);
+      expect(home.stderr).toContain("a token is in the repository");
+      expect(home.stdout).toBe(`home: http://127.0.0.1:9 (does not answer)\nkennel: ${join(dir, ".sheep")}\n`);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

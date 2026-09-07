@@ -51,7 +51,7 @@ export async function startHome(token: string): Promise<LocalHome | string> {
     } catch (error) {
       return `SHEEP_TEST_HOME=${url} does not answer: ${error instanceof Error ? error.message : String(error)}`;
     }
-    // A scratch directory all the same: `runSheep` points SHEEP_CONFIG at a file that does not exist under it.
+    // A scratch directory all the same: `runSheep` makes it the CLI's HOME, so the kennel it falls back to holds no config.
     return { url, token: given, persist: await mkdtemp(join(tmpdir(), "sheep-home-")) };
   }
   const wrangler = join(cellDir, "node_modules", "wrangler", "bin", "wrangler.js");
@@ -127,9 +127,14 @@ export interface RunOptions {
   cwd?: string;
 }
 
-/** Runs the built CLI against the home; never throws on a nonzero exit. */
+/**
+ * Runs the built CLI against the home; never throws on a nonzero exit.
+ * `HOME` is the scratch directory, so the fallback kennel is empty and no
+ * config of this machine's is read; the address and token come from the
+ * environment, which outranks any config a working directory might find.
+ */
 export async function runSheep(home: LocalHome, args: readonly string[], options: RunOptions = {}): Promise<Result> {
-  const env = { ...process.env, SHEEP_HOME: home.url, SHEEP_TOKEN: home.token, SHEEP_CONFIG: join(home.persist, "no-config"), NODE_NO_WARNINGS: "1" };
+  const env = { ...process.env, SHEEP_HOME: home.url, SHEEP_TOKEN: home.token, HOME: home.persist, NODE_NO_WARNINGS: "1" };
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [bin, ...args], { env, cwd: options.cwd, stdio: ["pipe", "pipe", "pipe"] });
     const out: Buffer[] = [];

@@ -1,11 +1,11 @@
-import { loadConfig, type SheepConfig } from "./config.js";
+import { kennelDir, loadConfig, sheepDir, type SheepConfig } from "./config.js";
 import { writeSessionFile } from "./export.js";
 import { runAbort, runLog, runPrompt, runStatus, runWait } from "./herd.js";
 import { Home } from "./home.js";
 import { isRefused, localStatus, readStamp, startLocalHome, stopLocalHome, whoAnswers } from "./local.js";
 import { PASTURE_NAME, runPasture } from "./pasture.js";
 import { runPiClient } from "./pi.js";
-import { formatSetup, INSTALL_SPEC, readGuide, setup } from "./setup.js";
+import { formatSetup, INSTALL_SPEC, kennelTracked, readGuide, setup, trackedWarning } from "./setup.js";
 
 /**
  * The build stamp, from the manifest beside the running code: the release
@@ -34,19 +34,20 @@ usage:
   sheep abort <id>                          stop the open operation
   sheep log [--since <entry id | ISO time>] [--last <n>] <id>   the transcript as text, oldest first, one block per entry
   sheep export <id> [file]                  write the session as a pi SQLite file (default <id>.sqlite)
-  sheep config                              print the resolved home (never the token)
+  sheep config                              print the resolved home and this directory's kennel (never the token)
   sheep setup [--no-install]                ready this directory: the command on PATH (installed with
                                             npm install -g ${INSTALL_SPEC} when absent), the skill under
-                                            .agents/skills/sheep with the .claude/skills doorway, the home reported;
+                                            .agents/skills/sheep with the .claude/skills doorway, the kennel .sheep/
+                                            here with a .gitignore entry for it in a git work tree, the home reported;
                                             idempotent, and it prints the next thing to run
   sheep --agent-help                        the guide for an agent: what sheep is, the verbs, the home, what needs a person
   sheep --version
 
-  sheep home local [--faux]                 a home on this machine, under ~/.sheep/local, started if it was not; writes
-                                            ~/.sheep/config when there is none; the report says whether a model key is held
-                                            (from ANTHROPIC_API_KEY), or that the faux provider answers instead
-  sheep home stop                           stop the local home
-  sheep home                                which home the config names, and whether it answers
+  sheep home local [--faux]                 a home on this machine, under the kennel's local/, started if it was not;
+                                            writes the kennel's config when there is none; the report says whether a model
+                                            key is held (from ANTHROPIC_API_KEY), or that the faux provider answers instead
+  sheep home stop                           stop this kennel's local home
+  sheep home                                which kennel, which home the config names, and whether it answers
 
   sheep pasture new <name> [--repo <url> | --repo .] [--branch <branch>]
                                             make a pasture: a shared tree, a repository or none, and the sheep born into it;
@@ -62,7 +63,7 @@ usage:
   sheep pasture secret ls <name>            the secrets' names, one per line, never a value
 
 options:
-  --home <url>    which home; also SHEEP_HOME or ~/.sheep/config ({"home": "...", "token": "..."})
+  --home <url>    which home; also SHEEP_HOME or the kennel's config ({"home": "...", "token": "..."})
   --json          machine output, pi's shapes: entries are pi entries, status is pi's lane snapshot,
                   a queued prompt is pi's queue response, a detached prompt is pi's operation response;
                   ls rows carry "pasture": null | "<name>" and "task": null | "<first line of the first prompt>"
@@ -71,6 +72,10 @@ options:
   --wait          with a prompt to a busy session: stream the queued turn when it starts
   --faux          with home local: the scripted model that answers "ok", for a look at the plumbing without a key
   --no-install    with setup: report the command missing rather than installing it
+
+The kennel is .sheep/ at or above the working directory, found the way git finds .git, and ~/.sheep when there is
+none: this directory's config and its own local home. sheep setup makes one here; two directories share nothing
+but the command, and cd is how you switch.
 
 A command whose home is the local one starts it when the connection is refused, and says so on stderr.
 
@@ -149,13 +154,13 @@ export async function main(argv: readonly string[]): Promise<number> {
   }
   const config = await loadConfig({ home: parsed.home });
   if (command === "config") {
-    process.stdout.write(`home: ${config.home ?? "(none)"}\ntoken: ${config.token ? "set" : "(none)"}\n`);
+    process.stdout.write(`home: ${config.home ?? "(none)"}\ntoken: ${config.token ? "set" : "(none)"}\nkennel: ${sheepDir()}\n`);
     return 0;
   }
   const output = { json: parsed.json, out: (text: string) => void process.stdout.write(text), err: (text: string) => void process.stderr.write(text) };
   if (command === "home") return await runHome(parsed, config, output);
   if (command === "setup") {
-    const report = await setup(config, { dir: process.cwd(), install: !parsed.noInstall, say: output.err });
+    const report = await setup({ dir: process.cwd(), install: !parsed.noInstall, say: output.err, home: parsed.home });
     process.stdout.write(parsed.json ? `${JSON.stringify(report)}\n` : formatSetup(report, process.cwd()));
     return 0;
   }
@@ -251,14 +256,18 @@ async function dispatch(command: string, parsed: Parsed, config: SheepConfig, ou
 /**
  * `sheep home local [--faux]`, `sheep home stop`, `sheep home [--json]`.
  * The report names states and paths, never a value from the secrets file.
+ * Every form says one line on stderr first when git tracks the kennel: a
+ * token is in the repository, and the command goes on regardless.
  */
 async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Promise<number> {
   const sub = parsed.rest[1];
+  const kennel = sheepDir();
+  if (kennelTracked(kennelDir())) output.err(trackedWarning(kennelDir()));
   try {
     if (sub === "local") {
       const report = await startLocalHome({ faux: parsed.faux, say: output.err });
       if (parsed.json) {
-        output.out(`${JSON.stringify({ home: report.url, ...report })}\n`);
+        output.out(`${JSON.stringify({ home: report.url, kennel, ...report })}\n`);
         return 0;
       }
       const key =
@@ -273,14 +282,14 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
           : report.config.wrote
             ? `${report.config.path} written`
             : `${report.config.path} names this home`;
-      output.out(`local home: ${report.url} (${report.state}, pid ${report.pid})\nfiles: ${report.dir}\nconfig: ${configLine}\nkey: ${key}\n`);
+      output.out(`local home: ${report.url} (${report.state}, pid ${report.pid})\nkennel: ${kennel}\nfiles: ${report.dir}\nconfig: ${configLine}\nkey: ${key}\n`);
       return 0;
     }
     if (sub === "stop") {
       const { stopped, record, unreaped } = await stopLocalHome();
       if (unreaped !== undefined) output.err(`sheep: pid ${unreaped} is still in the process table after SIGKILL (nothing reaps it?); the record's pid is cleared\n`);
       if (parsed.json) {
-        output.out(`${JSON.stringify({ stopped, home: record?.url ?? null, ...(unreaped === undefined ? {} : { unreaped }) })}\n`);
+        output.out(`${JSON.stringify({ stopped, home: record?.url ?? null, kennel, ...(unreaped === undefined ? {} : { unreaped }) })}\n`);
         return 0;
       }
       output.out(record === undefined ? "no local home has been started here\n" : stopped ? `stopped the local home at ${record.url}\n` : `the local home at ${record.url} was not running\n`);
@@ -293,19 +302,21 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
       const status = await localStatus();
       const home = status.record?.url ?? config.home ?? null;
       if (parsed.json) {
-        output.out(`${JSON.stringify({ home, local: true, running: status.running, pid: status.running ? status.record!.pid : null, port: status.record?.port ?? null, stamp: status.record?.stamp ?? null, startedAt: status.running ? status.record!.startedAt : null })}\n`);
+        output.out(`${JSON.stringify({ home, kennel, local: true, running: status.running, pid: status.running ? status.record!.pid : null, port: status.record?.port ?? null, stamp: status.record?.stamp ?? null, startedAt: status.running ? status.record!.startedAt : null })}\n`);
         return 0;
       }
       output.out(home === null ? "home: (none); run `sheep home local`\n" : `home: ${home} (local, ${status.running ? `running, pid ${status.record!.pid}` : "stopped"})\n`);
+      output.out(`kennel: ${kennel}\n`);
       return 0;
     }
     const home = config.home ?? null;
     const answers = home === null ? "nobody" : await whoAnswers(home);
     if (parsed.json) {
-      output.out(`${JSON.stringify({ home, local: false, answers: answers === "sheep" })}\n`);
+      output.out(`${JSON.stringify({ home, kennel, local: false, answers: answers === "sheep" })}\n`);
       return 0;
     }
     output.out(home === null ? "home: (none); run `sheep home local`, or pass --home <url>\n" : `home: ${home} (${answers === "sheep" ? "answers" : answers === "other" ? "answers, but not as a sheep home" : "does not answer"})\n`);
+    output.out(`kennel: ${kennel}\n`);
     return 0;
   } catch (error) {
     return fail(error instanceof Error ? error.message : String(error));

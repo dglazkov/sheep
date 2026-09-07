@@ -1,8 +1,8 @@
 ---
-status: planned
+status: partial
 since: 2026-09-07
 see: kennel
-note: "written 7 Sep 2026, the evening station was planned, from a conversation with the shepherd: a dog in each of a number of directories, wholly independent of one another. The shepherd's calls: the config is found from the directory, the way git finds `.git`, and `~/.sheep` is the fallback; the station's name is minted at the first deploy and recorded, the directory's basename and a counter, never a hash; named homes stay declined, the directory is the switch. The project lands before station phase 1, which takes its name rule. Nothing built."
+note: "written 7 Sep 2026, the evening station was planned, from a conversation with the shepherd: a dog in each of a number of directories, wholly independent of one another. The shepherd's calls: the config is found from the directory, the way git finds `.git`, and `~/.sheep` is the fallback; the station's name is minted at the first deploy and recorded, the directory's basename and a counter, never a hash; named homes stay declined, the directory is the switch. The project lands before station phase 1, which takes its name rule. Kennel phase 0 closed the same afternoon: `.sheep/` found by walking up, setup making it with its ignore entry, two homes in two directories in the package ring and on this laptop with a real model; journeys 1, 2, and 4 walked. Journey 3 is phase 1's rule and station phase 1's walk."
 ---
 
 # Kennel — the journeys

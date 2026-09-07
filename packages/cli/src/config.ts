@@ -1,6 +1,16 @@
+/**
+ * The kennel: what a dog holds in the directory it stands in. Kennel phase
+ * 0. `.sheep/` at or above the working directory, found by walking up the
+ * way git finds `.git`, and `~/.sheep` when there is none. The config and
+ * the local home live there, so two dogs in two directories share nothing
+ * but the command; the tools (wrangler) are the machine's, not a
+ * kennel's. There is no environment override: the working directory and
+ * `HOME` are the whole rule, which is what a ring walks.
+ */
+import { statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 /** Which home `sheep` talks to, and how it proves itself at the door. */
 export interface SheepConfig {
@@ -9,22 +19,55 @@ export interface SheepConfig {
   /** The bearer token the home expects on every request. */
   token?: string;
   /**
-   * Written by `sheep home local`: the home is the one under `~/.sheep/local`,
-   * which the CLI starts on demand when a connection to it is refused. The
-   * marker, not the address, decides: the address is whatever port the
-   * daemon last got, and a `--home` or `SHEEP_HOME` overriding it is never
-   * the local home, whatever it says.
+   * Written by `sheep home local`: the home is the one under the kennel's
+   * `local/`, which the CLI starts on demand when a connection to it is
+   * refused. The marker, not the address, decides: the address is whatever
+   * port the daemon last got, and a `--home` or `SHEEP_HOME` overriding it
+   * is never the local home, whatever it says.
    */
   local?: boolean;
 }
 
-export function configPath(): string {
-  return process.env.SHEEP_CONFIG ?? join(homedir(), ".sheep", "config");
+function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 /**
- * Resolve the config from, in rising precedence: `~/.sheep/config` (JSON),
- * `SHEEP_HOME` / `SHEEP_TOKEN`, and an explicit `--home`.
+ * The kennel: the first `.sheep/` directory at or above `from`, else
+ * `~/.sheep`, which a walk from anywhere under the home directory reaches
+ * on its own and a walk from `/tmp` falls back to. The path is returned
+ * whether or not the fallback exists; `sheep home local` makes it, as it
+ * always did. `from` is the working directory in the product and a
+ * fixture's tree in a test; nothing else passes it.
+ */
+export function sheepDir(from: string = process.cwd()): string {
+  let current = resolve(from);
+  for (;;) {
+    const candidate = join(current, ".sheep");
+    if (isDirectory(candidate)) return candidate;
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return join(homedir(), ".sheep");
+}
+
+/** The directory the kennel is in: where the `.gitignore` entry goes and where git is asked about `.sheep`. */
+export function kennelDir(from: string = process.cwd()): string {
+  return dirname(sheepDir(from));
+}
+
+export function configPath(): string {
+  return join(sheepDir(), "config");
+}
+
+/**
+ * Resolve the config from, in rising precedence: the kennel's `config`
+ * (JSON), `SHEEP_HOME` / `SHEEP_TOKEN`, and an explicit `--home`.
  */
 export async function loadConfig(overrides: Partial<SheepConfig> = {}): Promise<SheepConfig> {
   let fromFile: SheepConfig = {};

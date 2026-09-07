@@ -1,7 +1,8 @@
 /**
- * The local home: a home on the dog's own machine, workerd under
- * `~/.sheep/local`, started by the CLI, with no account behind it. Collar
- * phase 1.
+ * The local home: a home on the dog's own machine, workerd under the
+ * kennel's `local/`, started by the CLI, with no account behind it. Collar
+ * phase 1; kennel phase 0 moved it from `~/.sheep/local` to the kennel, so
+ * two directories run two homes, each with its own port, token, and store.
  *
  * The daemon is `wrangler dev` over the package's `home/wrangler.jsonc`
  * (the Worker `scripts/bundle.mjs` emitted) with `--persist-to` the
@@ -18,13 +19,14 @@
  * Installed from the release, the code sits in `dist/` with the manifest
  * and `home/` beside it, and the manifest's `sheep` stamp names the
  * wrangler the Worker was built with; that version is installed once, by
- * `npm install`, into `~/.sheep/tools/` and reused after. In a checkout
- * there is no stamp (the way `version()` tells), and the daemon is the
+ * `npm install`, into `~/.sheep/tools/` (the machine's, not the kennel's)
+ * and reused after. In a checkout there is no stamp (the way `version()`
+ * tells), and the daemon is the
  * checkout's own wrangler over `packages/cell/wrangler.jsonc`, which
  * bundles from source; the secrets file and the record are the same.
  *
- * `SHEEP_LOCAL` overrides the directory; `SHEEP_CONFIG` the config file.
- * A test and a ring make a fresh world with those two variables.
+ * Nothing overrides the directory: it is the kennel's, and a test or a
+ * ring makes a fresh world with a working directory and `HOME`.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -33,7 +35,7 @@ import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { configPath, type SheepConfig } from "./config.js";
+import { configPath, sheepDir, type SheepConfig } from "./config.js";
 
 /** The release's build stamp, `sheep` in the manifest beside the code; absent in a checkout. */
 export interface BuildStamp {
@@ -68,13 +70,18 @@ export function readStamp(): BuildStamp | undefined {
   return undefined;
 }
 
+/** The kennel's local home: `<kennel>/local`, so a directory's home is its own. */
 export function localDir(): string {
-  return process.env.SHEEP_LOCAL || join(homedir(), ".sheep", "local");
+  return join(sheepDir(), "local");
 }
 
-/** Where wrangler is installed once: beside `local/`, so `~/.sheep/tools`, or `$SHEEP_LOCAL/../tools`. */
+/**
+ * Where wrangler is installed once: `~/.sheep/tools` on every machine,
+ * never per kennel. A kennel is a config and a store, not a toolchain, so
+ * the second kennel on a machine finds the pin already fetched.
+ */
 export function toolsDir(): string {
-  return join(dirname(localDir()), "tools");
+  return join(homedir(), ".sheep", "tools");
 }
 
 const recordPath = () => join(localDir(), "home.json");
@@ -377,7 +384,7 @@ export interface StartReport {
 }
 
 /**
- * `sheep home local`: the home under `~/.sheep/local`, started if it was
+ * `sheep home local`: the home under the kennel's `local/`, started if it was
  * not, and the config written when there is none. A running home whose
  * secrets this call changed (a key newly exported, the provider flipped)
  * is restarted, so what the report says held is what the home holds.
