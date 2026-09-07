@@ -8,10 +8,10 @@ gave the command its name. [Project pasture](docs/projects/pasture/design.md)
 gave the herd a place: what every sheep on a repository should know.
 [Project collar](docs/projects/collar/design.md) gave the dog the
 command, and a release proved by installing it the way a user would.
-[Project kennel](docs/projects/kennel/design.md) is the next: a dog's
+[Project kennel](docs/projects/kennel/design.md) gave the dog a
 directory, found the way git finds `.git`, so dogs in several
 directories share nothing but the command. [Project station](docs/projects/station/design.md)
-follows it: a home in the cloud, from the package, in one path. Setup and usage are in [README.md](README.md).
+is the next: a home in the cloud, from the package, in one path. Setup and usage are in [README.md](README.md).
 Read a project's `phases.md` for where its work stands and what the next
 phase is; [docs/projects/README.md](docs/projects/README.md) lists them.
 `/conduct <project>` is how a phase is run: briefed to a subagent, proved

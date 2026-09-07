@@ -22,7 +22,7 @@ left the design.
 
 ---
 
-**Where we are: station phase 0 NOT STARTED. Next: station phase 0, the image and the stamp.** Planned 7 Sep 2026, the evening collar closed, from a conversation with the shepherd; the shepherd's calls are in the journey's front matter. Station phase 1 waits on [kennel](../kennel/phases.md): the config it writes is the kennel's, and the Worker's name is kennel phase 1's `mintName` and the config's `name` field, so kennel closes first. Station phase 0 asks once for a Docker Hub token in the repository's secrets; station phase 1 asks for the shepherd's Cloudflare token and the container minutes each walk spends; station phase 4 needs Docker on this laptop.
+**Where we are: station phase 0 NOT STARTED. Next: station phase 0, the image and the stamp.** Planned 7 Sep 2026, the evening collar closed, from a conversation with the shepherd; the shepherd's calls are in the journey's front matter. [Kennel](../kennel/phases.md) closed on 7 Sep 2026: the config station phase 1 writes is the kennel's, and the Worker's name is `mintName(kennelName(), taken, --name)` from `packages/cli/src/name.ts` with the config's `name` field; kennel's Open roster carries journey 3's walk, which station phase 1 is. Station phase 0 asks once for a Docker Hub token in the repository's secrets; station phase 1 asks for the shepherd's Cloudflare token and the container minutes each walk spends; station phase 4 needs Docker on this laptop.
 
 The order is dependency order. Phase 0 is the image on the registry
 and the stamp on the home, because a deploy from the package needs an

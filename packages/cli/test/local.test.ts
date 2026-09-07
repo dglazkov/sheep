@@ -198,18 +198,22 @@ describe("the local home's record", () => {
     worlds.push(w);
     const none = await w.sheep("home", "--json");
     expect(none.code).toBe(0);
-    expect(JSON.parse(none.stdout)).toEqual({ home: null, kennel: w.kennel, local: false, answers: false });
+    expect(JSON.parse(none.stdout)).toEqual({ home: null, kennel: w.kennel, name: null, local: false, answers: false });
     expect((await w.sheep("home")).stdout).toBe(`home: (none); run \`sheep home local\`, or pass --home <url>\nkennel: ${w.kennel}\n`);
 
     const sheepish = await listen("sheep\n");
     try {
       const url = `http://127.0.0.1:${sheepish.port}`;
       await writeFile(w.config, JSON.stringify({ home: url, token: "t" }));
-      expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toEqual({ home: url, kennel: w.kennel, local: false, answers: true });
+      expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toEqual({ home: url, kennel: w.kennel, name: null, local: false, answers: true });
       expect((await w.sheep("home")).stdout).toBe(`home: ${url} (answers)\nkennel: ${w.kennel}\n`);
+      // The station's name, once a deploy has recorded it (kennel phase 1): read like home, in JSON always and in prose as its own line.
+      await writeFile(w.config, JSON.stringify({ home: url, token: "t", name: "blog" }));
+      expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toEqual({ home: url, kennel: w.kennel, name: "blog", local: false, answers: true });
+      expect((await w.sheep("home")).stdout).toBe(`home: ${url} (answers)\nkennel: ${w.kennel}\nname: blog\n`);
       // A --home overrides a local config, and is never the local home.
       await writeFile(w.config, JSON.stringify({ home: "http://127.0.0.1:1", token: "t", local: true }));
-      expect(JSON.parse((await w.sheep("--home", url, "home", "--json")).stdout)).toEqual({ home: url, kennel: w.kennel, local: false, answers: true });
+      expect(JSON.parse((await w.sheep("--home", url, "home", "--json")).stdout)).toEqual({ home: url, kennel: w.kennel, name: null, local: false, answers: true });
     } finally {
       sheepish.server.close();
     }
@@ -270,6 +274,20 @@ describe.skipIf(!existsSync(cellWrangler))("sheep home local, in a checkout", ()
     expect(JSON.parse(await readFile(w.config, "utf8"))).toEqual({ home: freshUrl, token, local: true });
     expect((await stat(w.config)).mode & 0o777).toBe(0o600);
     expect((await w.sheep("home", "stop")).stdout).toBe(`stopped the local home at ${freshUrl}\n`);
+
+    // A name a deploy recorded (kennel phase 1) survives the rewrite a start does when the address moved: the file is
+    // rewritten with the real address and the name kept, and `sheep home` prints it.
+    await writeFile(w.config, JSON.stringify({ home: "http://127.0.0.1:1", token, local: true, name: "blog" }));
+    const named = await w.sheep("home", "local", "--faux", "--json");
+    expect(named.code).toBe(0);
+    const namedUrl = (JSON.parse(named.stdout) as { home: string; config: { wrote: boolean } }).home;
+    expect((JSON.parse(named.stdout) as { config: { wrote: boolean } }).config.wrote).toBe(true);
+    expect(JSON.parse(await readFile(w.config, "utf8"))).toEqual({ home: namedUrl, token, local: true, name: "blog" });
+    const namedStatus = JSON.parse((await w.sheep("home", "--json")).stdout) as { name: string | null; pid: number };
+    expect(namedStatus.name).toBe("blog");
+    expect((await w.sheep("home")).stdout).toBe(`home: ${namedUrl} (local, running, pid ${namedStatus.pid})\nkennel: ${w.kennel}\nname: blog\n`);
+    expect((await w.sheep("home", "stop")).stdout).toBe(`stopped the local home at ${namedUrl}\n`);
+    await writeFile(w.config, JSON.stringify({ home: namedUrl, token, local: true }));
 
     const ls = await w.sheep("ls");
     expect(ls.code).toBe(0);

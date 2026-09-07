@@ -753,14 +753,15 @@ class Ring {
     } catch {
       this.fail("k1.3", "sheep home --json (in blog/posts/2026)", deepHome);
     }
-    if (deepHome.code !== 0 || deepReport.home !== url || deepReport.running !== true || !this.samePath(deepReport.kennel, this.kennel(this.blog))) {
-      this.fail("k1.3", "sheep home --json (in blog/posts/2026)", { ...deepHome, stderr: `${deepHome.stderr}\nexpected kennel ${this.kennel(this.blog)}, home ${url}, running` });
+    // Kennel phase 1: a local home has no station's name; the field is there and null until a deploy mints one.
+    if (deepHome.code !== 0 || deepReport.home !== url || deepReport.running !== true || !this.samePath(deepReport.kennel, this.kennel(this.blog)) || deepReport.name !== null) {
+      this.fail("k1.3", "sheep home --json (in blog/posts/2026)", { ...deepHome, stderr: `${deepHome.stderr}\nexpected kennel ${this.kennel(this.blog)}, home ${url}, running, name null` });
     }
     const deepProse = await this.sheep(["home"], { cwd: this.deep });
     if (!deepProse.stdout.includes(this.kennelLine(this.blog).trim())) {
       this.fail("k1.3", "sheep home (in blog/posts/2026)", { ...deepProse, stderr: `${deepProse.stderr}\nexpected the prose to name blog's kennel` });
     }
-    this.ok("k1.3", "sheep ls; sheep home (in blog/posts/2026)", `${id} listed; kennel <blog>/.sheep, home ${url}, running`);
+    this.ok("k1.3", "sheep ls; sheep home (in blog/posts/2026)", `${id} listed; kennel <blog>/.sheep, home ${url}, running, name null`);
 
     // Journey 1 step 4: pi's dog stops its home; blog's is untouched, and its next `sheep ls` says nothing about pi.
     const piStopped = await this.sheep(["home", "stop"], { cwd: this.pi });

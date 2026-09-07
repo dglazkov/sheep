@@ -26,6 +26,13 @@ export interface SheepConfig {
    * is never the local home, whatever it says.
    */
   local?: boolean;
+  /**
+   * The station's name on the account, minted by the first `sheep home
+   * deploy` from this kennel (`name.ts`) and recorded here; every later
+   * deploy and the delete use it, and nothing derives it again. Absent
+   * until a deploy; a local home never has one.
+   */
+  name?: string;
 }
 
 function isDirectory(path: string): boolean {
@@ -80,6 +87,7 @@ export async function loadConfig(overrides: Partial<SheepConfig> = {}): Promise<
         ...(typeof record.home === "string" ? { home: record.home } : {}),
         ...(typeof record.token === "string" ? { token: record.token } : {}),
         ...(record.local === true ? { local: true } : {}),
+        ...(typeof record.name === "string" ? { name: record.name } : {}),
       };
     }
   } catch (error) {

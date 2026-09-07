@@ -47,7 +47,8 @@ usage:
                                             writes the kennel's config when there is none; the report says whether a model
                                             key is held (from ANTHROPIC_API_KEY), or that the faux provider answers instead
   sheep home stop                           stop this kennel's local home
-  sheep home                                which kennel, which home the config names, and whether it answers
+  sheep home                                which kennel, which home the config names, its station's name once minted,
+                                            and whether it answers
 
   sheep pasture new <name> [--repo <url> | --repo .] [--branch <branch>]
                                             make a pasture: a shared tree, a repository or none, and the sheep born into it;
@@ -297,26 +298,29 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
     }
     if (sub !== undefined) return fail(`unknown home command: ${sub}; sheep home [local [--faux] | stop]`);
 
-    // Which home the config names, and whether it answers.
+    // Which home the config names, and whether it answers. The station's name (kennel phase 1) is the config's record of the
+    // first deploy from this kennel: null in JSON until there is one, and a `name:` line in prose only when there is.
+    const name = config.name ?? null;
+    const nameLine = name === null ? "" : `name: ${name}\n`;
     if (config.local === true) {
       const status = await localStatus();
       const home = status.record?.url ?? config.home ?? null;
       if (parsed.json) {
-        output.out(`${JSON.stringify({ home, kennel, local: true, running: status.running, pid: status.running ? status.record!.pid : null, port: status.record?.port ?? null, stamp: status.record?.stamp ?? null, startedAt: status.running ? status.record!.startedAt : null })}\n`);
+        output.out(`${JSON.stringify({ home, kennel, name, local: true, running: status.running, pid: status.running ? status.record!.pid : null, port: status.record?.port ?? null, stamp: status.record?.stamp ?? null, startedAt: status.running ? status.record!.startedAt : null })}\n`);
         return 0;
       }
       output.out(home === null ? "home: (none); run `sheep home local`\n" : `home: ${home} (local, ${status.running ? `running, pid ${status.record!.pid}` : "stopped"})\n`);
-      output.out(`kennel: ${kennel}\n`);
+      output.out(`kennel: ${kennel}\n${nameLine}`);
       return 0;
     }
     const home = config.home ?? null;
     const answers = home === null ? "nobody" : await whoAnswers(home);
     if (parsed.json) {
-      output.out(`${JSON.stringify({ home, kennel, local: false, answers: answers === "sheep" })}\n`);
+      output.out(`${JSON.stringify({ home, kennel, name, local: false, answers: answers === "sheep" })}\n`);
       return 0;
     }
     output.out(home === null ? "home: (none); run `sheep home local`, or pass --home <url>\n" : `home: ${home} (${answers === "sheep" ? "answers" : answers === "other" ? "answers, but not as a sheep home" : "does not answer"})\n`);
-    output.out(`kennel: ${kennel}\n`);
+    output.out(`kennel: ${kennel}\n${nameLine}`);
     return 0;
   } catch (error) {
     return fail(error instanceof Error ? error.message : String(error));
