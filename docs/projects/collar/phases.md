@@ -22,7 +22,7 @@ carries them.
 
 ---
 
-**Where we are: collar phases 0 to 2 CLOSED; collar phases 3 and 4 PART-DONE. Next: the two asks, then collar phase 3's walk (the push, the workflow's two jobs, `npx … setup` from GitHub) and collar phase 4's run.** Planned 7 Sep 2026, the day after pasture closed, from a brainstorm with the shepherd; the shepherd's calls are in the journey's front matter. Phases 0 to 2 built and verified the same morning. Phase 3 built and proved here: the machine ring green on two images, the guard refusing a broken bundle, the workflow written; its walk waits on the shepherd for the first push of `release` and the workflow, no money. Phase 4 built and dry-run to the printed `claude -p` command; its run waits on the shepherd's key and a yes to a dollar or two of tokens. Nothing waits on work.
+**Where we are: collar phases 0 to 3 CLOSED; collar phase 4 PART-DONE. Next: collar phase 4's run from the spec, then the record.** Planned 7 Sep 2026, the day after pasture closed, from a brainstorm with the shepherd; the shepherd's calls are in the journey's front matter. Phases 0 to 2 built and verified the same morning. Phase 3 closed in the afternoon after the shepherd's yes: `release` is on GitHub, built by the workflow, and the install from the spec walks. Phase 4's dog ring held in repo mode with a real key and is running from the spec; the shepherd authorized the tokens.
 
 The order is dependency order. Phase 0 is the release itself, the two
 bundles and the Worker in a tree npm can install, and the package ring
@@ -223,7 +223,7 @@ warm network. **⚑** the first push of `release` and the workflow: a
 generated branch and an Actions workflow on the public repository,
 asked once; no money.
 
-**Status: PART-DONE.** 2026-09-07. The machine ring, the guard, and the workflow built and proved here: both images green, a broken bundle refused with the ref unmoved, the release tree 14 files with no `.github/`; the push of `release` and the workflow's first run wait on the shepherd's yes.
+**Status: CLOSED.** 2026-09-07. The machine ring green on both images, the guard refusing a broken bundle, and the workflow's third run green on both jobs after two fixes; `release` is on GitHub, and the package ring here installed `github:dglazkov/sheep#release` from a fresh `HOME` in nine seconds and walked journey 1, verified by the conductor.
 
 **Findings:**
 
@@ -232,7 +232,8 @@ asked once; no money.
 - **2026-09-07 — A debt, for collar phase 4: `sheep home stop` waits forever on a zombie.** With no init in a container the detached daemon is never reaped, `kill(pid, 0)` keeps answering, and after SIGKILL the loop in `stopLocalHome` is unbounded. The ring runs `docker --init`; the CLI should bound that loop.
 - **2026-09-07 — The guard refused a bundle broken on purpose at step 1 and left `refs/heads/release` untouched, the candidate parked at `refs/sheep/candidate`;** a good release moves the ref only after twelve ring lines, and neither `--force` nor `--no-push` skips the walk.
 - **2026-09-07 — The workflow cannot reach the release tree:** `release.mjs` drops every top-level entry of `HEAD` but README and LICENSE and demands exactly the design's 14 files, so `.github/` throws; checked by the conductor on a release built from the commit carrying the workflow. Cost: 90 minutes of a subagent, 20 of verification.
-- **2026-09-07 — Open: the first push of `release` and the workflow.** Waits on the shepherd's yes: a generated branch and an Actions workflow on the public repository, no money; then the workflow's two jobs green and `npx github:dglazkov/sheep#release setup` from a fresh `HOME` here close this phase.
+- **2026-09-07 — The shepherd said push, and the workflow's first two runs were red for reasons no local ring could see:** `setup-node` looks for pnpm before corepack has enabled it (`package-manager-cache: false`), and lamb's journey 5 test kept a faux turn running for 2.5 seconds, less than three CLI calls take on the runner (now ten). The third run pushed `release`.
+- **2026-09-07 — `npx github:dglazkov/sheep#release setup` from a fresh `HOME` on this machine reported in nine seconds,** and the package ring walked journey 1 from that spec in twenty; the runner's install job did the same, stamped with the run's commit.
 
 ## Phase 4: The dog ring, and the walk
 
