@@ -22,31 +22,46 @@ Every verb talks to a home, and the first one is on this machine:
 sheep home local
 ```
 
-It starts a home under `~/.sheep/local` (fetching a runtime once, the
-first time), writes `~/.sheep/config` so every later command finds it, and
-prints:
+It starts a home under the kennel's `local/` (fetching a runtime once, the
+first time), writes the kennel's `config` so every later command in this
+directory finds it, and prints:
 
 ```
 local home: http://127.0.0.1:<port> (started, pid <pid>)
-files: ~/.sheep/local
-config: ~/.sheep/config written
+kennel: <dir>/.sheep
+files: <dir>/.sheep/local
+config: <dir>/.sheep/config written
 key: not held; export ANTHROPIC_API_KEY and run `sheep home local` again
 ```
 
-(`~` is spelled out in full.) That last line is the one thing you cannot
-do alone. Ask the shepherd to export `ANTHROPIC_API_KEY` in the shell you
-run in, then run `sheep home local` again; it answers `key: held, in
-~/.sheep/local/.dev.vars`. Never ask for the key in the chat, and never
-pass it as an argument: the home reads it from that file and nothing else. `sheep home local --faux` runs a
-scripted model that answers "ok" to everything, for a look at the plumbing
-without a key.
+(The paths are spelled out in full.) That last line is the one thing you
+cannot do alone. Ask the shepherd to export `ANTHROPIC_API_KEY` in the
+shell you run in, then run `sheep home local` again; it answers `key:
+held, in <dir>/.sheep/local/.dev.vars`. Never ask for the key in the chat,
+and never pass it as an argument: the home reads it from that file and
+nothing else. `sheep home local --faux` runs a scripted model that answers
+"ok" to everything, for a look at the plumbing without a key.
 
 The home stops with `sheep home stop` and is started again by the next
 verb that needs it, which says so on stderr. `sheep home` reports which
-home the config names and whether it answers; `sheep config` prints the
-resolved home. `--home <url>` or `SHEEP_HOME` selects another home for one
-command. A home in the cloud, shared between machines, needs an account
-and is a later project.
+kennel it found, which home the config names, and whether it answers;
+`sheep config` prints the resolved home and the kennel. `--home <url>` or
+`SHEEP_HOME` selects another home for one command. A home in the cloud,
+shared between machines, needs an account and is a later project.
+
+## The kennel
+
+The **kennel** is `.sheep/` at or above the working directory, found by
+walking up the way git finds `.git`, and `~/.sheep` when there is none. It
+holds this directory's config and its own local home, so a dog in each of
+several directories has its own sheep, its own token, and its own home to
+start and stop; nothing is shared but the command and the runtime under
+`~/.sheep/tools`. `sheep setup` makes one here, and in a git work tree
+appends `.sheep/` to the `.gitignore` beside it, because the config holds a
+token and the home holds the model key. There is no variable that moves
+it: `cd` is how you switch, and a subdirectory finds the kennel above it.
+If the command says `.sheep` is tracked, tell the shepherd a token is in
+their repository; do not try to fix it yourself.
 
 ## The verbs
 

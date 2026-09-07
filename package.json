@@ -25,9 +25,9 @@
     "@mariozechner/clipboard": "0.3.9"
   },
   "sheep": {
-    "commit": "2d3b91a",
-    "builtAt": "2026-09-07T21:22:07Z",
+    "commit": "217cd63",
+    "builtAt": "2026-09-07T21:58:52Z",
     "wrangler": "4.129.0"
   },
-  "//": "GENERATED BRANCH: `pnpm release` builds it from 2d3b91a on main; develop there, not here. No `workspaces` and no scripts, deliberately: npm's git installer treats either as \"needs preparation\" and then installs this package into an empty directory (isocan #47). The bundles and the Worker are committed here for the same reason: there is no install-time build to make them."
+  "//": "GENERATED BRANCH: `pnpm release` builds it from 217cd63 on main; develop there, not here. No `workspaces` and no scripts, deliberately: npm's git installer treats either as \"needs preparation\" and then installs this package into an empty directory (isocan #47). The bundles and the Worker are committed here for the same reason: there is no install-time build to make them."
 }

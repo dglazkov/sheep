@@ -28,8 +28,15 @@ repository is the package:
 npx github:dglazkov/sheep#release setup
 ```
 
-It is idempotent, puts `sheep` on your PATH, installs this skill here, and
-ends with the sentence to run next. Keep the `#release` on the spec.
+It is idempotent, puts `sheep` on your PATH, installs this skill here,
+makes this directory's kennel (`.sheep/`, which holds its config and its
+own local home, and which setup adds to the `.gitignore` in a git work
+tree), and ends with the sentence to run next. Keep the `#release` on the
+spec.
+
+The kennel is found by walking up from where you stand, the way git finds
+`.git`, and is `~/.sheep` when there is none, so a dog in each of several
+directories herds its own sheep and shares nothing but the command.
 
 ## What needs a person
 
