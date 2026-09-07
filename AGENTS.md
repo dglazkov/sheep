@@ -5,8 +5,10 @@ agents. Two legs built it. The first is [project lamb](docs/projects/lamb/design
 pi, running in a cell. The second is [project pen](docs/projects/pen/design.md):
 programs, running for a cell. [Project recast](docs/projects/recast/design.md)
 gave the command its name. [Project pasture](docs/projects/pasture/design.md)
-is the next: the place a dog puts what every sheep on a repository should
-know. Setup and usage are in [README.md](README.md).
+gave the herd a place: what every sheep on a repository should know.
+[Project collar](docs/projects/collar/design.md) is the next: how a
+shepherd gives their dog the command, and how a release is proved by
+installing it the way a user would. Setup and usage are in [README.md](README.md).
 Read a project's `phases.md` for where its work stands and what the next
 phase is; [docs/projects/README.md](docs/projects/README.md) lists them.
 `/conduct <project>` is how a phase is run: briefed to a subagent, proved
