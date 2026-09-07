@@ -29,7 +29,7 @@ const ID = /^[0-9a-f-]{36}$/;
 
 /** Every turn: a bash call at once, then the answer after a delay, so a sheep is observably running. */
 const TURN = {
-  steps: [{ tool: { name: "bash", args: { command: "echo herding > note.txt && cat note.txt" } } }, { text: "done: note.txt written", delayMs: 2_500 }],
+  steps: [{ tool: { name: "bash", args: { command: "echo herding > note.txt && cat note.txt" } } }, { text: "done: note.txt written", delayMs: 10_000 }],
 };
 
 describe.skipIf(typeof home === "string")("journey 5: a dog and its flock, through sheep against a local home", () => {
