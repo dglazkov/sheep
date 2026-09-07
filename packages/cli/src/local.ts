@@ -101,14 +101,35 @@ function writeRecord(record: HomeRecord): void {
   writeFileSync(recordPath(), `${JSON.stringify(record, null, 2)}\n`);
 }
 
+/**
+ * A zombie: exited, and not yet reaped by its parent. A detached daemon in
+ * a container with no init is one after it dies, and `kill(pid, 0)` keeps
+ * answering for it (collar phase 3's finding); the process table says `Z`.
+ * Linux answers from `/proc`; elsewhere `ps` does.
+ */
+function zombie(pid: number): boolean {
+  if (process.platform === "linux") {
+    try {
+      const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+      // "pid (comm) state …": comm may hold spaces and parentheses, so the state is the first field after the last ")".
+      return stat.slice(stat.lastIndexOf(")") + 1).trim().startsWith("Z");
+    } catch {
+      return false;
+    }
+  }
+  const ps = spawnSync("ps", ["-o", "stat=", "-p", String(pid)], { encoding: "utf8" });
+  return ps.status === 0 && ps.stdout.trim().startsWith("Z");
+}
+
+/** There is such a process and it has not exited: a zombie has, whatever `kill(pid, 0)` says. */
 function alive(pid: number): boolean {
   try {
     process.kill(pid, 0);
-    return true;
   } catch (error) {
     // EPERM: there is such a process, and it is not ours to signal.
     return error instanceof Error && "code" in error && error.code === "EPERM";
   }
+  return !zombie(pid);
 }
 
 /** Who answers on the port: the home, something else, or nobody. */
@@ -412,8 +433,14 @@ export async function startLocalHome(options: StartOptions = {}): Promise<StartR
   };
 }
 
-/** `sheep home stop`: SIGTERM to the daemon when it is running, the record kept with its pid cleared; a stale record is cleared too. */
-export async function stopLocalHome(): Promise<{ stopped: boolean; record: HomeRecord | undefined }> {
+/**
+ * `sheep home stop`: SIGTERM to the daemon when it is running, the record
+ * kept with its pid cleared; a stale record is cleared too. The wait is
+ * bounded: ten seconds after SIGTERM, three after SIGKILL, and a pid that
+ * outlives both is reported as `unreaped` and left, never waited on
+ * forever (collar phase 3's debt).
+ */
+export async function stopLocalHome(): Promise<{ stopped: boolean; record: HomeRecord | undefined; unreaped?: number }> {
   const status = await localStatus();
   const { record } = status;
   if (record === undefined) return { stopped: false, record };
@@ -425,15 +452,18 @@ export async function stopLocalHome(): Promise<{ stopped: boolean; record: HomeR
   signal(pid, "SIGTERM");
   const deadline = Date.now() + 10_000;
   while (alive(pid) && Date.now() < deadline) await sleep(100);
+  let unreaped: number | undefined;
   if (alive(pid)) {
     signal(pid, "SIGKILL");
-    while (alive(pid)) await sleep(50);
+    const killed = Date.now() + 3_000;
+    while (alive(pid) && Date.now() < killed) await sleep(50);
+    if (alive(pid)) unreaped = pid;
   }
   // The port lets go a moment after the process does.
   const gone = Date.now() + 5_000;
   while ((await whoAnswers(record.url)) !== "nobody" && Date.now() < gone) await sleep(100);
   writeRecord({ ...record, pid: null });
-  return { stopped: true, record: { ...record, pid: null } };
+  return { stopped: true, record: { ...record, pid: null }, ...(unreaped === undefined ? {} : { unreaped }) };
 }
 
 /** The mode bits of the secrets file, for a report; undefined when there is none. */

@@ -8,11 +8,17 @@
  *
  *   pnpm hermetic --ring package [ref]     ref defaults to refs/heads/release of this repository
  *   pnpm hermetic --ring machine [ref]     the package ring inside a container from node:22-slim, then node:24-slim (collar phase 3)
+ *   pnpm hermetic --ring dog [ref|spec]    the machine ring's container with Claude Code in it, given the skill and journey 1's sentence (collar phase 4)
  *   --repo <path>                          the repository the ref is read from and installed from (default: this checkout; a bare repository works)
  *   --spec <spec>                          install this spec instead of a ref: `github:dglazkov/sheep#release` needs no repository at all
  *   --commit <sha>                         with --spec: the installed build must be stamped with this commit
- *   --image <name>                         machine ring: one image instead of both (repeatable)
+ *   --image <name>                         machine ring: one image instead of both (repeatable); dog ring: instead of node:24-slim
  *   --keep                                 leave the ring's directory, and its local home running, and say where
+ *   --yes                                  dog ring: the shepherd has read the estimate; do not ask
+ *   --dry-run                              dog ring: build, probe, add the skill, print the `claude -p` command, and stop before it; no key is needed
+ *   --budget <usd>                         dog ring: Claude Code's --max-budget-usd (default 5)
+ *   --timeout <minutes>                    dog ring: the container is killed after this long (default 30)
+ *   --agent <name>                         dog ring: claude-code, the only dog so far
  *
  * The rings are one script with one walk: the ring chooses the environment,
  * never the steps. The machine ring exports the ref into a build context as
@@ -24,6 +30,29 @@
  * mounted and no Docker socket. A machine without Docker says so and
  * exits 2. CI's second job runs `--spec github:dglazkov/sheep#release` on
  * a bare runner: the string a user types, with no repository beside it.
+ *
+ * The dog ring is the machine ring's image from `node:24-slim` with Claude
+ * Code installed by `npm install -g` at its current version, run once, as
+ * root, with `ANTHROPIC_API_KEY` from this process's environment passed
+ * through `docker run -e` (never an argument, never a build arg, never a
+ * file) and nothing else of this machine. Inside, this script's other
+ * half (`--inside`) adds the skill to a fresh working directory under the
+ * container's HOME with `npx skills add dglazkov/sheep --skill sheep`,
+ * prints the exact `claude -p` command, and runs it with journey 1's
+ * sentence and no steps: `--allowedTools` for Bash, Read, Edit, Write,
+ * Glob, and Grep, `--permission-prompts none` so nothing can ask and
+ * anything that would is denied and reported, `--max-budget-usd` as the
+ * cap, and `--output-format stream-json`, which this script renders as
+ * the transcript. Afterwards, in the same container, the installed
+ * `sheep --version`, `sheep ls --json`, and `sheep home --json` must show
+ * the ref's build, a sheep, and the local home answering with the key
+ * held; then `sheep home stop`. A ref is exported as `refs/heads/release`
+ * of `/src.git` and the container's git is told that
+ * `github.com/dglazkov/sheep` is `/src.git`, so the string the dog types
+ * from the README installs the ref; the spec `github:dglazkov/sheep#release`
+ * exports nothing and the dog's string reaches GitHub. The ring spends the
+ * shepherd's tokens and says so before the image is built, waiting for a
+ * `y` unless `--yes`; `--dry-run` needs neither the key nor the yes.
  *
  * The package ring makes one temp directory and points five variables
  * inside it: `npm_config_prefix`, `npm_config_cache`, `HOME`,
@@ -64,8 +93,9 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
+import { createInterface } from "node:readline";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 /** Where this script lives, one level up: the checkout, or `/ring` inside the machine ring's container. Stripped from PATH. */
@@ -78,19 +108,50 @@ const INSTALL_SPEC = "github:dglazkov/sheep#release";
 /** The machine ring's images, in the order they run. */
 const MACHINE_IMAGES = ["node:22-slim", "node:24-slim"];
 
+/** The dog ring: one image, one dog, the sentence from journey 1, and the tools the dog is given. */
+const DOG_IMAGE = "node:24-slim";
+const DOG_AGENT = "claude-code";
+const AGENT_PACKAGE = "@anthropic-ai/claude-code";
+const SENTENCE = "Install sheep from github.com/dglazkov/sheep and try it out.";
+const DOG_TOOLS = "Bash,Read,Edit,Write,Glob,Grep";
+/** How the skill reaches the dog before the prompt: the `skills` CLI, reading `main` of the public repository, this skill alone, into Claude Code's directory, with no prompts. */
+const SKILLS_ADD = ["npx", "-y", "skills", "add", "dglazkov/sheep", "--skill", "sheep", "--agent", DOG_AGENT, "-y"];
+/** The URLs npm's git installer may try for `github:dglazkov/sheep`; in repo mode the container's git is told each one is `/src.git`. */
+const GITHUB_URLS = ["https://github.com/dglazkov/sheep.git", "git+https://github.com/dglazkov/sheep.git", "ssh://git@github.com/dglazkov/sheep.git", "git+ssh://git@github.com/dglazkov/sheep.git"];
+
 function usage(message) {
-  console.error(`hermetic: ${message}\nusage: pnpm hermetic --ring package|machine [ref] [--repo <path>] [--spec <spec> [--commit <sha>]] [--image <name>] [--keep]`);
+  console.error(
+    `hermetic: ${message}\nusage: pnpm hermetic --ring package|machine [ref] [--repo <path>] [--spec <spec> [--commit <sha>]] [--image <name>] [--keep]\n       pnpm hermetic --ring dog [ref|${INSTALL_SPEC}] [--repo <path>] [--commit <sha>] [--image <name>] [--yes] [--dry-run] [--budget <usd>] [--timeout <minutes>] [--agent claude-code] [--keep]`,
+  );
   process.exit(2);
 }
 
 function parseArgs(argv) {
   const args = [...argv];
-  const parsed = { ring: undefined, ref: undefined, repo: root, spec: undefined, commit: undefined, images: [], keep: false };
+  const parsed = {
+    ring: undefined,
+    ref: undefined,
+    repo: root,
+    spec: undefined,
+    commit: undefined,
+    images: [],
+    keep: false,
+    yes: false,
+    dryRun: false,
+    budget: 5,
+    timeout: 30,
+    agent: DOG_AGENT,
+    // The container's half of the dog ring, and what the outer half tells it: never typed by hand.
+    inside: false,
+    redirect: false,
+    expect: undefined,
+  };
   const value = (flag) => {
     const next = args.shift();
     if (next === undefined || next.startsWith("--")) usage(`${flag} needs a value`);
     return next;
   };
+  let positional;
   while (args.length > 0) {
     const arg = args.shift();
     const [flag, inline] = arg.startsWith("--") && arg.includes("=") ? [arg.slice(0, arg.indexOf("=")), arg.slice(arg.indexOf("=") + 1)] : [arg, undefined];
@@ -101,18 +162,41 @@ function parseArgs(argv) {
     else if (flag === "--commit") parsed.commit = value(flag);
     else if (flag === "--image") parsed.images.push(value(flag));
     else if (flag === "--keep") parsed.keep = true;
+    else if (flag === "--yes") parsed.yes = true;
+    else if (flag === "--dry-run") parsed.dryRun = true;
+    else if (flag === "--budget") parsed.budget = Number(value(flag));
+    else if (flag === "--timeout") parsed.timeout = Number(value(flag));
+    else if (flag === "--agent") parsed.agent = value(flag);
+    else if (flag === "--inside") parsed.inside = true;
+    else if (flag === "--redirect") parsed.redirect = true;
+    else if (flag === "--expect") parsed.expect = value(flag);
     else if (flag.startsWith("--")) usage(`unknown flag ${flag}`);
-    else if (parsed.ref !== undefined) usage(`one ref at most: ${parsed.ref} and ${flag}`);
-    else parsed.ref = flag;
+    else if (positional !== undefined) usage(`one ref at most: ${positional} and ${flag}`);
+    else positional = flag;
   }
   if (parsed.ring === undefined) usage("--ring is required");
-  if (parsed.ring === "dog") usage("the dog ring is collar phase 4's; the package and machine rings exist");
-  if (parsed.ring !== "package" && parsed.ring !== "machine") usage(`unknown ring ${parsed.ring}`);
+  if (parsed.ring !== "package" && parsed.ring !== "machine" && parsed.ring !== "dog") usage(`unknown ring ${parsed.ring}`);
+  // The dog ring's one argument is a ref or the spec a user types; the other rings take a ref there and a spec by flag.
+  if (positional !== undefined) {
+    if (parsed.ring === "dog" && /^(github:|git\+|git:|https?:|ssh:)/.test(positional)) parsed.spec = positional;
+    else parsed.ref = positional;
+  }
   if (parsed.spec !== undefined && parsed.ref !== undefined) usage(`a ref (${parsed.ref}) or a spec (${parsed.spec}), not both`);
   if (parsed.commit !== undefined && parsed.spec === undefined) usage("--commit goes with --spec; a ref names its own commit");
   if (parsed.commit !== undefined && !/^[0-9a-f]{7,40}$/.test(parsed.commit)) usage(`--commit ${parsed.commit} is not a sha`);
   if (parsed.ring === "machine" && parsed.spec !== undefined) usage("the machine ring takes a ref; it exports the ref into the container as a bare repository");
-  if (parsed.images.length > 0 && parsed.ring !== "machine") usage("--image is the machine ring's");
+  if (parsed.images.length > 0 && parsed.ring === "package") usage("--image is the machine and dog rings'");
+  for (const [flag, on] of [["--yes", parsed.yes], ["--dry-run", parsed.dryRun], ["--inside", parsed.inside], ["--redirect", parsed.redirect], ["--expect", parsed.expect !== undefined]]) {
+    if (on && parsed.ring !== "dog") usage(`${flag} is the dog ring's`);
+  }
+  if (parsed.ring === "dog") {
+    if (parsed.spec !== undefined && parsed.spec !== INSTALL_SPEC) usage(`the dog types the README's spec, ${INSTALL_SPEC}; a spec that is not that one cannot be what it installs (a ref installs through /src.git)`);
+    if (parsed.agent !== DOG_AGENT) usage(`--agent ${parsed.agent}: ${DOG_AGENT} is the only dog so far; pi is the second, deliberately open`);
+    if (!Number.isFinite(parsed.budget) || parsed.budget <= 0) usage(`--budget ${parsed.budget} is not a number of dollars`);
+    if (!Number.isFinite(parsed.timeout) || parsed.timeout <= 0) usage(`--timeout ${parsed.timeout} is not a number of minutes`);
+    if (parsed.images.length > 1) usage("the dog ring runs one image; the walk is the point, not the matrix");
+    if (parsed.images.length === 0) parsed.images = [DOG_IMAGE];
+  }
   if (parsed.spec === undefined && parsed.ref === undefined) parsed.ref = "refs/heads/release";
   if (parsed.images.length === 0) parsed.images = [...MACHINE_IMAGES];
   return parsed;
@@ -672,8 +756,35 @@ function runIndented(command, args, options, indent = "    ") {
   });
 }
 
-/** The image tag the machine ring builds for a base image: `sheep-ring:node-22-slim`. */
-const ringTag = (image) => `sheep-ring:${image.replace(/[^A-Za-z0-9_.-]+/g, "-")}`;
+/** The image tag the machine ring builds for a base image: `sheep-ring:node-22-slim`; the dog ring's is `sheep-ring:dog-node-24-slim`. */
+const ringTag = (image, prefix = "") => `sheep-ring:${prefix}${image.replace(/[^A-Za-z0-9_.-]+/g, "-")}`;
+
+/**
+ * What a container is, checked before the walk: the image's node, npm, and
+ * git, and none of what journey 3 step 2 rules out. The dog ring adds its
+ * own lines. One shell command; a nonzero exit names the first thing wrong.
+ */
+function probeScript(extra = []) {
+  return [
+    `printf 'node %s, npm %s, git %s, %s\\n' "$(node --version)" "$(npm --version)" "$(git --version | cut -d' ' -f3)" "$(uname -m)"`,
+    `test ! -e /var/run/docker.sock || { echo 'a Docker socket is in the container'; exit 1; }`,
+    `for tool in pnpm wrangler workerd sheep; do ! command -v "$tool" >/dev/null || { echo "$tool is in the image"; exit 1; }; done`,
+    `for f in "$HOME/.gitconfig" "$HOME/.npmrc" "$HOME/.sheep" "$HOME/.npm" "$HOME/.wrangler" "$HOME/.config/.wrangler" "$HOME/.claude" "$HOME/.claude.json"; do test ! -e "$f" || { echo "$f is in the image"; exit 1; }; done`,
+    // `--init` mounts Docker's own init at /usr/sbin/docker-init: the one process that reaps a detached daemon, which a user's machine has and a container does not.
+    `awk '$5 !~ /^\\/(proc|sys|dev|etc\\/(resolv.conf|hostname|hosts)|usr\\/sbin\\/docker-init)(\\/|$)/ && $5 != "/" {print "mounted: " $5; bad=1} END {exit bad}' /proc/self/mountinfo`,
+    `echo "no docker socket; no pnpm, wrangler, workerd, or sheep; no git config, npmrc, .sheep, .npm, or .claude; nothing mounted but /, /proc, /sys, /dev, the DNS files, and docker-init"`,
+    ...extra,
+  ].join(" && ");
+}
+
+/** Builds one ring image from the context, streaming nothing; returns the seconds it took, or throws with docker's output. */
+async function buildImage(context, image, tag, buildArgs) {
+  const started = Date.now();
+  const args = ["build", "--build-arg", `NODE_IMAGE=${image}`, ...buildArgs.flatMap((arg) => ["--build-arg", arg]), "--tag", tag, "--file", join(context, "Dockerfile"), context];
+  const build = await run("docker", args, { env: { ...process.env, DOCKER_BUILDKIT: "1" } });
+  if (build.code !== 0) throw new Error(`docker build failed (exit ${build.code}):\n${build.stdout}${build.stderr}`.trimEnd());
+  return ((Date.now() - started) / 1000).toFixed(0);
+}
 
 /**
  * The machine ring: the package ring's walk inside a container built from
@@ -718,25 +829,15 @@ async function machineRing({ ref, repo, images, keep }) {
     for (const image of images) {
       const tag = ringTag(image);
       console.log(`\n${image}:`);
-      const buildStarted = Date.now();
-      const build = await run("docker", ["build", "--build-arg", `NODE_IMAGE=${image}`, "--tag", tag, "--file", join(context, "Dockerfile"), context], { env: { ...process.env, DOCKER_BUILDKIT: "1" } });
-      const buildSeconds = ((Date.now() - buildStarted) / 1000).toFixed(0);
-      if (build.code !== 0) {
-        console.log(`    docker build failed (exit ${build.code}):\n${build.stdout}${build.stderr}`.trimEnd());
-        failures.push(`${image}: docker build exited ${build.code}`);
+      let buildSeconds;
+      try {
+        buildSeconds = await buildImage(context, image, tag, []);
+      } catch (error) {
+        console.log(`    ${error.message}`);
+        failures.push(`${image}: docker build failed`);
         break;
       }
-      // What the container is: the image's node, npm, and git, and none of what journey 3 step 2 rules out.
-      const probe = [
-        `printf 'node %s, npm %s, git %s, %s\\n' "$(node --version)" "$(npm --version)" "$(git --version | cut -d' ' -f3)" "$(uname -m)"`,
-        `test ! -e /var/run/docker.sock || { echo 'a Docker socket is in the container'; exit 1; }`,
-        `for tool in pnpm wrangler workerd; do ! command -v "$tool" >/dev/null || { echo "$tool is in the image"; exit 1; }; done`,
-        `for f in "$HOME/.gitconfig" "$HOME/.npmrc" "$HOME/.sheep" "$HOME/.npm" "$HOME/.wrangler" "$HOME/.config/.wrangler"; do test ! -e "$f" || { echo "$f is in the image"; exit 1; }; done`,
-        // `--init` mounts Docker's own init at /usr/sbin/docker-init: the one process that reaps a detached daemon, which a user's machine has and a container does not.
-        `awk '$5 !~ /^\\/(proc|sys|dev|etc\\/(resolv.conf|hostname|hosts)|usr\\/sbin\\/docker-init)(\\/|$)/ && $5 != "/" {print "mounted: " $5; bad=1} END {exit bad}' /proc/self/mountinfo`,
-        `echo "no docker socket; no pnpm, wrangler, or workerd; no git config, npmrc, .sheep, or .npm; nothing mounted but /, /proc, /sys, /dev, the DNS files, and docker-init"`,
-      ].join(" && ");
-      const probed = await run("docker", ["run", "--rm", "--init", tag, "sh", "-c", probe]);
+      const probed = await run("docker", ["run", "--rm", "--init", tag, "sh", "-c", probeScript()]);
       if (probed.code !== 0) {
         console.log(`    the container is not bare (exit ${probed.code}):\n${probed.stdout}${probed.stderr}`.trimEnd());
         failures.push(`${image}: the container is not bare`);
@@ -761,7 +862,7 @@ async function machineRing({ ref, repo, images, keep }) {
       `that the user's architecture and libc are this image's: docker ${engine}, Debian slim`,
       "that a user without root can do it: the container ran as root, the image's default",
       "that the registry is reachable from a user's network: wrangler came through this machine's network, into the container's own npm cache",
-      "that the dog ring's agent would find its way: no coding agent was in the container (collar phase 4)",
+      "that a coding agent would find its way: none was in the container (the dog ring puts Claude Code in it and gives it the sentence)",
     );
   } finally {
     if (keep) console.log(`\nkept: ${context}`);
@@ -777,11 +878,363 @@ async function machineRing({ ref, repo, images, keep }) {
   console.log(`\nmachine ring: ok (${images.length} image${images.length === 1 ? "" : "s"} held)`);
 }
 
+/** An argument as a person would paste it into a shell. */
+const quote = (arg) => (/^[A-Za-z0-9_/.,:=+@%#-]+$/.test(arg) ? arg : `'${arg.replace(/'/g, `'\\''`)}'`);
+
+/** One line from the terminal. */
+function ask(question) {
+  return new Promise((resolveAsk) => {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(question, (answer) => {
+      rl.close();
+      resolveAsk(answer.trim());
+    });
+  });
+}
+
+/**
+ * The dog ring, outside: the key and the yes, then the build context, the
+ * image with Claude Code in it, the probe, and one container running this
+ * script's other half with the key as an environment variable. The
+ * container's output is the report; the ring ends by naming what it did
+ * not check.
+ */
+async function dogRing({ ref, repo, spec, commit, images, keep, yes, dryRun, budget, timeout }) {
+  const docker = spawnSync("docker", ["version", "--format", "{{.Server.Version}} {{.Server.Os}}/{{.Server.Arch}}"], { encoding: "utf8" });
+  if (docker.error || docker.status !== 0) {
+    const why = docker.error ? docker.error.message : (docker.stderr || docker.stdout || "").trim();
+    console.error(`hermetic: the dog ring needs Docker on this machine, and there is none that answers (docker version: ${why}); nothing was checked`);
+    process.exit(2);
+  }
+  const engine = docker.stdout.trim();
+  const image = images[0];
+  let sha;
+  let stamp;
+  if (spec === undefined) {
+    const git = gitIn(repo);
+    try {
+      sha = git("rev-parse", "--verify", `${ref}^{commit}`);
+    } catch (error) {
+      usage(`${ref}: ${error.message}`);
+    }
+    stamp = JSON.parse(git("show", `${sha}:package.json`)).sheep;
+    if (typeof stamp?.commit !== "string") usage(`${ref} carries no build stamp in its package.json; a release does`);
+  }
+  const expect = spec === undefined ? stamp.commit : commit;
+  const source = spec === undefined ? `${ref} = ${sha} (a build of ${stamp.commit}), reached inside as ${INSTALL_SPEC} through /src.git` : `${spec} from GitHub${commit ? `, expected to be a build of ${commit}` : ""}`;
+  console.log(`dog ring: ${source}; docker ${engine}; image ${image}; dog ${AGENT_PACKAGE} at its current version${dryRun ? "; dry run: stops before the prompt" : ""}`);
+
+  // The key and the yes, before anything is built or pulled.
+  if (!dryRun) {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      console.error("hermetic: the dog ring needs ANTHROPIC_API_KEY in its environment: Claude Code's key, and the one the dog's home will hold; export it and run again, or --dry-run, which needs none");
+      process.exit(2);
+    }
+    console.log(
+      [
+        "",
+        "the dog ring spends the shepherd's tokens.",
+        `  one Claude Code session in print mode on its default model with ${DOG_TOOLS}, walking journey 1 in a dozen or two turns: on the order of a dollar or two,`,
+        `  and never more than $${budget} (--max-budget-usd; --budget changes it). The key goes to the container as an environment variable and to nothing else of this ring;`,
+        `  ${image} is pulled if it is not here, and the container reaches npm, GitHub, and Anthropic over this machine's network.`,
+      ].join("\n"),
+    );
+    if (yes) console.log("  --yes: not asking");
+    else {
+      if (!process.stdin.isTTY) {
+        console.error("hermetic: the dog ring asks before it spends, and stdin is not a terminal; pass --yes to answer ahead. Nothing was built or spent");
+        process.exit(2);
+      }
+      const answer = await ask("run it? [y/N] ");
+      if (!/^y(es)?$/i.test(answer)) {
+        console.error("hermetic: not run; nothing was built or spent");
+        process.exit(2);
+      }
+    }
+  }
+
+  // The build context: the ref as refs/heads/release of a bare repository (an empty directory for the spec, which needs none), this script, and the Dockerfile.
+  const context = mkdtempSync(join(tmpdir(), "sheep-dog-"));
+  const bare = join(context, "src.git");
+  const tag = ringTag(image, "dog-");
+  const unchecked = [];
+  let failure;
+  let claudeVersion = "?";
+  try {
+    if (spec === undefined) {
+      gitIn(context)("init", "--quiet", "--bare", "src.git");
+      gitIn(repo)("push", "--quiet", bare, `${sha}:refs/heads/release`);
+      gitIn(bare)("symbolic-ref", "HEAD", "refs/heads/release");
+    } else mkdirSync(bare);
+    copyFileSync(fileURLToPath(import.meta.url), join(context, "hermetic.mjs"));
+    copyFileSync(join(root, "scripts", "hermetic", "Dockerfile"), join(context, "Dockerfile"));
+    console.log(`context: ${context}: src.git (${spec === undefined ? `${spawnSync("du", ["-sh", bare], { encoding: "utf8" }).stdout.split("\t")[0]}, the ref as refs/heads/release` : "empty; the spec needs no repository"}), hermetic.mjs, Dockerfile`);
+
+    console.log(`\n${image} + ${AGENT_PACKAGE}:`);
+    const buildSeconds = await buildImage(context, image, tag, [`AGENT=${AGENT_PACKAGE}`]);
+    console.log(`  built ${tag} in ${buildSeconds}s`);
+    const probed = await run("docker", ["run", "--rm", "--init", tag, "sh", "-c", probeScript([`printf 'claude %s at %s, run as %s\\n' "$(claude --version | cut -d' ' -f1)" "$(command -v claude)" "$(id -un)"`])]);
+    if (probed.code !== 0) throw new Error(`the container is not bare (exit ${probed.code}):\n${probed.stdout}${probed.stderr}`.trimEnd());
+    for (const line of probed.stdout.trim().split("\n")) console.log(`  ${line}`);
+    claudeVersion = /^claude (\S+)/m.exec(probed.stdout)?.[1] ?? "?";
+
+    // The container: this script's other half, the key as a variable docker reads from this process's environment, never an argument.
+    const name = `sheep-dog-${process.pid}`;
+    const inside = ["node", "/ring/hermetic.mjs", "--ring", "dog", "--inside", "--budget", String(budget), ...(spec === undefined ? ["--redirect"] : []), ...(expect ? ["--expect", expect] : []), ...(dryRun ? ["--dry-run"] : [])];
+    const runArgs = ["run", "--rm", "--init", "--name", name, ...(dryRun ? [] : ["-e", "ANTHROPIC_API_KEY"]), tag, ...inside];
+    console.log(`\n  docker ${runArgs.join(" ")}`);
+    let killed;
+    const kill = (why) => {
+      killed = why;
+      spawnSync("docker", ["kill", name], { stdio: "ignore" });
+    };
+    const onSignal = () => kill("interrupted");
+    process.once("SIGINT", onSignal);
+    process.once("SIGTERM", onSignal);
+    const timer = setTimeout(() => kill(`${timeout} minutes passed (--timeout)`), timeout * 60_000);
+    const started = Date.now();
+    let code;
+    try {
+      code = await runIndented("docker", runArgs, {}, "  ");
+    } finally {
+      clearTimeout(timer);
+      process.off("SIGINT", onSignal);
+      process.off("SIGTERM", onSignal);
+    }
+    const seconds = ((Date.now() - started) / 1000).toFixed(0);
+    if (killed) throw new Error(`the container was killed after ${seconds}s: ${killed}`);
+    if (code !== 0) throw new Error(`the container exited ${code} after ${seconds}s; its output is above`);
+    console.log(`\n${image}: ok (build ${buildSeconds}s, container ${seconds}s)`);
+  } catch (error) {
+    failure = error;
+  } finally {
+    if (keep) console.log(`\nkept: ${context}`);
+    else rmSync(context, { recursive: true, force: true });
+  }
+  unchecked.push(
+    `that any dog but Claude Code ${claudeVersion} would find its way: --agent ${DOG_AGENT} is the only value (pi is the second dog, deliberately open)`,
+    `that a second image holds: ${image} alone (the machine ring walks node:22-slim and node:24-slim)`,
+    `that a person typed the sentence and answered the dog: the prompt went in print mode with --allowedTools ${DOG_TOOLS} and --permission-prompts none, so nothing could ask and anything that would was denied and reported`,
+    "that the dog asked for the key: ANTHROPIC_API_KEY was in the container's environment from the start, so journey 1 step 2's ask was met ahead",
+    "that a user without root can do it: the container ran as root, the image's default; Claude Code refuses --dangerously-skip-permissions as root, so the dog's tools came by --allowedTools",
+    "that the skill the dog read is the ref's: npx skills add clones main of github.com/dglazkov/sheep, as it does for a user",
+    spec === undefined
+      ? `that github.com serves ${INSTALL_SPEC}: the container's git was told github.com/dglazkov/sheep is /src.git, the ref exported as refs/heads/release (the ring given the spec installs from GitHub)`
+      : `that the release commit has ${expect ?? "a known commit"} as a parent: no repository to read; \`git log release\` answers it${expect ? "" : "; with no --commit the stamp was printed, not checked"}`,
+    "that the dog's network is a user's: Claude Code, npm, GitHub, and the registry were reached over this machine's network",
+  );
+  if (dryRun) unchecked.push("everything from the prompt on: --dry-run stopped before it, and no key was in the container");
+  console.log("\nnot checked by the dog ring:");
+  for (const item of unchecked) console.log(`  - ${item}`);
+  console.log(`image kept: ${tag} (docker image rm to drop it)`);
+  if (failure) {
+    console.log(`\ndog ring: FAILED: ${failure.message}`);
+    process.exit(1);
+  }
+  console.log(`\ndog ring: ${dryRun ? "dry run ok (stopped before the prompt)" : "ok"}`);
+}
+
+/** The transcript, rendered from Claude Code's stream-json as it arrives: what the dog said, each tool call, the first lines of each result, and the result event kept. */
+class Transcript {
+  constructor(print) {
+    this.print = print;
+    this.result = undefined;
+    this.tools = 0;
+  }
+
+  line(text) {
+    if (!text.trim()) return;
+    let event;
+    try {
+      event = JSON.parse(text);
+    } catch {
+      this.print(`  ? ${text.slice(0, 200)}`);
+      return;
+    }
+    this.event(event);
+  }
+
+  event(event) {
+    const type = event.type;
+    if (type === "system" && event.subtype === "init") {
+      const skills = [...(event.skills ?? []), ...(event.slash_commands ?? [])].map(String);
+      this.print(`  init: claude ${event.claude_code_version ?? "?"}, model ${event.model}, ${(event.tools ?? []).length} tools, permission mode ${event.permissionMode}, the sheep skill ${skills.some((skill) => skill.includes("sheep")) ? "listed" : "not listed"}`);
+    } else if (type === "assistant") {
+      for (const block of event.message?.content ?? []) {
+        if (block.type === "text" && block.text.trim()) this.print(`  dog: ${block.text.trim().split("\n").join("\n       ")}`);
+        else if (block.type === "tool_use") {
+          this.tools++;
+          this.print(`  ${block.name}: ${Transcript.call(block)}`);
+        }
+      }
+    } else if (type === "user") {
+      for (const block of event.message?.content ?? []) {
+        if (block.type !== "tool_result") continue;
+        const text = typeof block.content === "string" ? block.content : (block.content ?? []).map((part) => part.text ?? "").join("\n");
+        const lines = text.trimEnd().split("\n");
+        const shown = lines.slice(0, 12).map((line) => (line.length > 200 ? `${line.slice(0, 200)}…` : line));
+        this.print(`    ${block.is_error ? "error" : "→"} ${shown.join("\n    | ")}${lines.length > 12 ? `\n    … ${lines.length - 12} more lines` : ""}`);
+      }
+    } else if (type === "result") this.result = event;
+  }
+
+  static call(block) {
+    const input = block.input ?? {};
+    if (block.name === "Bash") return `$ ${input.command}${input.description ? `  # ${input.description}` : ""}`;
+    if (typeof input.file_path === "string") return input.file_path;
+    return JSON.stringify(input).slice(0, 300);
+  }
+}
+
+/**
+ * The dog ring, inside the container: the skill, the redirect, the exact
+ * command, the run rendered as a transcript, and the assertions after it,
+ * all in one HOME. Prints nothing that holds the key.
+ */
+async function dogInside({ dryRun, redirect, expect, budget }) {
+  if (root !== "/" || !existsSync("/ring/hermetic.mjs") || !existsSync("/.dockerenv")) {
+    console.error("hermetic: --inside is the container's half of the dog ring; run pnpm hermetic --ring dog");
+    process.exit(2);
+  }
+  const env = process.env;
+  const key = env.ANTHROPIC_API_KEY;
+  const print = (text) => console.log(key ? text.split(key).join("<ANTHROPIC_API_KEY>") : text);
+  const home = homedir();
+  const work = join(home, "work");
+  const tilde = (path) => path.replace(home, "~");
+  const ok = (step, command, note) => print(`ok    ${step.padEnd(8)} ${command}${note ? `  → ${note}` : ""}`);
+  const fail = (step, command, result) => {
+    print(`\nFAIL  ${step}: ${command} (exit ${result.code})`);
+    if (result.stdout?.trim()) print(`--- stdout ---\n${result.stdout.trimEnd()}`);
+    if (result.stderr?.trim()) print(`--- stderr ---\n${result.stderr.trimEnd()}`);
+    process.exit(1);
+  };
+
+  // Before the dog: no sheep, no ~/.sheep, no working directory.
+  const before = spawnSync("sh", ["-c", "command -v sheep"], { encoding: "utf8" }).stdout.trim();
+  if (before || existsSync(join(home, ".sheep")) || existsSync(work)) fail("before", `command -v sheep; ls ${tilde(join(home, ".sheep"))} ${tilde(work)}`, { stdout: before, stderr: "sheep is in the container before the dog", code: 1 });
+  mkdirSync(work);
+  ok("before", `command -v sheep; ls ${tilde(join(home, ".sheep"))}`, `nothing; ${tilde(work)} made, empty`);
+
+  // The skill, from main on GitHub, as a user's would come; before the redirect, which is npm's.
+  const skillStarted = Date.now();
+  const added = await run(SKILLS_ADD[0], SKILLS_ADD.slice(1), { cwd: work, env });
+  const skillSeconds = ((Date.now() - skillStarted) / 1000).toFixed(0);
+  const skillDir = join(work, ".claude", "skills", "sheep");
+  const skillFile = join(skillDir, "SKILL.md");
+  if (added.code !== 0 || !existsSync(skillFile)) fail("skill", SKILLS_ADD.join(" "), { ...added, stderr: `${added.stderr}\nexpected ${skillFile}` });
+  const skillText = readFileSync(skillFile, "utf8");
+  let versus = "";
+  if (redirect) {
+    const refs = spawnSync("git", ["--git-dir", "/src.git", "show", "release:.agents/skills/sheep/SKILL.md"], { encoding: "utf8" }).stdout;
+    versus = skillText.trim() === refs.trim() ? "; the same text as the ref's .agents/skills/sheep/SKILL.md" : "; not the ref's text (main's, from GitHub)";
+  }
+  ok("skill", SKILLS_ADD.join(" "), `${skillSeconds}s; ${tilde(skillFile)} (${lstatSync(skillDir).isSymbolicLink() ? "a link" : "a real directory, copied"}, ${skillText.length} bytes)${versus}; in ${tilde(work)}: ${readdirSync(work).sort().join(", ")}`);
+
+  // The redirect: the string the dog types reaches /src.git, where the ref is refs/heads/release.
+  if (redirect) {
+    GITHUB_URLS.forEach((url, index) => gitIn(home)("config", "--global", ...(index === 0 ? [] : ["--add"]), "url.file:///src.git.insteadOf", url));
+    const listed = spawnSync("git", ["ls-remote", GITHUB_URLS[0], "refs/heads/release"], { encoding: "utf8" });
+    const sha = (listed.stdout || "").split("\t")[0];
+    if (listed.status !== 0 || !/^[0-9a-f]{40}$/.test(sha)) fail("redirect", `git ls-remote ${GITHUB_URLS[0]} refs/heads/release`, { stdout: listed.stdout, stderr: listed.stderr, code: listed.status ?? 1 });
+    ok("redirect", `git config --global url.file:///src.git.insteadOf ${GITHUB_URLS[0]} (and ${GITHUB_URLS.length - 1} more forms)`, `git ls-remote ${GITHUB_URLS[0]} refs/heads/release → ${sha.slice(0, 7)}`);
+  }
+
+  // The command, exactly; the sentence is journey 1's and nothing else is said.
+  const claudeArgs = ["-p", SENTENCE, "--allowedTools", DOG_TOOLS, "--permission-prompts", "none", "--max-budget-usd", String(budget), "--output-format", "stream-json", "--verbose"];
+  print(`\ndog: cd ${work} && claude ${claudeArgs.map(quote).join(" ")}`);
+  print(`     stdin /dev/null; ANTHROPIC_API_KEY ${key ? "in" : "not in"} the environment; the skill at ${tilde(skillDir)}`);
+  if (dryRun) {
+    print("dry run: stopping before the prompt");
+    return;
+  }
+  if (!key) fail("dog", "claude -p …", { stdout: "", stderr: "ANTHROPIC_API_KEY is not in the container's environment", code: 2 });
+
+  const transcript = new Transcript(print);
+  const started = Date.now();
+  print("");
+  const dog = await new Promise((resolveRun, reject) => {
+    const child = spawn("claude", claudeArgs, { cwd: work, env, stdio: ["ignore", "pipe", "pipe"] });
+    let pending = "";
+    const err = [];
+    child.stdout.on("data", (chunk) => {
+      pending += chunk.toString("utf8");
+      const lines = pending.split("\n");
+      pending = lines.pop();
+      for (const line of lines) transcript.line(line);
+    });
+    child.stderr.on("data", (chunk) => err.push(chunk));
+    child.once("error", reject);
+    child.once("close", (code, signal) => {
+      if (pending) transcript.line(pending);
+      resolveRun({ code: code ?? (signal ? 1 : 0), stderr: Buffer.concat(err).toString("utf8") });
+    });
+  });
+  const seconds = ((Date.now() - started) / 1000).toFixed(0);
+  const result = transcript.result;
+  if (dog.stderr.trim()) print(`  stderr: ${dog.stderr.trim().split("\n").slice(0, 20).join("\n  stderr: ")}`);
+  const denials = result?.permission_denials ?? [];
+  const summary = result
+    ? `${result.subtype}${result.is_error ? " (error)" : ""}, ${result.num_turns} turns, $${Number(result.total_cost_usd ?? 0).toFixed(2)}, ${transcript.tools} tool calls, ${denials.length} denials, model ${Object.keys(result.modelUsage ?? {}).join("+") || "?"}`
+    : "no result event";
+  print(`\ndog: exit ${dog.code} after ${seconds}s; ${summary}`);
+  for (const denial of denials) print(`  denied: ${denial.tool_name} ${JSON.stringify(denial.tool_input ?? {}).slice(0, 200)}`);
+  if (result?.result) print(`\nthe dog's report:\n  ${String(result.result).trim().split("\n").join("\n  ")}\n`);
+  const dogFailed = dog.code !== 0 || result === undefined || result.is_error === true;
+
+  // Afterwards, in the same HOME: the ref's build on PATH, a sheep, the local home answering with the key held, and a stop that ends.
+  const sheep = (args) => run("sheep", args, { cwd: work, env });
+  const version = await sheep(["--version"]);
+  const stampCommit = /^sheep ([0-9a-f]+) \(/.exec(version.stdout)?.[1];
+  if (version.code !== 0 || !stampCommit || version.stderr !== "") fail("after", "sheep --version", version);
+  if (expect && !expect.startsWith(stampCommit)) fail("after", "sheep --version", { ...version, stderr: `expected a build of ${expect}` });
+  ok("after", "sheep --version", `${version.stdout.trim()}${expect ? `, a build of ${expect}` : ""}; at ${spawnSync("sh", ["-c", "command -v sheep"], { encoding: "utf8" }).stdout.trim()}`);
+  const listed = await sheep(["ls", "--json"]);
+  let sessions;
+  try {
+    sessions = JSON.parse(listed.stdout);
+  } catch {
+    fail("after", "sheep ls --json", listed);
+  }
+  if (listed.code !== 0 || !Array.isArray(sessions) || sessions.length === 0) fail("after", "sheep ls --json", { ...listed, stderr: `${listed.stderr}\nexpected at least one sheep` });
+  ok("after", "sheep ls --json", `${sessions.length} sheep: ${sessions.map((session) => `${session.id} (${session.state ?? "?"}${session.name ? `, ${session.name}` : ""})`).join("; ")}${listed.stderr.trim() ? `; stderr: ${listed.stderr.trim()}` : ""}`);
+  const homed = await sheep(["home", "--json"]);
+  let report;
+  try {
+    report = JSON.parse(homed.stdout);
+  } catch {
+    fail("after", "sheep home --json", homed);
+  }
+  if (homed.code !== 0 || report.local !== true || report.running !== true || !/^http:\/\/127\.0\.0\.1:\d+$/.test(report.home) || typeof report.pid !== "number") fail("after", "sheep home --json", { ...homed, stderr: `${homed.stderr}\nexpected the local home running` });
+  if (expect && !expect.startsWith(report.stamp?.commit ?? "")) fail("after", "sheep home --json", { ...homed, stderr: `the home's stamp is ${report.stamp?.commit}; expected a build of ${expect}` });
+  const devVars = join(home, ".sheep", "local", ".dev.vars");
+  const names = existsSync(devVars) ? readFileSync(devVars, "utf8").split("\n").map((line) => line.split("=")[0].trim()).filter(Boolean) : [];
+  const mode = existsSync(devVars) ? statSync(devVars).mode & 0o777 : undefined;
+  if (!names.includes("SHEEP_ANTHROPIC_API_KEY") || names.includes("SHEEP_PROVIDER") || mode !== 0o600) fail("after", `stat ${tilde(devVars)}`, { stdout: `${names.join(", ")}; mode ${mode?.toString(8)}`, stderr: "expected SHEEP_ANTHROPIC_API_KEY held, no SHEEP_PROVIDER, mode 600: the key from the environment, a real model", code: 1 });
+  ok("after", "sheep home --json", `${report.home} running, pid ${report.pid}, stamp ${report.stamp?.commit}; ${tilde(devVars)} mode ${mode.toString(8)} holds ${names.join(", ")}`);
+  const stopStarted = Date.now();
+  const stopped = await sheep(["home", "stop"]);
+  const stopSeconds = ((Date.now() - stopStarted) / 1000).toFixed(1);
+  if (stopped.code !== 0 || stopped.stdout !== `stopped the local home at ${report.home}\n`) fail("after", "sheep home stop", stopped);
+  ok("after", "sheep home stop", `${stopped.stdout.trim()} in ${stopSeconds}s${stopped.stderr.trim() ? `; stderr: ${stopped.stderr.trim()}` : ""}`);
+  print(`after: ${tilde(work)}: ${readdirSync(work).sort().join(", ")}; ${tilde(join(home, ".sheep"))}: ${readdirSync(join(home, ".sheep")).sort().join(", ")}`);
+  if (dogFailed) {
+    print(`\nFAIL  dog: claude exited ${dog.code}${result ? `, ${result.subtype}${result.is_error ? ", is_error" : ""}` : ", no result event"}; the assertions after it held`);
+    process.exit(1);
+  }
+  print("\ninside: ok");
+}
+
 async function main() {
   const parsed = parseArgs(process.argv.slice(2));
   const { ring: ringName, ref, repo, spec, commit, keep } = parsed;
   if (ringName === "machine") {
     await machineRing(parsed);
+    return;
+  }
+  if (ringName === "dog") {
+    if (parsed.inside) await dogInside(parsed);
+    else await dogRing(parsed);
     return;
   }
   let ring;

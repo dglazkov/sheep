@@ -7,7 +7,7 @@
  * start, stop, and start on demand the checkout can do with its own
  * wrangler over `packages/cell`.
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
@@ -65,6 +65,28 @@ async function deadPid(): Promise<number> {
   return child.pid!;
 }
 
+/**
+ * A zombie: a Node that exited under a parent that never waits for it
+ * (`exec sleep` takes the shell's place and reaps nothing), which is what
+ * a detached daemon becomes in a container with no init. `kill(pid, 0)`
+ * keeps answering for it until the parent goes.
+ */
+async function zombiePid(): Promise<{ pid: number; reap: () => void }> {
+  const parent = spawn("sh", ["-c", `"${process.execPath}" -e "console.log(process.pid)" & exec sleep 60`], { stdio: ["ignore", "pipe", "ignore"] });
+  let out = "";
+  const pid = await new Promise<number>((resolve) => {
+    parent.stdout.on("data", (chunk: Buffer) => {
+      out += chunk.toString("utf8");
+      if (out.includes("\n")) resolve(Number(out.trim()));
+    });
+  });
+  const state = () => (spawnSync("ps", ["-o", "stat=", "-p", String(pid)], { encoding: "utf8" }).stdout.trim() || "?")[0];
+  const deadline = Date.now() + 5_000;
+  while (state() !== "Z" && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 25));
+  expect(state()).toBe("Z");
+  return { pid, reap: () => void parent.kill("SIGKILL") };
+}
+
 async function record(w: World, fields: { pid: number | null; port: number }): Promise<string> {
   await rm(w.local, { recursive: true, force: true });
   await mkdir(w.local, { recursive: true });
@@ -110,6 +132,28 @@ describe("the local home's record", () => {
     expect(stop.code).toBe(0);
     expect(stop.stdout).toBe(`the local home at ${url} was not running\n`);
     expect(JSON.parse(await readFile(join(w.local, "home.json"), "utf8"))).toMatchObject({ pid: null });
+  });
+
+  it("is stale when its pid is a zombie, though kill(pid, 0) answers for it: not running, and stop clears it at once", async () => {
+    const w = await world();
+    worlds.push(w);
+    const zombie = await zombiePid();
+    const sheepish = await listen("sheep\n");
+    try {
+      // The port answers sheep and the pid is in the table; only the state says the daemon is gone, as it is in a container with no init.
+      const url = await record(w, { pid: zombie.pid, port: sheepish.port });
+      expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toMatchObject({ home: url, running: false, pid: null });
+      const started = Date.now();
+      const stop = await w.sheep("home", "stop");
+      expect(stop.code).toBe(0);
+      expect(stop.stdout).toBe(`the local home at ${url} was not running\n`);
+      expect(stop.stderr).toBe("");
+      expect(Date.now() - started).toBeLessThan(5_000);
+      expect(JSON.parse(await readFile(join(w.local, "home.json"), "utf8"))).toMatchObject({ pid: null });
+    } finally {
+      sheepish.server.close();
+      zombie.reap();
+    }
   });
 
   it("is stale when its pid is alive but the port answers as something else; running when the port answers sheep", async () => {

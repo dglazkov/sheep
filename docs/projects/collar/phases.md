@@ -22,7 +22,7 @@ carries them.
 
 ---
 
-**Where we are: collar phases 0 to 2 CLOSED; collar phase 3 PART-DONE; collar phase 4 NOT STARTED. Next: collar phase 4, the dog ring, built up to its ⚑ run; then the two asks.** Planned 7 Sep 2026, the day after pasture closed, from a brainstorm with the shepherd; the shepherd's calls are in the journey's front matter. Phases 0 to 2 built and verified the same morning. Phase 3 built and proved here: the machine ring green on two images, the guard refusing a broken bundle, the workflow written; its walk waits on the shepherd for the first push of `release` and the workflow, no money. Phase 4's run waits on the shepherd for the tokens the dog ring spends.
+**Where we are: collar phases 0 to 2 CLOSED; collar phases 3 and 4 PART-DONE. Next: the two asks, then collar phase 3's walk (the push, the workflow's two jobs, `npx … setup` from GitHub) and collar phase 4's run.** Planned 7 Sep 2026, the day after pasture closed, from a brainstorm with the shepherd; the shepherd's calls are in the journey's front matter. Phases 0 to 2 built and verified the same morning. Phase 3 built and proved here: the machine ring green on two images, the guard refusing a broken bundle, the workflow written; its walk waits on the shepherd for the first push of `release` and the workflow, no money. Phase 4 built and dry-run to the printed `claude -p` command; its run waits on the shepherd's key and a yes to a dollar or two of tokens. Nothing waits on work.
 
 The order is dependency order. Phase 0 is the release itself, the two
 bundles and the Worker in a tree npm can install, and the package ring
@@ -262,4 +262,13 @@ output. `.claude/skills/conduct/status.sh collar` prints `clean`.
 **⚑** the dog ring spends the shepherd's tokens, on the order of a
 dollar or two per run, asked with the estimate.
 
-**Status: NOT STARTED.**
+**Status: PART-DONE.** 2026-09-07. The dog ring built and dry-run: the image with Claude Code 2.1.263, the probe, the skill added by name, the README's spec redirected to the ref inside the container, the exact `claude -p` command printed and stopped before; the run itself and journey 1's real walk wait on the shepherd's key and the tokens it spends.
+
+**Findings:**
+
+- **2026-09-07 — Claude Code 2.1.263 refuses `--dangerously-skip-permissions` and `bypassPermissions` as root, and the dog ring runs as root anyway:** `--allowedTools Bash,Read,Edit,Write,Glob,Grep` works as root, and `--permission-prompts none` denies and reports anything that would prompt, so print mode cannot hang.
+- **2026-09-07 — In repo mode a git `insteadOf` rule makes the README's spec install the ref:** `url.file:///src.git.insteadOf https://github.com/dglazkov/sheep.git` in the container's `~/.gitconfig`, so `npx github:dglazkov/sheep#release setup` reported that spec and the ref's stamp; the ring's "not checked" says so.
+- **2026-09-07 — Collar phase 3's stop debt is paid: a zombie counts as gone.** `kill(pid, 0)` succeeds on a zombie on macOS too; `alive()` reads `/proc/<pid>/stat` or `ps -o stat=`, and the post-SIGKILL wait is three seconds, then `unreaped` is reported. A test makes a zombie with `exec sleep`.
+- **2026-09-07 — `npm install -g @anthropic-ai/claude-code` leaves 97 MB in `~/.npm`,** which the fresh-`HOME` probe would have refused; the Dockerfile's agent layer removes it. The skills CLI copies the skill into `.claude/skills/sheep` as a real directory, so setup's doorway there is kept, not linked. Cost: 19 minutes of a subagent, 10 of verification.
+- **2026-09-07 — Open: `npx skills add dglazkov/sheep` without `--skill sheep` installs `conduct` and `pi-bump` too,** the repo's own `.claude/skills`, copied as real directories. The ring names the one skill; a dog told the bare command gets the conductor's skills. Waits on a decision about where the repo's own skills live.
+- **2026-09-07 — Open: the dog ring's run, and journey 1's real walk.** Waits on the shepherd's key in the environment and a yes to the tokens: one Claude Code session in print mode, on the order of a dollar or two, capped at five; `pnpm hermetic --ring dog github:dglazkov/sheep#release` once `release` is pushed.

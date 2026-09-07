@@ -277,9 +277,10 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
       return 0;
     }
     if (sub === "stop") {
-      const { stopped, record } = await stopLocalHome();
+      const { stopped, record, unreaped } = await stopLocalHome();
+      if (unreaped !== undefined) output.err(`sheep: pid ${unreaped} is still in the process table after SIGKILL (nothing reaps it?); the record's pid is cleared\n`);
       if (parsed.json) {
-        output.out(`${JSON.stringify({ stopped, home: record?.url ?? null })}\n`);
+        output.out(`${JSON.stringify({ stopped, home: record?.url ?? null, ...(unreaped === undefined ? {} : { unreaped }) })}\n`);
         return 0;
       }
       output.out(record === undefined ? "no local home has been started here\n" : stopped ? `stopped the local home at ${record.url}\n` : `the local home at ${record.url} was not running\n`);
