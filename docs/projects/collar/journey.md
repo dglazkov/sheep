@@ -1,8 +1,8 @@
 ---
-status: planned
+status: partial
 since: 2026-09-07
 see: collar
-note: "written 7 Sep 2026, the day after pasture closed, from a brainstorm with the shepherd: how a person gives their sheepdog the `sheep` command. The shepherd's calls: the command is published the way isocan is, a `release` branch on GitHub built from `main`, installed with npm's git installer, and nothing on npm; the pi fork ships inside the bundle; a home on the dog's own machine comes before any account; the deployed home from the package is the next project, not this one; and the release is proved by a hermetic install, in an environment as close to the user's as the repo can make, before it is pushed and again after. Nothing built."
+note: "written 7 Sep 2026, the day after pasture closed, from a brainstorm with the shepherd: how a person gives their sheepdog the `sheep` command. The shepherd's calls: the command is published the way isocan is, a `release` branch on GitHub built from `main`, installed with npm's git installer, and nothing on npm; the pi fork ships inside the bundle; a home on the dog's own machine comes before any account; the deployed home from the package is the next project, not this one; and the release is proved by a hermetic install, in an environment as close to the user's as the repo can make, before it is pushed and again after. Collar phase 0 built the same morning: the two bundles with pi's own esbuild options, the Worker from wrangler's dry run, the release script making a two-parent ref without pushing, and the package ring installing that ref through npm's git installer into a fresh prefix and walking journey 1 steps 3, 4, and 7 with the faux provider; the ring held."
 ---
 
 # Collar — the journeys
@@ -60,10 +60,11 @@ nothing else.
    reply streams from a real model and the command exits. `sheep ls`
    lists the sheep. `sheep status <id>` and `sheep log <id>` are lamb
    journey 5's.
-4. The dog runs `sheep attach <id> -- "And now?"`; the reply streams
-   through pi's client, from the bundle, with no checkout of pi anywhere
-   on the machine. The person runs `sheep attach <id>` at their own
-   terminal and gets pi's interactive terminal on the same sheep.
+4. The dog runs `sheep attach <id> -- "And now?"` and the reply
+   streams. The person runs `sheep attach <id>` at their own terminal
+   and gets pi's interactive terminal on the same sheep, from the
+   bundle, with no checkout of pi anywhere on the machine; the same
+   command with no terminal attaches through that bundle and says so.
 5. The dog runs `sheep --agent-help` and reads the guide: the verbs, the
    home, what needs a person, in the words this build ships. The skill
    said to; it says little else.

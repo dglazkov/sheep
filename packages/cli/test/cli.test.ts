@@ -9,9 +9,9 @@ const run = promisify(execFile);
 const bin = new URL("../bin/sheep.js", import.meta.url).pathname;
 
 describe("sheep", () => {
-  it("prints its version", async () => {
+  it("prints its version: no build stamp in a checkout", async () => {
     const { stdout } = await run(process.execPath, [bin, "--version"]);
-    expect(stdout).toMatch(/^sheep \d+\.\d+\.\d+\n$/);
+    expect(stdout).toBe("sheep 0.0.0-checkout\n");
   });
 
   it("resolves the home from the config file, the environment, and --home in that order", async () => {

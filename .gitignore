@@ -146,3 +146,7 @@ vite.config.ts.timestamp-*
 .wrangler
 .dev.vars
 *.tsbuildinfo
+
+# collar: the release's built files. main is sources only; scripts/release.mjs commits these onto the release branch.
+/dist/
+/home/

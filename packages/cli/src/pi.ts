@@ -1,16 +1,22 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startBridge } from "./bridge.js";
 
 /**
- * pi's development CLI, run from the pinned checkout's source. Since #9132
- * the published `pi` no longer dispatches `client`; the command lives in
- * `src/experimental/cli.ts`, and pi's own tests run it exactly this way:
- * Node strips the types, and pi's `source-resolver` maps the workspace
- * packages to their sources.
+ * pi's experimental CLI, whole. Installed from the release, it is the
+ * bundle `dist/pi-client.mjs` beside the running `dist/sheep.mjs`, built
+ * by `scripts/bundle.mjs` from the fork; there is nothing to resolve, so
+ * it is spawned bare. In a checkout it is the pinned fork's source: since
+ * #9132 the published `pi` no longer dispatches `client`; the command
+ * lives in `src/experimental/cli.ts`, and pi's own tests run it exactly
+ * this way, Node stripping the types and pi's `source-resolver` mapping
+ * the workspace packages to their sources.
  */
 export function piCliArgs(): string[] {
+  const bundled = join(dirname(fileURLToPath(import.meta.url)), "pi-client.mjs");
+  if (existsSync(bundled)) return [bundled];
   // The package's entry is dist/index.js, reachable only through its ESM export map; src sits beside dist.
   const packageDir = dirname(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))));
   const experimental = join(packageDir, "src", "experimental");

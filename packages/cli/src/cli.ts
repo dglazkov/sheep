@@ -1,4 +1,4 @@
-import { createRequire } from "node:module";
+import { readFileSync } from "node:fs";
 import { loadConfig } from "./config.js";
 import { writeSessionFile } from "./export.js";
 import { runAbort, runLog, runPrompt, runStatus, runWait } from "./herd.js";
@@ -6,8 +6,22 @@ import { Home } from "./home.js";
 import { PASTURE_NAME, runPasture } from "./pasture.js";
 import { runPiClient } from "./pi.js";
 
-const require = createRequire(import.meta.url);
-const { version } = require("../package.json") as { version: string };
+/**
+ * The build stamp, from the manifest beside the running code: the release
+ * manifest above `dist/sheep.mjs` carries `sheep.commit` and
+ * `sheep.builtAt`, written by `scripts/release.mjs`; a checkout's
+ * `packages/cli/package.json` carries no stamp, and says so.
+ */
+export function version(): string {
+  try {
+    const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { sheep?: { commit?: unknown; builtAt?: unknown } };
+    const stamp = manifest.sheep;
+    if (stamp && typeof stamp.commit === "string" && typeof stamp.builtAt === "string") return `sheep ${stamp.commit} (${stamp.builtAt})`;
+  } catch {
+    // no manifest beside the code: a checkout
+  }
+  return "sheep 0.0.0-checkout";
+}
 
 const USAGE = `sheep — pi, running in a cell
 
@@ -109,7 +123,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     return 0;
   }
   if (command === "--version" || command === "-v") {
-    process.stdout.write(`sheep ${version}\n`);
+    process.stdout.write(`${version()}\n`);
     return 0;
   }
   const config = await loadConfig({ home: parsed.home });

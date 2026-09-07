@@ -22,7 +22,7 @@ carries them.
 
 ---
 
-**Where we are: collar phase 0 NOT STARTED. Next: collar phase 0, the bundles and the release tree.** Planned 7 Sep 2026, the day after pasture closed, from a brainstorm with the shepherd; the shepherd's calls are in the journey's front matter. Nothing waits on a person until collar phase 3, which asks once for the `release` branch and the workflow, and collar phase 4, which spends tokens.
+**Where we are: collar phase 0 CLOSED; collar phases 1 to 4 NOT STARTED. Next: collar phase 1, the local home.** Planned 7 Sep 2026, the day after pasture closed, from a brainstorm with the shepherd; the shepherd's calls are in the journey's front matter. Phase 0 built and verified the same morning: the release exists as a ref in this repository, and the package ring holds against it. Nothing waits on a person until collar phase 3, which asks once for the `release` branch and the workflow, and collar phase 4, which spends tokens.
 
 The order is dependency order. Phase 0 is the release itself, the two
 bundles and the Worker in a tree npm can install, and the package ring
@@ -83,14 +83,24 @@ has exactly the files the design lists and whose commit's second parent
 is `HEAD`; `git ls-tree` of it shows no `packages/`, `vendor/`,
 `.github/`. `pnpm hermetic --ring package <ref>` exits 0 on this machine:
 the installed `sheep --version` prints the stamp; `sheep new -- hello`
-answers `ok`; `sheep attach <id> -- again` streams, and `ps`
-during it, captured by the ring, shows the child running
-`dist/pi-client.mjs` under the ring's prefix; `sheep export` writes a
+answers `ok`; `sheep attach <id> -- again` streams, and `sheep
+attach <id>` with no prompt and no terminal attaches through pi's
+client, `ps` during it, captured by the ring, showing the child
+running `dist/pi-client.mjs` under the ring's prefix; `sheep export` writes a
 file pi's backend opens. `find
 <prefix> -name '*.ts' -path '*earendil*'` is empty. `pnpm test` and
 `pnpm -r typecheck` exit 0, the suites unchanged. **⚑** none.
 
-**Status: NOT STARTED.**
+**Status: CLOSED.** 2026-09-07. The bundles, the Worker, the release ref, and the package ring built; the ring installed the ref through npm's git installer into a fresh prefix and walked journey 1 steps 3, 4, and 7 with the faux provider, verified by the conductor.
+
+**Findings:**
+
+- **2026-09-07 — The client bundle from the fork's `experimental/cli.ts` built and ran first try with pi's own esbuild options.** The one addition is a stub for `chord/bundler`, which reaches esbuild through pi's `server.ts`, a server-side path attach mode never takes.
+- **2026-09-07 — A prompt never spawns pi's client.** `sheep attach <id> -- "…"` is sheep's in-process client; only the promptless attach runs `dist/pi-client.mjs`, which with no TTY attaches, prints `attached`, and exits. The proof and journey 1 step 4 now say so.
+- **2026-09-07 — npm's git installer took the release in three seconds:** twelve files, seven packages beside sheep, no `.git`, no `*.ts`, no build tool; `dist/pi-client.mjs` is 7.1 MiB and `dist/sheep.mjs` 570 KiB. The ring's fresh `HOME` held only an empty `.sheep/local` afterwards.
+- **2026-09-07 — The emitted Worker serves from an installed tree:** `wrangler dev --config <install>/home/wrangler.jsonc --persist-to …` with the checkout's wrangler 4.129.0 answers `sheep` on `GET /`. Collar phase 1's local home is a daemon and a wrangler fetch away.
+- **2026-09-07 — A debt, for collar phase 2: every `sheep` invocation on Node 24 prints `ExperimentalWarning: SQLite`,** because `export.ts` imports `node:sqlite` at load. The ring silences it with `NODE_NO_WARNINGS`; a user will not. A lazy import in `export` ends it.
+- **2026-09-07 — The manifest's pins for photon, jiti, and clipboard are checked against the fork's `package.json` at build time,** so a pi bump that moves them fails `pnpm release` until `release.mjs` follows. Cost: 20 minutes of a subagent, 15 of verification.
 
 ## Phase 1: The local home
 
