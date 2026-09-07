@@ -47,7 +47,7 @@ last criterion.
 
 **Work:** `.github/workflows/release.yml`: in the `release` job, before
 `pnpm release`, build `packages/pen`'s image on the runner and push it
-to `docker.io/dglazkov/sheep-pen:<commit>` with a Docker Hub token from
+to `docker.io/dglazkov2/sheep-pen:<commit>` with a Docker Hub token from
 the repository's secrets; skip the push, and say so, when the secret is
 absent, so a fork's CI still releases a package that cannot deploy.
 `scripts/release.mjs`: the shipped `home/wrangler.jsonc`'s `pen`
@@ -63,7 +63,7 @@ not this phase.
 checkout's own deploys.
 
 **Proof:** The workflow's run on the phase commit pushes the image and
-`docker pull docker.io/dglazkov/sheep-pen:<commit>` succeeds here; the
+`docker pull docker.io/dglazkov2/sheep-pen:<commit>` succeeds here; the
 release built by that run has an image line naming the same commit
 (`git show origin/release:home/wrangler.jsonc`). In workerd, `GET
 /home` carries `build` and a test holds its shape. The package ring
@@ -75,12 +75,12 @@ free.
 **Findings.**
 
 - **2026-09-07 — The stamp rides wrangler's `--define` as a JSON string.** esbuild substitutes inside `typeof`, so `homeBuild()`'s checkout test compiles to a constant in a release and stays a safe global check under `wrangler dev` and the workerd pool, which define nothing.
-- **2026-09-07 — The shipped `pen` environment names `docker.io/dglazkov/sheep-pen:<commit>` and nothing of the checkout's build.** `image_build_context` and `containers[].name` are dropped; the environment's own `name` is still `sheep-pen`, so station phase 1's deploy passes `--name` for both.
+- **2026-09-07 — The shipped `pen` environment names `docker.io/dglazkov2/sheep-pen:<commit>` and nothing of the checkout's build.** `image_build_context` and `containers[].name` are dropped; the environment's own `name` is still `sheep-pen`, so station phase 1's deploy passes `--name` for both.
 - **2026-09-07 — The package ring walked a stamped release: step 6 printed `build.home = build.cli = 1fc8d03 (2026-09-07T22:41:08Z)`.** The stopped-case prose is unchanged: the two build lines print only when `GET /home` answered with the token.
 - **2026-09-07 — A local home's skew line says stop, not deploy.** A local home is the package's Worker from the moment it started, so `sheep home stop` is its fix after `npm install -g`; the station's line is the design's; unstamped sides are reported, never warned about.
 - **2026-09-07 — The workflow built the image in 25 seconds and said `did not push it` without the secret;** both jobs green, `release` naming `sheep-pen:327e623` and the install job's ring showing the stamps equal on the runner. Here it builds for `linux/amd64` under emulation, 403 MB.
 - **2026-09-07 — `pnpm release` is the conductor's to run.** Auto mode's classifier refused it to the subagent, with `--force` and without, since the script moves `refs/heads/release`; the conductor ran the ring, the ref reset after. Cost: 22 minutes of a subagent, 25 of verification.
-- **2026-09-07 — Open: the push and the pull.** `docker pull docker.io/dglazkov/sheep-pen:<commit>` and a workflow-built release's image line wait on the shepherd: a Docker Hub account, a Read & Write access token, `gh secret set DOCKERHUB_TOKEN`; free.
+- **2026-09-07 — Open: the push and the pull.** `docker pull docker.io/dglazkov2/sheep-pen:<commit>` and a workflow-built release's image line wait on the shepherd: a Docker Hub account, a Read & Write access token, `gh secret set DOCKERHUB_TOKEN`; free.
 
 **Status: PART-DONE.** 2026-09-07. Everything but the push built and proved here: the stamped Worker, the shipped config's image line, `GET /home`'s `build`, `sheep home`'s two stamps, and the package ring showing them equal; the workflow's push and the pull from the registry wait on the token the Open finding names.
 

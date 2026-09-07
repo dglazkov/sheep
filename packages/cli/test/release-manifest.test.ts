@@ -80,14 +80,14 @@ describe("the release manifest", () => {
         },
       },
     };
-    expect(IMAGE_REPOSITORY).toBe("docker.io/dglazkov/sheep-pen");
-    expect(imageReference(STAMP.commit)).toBe("docker.io/dglazkov/sheep-pen:194656e");
+    expect(IMAGE_REPOSITORY).toBe("docker.io/dglazkov2/sheep-pen");
+    expect(imageReference(STAMP.commit)).toBe("docker.io/dglazkov2/sheep-pen:194656e");
     const released = shippedConfig(cell, STAMP) as { env: { pen: Record<string, unknown> } } & Record<string, unknown>;
     expect(released).not.toHaveProperty("$schema");
     expect(released).toMatchObject({ name: "sheep", main: "worker.mjs", no_bundle: true, compatibility_date: "2026-08-22" });
     expect(released.env.pen).toEqual({
       name: "sheep-pen",
-      containers: [{ image: "docker.io/dglazkov/sheep-pen:194656e", class_name: "PenContainer", instance_type: "basic", max_instances: 3 }],
+      containers: [{ image: "docker.io/dglazkov2/sheep-pen:194656e", class_name: "PenContainer", instance_type: "basic", max_instances: 3 }],
       vars: { PEN_IDLE: "10m" },
     });
     // No stamp: a checkout build keeps the Dockerfile line, context and name included.

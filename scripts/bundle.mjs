@@ -44,7 +44,7 @@
  * string of the two values the release manifest carries, and `GET /home`
  * reports them as `build`; and the shipped config's `pen` environment
  * names the pen image the same release pushed,
- * `docker.io/dglazkov/sheep-pen:<commit>`, in place of the checkout's
+ * `docker.io/dglazkov2/sheep-pen:<commit>`, in place of the checkout's
  * Dockerfile, with `image_build_context` gone and `containers[].name`
  * left for deploy to set per Worker (a container application's name is
  * account-wide; recast phase 1). Run by hand with no stamp, the Worker is

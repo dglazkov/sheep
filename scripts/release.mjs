@@ -88,9 +88,9 @@ export const RELEASE_OPTIONAL_DEPENDENCIES = {
  * pushes `packages/pen`'s image there tagged with the stamp's commit, and
  * `scripts/bundle.mjs` names that tag in the shipped `home/wrangler.jsonc`,
  * so the package and the image name the same commit. The login user is the
- * namespace, `dglazkov`; the token is the repository's `DOCKERHUB_TOKEN`.
+ * namespace, `dglazkov2`; the token is the repository's `DOCKERHUB_TOKEN`.
  */
-export const IMAGE_REPOSITORY = "docker.io/dglazkov/sheep-pen";
+export const IMAGE_REPOSITORY = "docker.io/dglazkov2/sheep-pen";
 
 /** What ships from HEAD's tree unchanged; everything else at the top level is removed from the release index. */
 export const SHIPPED_FROM_HEAD = ["README.md", "LICENSE"];

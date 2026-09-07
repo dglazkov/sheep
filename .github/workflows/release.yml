@@ -11,7 +11,7 @@
 #            branch changed, and the one that would have caught isocan's #47.
 #
 # Station phase 0: the release job also builds packages/pen's image on the runner and pushes it to Docker Hub as
-# docker.io/dglazkov/sheep-pen:<commit>, the seven characters the release manifest's stamp and the shipped
+# docker.io/dglazkov2/sheep-pen:<commit>, the seven characters the release manifest's stamp and the shipped
 # home/wrangler.jsonc name, so a station deployed from the package pulls the container its bundle was tested with.
 # Nothing deploys here; `sheep home deploy` from the package is station's later phases.
 name: release
@@ -82,13 +82,13 @@ jobs:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           commit="$(git rev-parse HEAD)"
-          image="docker.io/dglazkov/sheep-pen:${commit:0:7}"
+          image="docker.io/dglazkov2/sheep-pen:${commit:0:7}"
           docker build --platform linux/amd64 --tag "$image" packages/pen
           if [ -z "$DOCKERHUB_TOKEN" ]; then
             echo "built $image and did not push it: DOCKERHUB_TOKEN is not in this repository's secrets, so a station deployed from this release has no image to pull"
             exit 0
           fi
-          printf '%s' "$DOCKERHUB_TOKEN" | docker login docker.io --username dglazkov --password-stdin
+          printf '%s' "$DOCKERHUB_TOKEN" | docker login docker.io --username dglazkov2 --password-stdin
           docker push "$image"
           docker logout docker.io
           echo "pushed $image"

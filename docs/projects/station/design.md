@@ -30,7 +30,7 @@ real account.
 | Word | What it is | Where it lives |
 | --- | --- | --- |
 | the station | the deployed home: a Worker, its objects, its container application | the shepherd's account, Worker `sheep` by default, `--name` for another |
-| the image | the pen container's image | `docker.io/dglazkov/sheep-pen:<commit>`, pushed by the release; named by tag in the package's config |
+| the image | the pen container's image | `docker.io/dglazkov2/sheep-pen:<commit>`, pushed by the release; named by tag in the package's config |
 | the stamp | collar's build stamp, on the home too | `GET /home` gains `build: {commit, builtAt}`, set into the Worker at bundle time |
 | `sheep home deploy` | the one path | the CLI, over wrangler from `~/.sheep/tools` and the account API |
 | `sheep home join` | a second machine's way in | the CLI: the address as an argument, the token on stdin |
@@ -152,7 +152,7 @@ walk shows it is not.
 ## The image
 
 The release builds `packages/pen`'s image and pushes it to Docker Hub as
-`docker.io/dglazkov/sheep-pen:<commit>`, on the runner, with a token the
+`docker.io/dglazkov2/sheep-pen:<commit>`, on the runner, with a token the
 shepherd puts in the repository's secrets: one ⚑ step, once. The release
 script rewrites the shipped config's image line to that reference, so
 the package and the image name the same commit, and a station deployed
