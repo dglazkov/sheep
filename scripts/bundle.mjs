@@ -23,8 +23,10 @@
  * bundle that leaks any other import fails here rather than on a user's
  * laptop.
  *
- * Beside the bundles, what the client path reads at runtime relative to
- * its package: pi's built-in theme JSON (`dist/modes/interactive/theme/`,
+ * Beside the bundles, the guide: `packages/cli/agent-guide.md` becomes
+ * `dist/agent-guide.md`, which `sheep --agent-help` prints from beside the
+ * bundle (collar phase 2). And what the client path reads at runtime
+ * relative to its package: pi's built-in theme JSON (`dist/modes/interactive/theme/`,
  * where `getThemesDir()` looks from a package with no `src/`) and the
  * image-resize worker (`dist/image-resize-worker.js`, resolved beside the
  * bundle by `resizeImage`). Not copied, because attach mode never reaches
@@ -257,6 +259,10 @@ export async function buildRelease() {
   files.push(await bundleEntry("dist/pi-client.mjs", join(codingAgent, "src", "experimental", "cli.ts"), join(distDir, "pi-client.mjs")));
   files.push(await bundleEntry("dist/image-resize-worker.js", join(codingAgent, "src", "utils", "image-resize-worker.ts"), join(distDir, "image-resize-worker.js")));
   chmodSync(join(distDir, "pi-client.mjs"), 0o755);
+
+  const guide = join(root, "packages", "cli", "agent-guide.md");
+  copyFileSync(guide, join(distDir, "agent-guide.md"));
+  files.push({ file: "dist/agent-guide.md", bytes: readFileSync(guide).length });
 
   const themeSource = join(codingAgent, "src", "modes", "interactive", "theme");
   const themeTarget = join(distDir, "modes", "interactive", "theme");

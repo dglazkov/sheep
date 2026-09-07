@@ -5,6 +5,7 @@ import { Home } from "./home.js";
 import { isRefused, localStatus, readStamp, startLocalHome, stopLocalHome, whoAnswers } from "./local.js";
 import { PASTURE_NAME, runPasture } from "./pasture.js";
 import { runPiClient } from "./pi.js";
+import { formatSetup, INSTALL_SPEC, readGuide, setup } from "./setup.js";
 
 /**
  * The build stamp, from the manifest beside the running code: the release
@@ -34,6 +35,11 @@ usage:
   sheep log [--since <entry id | ISO time>] [--last <n>] <id>   the transcript as text, oldest first, one block per entry
   sheep export <id> [file]                  write the session as a pi SQLite file (default <id>.sqlite)
   sheep config                              print the resolved home (never the token)
+  sheep setup [--no-install]                ready this directory: the command on PATH (installed with
+                                            npm install -g ${INSTALL_SPEC} when absent), the skill under
+                                            .agents/skills/sheep with the .claude/skills doorway, the home reported;
+                                            idempotent, and it prints the next thing to run
+  sheep --agent-help                        the guide for an agent: what sheep is, the verbs, the home, what needs a person
   sheep --version
 
   sheep home local [--faux]                 a home on this machine, under ~/.sheep/local, started if it was not; writes
@@ -64,6 +70,7 @@ options:
   --detach        with a prompt: send it and exit before the first token; the id is the first line of stdout
   --wait          with a prompt to a busy session: stream the queued turn when it starts
   --faux          with home local: the scripted model that answers "ok", for a look at the plumbing without a key
+  --no-install    with setup: report the command missing rather than installing it
 
 A command whose home is the local one starts it when the connection is refused, and says so on stderr.
 
@@ -83,6 +90,7 @@ interface Parsed {
   detach: boolean;
   wait: boolean;
   faux: boolean;
+  noInstall: boolean;
   since?: string;
   last?: string;
   timeout?: string;
@@ -91,7 +99,7 @@ interface Parsed {
 
 function parse(argv: readonly string[]): Parsed {
   const args = [...argv];
-  const parsed: Parsed = { rest: [], json: false, detach: false, wait: false, faux: false };
+  const parsed: Parsed = { rest: [], json: false, detach: false, wait: false, faux: false, noInstall: false };
   const valued: Record<string, (value: string | undefined) => void> = {
     "--home": (value) => (parsed.home = value),
     "--name": (value) => (parsed.name = value),
@@ -115,6 +123,7 @@ function parse(argv: readonly string[]): Parsed {
     else if (arg === "--detach") parsed.detach = true;
     else if (arg === "--wait") parsed.wait = true;
     else if (arg === "--faux") parsed.faux = true;
+    else if (arg === "--no-install") parsed.noInstall = true;
     else parsed.rest.push(arg);
   }
   return parsed;
@@ -122,6 +131,12 @@ function parse(argv: readonly string[]): Parsed {
 
 /** Runs the CLI; returns the process exit code. */
 export async function main(argv: readonly string[]): Promise<number> {
+  // The guide, wherever the flag is typed before a prompt: stop, and print how to work here.
+  const dash = argv.indexOf("--");
+  if (argv.slice(0, dash === -1 ? argv.length : dash).includes("--agent-help")) {
+    process.stdout.write(readGuide());
+    return 0;
+  }
   const parsed = parse(argv);
   const command = parsed.rest[0];
   if (command === undefined || command === "--help" || command === "-h") {
@@ -139,6 +154,11 @@ export async function main(argv: readonly string[]): Promise<number> {
   }
   const output = { json: parsed.json, out: (text: string) => void process.stdout.write(text), err: (text: string) => void process.stderr.write(text) };
   if (command === "home") return await runHome(parsed, config, output);
+  if (command === "setup") {
+    const report = await setup(config, { dir: process.cwd(), install: !parsed.noInstall, say: output.err });
+    process.stdout.write(parsed.json ? `${JSON.stringify(report)}\n` : formatSetup(report, process.cwd()));
+    return 0;
+  }
   try {
     return await dispatch(command, parsed, config, output);
   } catch (error) {
@@ -219,7 +239,7 @@ async function dispatch(command: string, parsed: Parsed, config: SheepConfig, ou
       const id = parsed.rest[1];
       if (id === undefined) return fail("export needs a session id");
       const file = parsed.rest[2] ?? `${id}.sqlite`;
-      const { tables } = writeSessionFile(file, await home.exportRows(id));
+      const { tables } = await writeSessionFile(file, await home.exportRows(id));
       process.stdout.write(`${file}\t${Object.entries(tables).map(([table, count]) => `${table}=${count}`).join(" ")}\n`);
       return 0;
     }

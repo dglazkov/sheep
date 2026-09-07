@@ -9,7 +9,7 @@
 import { describe, expect, it } from "vitest";
 // The script is plain ESM at the repository root; vitest loads it as is.
 // @ts-expect-error no declarations for the release script
-import { BIN_SHEEP_JS, PREPARATION_KEYS, releaseManifest } from "../../../scripts/release.mjs";
+import { BIN_SHEEP_JS, expectedReleaseFiles, PREPARATION_KEYS, releaseManifest, SKILL_DIR } from "../../../scripts/release.mjs";
 
 const STAMP = { commit: "194656e", builtAt: "2026-09-07T17:00:00Z", wrangler: "4.129.0" };
 const ROOT_PACKAGE = { name: "sheep", private: true, type: "module", packageManager: "pnpm@10.33.0", scripts: { build: "pnpm -r build", test: "pnpm -r test", release: "node scripts/release.mjs" }, devDependencies: { esbuild: "^0.28.0" } };
@@ -54,6 +54,14 @@ describe("the release manifest", () => {
     expect(manifest.sheep).toEqual(STAMP);
     expect(manifest).not.toHaveProperty("commit");
     expect(BIN_SHEEP_JS).toMatch(/^#!\/usr\/bin\/env node\nimport \{ main \} from "\.\.\/dist\/sheep\.mjs";\n/);
+  });
+
+  it("lists the guide beside the bundle and the skill at its path, and refuses a build without either", () => {
+    const built = [{ file: "dist/sheep.mjs" }, { file: "dist/pi-client.mjs" }, { file: "dist/agent-guide.md" }, { file: "home/worker.mjs" }, { file: "home/wrangler.jsonc" }];
+    const skill = [`${SKILL_DIR}/SKILL.md`];
+    expect(expectedReleaseFiles(built, skill)).toEqual([".agents/skills/sheep/SKILL.md", "LICENSE", "README.md", "bin/sheep.js", "dist/agent-guide.md", "dist/pi-client.mjs", "dist/sheep.mjs", "home/worker.mjs", "home/wrangler.jsonc", "package.json"]);
+    expect(() => expectedReleaseFiles(built.filter((file) => file.file !== "dist/agent-guide.md"), skill)).toThrow(/agent-guide/);
+    expect(() => expectedReleaseFiles(built, [])).toThrow(/SKILL\.md/);
   });
 
   it("refuses a stamp with a piece missing", () => {

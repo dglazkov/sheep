@@ -22,7 +22,7 @@ carries them.
 
 ---
 
-**Where we are: collar phases 0 and 1 CLOSED; collar phases 2 to 4 NOT STARTED. Next: collar phase 2, setup, the skill, and the guide.** Planned 7 Sep 2026, the day after pasture closed, from a brainstorm with the shepherd; the shepherd's calls are in the journey's front matter. Phases 0 and 1 built and verified the same morning: the release exists as a ref in this repository, and the package ring installs it and walks journey 1's core against a local home started from the install. Nothing waits on a person until collar phase 3, which asks once for the `release` branch and the workflow, and collar phase 4, which spends tokens.
+**Where we are: collar phases 0 to 2 CLOSED; collar phases 3 and 4 NOT STARTED. Next: collar phase 3, the machine ring, the guard, and CI.** Planned 7 Sep 2026, the day after pasture closed, from a brainstorm with the shepherd; the shepherd's calls are in the journey's front matter. Phases 0 to 2 built and verified the same morning: the release exists as a ref in this repository, and the package ring installs it with `npx … setup` and walks all of journey 1 against a local home started from the install. Collar phase 3 asks once for the `release` branch and the workflow, and collar phase 4 spends tokens; nothing else waits on a person.
 
 The order is dependency order. Phase 0 is the release itself, the two
 bundles and the Worker in a tree npm can install, and the package ring
@@ -182,7 +182,15 @@ setup run a second time reports everything current. In the checkout,
 installs nothing, held by a test. `git diff --stat README.md` moves the
 checkout section below the spec. **⚑** none.
 
-**Status: NOT STARTED.**
+**Status: CLOSED.** 2026-09-07. `sheep setup`, the skill, `sheep --agent-help`, and the README built; the package ring walked journey 1 steps 1 to 7 from the install with the faux provider, setup's second run reporting everything current, verified by the conductor.
+
+**Findings:**
+
+- **2026-09-07 — `npx git+file://…#sha setup` ran from the ring's `_npx` cache and installed the durable copy itself:** setup's `npm install -g` put `sheep` at the prefix in seven seconds, and the report named the prefix's bin, not the cache's, because the lookup skips `_npx` (isocan #48).
+- **2026-09-07 — Collar phase 0's warning debt is paid:** export's was the CLI's only `node:sqlite` import; lazy, `sheep --version` on Node 24 prints 21 bytes and an empty stderr, which the ring asserts with no `NODE_NO_WARNINGS`. The root script's `--disable-warning` had never reached the CLI, a child node.
+- **2026-09-07 — The release takes the skill from the working tree with `git add -f`, like the bundles, while the manifest and README come from `HEAD`;** on a `--force` build of a dirty tree the README is `HEAD`'s and the skill is disk's, which a clean tree makes moot.
+- **2026-09-07 — A checkout is told twice, separately:** the working directory (a `package.json` named `sheep` with a workspace beside `packages/`) decides the skill, the missing stamp decides the command; a checkout's `sheep` run elsewhere installs the skill there, which is how the test drives it without an install.
+- **2026-09-07 — A differing skill copy is refreshed, not refused, so upgrading the command upgrades the doorway;** a real directory or a foreign link at `.claude/skills/sheep` is kept and reported. The guide's claims about exit codes, lane states, and the queued line were checked against the code. Cost: 15 minutes of a subagent, 10 of verification.
 
 ## Phase 3: The machine ring, the guard, and CI
 

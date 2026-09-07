@@ -1,13 +1,18 @@
 import { INITIAL_SCHEMA_SQL } from "@earendil-works/pi-session-backend-sqlite-node/sqlite";
-import { DatabaseSync } from "node:sqlite";
 
 /**
  * Rebuilds a pi SQLite session file from the rows a cell exports. The cell
  * has no file to hand out, only rows; pi's schema is the same on both
  * sides, so the file pi's Node backend opens is these rows under that
  * schema.
+ *
+ * `node:sqlite` is imported here and not at load: on Node 24 the module
+ * prints `ExperimentalWarning: SQLite` the moment it is imported, and only
+ * `sheep export` needs it. Every other verb prints nothing on stderr it
+ * did not mean to (collar phase 0's debt, paid in collar phase 2).
  */
-export function writeSessionFile(path: string, rows: Record<string, Record<string, unknown>[]>): { tables: Record<string, number> } {
+export async function writeSessionFile(path: string, rows: Record<string, Record<string, unknown>[]>): Promise<{ tables: Record<string, number> }> {
+  const { DatabaseSync } = await import("node:sqlite");
   const db = new DatabaseSync(path);
   const counts: Record<string, number> = {};
   try {

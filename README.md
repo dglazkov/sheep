@@ -16,7 +16,62 @@ on its own after being evicted mid-turn, and an idle session costs nothing.
 The long version of the idea, and where the work stands, is in
 [`docs/projects/`](docs/projects/README.md).
 
-## sheep
+## Give your agent sheep
+
+The install spec is `github:dglazkov/sheep#release`: the `release` branch
+of this repository, built from `main`, installed with npm's git installer.
+Nothing is on npm. The first five minutes, as the dog walks them:
+
+1. With Claude Code (or another coding agent) open in a repository, say:
+   "Install sheep from github.com/dglazkov/sheep and try it out." The dog
+   runs
+
+   ```sh
+   npx github:dglazkov/sheep#release setup
+   ```
+
+   which puts `sheep` on PATH (`npm install -g github:dglazkov/sheep#release`),
+   installs the skill into the current directory under `.agents/skills/sheep`
+   with a `.claude/skills/sheep` doorway, reports that no home is configured,
+   and prints the one sentence to run next. It is idempotent; `--json` gives
+   the same report to a program.
+
+2. `sheep home local` starts a home on the machine, under `~/.sheep/local`,
+   and writes `~/.sheep/config`. It says the home has no model key; the dog
+   asks you for an Anthropic key, which you export as `ANTHROPIC_API_KEY`,
+   and `sheep home local` again reports the key held, and where. No account
+   is needed. (`--faux` runs a scripted model instead, for a look at the
+   plumbing without a key.)
+
+3. `sheep new -- "What can you see in the workspace?"` mints a sheep and
+   streams its reply. `sheep ls` lists it; `sheep status <id>` and
+   `sheep log <id>` say what it is doing and what it did.
+
+4. `sheep attach <id> -- "And now?"` continues it. At your own terminal,
+   `sheep attach <id>` opens pi's interactive terminal on the same sheep,
+   from the installed bundle, with no checkout of pi anywhere.
+
+5. `sheep --agent-help` is the guide the dog reads: the verbs, the home,
+   what needs a person, in the words this build ships. The skill says to
+   read it, and little else.
+
+6. The next morning the home is not running. `sheep ls` starts it and lists
+   yesterday's sheep. `sheep home stop` stops it; `sheep home` says so.
+
+7. `sheep export <id>` writes a pi session file. `sheep --version` prints
+   the build stamp: the commit on `main` the release was built from, and
+   when. Upgrading is `npm install -g github:dglazkov/sheep#release` again.
+
+Every release is proved before it is pushed by installing it the way you
+do, into a fresh prefix, cache, and `HOME`, and walking the steps above
+with the scripted model: `pnpm hermetic --ring package`.
+
+## Developing sheep
+
+Everything below is the checkout: `sheep` here means
+`node packages/cli/bin/sheep.js`, against a home run from source.
+
+### sheep
 
 `sheep` is the command. Two legs built it, and a third gave it its name:
 [lamb](docs/projects/lamb/design.md) put [pi](https://pi.dev) in a cell,
@@ -45,7 +100,7 @@ What you get today:
 Design, acceptance journeys, and the phase-by-phase record with findings,
 project by project: [`docs/projects/`](docs/projects/README.md).
 
-### Prerequisites
+#### Prerequisites
 
 - Node 22 or newer, with corepack (ships with Node). The repo pins its pnpm
   version, so `corepack enable` is the only install.
@@ -54,7 +109,7 @@ project by project: [`docs/projects/`](docs/projects/README.md).
   account. No domain needed; the Free plan includes SQLite Durable Objects.
 - An Anthropic API key.
 
-### Set up the repo
+#### Set up the repo
 
 ```sh
 git clone https://github.com/dglazkov/sheep && cd sheep
@@ -68,7 +123,7 @@ pnpm install
 pnpm test        # the cell's tests run inside workerd, the Workers runtime
 ```
 
-### Secrets
+#### Secrets
 
 Copy the example and fill in two values:
 
@@ -83,7 +138,7 @@ cp packages/cell/.dev.vars.example packages/cell/.dev.vars
 `.dev.vars` is gitignored and is read only by the local dev servers. A
 deployed home gets the same names through `wrangler secret put`, below.
 
-### Run a home locally
+#### Run a home locally
 
 In one terminal:
 
@@ -101,7 +156,7 @@ node packages/cli/bin/sheep.js new -- "hello, what can you see in the workspace?
 node packages/cli/bin/sheep.js new                                                   # pi's interactive terminal
 ```
 
-### Deploy a home on Cloudflare
+#### Deploy a home on Cloudflare
 
 Once, log Wrangler in; it opens a browser tab to authorize:
 
@@ -130,7 +185,7 @@ Point `sheep` at the home so it needs no environment variables:
 { "home": "https://sheep.<you>.workers.dev", "token": "<your SHEEP_TOKEN>" }
 ```
 
-### Use it
+#### Use it
 
 ```sh
 sheep new [--name <name>] [-- <prompt>]   # a new session, pi's terminal attached
@@ -145,7 +200,7 @@ sheep --home <url> ...                    # a different home for one command
 shell if you like. With a prompt after `--` the reply streams and the
 command exits; without one you get pi's full terminal.
 
-### A home with a container: pen
+#### A home with a container: pen
 
 The second leg gave each cell a container it rents for the length of a
 command that needs one (`pnpm`, `node`, `python`, `git`). The same Worker
@@ -186,7 +241,7 @@ request, and it lives nowhere but the home. `PEN_GIT_HOST` (default
 `github.com`) is the one host it is for; `PEN_GIT_AUTHOR_NAME` and
 `PEN_GIT_AUTHOR_EMAIL` are who the container's commits are by.
 
-### Layout
+#### Layout
 
 ```
 packages/cell/    the Worker: the cell, the directory, the workspace, the shell, the wire

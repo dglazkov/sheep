@@ -2,8 +2,9 @@
 /**
  * The rings: prove a release the way a user meets it, in an environment
  * this checkout's state cannot reach. Collar phase 0 built the package
- * ring; collar phase 1 gave it the local home, so the walk is the
- * installed command's from the first step to the last.
+ * ring; collar phase 1 gave it the local home; collar phase 2 gave it
+ * setup, so the walk is journey 1 whole, from `npx <spec> setup` to
+ * `sheep --version`, with the installed command and nothing else.
  *
  *   pnpm hermetic --ring package [ref]     ref defaults to refs/heads/release of this repository
  *   --keep                                  leave the ring's directory, and its local home running, and say where
@@ -11,22 +12,32 @@
  * The package ring makes one temp directory and points five variables
  * inside it: `npm_config_prefix`, `npm_config_cache`, `HOME`,
  * `SHEEP_CONFIG`, and `SHEEP_LOCAL`, asserted before anything runs. It
- * installs the ref with `npm install -g git+file://<this repo>#<ref>`,
- * npm's git installer, where isocan's #47 lived, never a tarball; puts the
- * prefix's `bin` first on PATH with this checkout's directories stripped
- * from it; and walks journey 1 with the installed `sheep`, never
+ * puts the prefix's `bin` first on PATH with this checkout's directories
+ * stripped from it, and walks journey 1 with the installed `sheep`, never
  * `bin/sheep.js`. One line per step; the first failure prints its command
  * and output and exits 1; the end names what was not checked.
  *
- * The walk is journey 1 steps 2, 3, 4, 6, and 7 with the faux provider:
- * `sheep home local --faux` starts the home under the ring's `SHEEP_LOCAL`
+ * The walk is journey 1 steps 1 to 7 with the faux provider. Step 1 is
+ * `npx <spec> setup --json` in a scratch working directory under the ring,
+ * with `SHEEP_INSTALL_SPEC` naming the ring's ref as `git+file://<this
+ * repo>#<sha>`, so setup's own `npm install -g` runs npm's git installer,
+ * where isocan's #47 lived, against the ring's prefix and cache, never a
+ * tarball and never GitHub, whose branch collar phase 3 pushes. The ring
+ * then reads the install the way phase 0 did, and the report: the command
+ * at the prefix's bin, the skill and its doorway in the working directory,
+ * no home, and the next sentence. Step 2's `sheep home local --faux`
+ * starts the home under the ring's `SHEEP_LOCAL`
  * (wrangler fetched into the ring's `~/.sheep/tools` at the manifest's
  * pin, through the ring's npm cache) and writes the ring's `SHEEP_CONFIG`;
  * every later command finds the home through that config, with no
  * `SHEEP_HOME` or `SHEEP_TOKEN` in the environment. `ps` is read while the
  * home runs, and polled for the whole walk, to see that the token is in
  * no process's arguments: the daemon gets its secrets from `.dev.vars`,
- * mode 600, through `--env-file`. Steps 1 and 5 are collar phase 2's.
+ * mode 600, through `--env-file`. Step 5 is `sheep --agent-help`, which
+ * must print `dist/agent-guide.md` from beside the bundle, and setup a
+ * second time, which must report everything current. The CLI runs with no
+ * `NODE_NO_WARNINGS`: a warning on stderr from `sheep --version` (collar
+ * phase 0's `ExperimentalWarning: SQLite`) fails the walk.
  *
  * Step 4 has two halves. `sheep attach <id> -- "again"` streams the reply
  * through sheep's own client, inside `dist/sheep.mjs`. `sheep attach
@@ -36,10 +47,9 @@
  * while it runs to see the child and where it runs from.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -127,6 +137,9 @@ class Ring {
     this.local = join(this.home, ".sheep", "local");
     this.config = join(this.home, ".sheep", "config");
     for (const dir of [this.prefix, this.cache, this.home, this.local]) mkdirSync(dir, { recursive: true });
+    this.work = join(this.dir, "work");
+    mkdirSync(this.work);
+    this.stamp = JSON.parse(git("show", `${this.sha}:package.json`)).sheep;
     this.lines = [];
     this.unchecked = [];
     this.localHome = undefined;
@@ -155,7 +168,6 @@ class Ring {
       npm_config_fund: "false",
       npm_config_audit: "false",
       npm_config_progress: "false",
-      NODE_NO_WARNINGS: "1",
     };
   }
 
@@ -178,6 +190,7 @@ class Ring {
     onlyHolds(this.home, [".sheep"]);
     onlyHolds(join(this.home, ".sheep"), ["local"]);
     onlyHolds(this.local, []);
+    onlyHolds(this.work, []);
     for (const entry of env.PATH.split(":")) {
       if (entry === root || entry.startsWith(root + sep)) throw new Error(`PATH still reaches this checkout: ${entry}`);
     }
@@ -187,30 +200,91 @@ class Ring {
     console.log(`  PATH=${join(this.prefix, "bin")}:… (this checkout stripped)`);
   }
 
+  /** Paths as a child saw them, or as the ring named them: on macOS the ring's temp directory is under /var and its realpath under /private/var. */
+  samePath(a, b) {
+    if (typeof a !== "string" || typeof b !== "string") return false;
+    const real = (path) => {
+      try {
+        return realpathSync(path);
+      } catch {
+        return path;
+      }
+    };
+    return a === b || real(a) === real(b);
+  }
+
+  /**
+   * Journey 1 step 1: `npx <spec> setup --json` in the ring's scratch
+   * working directory. Setup installs the command with npm's git installer
+   * and the skill into that directory; the ring reads both, and the report.
+   */
   async install() {
     const spec = `git+file://${root}#${this.sha}`;
     const started = Date.now();
-    const env = this.env();
+    // The spec setup installs with is the ring's ref, not github:dglazkov/sheep#release: that branch is collar phase 3's.
+    const env = { ...this.env(), SHEEP_INSTALL_SPEC: spec };
     const versions = { node: spawnSync("node", ["--version"], { env, encoding: "utf8" }).stdout.trim(), npm: spawnSync("npm", ["--version"], { env, encoding: "utf8" }).stdout.trim() };
-    const result = await run("npm", ["install", "-g", spec], { env, cwd: this.dir });
+    const command = `npx ${spec} setup --json`;
+    const result = await run("npx", [spec, "setup", "--json"], { env, cwd: this.work });
     const seconds = ((Date.now() - started) / 1000).toFixed(0);
-    if (result.code !== 0) this.fail("install", `npm install -g ${spec}`, result);
+    if (result.code !== 0) this.fail("step 1", command, result);
+    let report;
+    try {
+      report = JSON.parse(result.stdout);
+    } catch {
+      this.fail("step 1", command, { ...result, stderr: `${result.stderr}\nstdout is not the JSON report` });
+    }
     const bin = join(this.prefix, "bin", "sheep");
     const pkg = join(this.prefix, "lib", "node_modules", "sheep");
-    for (const required of [bin, join(pkg, "package.json"), join(pkg, "dist", "sheep.mjs"), join(pkg, "dist", "pi-client.mjs"), join(pkg, "home", "worker.mjs"), join(pkg, "home", "wrangler.jsonc")]) {
-      if (!existsSync(required)) this.fail("install", `npm install -g ${spec}`, { ...result, stderr: `${result.stderr}\nmissing after install: ${required}` });
+    for (const required of [bin, join(pkg, "package.json"), join(pkg, "dist", "sheep.mjs"), join(pkg, "dist", "pi-client.mjs"), join(pkg, "dist", "agent-guide.md"), join(pkg, "home", "worker.mjs"), join(pkg, "home", "wrangler.jsonc"), join(pkg, ".agents", "skills", "sheep", "SKILL.md")]) {
+      if (!existsSync(required)) this.fail("step 1", command, { ...result, stderr: `${result.stderr}\nmissing after install: ${required}` });
     }
     for (const tool of ["esbuild", "wrangler", "workerd"]) {
-      if (existsSync(join(pkg, "node_modules", tool))) this.fail("install", `ls ${join(pkg, "node_modules")}`, { stdout: readdirSync(join(pkg, "node_modules")).join("\n"), stderr: `${tool} was installed into the release's tree`, code: 1 });
+      if (existsSync(join(pkg, "node_modules", tool))) this.fail("step 1", `ls ${join(pkg, "node_modules")}`, { stdout: readdirSync(join(pkg, "node_modules")).join("\n"), stderr: `${tool} was installed into the release's tree`, code: 1 });
     }
     const which = spawnSync("sh", ["-c", "command -v sheep"], { env, encoding: "utf8" }).stdout.trim();
-    if (which !== bin) this.fail("install", "command -v sheep", { stdout: which, stderr: `expected ${bin}`, code: 1 });
+    if (which !== bin) this.fail("step 1", "command -v sheep", { stdout: which, stderr: `expected ${bin}`, code: 1 });
     // No pi source anywhere under the prefix: pi is inside the two bundles, not a checkout.
     const find = spawnSync("find", [this.prefix, "-name", "*.ts", "-path", "*earendil*"], { encoding: "utf8" });
-    if (find.stdout.trim() !== "") this.fail("install", `find ${this.prefix} -name '*.ts' -path '*earendil*'`, { stdout: find.stdout, stderr: "pi sources under the prefix", code: 1 });
+    if (find.stdout.trim() !== "") this.fail("step 1", `find ${this.prefix} -name '*.ts' -path '*earendil*'`, { stdout: find.stdout, stderr: "pi sources under the prefix", code: 1 });
+    // npx ran from the ring's own cache, where its copy of the package will not keep; the durable one is the prefix's.
+    if (!existsSync(join(this.cache, "_npx"))) this.fail("step 1", `ls ${this.cache}`, { stdout: readdirSync(this.cache).join("\n"), stderr: "npx left no _npx cache in the ring", code: 1 });
     const installed = readdirSync(join(pkg, "node_modules")).filter((name) => !name.startsWith("."));
-    this.ok("install", `npm install -g ${spec}`, `${seconds}s, node ${versions.node}, npm ${versions.npm}; ${installed.length} packages beside sheep; no *.ts under *earendil*`);
     this.pkg = pkg;
+
+    // The report: three states, and the next sentence.
+    const version = `sheep ${this.stamp.commit} (${this.stamp.builtAt})`;
+    const skillDir = join(this.work, ".agents", "skills", "sheep");
+    const doorway = join(this.work, ".claude", "skills", "sheep");
+    const expected = { cli: { state: "installed", path: bin, version, spec }, skill: { state: "installed", path: skillDir, doorway: { path: doorway, state: "linked" } }, home: { state: "none", home: null }, checkout: null, next: "sheep home local" };
+    const wrong = [];
+    if (report.cli?.state !== expected.cli.state || !this.samePath(report.cli?.path, bin) || report.cli?.version !== version || report.cli?.spec !== spec) wrong.push("cli");
+    if (report.skill?.state !== "installed" || !this.samePath(report.skill?.path, skillDir) || report.skill?.doorway?.state !== "linked" || !this.samePath(report.skill?.doorway?.path, doorway)) wrong.push("skill");
+    if (report.home?.state !== "none" || report.home?.home !== null) wrong.push("home");
+    if (report.checkout !== null) wrong.push("checkout");
+    if (report.next !== expected.next) wrong.push("next");
+    if (wrong.length > 0) this.fail("step 1", command, { ...result, stderr: `${result.stderr}\n${wrong.join(", ")} not as expected: ${JSON.stringify(expected)}` });
+    // The skill on disk: this release's SKILL.md under .agents, and .claude/skills/sheep a relative link to it.
+    const shipped = readFileSync(join(pkg, ".agents", "skills", "sheep", "SKILL.md"), "utf8");
+    const copied = existsSync(join(skillDir, "SKILL.md")) ? readFileSync(join(skillDir, "SKILL.md"), "utf8") : undefined;
+    if (copied !== shipped) this.fail("step 1", `cat ${join(skillDir, "SKILL.md")}`, { stdout: copied ?? "", stderr: "expected the release's SKILL.md", code: 1 });
+    if (shipped.trim() !== git("show", `${this.sha}:.agents/skills/sheep/SKILL.md`)) this.fail("step 1", `git show ${this.sha}:.agents/skills/sheep/SKILL.md`, { stdout: shipped, stderr: "the installed skill is not the ref's", code: 1 });
+    let link;
+    try {
+      link = lstatSync(doorway);
+    } catch {
+      this.fail("step 1", `ls -l ${doorway}`, { stdout: "", stderr: "no doorway", code: 1 });
+    }
+    if (!link.isSymbolicLink() || readlinkSync(doorway) !== "../../.agents/skills/sheep" || !statSync(doorway).isDirectory() || readFileSync(join(doorway, "SKILL.md"), "utf8") !== shipped) {
+      this.fail("step 1", `ls -l ${doorway}`, { stdout: link.isSymbolicLink() ? readlinkSync(doorway) : "not a symlink", stderr: "expected a relative symlink ../../.agents/skills/sheep leading to the copy", code: 1 });
+    }
+    // Nothing else appeared in the working directory, and nothing in HOME beyond the skeleton: setup makes no home.
+    const inWork = readdirSync(this.work).sort();
+    if (JSON.stringify(inWork) !== JSON.stringify([".agents", ".claude"])) this.fail("step 1", `ls -a ${this.work}`, { stdout: inWork.join("\n"), stderr: "expected .agents and .claude only", code: 1 });
+    if (existsSync(this.config) || readdirSync(this.local).length > 0) this.fail("step 1", `ls -a ${join(this.home, ".sheep")}`, { stdout: readdirSync(join(this.home, ".sheep")).join("\n"), stderr: "setup wrote a config or touched the local home", code: 1 });
+    this.ok("step 1", command, `${seconds}s, node ${versions.node}, npm ${versions.npm}; ${installed.length} packages beside sheep; no *.ts under *earendil*`);
+    this.ok("step 1", "the report", `cli installed at <ring>/prefix/bin/sheep (${version}); skill installed at <work>/.agents/skills/sheep, .claude/skills/sheep linked; home none; next "${report.next}"`);
+    this.unchecked.push(`journey 1 step 1: the spec ${JSON.stringify("github:dglazkov/sheep#release")}; the ring installed ${spec} through SHEEP_INSTALL_SPEC (collar phase 3 pushes the branch)`);
   }
 
   /** The installed `sheep`, first on PATH, finding its home through the ring's config file and nothing in the environment. */
@@ -243,17 +317,15 @@ class Ring {
   }
 
   async walk() {
-    const stamp = JSON.parse(git("show", `${this.sha}:package.json`)).sheep;
+    const stamp = this.stamp;
     const parents = git("log", "-1", "--format=%P", this.sha).split(" ");
     if (!parents.some((parent) => parent.startsWith(stamp.commit))) throw new Error(`the manifest's commit ${stamp.commit} is not a parent of ${this.sha}`);
 
-    // Journey 1 step 7, the second half, first: the installed command names its build. No home is needed, and none is configured.
+    // Journey 1 step 7, the second half, first: the installed command names its build, and says nothing on stderr. No home is needed, and none is configured.
     const version = await this.sheep(["--version"]);
     const expected = `sheep ${stamp.commit} (${stamp.builtAt})\n`;
-    if (version.code !== 0 || version.stdout !== expected) this.fail("step 7", "sheep --version", { ...version, stderr: `${version.stderr}\nexpected ${JSON.stringify(expected)}` });
-    this.ok("step 7", "sheep --version", version.stdout.trim());
-
-    this.skip("step 1", "sheep setup is collar phase 2's");
+    if (version.code !== 0 || version.stdout !== expected || version.stderr !== "") this.fail("step 7", "sheep --version", { ...version, stderr: `${version.stderr}\nexpected ${JSON.stringify(expected)} and an empty stderr` });
+    this.ok("step 7", "sheep --version", `${version.stdout.trim()}; nothing on stderr`);
 
     // Step 2: the local home, under the ring's SHEEP_LOCAL, with the faux provider in place of a key.
     const startedAt = Date.now();
@@ -350,7 +422,37 @@ class Ring {
     this.ok("step 4", "ps", seen);
     this.unchecked.push("journey 1 step 4: pi's interactive terminal, which needs a TTY; the ring attached with none");
 
-    this.skip("step 5", "sheep --agent-help is collar phase 2's");
+    // Step 5: the guide is the file beside the bundle, printed whole; and setup again, in the same directory, finds everything current and the home running.
+    const guide = await this.sheep(["--agent-help"]);
+    const shipped = readFileSync(join(this.pkg, "dist", "agent-guide.md"), "utf8");
+    if (guide.code !== 0 || guide.stdout !== shipped || guide.stderr !== "") this.fail("step 5", "sheep --agent-help", { ...guide, stderr: `${guide.stderr}\nexpected ${join(this.pkg, "dist", "agent-guide.md")} on stdout and nothing on stderr` });
+    if (shipped.trim() !== git("show", `${this.sha}:dist/agent-guide.md`)) this.fail("step 5", `git show ${this.sha}:dist/agent-guide.md`, { stdout: shipped, stderr: "the installed guide is not the ref's", code: 1 });
+    for (const said of ["sheep home local", "ANTHROPIC_API_KEY", "sheep wait", "A hand at a terminal"]) {
+      if (!shipped.includes(said)) this.fail("step 5", "sheep --agent-help", { ...guide, stderr: `the guide does not say ${JSON.stringify(said)}`, code: 1 });
+    }
+    const setupAgain = await this.sheep(["setup", "--json"], { cwd: this.work });
+    let second;
+    try {
+      second = JSON.parse(setupAgain.stdout);
+    } catch {
+      this.fail("step 5", "sheep setup --json (again)", setupAgain);
+    }
+    const bin = join(this.prefix, "bin", "sheep");
+    const current =
+      setupAgain.code === 0 &&
+      second.cli?.state === "on-path" &&
+      this.samePath(second.cli.path, bin) &&
+      second.cli.version === expected.trim() &&
+      second.skill?.state === "current" &&
+      second.skill.doorway?.state === "current" &&
+      second.home?.state === "local" &&
+      second.home.home === url &&
+      second.home.running === true &&
+      second.home.pid === report.pid &&
+      second.checkout === null &&
+      second.next === "sheep --agent-help";
+    if (!current) this.fail("step 5", "sheep setup --json (again)", { ...setupAgain, stderr: `${setupAgain.stderr}\nexpected cli on-path at ${bin}, skill current, doorway current, home ${url} local and running under pid ${report.pid}, next "sheep --agent-help"` });
+    this.ok("step 5", "sheep --agent-help; sheep setup --json (again)", `${shipped.split(/\s+/).length} words, the ref's dist/agent-guide.md; again: cli on-path, skill current, doorway current, home local running, next "${second.next}"`);
 
     // Step 6: the home stops; the next command starts it and says so; the sheep is still there; `sheep home` reports each state.
     const stopped = await this.sheep(["home", "stop"]);
@@ -381,16 +483,16 @@ class Ring {
     const exported = await this.sheep(["export", id, file]);
     if (exported.code !== 0 || !existsSync(file)) this.fail("step 7", `sheep export ${id} ${file}`, exported);
     const counts = Object.fromEntries(exported.stdout.trim().split("\t")[1].split(" ").map((pair) => pair.split("=")));
-    const db = new DatabaseSync(file, { readOnly: true });
-    try {
+    // Counted in a child Node told the SQLite warning is known, so the only ExperimentalWarning that can appear in this ring's output is the CLI's.
+    const counter = `const { DatabaseSync } = require("node:sqlite"); const db = new DatabaseSync(process.argv[1], { readOnly: true });
       const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((row) => row.name);
-      for (const [table, count] of Object.entries(counts)) {
-        if (!tables.includes(table)) this.fail("step 7", `sqlite3 ${file} .tables`, { stdout: tables.join("\n"), stderr: `export reported ${table}=${count}, not in the file`, code: 1 });
-        const rows = db.prepare(`SELECT count(*) AS n FROM "${table}"`).get().n;
-        if (String(rows) !== count) this.fail("step 7", `SELECT count(*) FROM ${table}`, { stdout: String(rows), stderr: `export reported ${count}`, code: 1 });
-      }
-    } finally {
-      db.close();
+      console.log(JSON.stringify(Object.fromEntries(tables.map((table) => [table, db.prepare('SELECT count(*) AS n FROM "' + table + '"').get().n]))));`;
+    const counted = spawnSync(process.execPath, ["--disable-warning=ExperimentalWarning", "-e", counter, file], { encoding: "utf8" });
+    if (counted.status !== 0) this.fail("step 7", `node -e (node:sqlite) ${file}`, { stdout: counted.stdout, stderr: counted.stderr, code: counted.status ?? 1 });
+    const inFile = JSON.parse(counted.stdout);
+    for (const [table, count] of Object.entries(counts)) {
+      if (!(table in inFile)) this.fail("step 7", `sqlite3 ${file} .tables`, { stdout: Object.keys(inFile).join("\n"), stderr: `export reported ${table}=${count}, not in the file`, code: 1 });
+      if (String(inFile[table]) !== count) this.fail("step 7", `SELECT count(*) FROM ${table}`, { stdout: String(inFile[table]), stderr: `export reported ${count}`, code: 1 });
     }
     this.ok("step 7", `sheep export ${id}`, `${exported.stdout.trim().split("\t")[1]}; opened with node:sqlite, counts match`);
     this.unchecked.push("journey 1 step 7: pi's own session backend opening the export; node:sqlite opened it and counted");

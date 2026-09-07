@@ -17,8 +17,9 @@
  *
  *   package.json         name sheep, bin, the dependencies below, engines, the build stamp under `sheep`; no scripts, no workspaces
  *   bin/sheep.js         #!/usr/bin/env node; imports ../dist/sheep.mjs
- *   dist/                the two bundles and what they read beside them (scripts/bundle.mjs)
+ *   dist/                the two bundles, the guide, and what they read beside them (scripts/bundle.mjs)
  *   home/                the Worker and its config (scripts/bundle.mjs)
+ *   .agents/skills/sheep the skill: the doorway `sheep setup` copies into a directory
  *   README.md, LICENSE   from HEAD
  *
  * Nothing of `packages/`, `vendor/`, `docs/`, or `.github/` ships.
@@ -70,6 +71,9 @@ export const RELEASE_OPTIONAL_DEPENDENCIES = {
 
 /** What ships from HEAD's tree unchanged; everything else at the top level is removed from the release index. */
 export const SHIPPED_FROM_HEAD = ["README.md", "LICENSE"];
+
+/** The skill's directory, shipped at its own path: added back after the top level is cleared, from the tree like the built files. */
+export const SKILL_DIR = ".agents/skills/sheep";
 
 /** The Node floor: `node:sqlite` in the CLI's export needs >=22.13, and the fork's own floor is 22.19. */
 export const ENGINES = { node: ">=22.19" };
@@ -126,12 +130,15 @@ function tryGit(...args) {
   return done.status === 0 ? (done.stdout || "").trim() : "";
 }
 
-/** The files the design lists, less the skill and the guide, which are collar phase 2's. */
-export function expectedReleaseFiles(built) {
+/** The files the design lists: the manifest, the bin, what the bundle build wrote (the guide among them), the skill, and the two from HEAD. */
+export function expectedReleaseFiles(built, skill) {
+  if (!built.some((file) => file.file === "dist/agent-guide.md")) throw new Error("the bundle build did not write dist/agent-guide.md");
+  if (!skill.includes(`${SKILL_DIR}/SKILL.md`)) throw new Error(`the tree carries no ${SKILL_DIR}/SKILL.md`);
   return [
     "package.json",
     "bin/sheep.js",
     ...built.map((file) => file.file),
+    ...skill,
     ...SHIPPED_FROM_HEAD,
   ].sort();
 }
@@ -171,6 +178,10 @@ async function main() {
     }
     git("add", "-f", "dist", "home", { env });
 
+    // The skill, from the working tree like the bundles it goes with; on a clean tree, which the guard demands, that is HEAD's.
+    git("add", "-f", "--", SKILL_DIR, { env });
+    const skill = git("ls-files", "--cached", "--", SKILL_DIR, { env }).split("\n").filter(Boolean);
+
     const bin = path.join(tmp, "sheep.js");
     await fs.writeFile(bin, BIN_SHEEP_JS);
     const binBlob = git("hash-object", "-w", "--path", "bin/sheep.js", bin, { env });
@@ -186,7 +197,7 @@ async function main() {
 
     // The tree is exactly the files the design lists; anything else, in either direction, is a bug here.
     const files = git("ls-tree", "-r", "--name-only", tree).split("\n").filter(Boolean).sort();
-    const expected = expectedReleaseFiles(built.files);
+    const expected = expectedReleaseFiles(built.files, skill);
     if (JSON.stringify(files) !== JSON.stringify(expected)) {
       const extra = files.filter((file) => !expected.includes(file));
       const missing = expected.filter((file) => !files.includes(file));
@@ -196,7 +207,7 @@ async function main() {
     // First parent: where the branch was. Second: the commit this build is of.
     const previous = tryGit("rev-parse", "--verify", "--quiet", "refs/remotes/origin/release") || tryGit("rev-parse", "--verify", "--quiet", "refs/heads/release");
     const parents = [...(previous ? ["-p", previous] : []), "-p", head];
-    const message = `release ${stamp.commit}: ${subject}\n\nBuilt ${builtAt} with wrangler ${built.wrangler}. Two bundles and the Worker included; no prepare script, no workspaces (isocan #47).\n`;
+    const message = `release ${stamp.commit}: ${subject}\n\nBuilt ${builtAt} with wrangler ${built.wrangler}. Two bundles, the guide, the skill, and the Worker included; no prepare script, no workspaces (isocan #47).\n`;
     const dated = { ...env, GIT_AUTHOR_DATE: builtAt, GIT_COMMITTER_DATE: builtAt };
     const commit = git("commit-tree", tree, ...parents, "-m", message, { env: dated });
     git("update-ref", "refs/heads/release", commit, "-m", `release from ${stamp.commit}`);
