@@ -6,9 +6,10 @@ pi, running in a cell. The second is [project pen](docs/projects/pen/design.md):
 programs, running for a cell. [Project recast](docs/projects/recast/design.md)
 gave the command its name. [Project pasture](docs/projects/pasture/design.md)
 gave the herd a place: what every sheep on a repository should know.
-[Project collar](docs/projects/collar/design.md) is the next: how a
-shepherd gives their dog the command, and how a release is proved by
-installing it the way a user would. Setup and usage are in [README.md](README.md).
+[Project collar](docs/projects/collar/design.md) gave the dog the
+command, and a release proved by installing it the way a user would.
+[Project station](docs/projects/station/design.md) is the next: a home
+in the cloud, from the package, in one path. Setup and usage are in [README.md](README.md).
 Read a project's `phases.md` for where its work stands and what the next
 phase is; [docs/projects/README.md](docs/projects/README.md) lists them.
 `/conduct <project>` is how a phase is run: briefed to a subagent, proved
