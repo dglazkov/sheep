@@ -246,7 +246,8 @@ function listenHome(build: unknown, token = "t"): Promise<{ server: Server; port
 }
 
 describe("the two stamps (station phase 0)", () => {
-  it("prints the home's build beside this command's, in prose and in JSON, with the token at GET /home", async () => {
+  // Eight CLI spawns; on a GitHub runner each takes most of a second (collar phase 3), so the default 5s is not enough.
+  it("prints the home's build beside this command's, in prose and in JSON, with the token at GET /home", { timeout: 60_000 }, async () => {
     const w = await world();
     worlds.push(w);
     const stamped = await listenHome({ commit: "1fc8d03", builtAt: "2026-09-07T20:00:00Z" });
