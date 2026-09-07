@@ -22,7 +22,7 @@ carries them.
 
 ---
 
-**Where we are: collar phase 0 CLOSED; collar phases 1 to 4 NOT STARTED. Next: collar phase 1, the local home.** Planned 7 Sep 2026, the day after pasture closed, from a brainstorm with the shepherd; the shepherd's calls are in the journey's front matter. Phase 0 built and verified the same morning: the release exists as a ref in this repository, and the package ring holds against it. Nothing waits on a person until collar phase 3, which asks once for the `release` branch and the workflow, and collar phase 4, which spends tokens.
+**Where we are: collar phases 0 and 1 CLOSED; collar phases 2 to 4 NOT STARTED. Next: collar phase 2, setup, the skill, and the guide.** Planned 7 Sep 2026, the day after pasture closed, from a brainstorm with the shepherd; the shepherd's calls are in the journey's front matter. Phases 0 and 1 built and verified the same morning: the release exists as a ref in this repository, and the package ring installs it and walks journey 1's core against a local home started from the install. Nothing waits on a person until collar phase 3, which asks once for the `release` branch and the workflow, and collar phase 4, which spends tokens.
 
 The order is dependency order. Phase 0 is the release itself, the two
 bundles and the Worker in a tree npm can install, and the package ring
@@ -142,7 +142,16 @@ passes. In the checkout: `pnpm test` unchanged, plus tests for the pid
 file, the port check, and the config sentence driven through
 `bin/sheep.js` with a temp `SHEEP_LOCAL`. **⚑** none.
 
-**Status: NOT STARTED.**
+**Status: CLOSED.** 2026-09-07. The local home built: `sheep home local|stop`, `sheep home`, the secrets file, wrangler fetched once, start on demand; the package ring walked journey 1 steps 2, 3, 4, 6, and 7 from the install against it, and journey 5's file passed against that home, verified by the conductor.
+
+**Findings:**
+
+- **2026-09-07 — wrangler's `--env-file` reads a secrets file for a config in another directory,** so `~/.sheep/local/.dev.vars`, mode 600, feeds the package's own `home/wrangler.jsonc` unchanged; the daemon's one secret-related argument is the file's path, and 83 `ps` samples across the walk saw the token in none.
+- **2026-09-07 — A home is running only when its pid is alive and the port answers `sheep`;** either alone is a stale record, and `sheep home stop` signals nothing stale, so a reused pid or a stranger on the port is never killed. Tests drive both halves.
+- **2026-09-07 — A `local: true` marker in `~/.sheep/config` decides the start on demand, not the address,** which the daemon may move; `SHEEP_HOME` or `--home` drops the marker, so a refused connection to any other home is the error it was.
+- **2026-09-07 — A running home whose secrets changed is restarted, not reported:** `sheep home local` after `export ANTHROPIC_API_KEY` says `restarted` and `held`, and the home holds it; otherwise "held" would describe the file and not the home.
+- **2026-09-07 — wrangler 4.129.0 fetched into the ring's `~/.sheep/tools` in seven seconds, 236 MB;** the home started, stopped, and was restarted by `sheep ls` on the same port with the earlier sheep listed. wrangler also writes `.wrangler/tmp` beside the served config, inside the installed package tree; harmless, gone on reinstall.
+- **2026-09-07 — On macOS `import.meta.url` inside the bundle is the realpath under `/private/var`, while the ring's variables said `/var`;** the ring's first run failed on that string alone and now compares real paths. Cost: 18 minutes of a subagent, 12 of verification.
 
 ## Phase 2: Setup, the skill, and the guide
 

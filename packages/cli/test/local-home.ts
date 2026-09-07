@@ -4,6 +4,12 @@
  * Started once per test file; a file skips, with a message, when the home
  * cannot be started here. Factored out of journey 5's test for pasture
  * phase 0, which drives the same binary against the same kind of home.
+ *
+ * Collar phase 1: with `SHEEP_TEST_HOME` set, a home that is already up
+ * (the installed `sheep home local --faux`, in a ring or kept from one)
+ * is used instead of spawning, with `SHEEP_TEST_TOKEN` as its token, and
+ * `stopHome` leaves it running. That is how journey 5's file runs against
+ * the home a user gets, not the checkout's.
  */
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -18,7 +24,8 @@ const cellDir = new URL("../../cell/", import.meta.url).pathname;
 export interface LocalHome {
   url: string;
   token: string;
-  child: ChildProcess;
+  /** The `wrangler dev` this helper spawned; absent for a home that was already up (`SHEEP_TEST_HOME`). */
+  child?: ChildProcess;
   persist: string;
 }
 
@@ -35,6 +42,18 @@ async function freePort(): Promise<number> {
 
 /** The home, or the sentence saying why it could not be started. */
 export async function startHome(token: string): Promise<LocalHome | string> {
+  if (process.env.SHEEP_TEST_HOME) {
+    const url = process.env.SHEEP_TEST_HOME.replace(/\/+$/, "");
+    const given = process.env.SHEEP_TEST_TOKEN ?? token;
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(2_000) });
+      if (!response.ok || !(await response.text()).startsWith("sheep")) return `SHEEP_TEST_HOME=${url} does not answer as a sheep home`;
+    } catch (error) {
+      return `SHEEP_TEST_HOME=${url} does not answer: ${error instanceof Error ? error.message : String(error)}`;
+    }
+    // A scratch directory all the same: `runSheep` points SHEEP_CONFIG at a file that does not exist under it.
+    return { url, token: given, persist: await mkdtemp(join(tmpdir(), "sheep-home-")) };
+  }
   const wrangler = join(cellDir, "node_modules", "wrangler", "bin", "wrangler.js");
   if (!existsSync(wrangler)) return `wrangler is not installed at ${wrangler}`;
   let port: number;
@@ -88,8 +107,11 @@ export async function startHome(token: string): Promise<LocalHome | string> {
 }
 
 export async function stopHome(home: LocalHome): Promise<void> {
-  home.child.kill("SIGTERM");
-  await new Promise((resolve) => home.child.once("exit", resolve));
+  const { child } = home;
+  if (child !== undefined) {
+    child.kill("SIGTERM");
+    await new Promise((resolve) => child.once("exit", resolve));
+  }
   await rm(home.persist, { recursive: true, force: true });
 }
 

@@ -1,8 +1,8 @@
-import { readFileSync } from "node:fs";
-import { loadConfig } from "./config.js";
+import { loadConfig, type SheepConfig } from "./config.js";
 import { writeSessionFile } from "./export.js";
 import { runAbort, runLog, runPrompt, runStatus, runWait } from "./herd.js";
 import { Home } from "./home.js";
+import { isRefused, localStatus, readStamp, startLocalHome, stopLocalHome, whoAnswers } from "./local.js";
 import { PASTURE_NAME, runPasture } from "./pasture.js";
 import { runPiClient } from "./pi.js";
 
@@ -10,17 +10,12 @@ import { runPiClient } from "./pi.js";
  * The build stamp, from the manifest beside the running code: the release
  * manifest above `dist/sheep.mjs` carries `sheep.commit` and
  * `sheep.builtAt`, written by `scripts/release.mjs`; a checkout's
- * `packages/cli/package.json` carries no stamp, and says so.
+ * `packages/cli/package.json` carries no stamp, and says so. The same
+ * test tells the local home which wrangler and which config are its own.
  */
 export function version(): string {
-  try {
-    const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { sheep?: { commit?: unknown; builtAt?: unknown } };
-    const stamp = manifest.sheep;
-    if (stamp && typeof stamp.commit === "string" && typeof stamp.builtAt === "string") return `sheep ${stamp.commit} (${stamp.builtAt})`;
-  } catch {
-    // no manifest beside the code: a checkout
-  }
-  return "sheep 0.0.0-checkout";
+  const stamp = readStamp();
+  return stamp === undefined ? "sheep 0.0.0-checkout" : `sheep ${stamp.commit} (${stamp.builtAt})`;
 }
 
 const USAGE = `sheep — pi, running in a cell
@@ -40,6 +35,12 @@ usage:
   sheep export <id> [file]                  write the session as a pi SQLite file (default <id>.sqlite)
   sheep config                              print the resolved home (never the token)
   sheep --version
+
+  sheep home local [--faux]                 a home on this machine, under ~/.sheep/local, started if it was not; writes
+                                            ~/.sheep/config when there is none; the report says whether a model key is held
+                                            (from ANTHROPIC_API_KEY), or that the faux provider answers instead
+  sheep home stop                           stop the local home
+  sheep home                                which home the config names, and whether it answers
 
   sheep pasture new <name> [--repo <url> | --repo .] [--branch <branch>]
                                             make a pasture: a shared tree, a repository or none, and the sheep born into it;
@@ -62,6 +63,9 @@ options:
   --pasture <name>  with new: the pasture to be born into; with ls: only that herd
   --detach        with a prompt: send it and exit before the first token; the id is the first line of stdout
   --wait          with a prompt to a busy session: stream the queued turn when it starts
+  --faux          with home local: the scripted model that answers "ok", for a look at the plumbing without a key
+
+A command whose home is the local one starts it when the connection is refused, and says so on stderr.
 
 With a prompt after --, the reply streams and sheep exits when the turn ends. A prompt to a busy session is
 queued behind the running turn, as pi queues a prompt typed mid-turn; sheep prints "queued <id>" and exits 0.
@@ -78,6 +82,7 @@ interface Parsed {
   json: boolean;
   detach: boolean;
   wait: boolean;
+  faux: boolean;
   since?: string;
   last?: string;
   timeout?: string;
@@ -86,7 +91,7 @@ interface Parsed {
 
 function parse(argv: readonly string[]): Parsed {
   const args = [...argv];
-  const parsed: Parsed = { rest: [], json: false, detach: false, wait: false };
+  const parsed: Parsed = { rest: [], json: false, detach: false, wait: false, faux: false };
   const valued: Record<string, (value: string | undefined) => void> = {
     "--home": (value) => (parsed.home = value),
     "--name": (value) => (parsed.name = value),
@@ -109,6 +114,7 @@ function parse(argv: readonly string[]): Parsed {
     else if (arg === "--json") parsed.json = true;
     else if (arg === "--detach") parsed.detach = true;
     else if (arg === "--wait") parsed.wait = true;
+    else if (arg === "--faux") parsed.faux = true;
     else parsed.rest.push(arg);
   }
   return parsed;
@@ -132,75 +138,154 @@ export async function main(argv: readonly string[]): Promise<number> {
     return 0;
   }
   const output = { json: parsed.json, out: (text: string) => void process.stdout.write(text), err: (text: string) => void process.stderr.write(text) };
-  // Every case is `return await`: a rejection inside the `try` is caught below and printed as a sentence, not thrown out of `main`.
+  if (command === "home") return await runHome(parsed, config, output);
   try {
-    const home = new Home(config);
-    switch (command) {
-      case "ls": {
-        const sessions = await home.list(parsed.pasture);
-        if (parsed.json) process.stdout.write(`${JSON.stringify(sessions)}\n`);
-        else {
-          for (const session of sessions) {
-            process.stdout.write(`${session.id}\t${session.name ?? ""}\t${new Date(session.createdAt).toISOString()}\t${session.state}\t${session.pasture ?? ""}\n`);
-          }
-        }
-        return 0;
-      }
-      case "new": {
-        if (parsed.pasture !== undefined && !PASTURE_NAME.test(parsed.pasture)) return fail(`a pasture's name is [a-z0-9-]+, not ${JSON.stringify(parsed.pasture)}`);
-        const session = await home.create(parsed.name, parsed.pasture);
-        if (parsed.detach) return await detach(home, session.id, parsed);
-        process.stderr.write(`session ${session.id}\n`);
-        return await attach(home, session.id, parsed, output);
-      }
-      case "-c":
-      case "--continue": {
-        const newest = (await home.list())[0];
-        if (newest === undefined) return fail("no sessions at this home; run `sheep new`");
-        return await (parsed.detach ? detach(home, newest.id, parsed) : attach(home, newest.id, parsed, output));
-      }
-      case "attach": {
-        const id = parsed.rest[1];
-        if (id === undefined) return fail("attach needs a session id");
-        return await (parsed.detach ? detach(home, id, parsed) : attach(home, id, parsed, output));
-      }
-      case "status": {
-        const id = parsed.rest[1];
-        if (id === undefined) return fail("status needs a session id");
-        return await runStatus(home, id, output);
-      }
-      case "wait": {
-        const ids = parsed.rest.slice(1);
-        if (ids.length === 0) return fail("wait needs at least one session id");
-        const seconds = parsed.timeout === undefined ? undefined : Number(parsed.timeout);
-        if (seconds !== undefined && !(seconds > 0)) return fail(`--timeout needs a number of seconds, not ${parsed.timeout}`);
-        return await runWait(home, ids, { timeoutMs: seconds === undefined ? undefined : seconds * 1000 }, output);
-      }
-      case "abort": {
-        const id = parsed.rest[1];
-        if (id === undefined) return fail("abort needs a session id");
-        return await runAbort(home, id, output);
-      }
-      case "log": {
-        const id = parsed.rest[1];
-        if (id === undefined) return fail("log needs a session id");
-        const last = parsed.last === undefined ? undefined : Number(parsed.last);
-        if (last !== undefined && !(Number.isInteger(last) && last >= 0)) return fail(`--last needs a count, not ${parsed.last}`);
-        return await runLog(home, id, { since: parsed.since, last }, output);
-      }
-      case "pasture":
-        return await runPasture(home, { rest: parsed.rest.slice(1), repo: parsed.repo, branch: parsed.branch }, output);
-      case "export": {
-        const id = parsed.rest[1];
-        if (id === undefined) return fail("export needs a session id");
-        const file = parsed.rest[2] ?? `${id}.sqlite`;
-        const { tables } = writeSessionFile(file, await home.exportRows(id));
-        process.stdout.write(`${file}\t${Object.entries(tables).map(([table, count]) => `${table}=${count}`).join(" ")}\n`);
-        return 0;
-      }
-      default:
-        return fail(`unknown command: ${command}`);
+    return await dispatch(command, parsed, config, output);
+  } catch (error) {
+    // Started on demand: the configured home is the local one and nobody answered, so start it, say so, and go on once.
+    if (!(config.local === true && isRefused(error))) return fail(error instanceof Error ? error.message : String(error));
+    process.stderr.write("sheep: the local home is not running; starting it\n");
+    try {
+      const started = await startLocalHome({ say: output.err });
+      process.stderr.write(`sheep: local home at ${started.url}\n`);
+      return await dispatch(command, parsed, await loadConfig({ home: parsed.home }), output);
+    } catch (again) {
+      return fail(again instanceof Error ? again.message : String(again));
     }
+  }
+}
+
+type Output = Parameters<typeof runPrompt>[4];
+
+/** Every verb that talks to a home. A rejection is thrown to `main`, which prints it as a sentence, or starts the local home first. */
+async function dispatch(command: string, parsed: Parsed, config: SheepConfig, output: Output): Promise<number> {
+  const home = new Home(config);
+  switch (command) {
+    case "ls": {
+      const sessions = await home.list(parsed.pasture);
+      if (parsed.json) process.stdout.write(`${JSON.stringify(sessions)}\n`);
+      else {
+        for (const session of sessions) {
+          process.stdout.write(`${session.id}\t${session.name ?? ""}\t${new Date(session.createdAt).toISOString()}\t${session.state}\t${session.pasture ?? ""}\n`);
+        }
+      }
+      return 0;
+    }
+    case "new": {
+      if (parsed.pasture !== undefined && !PASTURE_NAME.test(parsed.pasture)) return fail(`a pasture's name is [a-z0-9-]+, not ${JSON.stringify(parsed.pasture)}`);
+      const session = await home.create(parsed.name, parsed.pasture);
+      if (parsed.detach) return await detach(home, session.id, parsed);
+      process.stderr.write(`session ${session.id}\n`);
+      return await attach(home, session.id, parsed, output);
+    }
+    case "-c":
+    case "--continue": {
+      const newest = (await home.list())[0];
+      if (newest === undefined) return fail("no sessions at this home; run `sheep new`");
+      return await (parsed.detach ? detach(home, newest.id, parsed) : attach(home, newest.id, parsed, output));
+    }
+    case "attach": {
+      const id = parsed.rest[1];
+      if (id === undefined) return fail("attach needs a session id");
+      return await (parsed.detach ? detach(home, id, parsed) : attach(home, id, parsed, output));
+    }
+    case "status": {
+      const id = parsed.rest[1];
+      if (id === undefined) return fail("status needs a session id");
+      return await runStatus(home, id, output);
+    }
+    case "wait": {
+      const ids = parsed.rest.slice(1);
+      if (ids.length === 0) return fail("wait needs at least one session id");
+      const seconds = parsed.timeout === undefined ? undefined : Number(parsed.timeout);
+      if (seconds !== undefined && !(seconds > 0)) return fail(`--timeout needs a number of seconds, not ${parsed.timeout}`);
+      return await runWait(home, ids, { timeoutMs: seconds === undefined ? undefined : seconds * 1000 }, output);
+    }
+    case "abort": {
+      const id = parsed.rest[1];
+      if (id === undefined) return fail("abort needs a session id");
+      return await runAbort(home, id, output);
+    }
+    case "log": {
+      const id = parsed.rest[1];
+      if (id === undefined) return fail("log needs a session id");
+      const last = parsed.last === undefined ? undefined : Number(parsed.last);
+      if (last !== undefined && !(Number.isInteger(last) && last >= 0)) return fail(`--last needs a count, not ${parsed.last}`);
+      return await runLog(home, id, { since: parsed.since, last }, output);
+    }
+    case "pasture":
+      return await runPasture(home, { rest: parsed.rest.slice(1), repo: parsed.repo, branch: parsed.branch }, output);
+    case "export": {
+      const id = parsed.rest[1];
+      if (id === undefined) return fail("export needs a session id");
+      const file = parsed.rest[2] ?? `${id}.sqlite`;
+      const { tables } = writeSessionFile(file, await home.exportRows(id));
+      process.stdout.write(`${file}\t${Object.entries(tables).map(([table, count]) => `${table}=${count}`).join(" ")}\n`);
+      return 0;
+    }
+    default:
+      return fail(`unknown command: ${command}`);
+  }
+}
+
+/**
+ * `sheep home local [--faux]`, `sheep home stop`, `sheep home [--json]`.
+ * The report names states and paths, never a value from the secrets file.
+ */
+async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Promise<number> {
+  const sub = parsed.rest[1];
+  try {
+    if (sub === "local") {
+      const report = await startLocalHome({ faux: parsed.faux, say: output.err });
+      if (parsed.json) {
+        output.out(`${JSON.stringify({ home: report.url, ...report })}\n`);
+        return 0;
+      }
+      const key =
+        report.key === "faux"
+          ? "the faux provider answers every prompt with \"ok\"; no key is used"
+          : report.key === "held"
+            ? `held, in ${report.secrets}`
+            : `not held; export ANTHROPIC_API_KEY and run \`sheep home local\` again`;
+      const configLine =
+        report.config.names !== undefined
+          ? `${report.config.path} names ${report.config.names}; --home ${report.url} selects the local home for one command`
+          : report.config.wrote
+            ? `${report.config.path} written`
+            : `${report.config.path} names this home`;
+      output.out(`local home: ${report.url} (${report.state}, pid ${report.pid})\nfiles: ${report.dir}\nconfig: ${configLine}\nkey: ${key}\n`);
+      return 0;
+    }
+    if (sub === "stop") {
+      const { stopped, record } = await stopLocalHome();
+      if (parsed.json) {
+        output.out(`${JSON.stringify({ stopped, home: record?.url ?? null })}\n`);
+        return 0;
+      }
+      output.out(record === undefined ? "no local home has been started here\n" : stopped ? `stopped the local home at ${record.url}\n` : `the local home at ${record.url} was not running\n`);
+      return 0;
+    }
+    if (sub !== undefined) return fail(`unknown home command: ${sub}; sheep home [local [--faux] | stop]`);
+
+    // Which home the config names, and whether it answers.
+    if (config.local === true) {
+      const status = await localStatus();
+      const home = status.record?.url ?? config.home ?? null;
+      if (parsed.json) {
+        output.out(`${JSON.stringify({ home, local: true, running: status.running, pid: status.running ? status.record!.pid : null, port: status.record?.port ?? null, stamp: status.record?.stamp ?? null, startedAt: status.running ? status.record!.startedAt : null })}\n`);
+        return 0;
+      }
+      output.out(home === null ? "home: (none); run `sheep home local`\n" : `home: ${home} (local, ${status.running ? `running, pid ${status.record!.pid}` : "stopped"})\n`);
+      return 0;
+    }
+    const home = config.home ?? null;
+    const answers = home === null ? "nobody" : await whoAnswers(home);
+    if (parsed.json) {
+      output.out(`${JSON.stringify({ home, local: false, answers: answers === "sheep" })}\n`);
+      return 0;
+    }
+    output.out(home === null ? "home: (none); run `sheep home local`, or pass --home <url>\n" : `home: ${home} (${answers === "sheep" ? "answers" : answers === "other" ? "answers, but not as a sheep home" : "does not answer"})\n`);
+    return 0;
   } catch (error) {
     return fail(error instanceof Error ? error.message : String(error));
   }
@@ -221,7 +306,7 @@ async function detach(home: Home, sessionId: string, parsed: Parsed): Promise<nu
 }
 
 /** With a prompt, sheep's own client; without one, pi's terminal through the bridge. */
-async function attach(home: Home, sessionId: string, parsed: Parsed, output: Parameters<typeof runPrompt>[4]): Promise<number> {
+async function attach(home: Home, sessionId: string, parsed: Parsed, output: Output): Promise<number> {
   if (parsed.prompt !== undefined) return runPrompt(home, sessionId, parsed.prompt, { wait: parsed.wait }, output);
   const serverId = await home.serverId();
   return runPiClient({ socketUrl: home.socketUrl(sessionId, serverId), serverId, sessionId });

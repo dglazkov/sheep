@@ -8,6 +8,14 @@ export interface SheepConfig {
   home?: string;
   /** The bearer token the home expects on every request. */
   token?: string;
+  /**
+   * Written by `sheep home local`: the home is the one under `~/.sheep/local`,
+   * which the CLI starts on demand when a connection to it is refused. The
+   * marker, not the address, decides: the address is whatever port the
+   * daemon last got, and a `--home` or `SHEEP_HOME` overriding it is never
+   * the local home, whatever it says.
+   */
+  local?: boolean;
 }
 
 export function configPath(): string {
@@ -28,6 +36,7 @@ export async function loadConfig(overrides: Partial<SheepConfig> = {}): Promise<
       fromFile = {
         ...(typeof record.home === "string" ? { home: record.home } : {}),
         ...(typeof record.token === "string" ? { token: record.token } : {}),
+        ...(record.local === true ? { local: true } : {}),
       };
     }
   } catch (error) {
@@ -37,7 +46,10 @@ export async function loadConfig(overrides: Partial<SheepConfig> = {}): Promise<
     ...(process.env.SHEEP_HOME ? { home: process.env.SHEEP_HOME } : {}),
     ...(process.env.SHEEP_TOKEN ? { token: process.env.SHEEP_TOKEN } : {}),
   };
-  return { ...fromFile, ...fromEnv, ...stripUndefined(overrides) };
+  const resolved = { ...fromFile, ...fromEnv, ...stripUndefined(overrides) };
+  // An address from the environment or the command line is some home, never the local one, whatever the file says.
+  if (fromEnv.home !== undefined || overrides.home !== undefined) delete resolved.local;
+  return resolved;
 }
 
 function stripUndefined<T extends object>(value: T): Partial<T> {
