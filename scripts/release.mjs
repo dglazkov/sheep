@@ -19,7 +19,7 @@
  *   bin/sheep.js         #!/usr/bin/env node; imports ../dist/sheep.mjs
  *   dist/                the two bundles, the guide, and what they read beside them (scripts/bundle.mjs)
  *   home/                the Worker and its config (scripts/bundle.mjs)
- *   .agents/skills/sheep the skill: the doorway `sheep setup` copies into a directory
+ *   SKILL.md             the skill, at the root so `npx skills add dglazkov/sheep` offers it alone: the doorway `sheep setup` copies into a directory
  *   README.md, LICENSE   from HEAD
  *
  * Nothing of `packages/`, `vendor/`, `docs/`, or `.github/` ships.
@@ -81,8 +81,8 @@ export const RELEASE_OPTIONAL_DEPENDENCIES = {
 /** What ships from HEAD's tree unchanged; everything else at the top level is removed from the release index. */
 export const SHIPPED_FROM_HEAD = ["README.md", "LICENSE"];
 
-/** The skill's directory, shipped at its own path: added back after the top level is cleared, from the tree like the built files. */
-export const SKILL_DIR = ".agents/skills/sheep";
+/** The skill, at the root: added back after the top level is cleared, from the tree like the built files. */
+export const SKILL_FILE = "SKILL.md";
 
 /** The branch installs come from, and the ref a candidate waits on while the package ring walks it (collar phase 3). */
 export const RELEASE_REF = "refs/heads/release";
@@ -146,7 +146,7 @@ function tryGit(...args) {
 /** The files the design lists: the manifest, the bin, what the bundle build wrote (the guide among them), the skill, and the two from HEAD. */
 export function expectedReleaseFiles(built, skill) {
   if (!built.some((file) => file.file === "dist/agent-guide.md")) throw new Error("the bundle build did not write dist/agent-guide.md");
-  if (!skill.includes(`${SKILL_DIR}/SKILL.md`)) throw new Error(`the tree carries no ${SKILL_DIR}/SKILL.md`);
+  if (!skill.includes(SKILL_FILE)) throw new Error(`the tree carries no ${SKILL_FILE}`);
   return [
     "package.json",
     "bin/sheep.js",
@@ -194,8 +194,8 @@ async function main() {
     git("add", "-f", "dist", "home", { env });
 
     // The skill, from the working tree like the bundles it goes with; on a clean tree, which the guard demands, that is HEAD's.
-    git("add", "-f", "--", SKILL_DIR, { env });
-    const skill = git("ls-files", "--cached", "--", SKILL_DIR, { env }).split("\n").filter(Boolean);
+    git("add", "-f", "--", SKILL_FILE, { env });
+    const skill = git("ls-files", "--cached", "--", SKILL_FILE, { env }).split("\n").filter(Boolean);
 
     const bin = path.join(tmp, "sheep.js");
     await fs.writeFile(bin, BIN_SHEEP_JS);

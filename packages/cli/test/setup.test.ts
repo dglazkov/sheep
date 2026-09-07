@@ -18,7 +18,7 @@ import { bin, type Result } from "./local-home.js";
 
 const repoRoot = new URL("../../../", import.meta.url).pathname.replace(/\/$/, "");
 const guide = new URL("../agent-guide.md", import.meta.url).pathname;
-const skill = join(repoRoot, ".agents", "skills", SKILL_NAME);
+const skill = join(repoRoot, "SKILL.md");
 
 /** The checkout's CLI, run in `cwd` with a config file that does not exist and no home in the environment. */
 function sheep(cwd: string, args: string[], extra: Record<string, string> = {}): Promise<Result> {
@@ -92,16 +92,16 @@ describe("the skill", () => {
     try {
       const first = installSkill(dir, skill);
       expect(first).toEqual({ path: join(dir, ".agents", "skills", SKILL_NAME), state: "installed", doorway: { path: join(dir, ".claude", "skills", SKILL_NAME), state: "linked" } });
-      expect(await readFile(join(first.path, "SKILL.md"), "utf8")).toBe(await readFile(join(skill, "SKILL.md"), "utf8"));
+      expect(await readFile(join(first.path, "SKILL.md"), "utf8")).toBe(await readFile(skill, "utf8"));
       expect(lstatSync(first.doorway.path).isSymbolicLink()).toBe(true);
       expect(readlinkSync(first.doorway.path)).toBe(join("..", "..", ".agents", "skills", SKILL_NAME));
-      expect(await readFile(join(first.doorway.path, "SKILL.md"), "utf8")).toBe(await readFile(join(skill, "SKILL.md"), "utf8"));
+      expect(await readFile(join(first.doorway.path, "SKILL.md"), "utf8")).toBe(await readFile(skill, "utf8"));
 
       expect(installSkill(dir, skill)).toMatchObject({ state: "current", doorway: { state: "current" } });
 
       await writeFile(join(first.path, "SKILL.md"), "an older doorway\n");
       expect(installSkill(dir, skill)).toMatchObject({ state: "refreshed", doorway: { state: "current" } });
-      expect(await readFile(join(first.path, "SKILL.md"), "utf8")).toBe(await readFile(join(skill, "SKILL.md"), "utf8"));
+      expect(await readFile(join(first.path, "SKILL.md"), "utf8")).toBe(await readFile(skill, "utf8"));
 
       // Somebody's real directory at the doorway's place: left alone, and said so.
       const other = await mkdtemp(join(tmpdir(), "sheep-setup-"));

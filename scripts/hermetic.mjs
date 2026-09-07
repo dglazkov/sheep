@@ -37,7 +37,8 @@
  * through `docker run -e` (never an argument, never a build arg, never a
  * file) and nothing else of this machine. Inside, this script's other
  * half (`--inside`) adds the skill to a fresh working directory under the
- * container's HOME with `npx skills add dglazkov/sheep --skill sheep`,
+ * container's HOME with `npx skills add dglazkov/sheep --skill sheep` (the
+ * root SKILL.md, the one skill a bare `skills add` finds),
  * prints the exact `claude -p` command, and runs it with journey 1's
  * sentence and no steps: `--allowedTools` for Bash, Read, Edit, Write,
  * Glob, and Grep, `--permission-prompts none` so nothing can ask and
@@ -391,7 +392,7 @@ class Ring {
     }
     const bin = join(this.prefix, "bin", "sheep");
     const pkg = join(this.prefix, "lib", "node_modules", "sheep");
-    for (const required of [bin, join(pkg, "package.json"), join(pkg, "dist", "sheep.mjs"), join(pkg, "dist", "pi-client.mjs"), join(pkg, "dist", "agent-guide.md"), join(pkg, "home", "worker.mjs"), join(pkg, "home", "wrangler.jsonc"), join(pkg, ".agents", "skills", "sheep", "SKILL.md")]) {
+    for (const required of [bin, join(pkg, "package.json"), join(pkg, "dist", "sheep.mjs"), join(pkg, "dist", "pi-client.mjs"), join(pkg, "dist", "agent-guide.md"), join(pkg, "home", "worker.mjs"), join(pkg, "home", "wrangler.jsonc"), join(pkg, "SKILL.md")]) {
       if (!existsSync(required)) this.fail("step 1", command, { ...result, stderr: `${result.stderr}\nmissing after install: ${required}` });
     }
     // With no repository, the build stamp is the install's; it has to be whole, and the commit the caller expected.
@@ -432,11 +433,11 @@ class Ring {
     if (report.checkout !== null) wrong.push("checkout");
     if (report.next !== expected.next) wrong.push("next");
     if (wrong.length > 0) this.fail("step 1", command, { ...result, stderr: `${result.stderr}\n${wrong.join(", ")} not as expected: ${JSON.stringify(expected)}` });
-    // The skill on disk: this release's SKILL.md under .agents, and .claude/skills/sheep a relative link to it.
-    const shipped = readFileSync(join(pkg, ".agents", "skills", "sheep", "SKILL.md"), "utf8");
+    // The skill on disk: this release's root SKILL.md copied under .agents, and .claude/skills/sheep a relative link to it.
+    const shipped = readFileSync(join(pkg, "SKILL.md"), "utf8");
     const copied = existsSync(join(skillDir, "SKILL.md")) ? readFileSync(join(skillDir, "SKILL.md"), "utf8") : undefined;
     if (copied !== shipped) this.fail("step 1", `cat ${join(skillDir, "SKILL.md")}`, { stdout: copied ?? "", stderr: "expected the release's SKILL.md", code: 1 });
-    if (this.sha !== undefined && shipped.trim() !== this.git("show", `${this.sha}:.agents/skills/sheep/SKILL.md`)) this.fail("step 1", `git show ${this.sha}:.agents/skills/sheep/SKILL.md`, { stdout: shipped, stderr: "the installed skill is not the ref's", code: 1 });
+    if (this.sha !== undefined && shipped.trim() !== this.git("show", `${this.sha}:SKILL.md`)) this.fail("step 1", `git show ${this.sha}:SKILL.md`, { stdout: shipped, stderr: "the installed skill is not the ref's", code: 1 });
     let link;
     try {
       link = lstatSync(doorway);
@@ -1017,7 +1018,7 @@ async function dogRing({ ref, repo, spec, commit, images, keep, yes, dryRun, bud
     `that a person typed the sentence and answered the dog: the prompt went in print mode with --allowedTools ${DOG_TOOLS} and --permission-prompts none, so nothing could ask and anything that would was denied and reported`,
     "that the dog asked for the key: ANTHROPIC_API_KEY was in the container's environment from the start, so journey 1 step 2's ask was met ahead",
     "that a user without root can do it: the container ran as root, the image's default; Claude Code refuses --dangerously-skip-permissions as root, so the dog's tools came by --allowedTools",
-    "that the skill the dog read is the ref's: npx skills add clones main of github.com/dglazkov/sheep, as it does for a user",
+    "that the skill the dog read is the ref's: npx skills add clones main of github.com/dglazkov/sheep, as it does for a user; --skill sheep names the one the root SKILL.md is, which a bare `skills add` finds and stops at (the repository's .claude/skills are its own workflow, and never offered)",
     spec === undefined
       ? `that github.com serves ${INSTALL_SPEC}: the container's git was told github.com/dglazkov/sheep is /src.git, the ref exported as refs/heads/release (the ring given the spec installs from GitHub)`
       : `that the release commit has ${expect ?? "a known commit"} as a parent: no repository to read; \`git log release\` answers it${expect ? "" : "; with no --commit the stamp was printed, not checked"}`,
@@ -1126,8 +1127,8 @@ async function dogInside({ dryRun, redirect, expect, budget }) {
   const skillText = readFileSync(skillFile, "utf8");
   let versus = "";
   if (redirect) {
-    const refs = spawnSync("git", ["--git-dir", "/src.git", "show", "release:.agents/skills/sheep/SKILL.md"], { encoding: "utf8" }).stdout;
-    versus = skillText.trim() === refs.trim() ? "; the same text as the ref's .agents/skills/sheep/SKILL.md" : "; not the ref's text (main's, from GitHub)";
+    const refs = spawnSync("git", ["--git-dir", "/src.git", "show", "release:SKILL.md"], { encoding: "utf8" }).stdout;
+    versus = skillText.trim() === refs.trim() ? "; the same text as the ref's SKILL.md" : "; not the ref's text (main's, from GitHub)";
   }
   ok("skill", SKILLS_ADD.join(" "), `${skillSeconds}s; ${tilde(skillFile)} (${lstatSync(skillDir).isSymbolicLink() ? "a link" : "a real directory, copied"}, ${skillText.length} bytes)${versus}; in ${tilde(work)}: ${readdirSync(work).sort().join(", ")}`);
 

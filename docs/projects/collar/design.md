@@ -36,7 +36,7 @@ way a user did.
 | the install spec | `github:dglazkov/sheep#release` | `INSTALL_SPEC` in the CLI; the README; the skill |
 | the build stamp | the `main` commit and time a release was built from | `sheep.commit` and `sheep.builtAt` in the manifest; `sheep --version` |
 | the local home | a home in workerd on the dog's machine, no account behind it | `~/.sheep/local/`: state, secrets, the daemon's log and pid |
-| the skill | the doorway an agent reads: install, `sheep --agent-help`, what needs a person | `.agents/skills/sheep/SKILL.md`, and a `.claude/skills/sheep` symlink |
+| the skill | the doorway an agent reads: install, `sheep --agent-help`, what needs a person | `SKILL.md` at the repo root and the release root; installed as `.agents/skills/sheep/` with a `.claude/skills/sheep` symlink |
 | the guide | the words this build ships about itself | `sheep --agent-help`, a file beside the bundle |
 | a ring | one hermetic environment the walk runs in | `scripts/hermetic.mjs --ring package\|machine\|dog` |
 | the walk | journey 1 steps 1 to 4 and 6, with the faux provider | the one script every ring runs |
@@ -109,7 +109,7 @@ dist/pi-client.mjs        pi's experimental cli, whole, for attach mode
 dist/agent-guide.md       the guide, `sheep --agent-help`
 home/worker.mjs           the cell, bundled for workerd
 home/wrangler.jsonc       main worker.mjs, no_bundle, the bindings and migrations of packages/cell/wrangler.jsonc
-.agents/skills/sheep/SKILL.md
+SKILL.md                  the skill, at the root so `npx skills add dglazkov/sheep` finds it alone
 README.md, LICENSE
 ```
 
@@ -244,7 +244,9 @@ shape:
 4. **The report**, in prose and with `--json`: each of the three, its
    state, and the next thing to run.
 
-The skill, `.agents/skills/sheep/SKILL.md`, is short and does not rot:
+The skill sits at the repo root, not under `.claude/skills` beside `conduct` and `pi-bump`: those are the repo's own workflow, the shepherd's, and a dog must never receive them. The skills CLI stops at a root `SKILL.md` and lists only that one, descending into subdirectories only when asked with `--full-depth`, so the root is what keeps `npx skills add dglazkov/sheep` honest.
+
+The skill, `SKILL.md` at the repo root, is short and does not rot:
 what sheep is in two sentences, the install spec, `sheep setup`, then
 "run `sheep --agent-help` and read it before anything else", and the
 three things that need a person: a key, an account for a deployed home,

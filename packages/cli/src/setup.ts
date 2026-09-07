@@ -6,10 +6,10 @@
  * 1. The command on PATH. Not there: `npm install -g <spec>`, unless
  *    `--no-install`. There already, from a release or a checkout: left
  *    alone. `which` is not trusted (`onpath.ts`).
- * 2. The skill in this directory: `.agents/skills/sheep/`, copied from the
- *    package, and a relative symlink at `.claude/skills/sheep`, never over
- *    a real directory. Inside a checkout of sheep itself: nothing, and the
- *    report says why.
+ * 2. The skill in this directory: `.agents/skills/sheep/SKILL.md`, copied
+ *    from the package root's `SKILL.md`, and a relative symlink at
+ *    `.claude/skills/sheep`, never over a real directory. Inside a checkout
+ *    of sheep itself: nothing, and the report says why.
  * 3. The home: reported, not made. None configured, the local home and
  *    whether it runs, or another address and whether it answers. `sheep
  *    home local` is the next sentence when there is none.
@@ -24,7 +24,7 @@
  * upgrades the words; the skill is a doorway that says to read them.
  */
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { SheepConfig } from "./config.js";
@@ -53,10 +53,16 @@ export function readGuide(): string {
   return readFileSync(guidePath(), "utf8");
 }
 
-/** The skill this build ships: `.agents/skills/sheep/` at the package root, which is the repository root in a checkout. */
+/**
+ * The skill this build ships: `SKILL.md` at the package root, beside
+ * `package.json`, which is the repository root in a checkout. At the root
+ * rather than under `.agents/skills/`, because `npx skills add
+ * dglazkov/sheep` stops at a root `SKILL.md` and offers that one skill; the
+ * repository's own `.claude/skills/` are its workflow, not a dog's.
+ */
 export function skillSource(): string {
   const packageRoot = readStamp() === undefined ? join(codeDir, "..", "..", "..") : join(codeDir, "..");
-  return join(packageRoot, ".agents", "skills", SKILL_NAME);
+  return join(packageRoot, "SKILL.md");
 }
 
 /**
@@ -93,14 +99,12 @@ export interface SkillReport {
   doorway: { path: string; state: DoorwayState };
 }
 
-function sameTree(a: string, b: string): boolean {
-  const names = readdirSync(a).sort();
-  if (JSON.stringify(names) !== JSON.stringify(readdirSync(b).sort())) return false;
-  return names.every((name) => {
-    const [x, y] = [join(a, name), join(b, name)];
-    if (statSync(x).isDirectory()) return statSync(y).isDirectory() && sameTree(x, y);
-    return statSync(y).isFile() && readFileSync(x).equals(readFileSync(y));
-  });
+/** `dest` is a directory holding exactly one file, `SKILL.md`, with `source`'s bytes. */
+function sameSkill(source: string, dest: string): boolean {
+  if (!existsSync(dest) || !statSync(dest).isDirectory()) return false;
+  if (JSON.stringify(readdirSync(dest)) !== JSON.stringify(["SKILL.md"])) return false;
+  const copy = join(dest, "SKILL.md");
+  return statSync(copy).isFile() && readFileSync(copy).equals(readFileSync(source));
 }
 
 /**
@@ -113,15 +117,15 @@ function sameTree(a: string, b: string): boolean {
  * directory at the symlink's place is never touched.
  */
 export function installSkill(dir: string, source: string = skillSource()): SkillReport {
-  if (!existsSync(join(source, "SKILL.md"))) throw new Error(`this build carries no skill at ${source}`);
+  if (!existsSync(source)) throw new Error(`this build carries no skill at ${source}`);
   const dest = join(dir, ".agents", "skills", SKILL_NAME);
   let state: SkillState;
-  if (existsSync(dest) && statSync(dest).isDirectory() && sameTree(source, dest)) state = "current";
+  if (sameSkill(source, dest)) state = "current";
   else {
     state = existsSync(dest) ? "refreshed" : "installed";
-    mkdirSync(dirname(dest), { recursive: true });
     rmSync(dest, { recursive: true, force: true });
-    cpSync(source, dest, { recursive: true });
+    mkdirSync(dest, { recursive: true });
+    copyFileSync(source, join(dest, "SKILL.md"));
   }
 
   const doorway = join(dir, ".claude", "skills", SKILL_NAME);
