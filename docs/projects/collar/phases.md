@@ -228,12 +228,12 @@ asked once; no money.
 **Findings:**
 
 - **2026-09-07 — The machine ring held on both images in under thirty seconds: `node:22-slim` and `node:24-slim`, arm64, git and procps added, nothing mounted, as root;** the install took three seconds and wrangler's fetch five inside each container.
-- **2026-09-07 — A bare repository with an unborn `HEAD` crashes npm's git installer:** `git ls-remote` lists no `HEAD`, and pacote dies with "Cannot read properties of undefined (reading 'sha')". The ring points the bare repository's `HEAD` at the ref it exports.
-- **2026-09-07 — A debt, for collar phase 4: `sheep home stop` waits forever on a zombie.** With no init in a container the detached daemon is never reaped, `kill(pid, 0)` keeps answering, and after SIGKILL the loop in `stopLocalHome` is unbounded. The ring runs `docker --init`; the CLI should bound that loop.
-- **2026-09-07 — The guard refused a bundle broken on purpose at step 1 and left `refs/heads/release` untouched, the candidate parked at `refs/sheep/candidate`;** a good release moves the ref only after twelve ring lines, and neither `--force` nor `--no-push` skips the walk.
-- **2026-09-07 — The workflow cannot reach the release tree:** `release.mjs` drops every top-level entry of `HEAD` but README and LICENSE and demands exactly the design's 14 files, so `.github/` throws; checked by the conductor on a release built from the commit carrying the workflow. Cost: 90 minutes of a subagent, 20 of verification.
-- **2026-09-07 — The shepherd said push, and the workflow's first two runs were red for reasons no local ring could see:** `setup-node` looks for pnpm before corepack has enabled it (`package-manager-cache: false`), and lamb's journey 5 test kept a faux turn running for 2.5 seconds, less than three CLI calls take on the runner (now ten). The third run pushed `release`.
-- **2026-09-07 — `npx github:dglazkov/sheep#release setup` from a fresh `HOME` on this machine reported in nine seconds,** and the package ring walked journey 1 from that spec in twenty; the runner's install job did the same, stamped with the run's commit.
+- **2026-09-07 — A bare repository with an unborn `HEAD` crashes npm's git installer** ("Cannot read properties of undefined (reading 'sha')"); the ring points the bare repository's `HEAD` at the ref it exports.
+- **2026-09-07 — A debt, paid in collar phase 4: `sheep home stop` waited forever on a zombie.** With no init in a container the daemon is never reaped, `kill(pid, 0)` keeps answering, and the loop after SIGKILL was unbounded; the ring runs `docker --init`.
+- **2026-09-07 — The guard refused a bundle broken on purpose at step 1 and left `refs/heads/release` untouched, the candidate parked at `refs/sheep/candidate`;** neither `--force` nor `--no-push` skips the walk.
+- **2026-09-07 — The workflow cannot reach the release tree:** `release.mjs` drops every top-level entry of `HEAD` but README and LICENSE and demands the design's 14 files, so `.github/` throws; checked on a release built from the commit carrying the workflow. Cost: 90 minutes of a subagent, 20 of verification.
+- **2026-09-07 — The workflow's first two runs were red for reasons no local ring could see:** `setup-node` looks for pnpm before corepack enables it (`package-manager-cache: false`), and lamb's journey 5 test kept a faux turn running 2.5 seconds, less than three CLI calls take on the runner (now ten). The third run pushed `release`.
+- **2026-09-07 — `npx github:dglazkov/sheep#release setup` from a fresh `HOME` here reported in nine seconds,** and the package ring walked journey 1 from that spec in twenty; the runner's install job did the same, stamped with the run's commit.
 
 ## Phase 4: The dog ring, and the walk
 
