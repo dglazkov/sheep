@@ -7,7 +7,23 @@
  * `sheep --version`, with the installed command and nothing else.
  *
  *   pnpm hermetic --ring package [ref]     ref defaults to refs/heads/release of this repository
- *   --keep                                  leave the ring's directory, and its local home running, and say where
+ *   pnpm hermetic --ring machine [ref]     the package ring inside a container from node:22-slim, then node:24-slim (collar phase 3)
+ *   --repo <path>                          the repository the ref is read from and installed from (default: this checkout; a bare repository works)
+ *   --spec <spec>                          install this spec instead of a ref: `github:dglazkov/sheep#release` needs no repository at all
+ *   --commit <sha>                         with --spec: the installed build must be stamped with this commit
+ *   --image <name>                         machine ring: one image instead of both (repeatable)
+ *   --keep                                 leave the ring's directory, and its local home running, and say where
+ *
+ * The rings are one script with one walk: the ring chooses the environment,
+ * never the steps. The machine ring exports the ref into a build context as
+ * a bare repository, builds an image from `node:22-slim` and one from
+ * `node:24-slim` with git and procps added (git because the README names
+ * it as a prerequisite and npm's git installer needs it; procps because
+ * this script reads `ps`), copies itself in, and runs `node hermetic.mjs
+ * --ring package --repo /src.git <sha>` in a container with nothing
+ * mounted and no Docker socket. A machine without Docker says so and
+ * exits 2. CI's second job runs `--spec github:dglazkov/sheep#release` on
+ * a bare runner: the string a user types, with no repository beside it.
  *
  * The package ring makes one temp directory and points five variables
  * inside it: `npm_config_prefix`, `npm_config_cache`, `HOME`,
@@ -47,41 +63,69 @@
  * while it runs to see the child and where it runs from.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+/** Where this script lives, one level up: the checkout, or `/ring` inside the machine ring's container. Stripped from PATH. */
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const FAUX_REPLY = "ok";
 
+/** The one string a dog needs, as `packages/cli/src/setup.ts` holds it: with this spec the ring leaves `SHEEP_INSTALL_SPEC` unset and setup runs its own default. */
+const INSTALL_SPEC = "github:dglazkov/sheep#release";
+
+/** The machine ring's images, in the order they run. */
+const MACHINE_IMAGES = ["node:22-slim", "node:24-slim"];
+
 function usage(message) {
-  console.error(`hermetic: ${message}\nusage: pnpm hermetic --ring package [ref] [--keep]`);
+  console.error(`hermetic: ${message}\nusage: pnpm hermetic --ring package|machine [ref] [--repo <path>] [--spec <spec> [--commit <sha>]] [--image <name>] [--keep]`);
   process.exit(2);
 }
 
 function parseArgs(argv) {
   const args = [...argv];
-  const parsed = { ring: undefined, ref: "refs/heads/release", keep: false };
+  const parsed = { ring: undefined, ref: undefined, repo: root, spec: undefined, commit: undefined, images: [], keep: false };
+  const value = (flag) => {
+    const next = args.shift();
+    if (next === undefined || next.startsWith("--")) usage(`${flag} needs a value`);
+    return next;
+  };
   while (args.length > 0) {
     const arg = args.shift();
-    if (arg === "--ring") parsed.ring = args.shift();
-    else if (arg.startsWith("--ring=")) parsed.ring = arg.slice("--ring=".length);
-    else if (arg === "--keep") parsed.keep = true;
-    else if (arg.startsWith("--")) usage(`unknown flag ${arg}`);
-    else parsed.ref = arg;
+    const [flag, inline] = arg.startsWith("--") && arg.includes("=") ? [arg.slice(0, arg.indexOf("=")), arg.slice(arg.indexOf("=") + 1)] : [arg, undefined];
+    if (inline !== undefined) args.unshift(inline);
+    if (flag === "--ring") parsed.ring = value(flag);
+    else if (flag === "--repo") parsed.repo = resolve(value(flag));
+    else if (flag === "--spec") parsed.spec = value(flag);
+    else if (flag === "--commit") parsed.commit = value(flag);
+    else if (flag === "--image") parsed.images.push(value(flag));
+    else if (flag === "--keep") parsed.keep = true;
+    else if (flag.startsWith("--")) usage(`unknown flag ${flag}`);
+    else if (parsed.ref !== undefined) usage(`one ref at most: ${parsed.ref} and ${flag}`);
+    else parsed.ref = flag;
   }
   if (parsed.ring === undefined) usage("--ring is required");
-  if (parsed.ring === "machine" || parsed.ring === "dog") usage(`the ${parsed.ring} ring is collar phase 4's; only the package ring exists`);
-  if (parsed.ring !== "package") usage(`unknown ring ${parsed.ring}`);
+  if (parsed.ring === "dog") usage("the dog ring is collar phase 4's; the package and machine rings exist");
+  if (parsed.ring !== "package" && parsed.ring !== "machine") usage(`unknown ring ${parsed.ring}`);
+  if (parsed.spec !== undefined && parsed.ref !== undefined) usage(`a ref (${parsed.ref}) or a spec (${parsed.spec}), not both`);
+  if (parsed.commit !== undefined && parsed.spec === undefined) usage("--commit goes with --spec; a ref names its own commit");
+  if (parsed.commit !== undefined && !/^[0-9a-f]{7,40}$/.test(parsed.commit)) usage(`--commit ${parsed.commit} is not a sha`);
+  if (parsed.ring === "machine" && parsed.spec !== undefined) usage("the machine ring takes a ref; it exports the ref into the container as a bare repository");
+  if (parsed.images.length > 0 && parsed.ring !== "machine") usage("--image is the machine ring's");
+  if (parsed.spec === undefined && parsed.ref === undefined) parsed.ref = "refs/heads/release";
+  if (parsed.images.length === 0) parsed.images = [...MACHINE_IMAGES];
   return parsed;
 }
 
-const git = (...args) => {
-  const done = spawnSync("git", args, { cwd: root, encoding: "utf8" });
-  if (done.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${(done.stderr || "").trim()}`);
-  return (done.stdout || "").trim();
-};
+/** `git` in a repository: this checkout by default, or the one `--repo` named, which may be bare. */
+const gitIn =
+  (dir) =>
+  (...args) => {
+    const done = spawnSync("git", args, { cwd: dir, encoding: "utf8" });
+    if (done.status !== 0) throw new Error(`git ${args.join(" ")} failed in ${dir}: ${(done.stderr || "").trim()}`);
+    return (done.stdout || "").trim();
+  };
 
 /** Runs a command to completion, collecting output; never throws on a nonzero exit. */
 function run(command, args, options) {
@@ -125,10 +169,30 @@ async function answers(url) {
 }
 
 class Ring {
-  constructor(ref, keep) {
-    // The ref first: a ref that does not resolve leaves no directory behind.
-    this.sha = git("rev-parse", "--verify", `${ref}^{commit}`);
-    this.ref = ref;
+  /**
+   * A ref in a repository (the spec becomes `git+file://<repo>#<sha>`, and
+   * the ring reads the ref's tree to check the install against it), or a
+   * spec alone (`github:dglazkov/sheep#release`: no repository, and the
+   * build stamp is read from the install; `--commit` says what it must be).
+   */
+  constructor({ ref, repo, spec, commit, keep }) {
+    if (spec === undefined) {
+      this.git = gitIn(repo);
+      // The ref first: a ref that does not resolve leaves no directory behind.
+      this.sha = this.git("rev-parse", "--verify", `${ref}^{commit}`);
+      this.ref = ref;
+      this.repo = repo;
+      this.spec = `git+file://${repo}#${this.sha}`;
+      this.stamp = JSON.parse(this.git("show", `${this.sha}:package.json`)).sheep;
+    } else {
+      this.git = undefined;
+      this.sha = undefined;
+      this.ref = undefined;
+      this.repo = undefined;
+      this.spec = spec;
+      this.stamp = undefined;
+    }
+    this.commit = commit;
     this.keep = keep;
     this.dir = mkdtempSync(join(tmpdir(), "sheep-ring-"));
     this.prefix = join(this.dir, "prefix");
@@ -139,11 +203,15 @@ class Ring {
     for (const dir of [this.prefix, this.cache, this.home, this.local]) mkdirSync(dir, { recursive: true });
     this.work = join(this.dir, "work");
     mkdirSync(this.work);
-    this.stamp = JSON.parse(git("show", `${this.sha}:package.json`)).sheep;
     this.lines = [];
     this.unchecked = [];
     this.localHome = undefined;
     this.tokenWatch = undefined;
+  }
+
+  /** The directories stripped from PATH: where this script lives and the repository the ring installs from; never the filesystem root. */
+  stripped() {
+    return [...new Set([root, this.repo].filter((dir) => dir && dir !== sep))];
   }
 
   /** The environment every command in the ring runs with: the five variables, and a PATH with this checkout stripped. */
@@ -152,10 +220,11 @@ class Ring {
     for (const [key, value] of Object.entries(process.env)) {
       if (key.startsWith("npm_") || key.startsWith("PNPM_") || key === "NODE_OPTIONS" || key === "NODE_PATH" || key === "INIT_CWD") continue;
       // No home, no token, no key: the walk gets its home from the config the installed command writes, and runs the faux provider.
-      if (key === "SHEEP_HOME" || key === "SHEEP_TOKEN" || key === "ANTHROPIC_API_KEY") continue;
+      if (key === "SHEEP_HOME" || key === "SHEEP_TOKEN" || key === "ANTHROPIC_API_KEY" || key === "SHEEP_INSTALL_SPEC") continue;
       inherited[key] = value;
     }
-    const path = (process.env.PATH ?? "").split(":").filter((entry) => entry && !entry.startsWith(root + sep) && entry !== root);
+    const stripped = this.stripped();
+    const path = (process.env.PATH ?? "").split(":").filter((entry) => entry && !stripped.some((dir) => entry === dir || entry.startsWith(dir + sep)));
     return {
       ...inherited,
       npm_config_prefix: this.prefix,
@@ -192,12 +261,14 @@ class Ring {
     onlyHolds(this.local, []);
     onlyHolds(this.work, []);
     for (const entry of env.PATH.split(":")) {
-      if (entry === root || entry.startsWith(root + sep)) throw new Error(`PATH still reaches this checkout: ${entry}`);
+      for (const dir of this.stripped()) {
+        if (entry === dir || entry.startsWith(dir + sep)) throw new Error(`PATH still reaches ${dir}: ${entry}`);
+      }
     }
     if (existsSync(this.config)) throw new Error(`${this.config} exists before the walk`);
     console.log(`ring: ${this.dir}`);
     for (const key of five) console.log(`  ${key}=${env[key]}`);
-    console.log(`  PATH=${join(this.prefix, "bin")}:… (this checkout stripped)`);
+    console.log(`  PATH=${join(this.prefix, "bin")}:… (${this.stripped().join(" and ")} stripped)`);
   }
 
   /** Paths as a child saw them, or as the ring named them: on macOS the ring's temp directory is under /var and its realpath under /private/var. */
@@ -219,10 +290,10 @@ class Ring {
    * and the skill into that directory; the ring reads both, and the report.
    */
   async install() {
-    const spec = `git+file://${root}#${this.sha}`;
+    const spec = this.spec;
     const started = Date.now();
-    // The spec setup installs with is the ring's ref, not github:dglazkov/sheep#release: that branch is collar phase 3's.
-    const env = { ...this.env(), SHEEP_INSTALL_SPEC: spec };
+    // Setup's own default is the user's string; any other spec (a ref in a repository) reaches setup through SHEEP_INSTALL_SPEC.
+    const env = spec === INSTALL_SPEC ? this.env() : { ...this.env(), SHEEP_INSTALL_SPEC: spec };
     const versions = { node: spawnSync("node", ["--version"], { env, encoding: "utf8" }).stdout.trim(), npm: spawnSync("npm", ["--version"], { env, encoding: "utf8" }).stdout.trim() };
     const command = `npx ${spec} setup --json`;
     const result = await run("npx", [spec, "setup", "--json"], { env, cwd: this.work });
@@ -238,6 +309,19 @@ class Ring {
     const pkg = join(this.prefix, "lib", "node_modules", "sheep");
     for (const required of [bin, join(pkg, "package.json"), join(pkg, "dist", "sheep.mjs"), join(pkg, "dist", "pi-client.mjs"), join(pkg, "dist", "agent-guide.md"), join(pkg, "home", "worker.mjs"), join(pkg, "home", "wrangler.jsonc"), join(pkg, ".agents", "skills", "sheep", "SKILL.md")]) {
       if (!existsSync(required)) this.fail("step 1", command, { ...result, stderr: `${result.stderr}\nmissing after install: ${required}` });
+    }
+    // With no repository, the build stamp is the install's; it has to be whole, and the commit the caller expected.
+    if (this.stamp === undefined) {
+      const manifest = JSON.parse(readFileSync(join(pkg, "package.json"), "utf8"));
+      const stamp = manifest.sheep;
+      if (manifest.name !== "sheep" || typeof stamp?.commit !== "string" || typeof stamp?.builtAt !== "string" || typeof stamp?.wrangler !== "string") {
+        this.fail("step 1", `cat ${join(pkg, "package.json")}`, { stdout: JSON.stringify(manifest, null, 2), stderr: "expected name sheep and a build stamp under sheep: commit, builtAt, wrangler", code: 1 });
+      }
+      if (this.commit !== undefined && !this.commit.startsWith(stamp.commit)) {
+        this.fail("step 1", `cat ${join(pkg, "package.json")}`, { stdout: JSON.stringify(stamp), stderr: `the install is stamped ${stamp.commit}; expected a build of ${this.commit}`, code: 1 });
+      }
+      this.stamp = stamp;
+      console.log(`installed: sheep ${stamp.commit} (${stamp.builtAt}), wrangler ${stamp.wrangler}`);
     }
     for (const tool of ["esbuild", "wrangler", "workerd"]) {
       if (existsSync(join(pkg, "node_modules", tool))) this.fail("step 1", `ls ${join(pkg, "node_modules")}`, { stdout: readdirSync(join(pkg, "node_modules")).join("\n"), stderr: `${tool} was installed into the release's tree`, code: 1 });
@@ -268,7 +352,7 @@ class Ring {
     const shipped = readFileSync(join(pkg, ".agents", "skills", "sheep", "SKILL.md"), "utf8");
     const copied = existsSync(join(skillDir, "SKILL.md")) ? readFileSync(join(skillDir, "SKILL.md"), "utf8") : undefined;
     if (copied !== shipped) this.fail("step 1", `cat ${join(skillDir, "SKILL.md")}`, { stdout: copied ?? "", stderr: "expected the release's SKILL.md", code: 1 });
-    if (shipped.trim() !== git("show", `${this.sha}:.agents/skills/sheep/SKILL.md`)) this.fail("step 1", `git show ${this.sha}:.agents/skills/sheep/SKILL.md`, { stdout: shipped, stderr: "the installed skill is not the ref's", code: 1 });
+    if (this.sha !== undefined && shipped.trim() !== this.git("show", `${this.sha}:.agents/skills/sheep/SKILL.md`)) this.fail("step 1", `git show ${this.sha}:.agents/skills/sheep/SKILL.md`, { stdout: shipped, stderr: "the installed skill is not the ref's", code: 1 });
     let link;
     try {
       link = lstatSync(doorway);
@@ -284,7 +368,8 @@ class Ring {
     if (existsSync(this.config) || readdirSync(this.local).length > 0) this.fail("step 1", `ls -a ${join(this.home, ".sheep")}`, { stdout: readdirSync(join(this.home, ".sheep")).join("\n"), stderr: "setup wrote a config or touched the local home", code: 1 });
     this.ok("step 1", command, `${seconds}s, node ${versions.node}, npm ${versions.npm}; ${installed.length} packages beside sheep; no *.ts under *earendil*`);
     this.ok("step 1", "the report", `cli installed at <ring>/prefix/bin/sheep (${version}); skill installed at <work>/.agents/skills/sheep, .claude/skills/sheep linked; home none; next "${report.next}"`);
-    this.unchecked.push(`journey 1 step 1: the spec ${JSON.stringify("github:dglazkov/sheep#release")}; the ring installed ${spec} through SHEEP_INSTALL_SPEC (collar phase 3 pushes the branch)`);
+    if (spec !== INSTALL_SPEC) this.unchecked.push(`journey 1 step 1: the spec ${JSON.stringify(INSTALL_SPEC)}; the ring installed ${spec} through SHEEP_INSTALL_SPEC (CI's second job installs the user's string)`);
+    if (this.sha === undefined) this.unchecked.push(`journey 1 step 1: that the installed skill and guide are the ref's: the ring had a spec and no repository, so it read them from the install`);
   }
 
   /** The installed `sheep`, first on PATH, finding its home through the ring's config file and nothing in the environment. */
@@ -318,8 +403,10 @@ class Ring {
 
   async walk() {
     const stamp = this.stamp;
-    const parents = git("log", "-1", "--format=%P", this.sha).split(" ");
-    if (!parents.some((parent) => parent.startsWith(stamp.commit))) throw new Error(`the manifest's commit ${stamp.commit} is not a parent of ${this.sha}`);
+    if (this.sha !== undefined) {
+      const parents = this.git("log", "-1", "--format=%P", this.sha).split(" ");
+      if (!parents.some((parent) => parent.startsWith(stamp.commit))) throw new Error(`the manifest's commit ${stamp.commit} is not a parent of ${this.sha}`);
+    } else this.unchecked.push(`journey 2: that the release commit has ${stamp.commit} as a parent: no repository to read; \`git log release\` answers it`);
 
     // Journey 1 step 7, the second half, first: the installed command names its build, and says nothing on stderr. No home is needed, and none is configured.
     const version = await this.sheep(["--version"]);
@@ -426,7 +513,7 @@ class Ring {
     const guide = await this.sheep(["--agent-help"]);
     const shipped = readFileSync(join(this.pkg, "dist", "agent-guide.md"), "utf8");
     if (guide.code !== 0 || guide.stdout !== shipped || guide.stderr !== "") this.fail("step 5", "sheep --agent-help", { ...guide, stderr: `${guide.stderr}\nexpected ${join(this.pkg, "dist", "agent-guide.md")} on stdout and nothing on stderr` });
-    if (shipped.trim() !== git("show", `${this.sha}:dist/agent-guide.md`)) this.fail("step 5", `git show ${this.sha}:dist/agent-guide.md`, { stdout: shipped, stderr: "the installed guide is not the ref's", code: 1 });
+    if (this.sha !== undefined && shipped.trim() !== this.git("show", `${this.sha}:dist/agent-guide.md`)) this.fail("step 5", `git show ${this.sha}:dist/agent-guide.md`, { stdout: shipped, stderr: "the installed guide is not the ref's", code: 1 });
     for (const said of ["sheep home local", "ANTHROPIC_API_KEY", "sheep wait", "A hand at a terminal"]) {
       if (!shipped.includes(said)) this.fail("step 5", "sheep --agent-help", { ...guide, stderr: `the guide does not say ${JSON.stringify(said)}`, code: 1 });
     }
@@ -542,7 +629,7 @@ class Ring {
     console.log(`not checked by the package ring:`);
     for (const item of [
       ...this.unchecked,
-      "that this machine's Node is the user's: the ring ran the node and npm on PATH here (the machine ring is collar phase 4's)",
+      "that this machine's Node is the user's: the ring ran the node and npm on PATH here (the machine ring runs this walk in containers from node:22-slim and node:24-slim)",
       "that wrangler's fetch works on a cold network: ~/.sheep/tools came through the ring's own npm cache, from the registry the first time",
     ]) {
       console.log(`  - ${item}`);
@@ -564,15 +651,147 @@ class Ring {
   }
 }
 
-async function main() {
-  const { ring: ringName, ref, keep } = parseArgs(process.argv.slice(2));
-  let ring;
+/** Streams a command's output line by line under an indent; resolves with the exit code. */
+function runIndented(command, args, options, indent = "    ") {
+  return new Promise((resolveRun, reject) => {
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], ...options });
+    let pending = "";
+    const emit = (chunk) => {
+      pending += chunk.toString("utf8");
+      const lines = pending.split("\n");
+      pending = lines.pop();
+      for (const line of lines) console.log(indent + line);
+    };
+    child.stdout.on("data", emit);
+    child.stderr.on("data", emit);
+    child.once("error", reject);
+    child.once("close", (code, signal) => {
+      if (pending) console.log(indent + pending);
+      resolveRun(code ?? (signal ? 1 : 0));
+    });
+  });
+}
+
+/** The image tag the machine ring builds for a base image: `sheep-ring:node-22-slim`. */
+const ringTag = (image) => `sheep-ring:${image.replace(/[^A-Za-z0-9_.-]+/g, "-")}`;
+
+/**
+ * The machine ring: the package ring's walk inside a container built from
+ * each of the images, with the ref exported into the build context as a
+ * bare repository and nothing mounted. One line per image, the package
+ * ring's output indented under it; the first image that fails ends the
+ * ring. Docker is the one thing it needs; without it, exit 2, loudly.
+ */
+async function machineRing({ ref, repo, images, keep }) {
+  const docker = spawnSync("docker", ["version", "--format", "{{.Server.Version}} {{.Server.Os}}/{{.Server.Arch}}"], { encoding: "utf8" });
+  if (docker.error || docker.status !== 0) {
+    const why = docker.error ? docker.error.message : (docker.stderr || docker.stdout || "").trim();
+    console.error(`hermetic: the machine ring needs Docker on this machine, and there is none that answers (docker version: ${why}); nothing was checked`);
+    process.exit(2);
+  }
+  const engine = docker.stdout.trim();
+  const git = gitIn(repo);
+  let sha;
   try {
-    ring = new Ring(ref, keep);
+    sha = git("rev-parse", "--verify", `${ref}^{commit}`);
   } catch (error) {
     usage(`${ref}: ${error.message}`);
   }
-  console.log(`package ring: ${ref} = ${ring.sha}`);
+  console.log(`machine ring: ${ref} = ${sha}; docker ${engine}; images ${images.join(", ")}`);
+
+  // The build context: the ref's history as a bare repository, this script, and the Dockerfile. Nothing else of this machine reaches the image.
+  const context = mkdtempSync(join(tmpdir(), "sheep-machine-"));
+  const bare = join(context, "src.git");
+  const failures = [];
+  const unchecked = [];
+  try {
+    gitIn(context)("init", "--quiet", "--bare", "src.git");
+    git("push", "--quiet", bare, `${sha}:refs/heads/ring`);
+    // A fresh bare repository's HEAD points at a branch that does not exist, so `git ls-remote` lists no HEAD, and npm's git
+    // installer (pacote, npm 10 and 11) dies on it: "Cannot read properties of undefined (reading 'sha')". HEAD is the ring's branch.
+    gitIn(bare)("symbolic-ref", "HEAD", "refs/heads/ring");
+    copyFileSync(fileURLToPath(import.meta.url), join(context, "hermetic.mjs"));
+    copyFileSync(join(root, "scripts", "hermetic", "Dockerfile"), join(context, "Dockerfile"));
+    const size = spawnSync("du", ["-sh", bare], { encoding: "utf8" }).stdout.split("\t")[0];
+    console.log(`context: ${context}: src.git (${size}, the ref as refs/heads/ring), hermetic.mjs, Dockerfile`);
+
+    for (const image of images) {
+      const tag = ringTag(image);
+      console.log(`\n${image}:`);
+      const buildStarted = Date.now();
+      const build = await run("docker", ["build", "--build-arg", `NODE_IMAGE=${image}`, "--tag", tag, "--file", join(context, "Dockerfile"), context], { env: { ...process.env, DOCKER_BUILDKIT: "1" } });
+      const buildSeconds = ((Date.now() - buildStarted) / 1000).toFixed(0);
+      if (build.code !== 0) {
+        console.log(`    docker build failed (exit ${build.code}):\n${build.stdout}${build.stderr}`.trimEnd());
+        failures.push(`${image}: docker build exited ${build.code}`);
+        break;
+      }
+      // What the container is: the image's node, npm, and git, and none of what journey 3 step 2 rules out.
+      const probe = [
+        `printf 'node %s, npm %s, git %s, %s\\n' "$(node --version)" "$(npm --version)" "$(git --version | cut -d' ' -f3)" "$(uname -m)"`,
+        `test ! -e /var/run/docker.sock || { echo 'a Docker socket is in the container'; exit 1; }`,
+        `for tool in pnpm wrangler workerd; do ! command -v "$tool" >/dev/null || { echo "$tool is in the image"; exit 1; }; done`,
+        `for f in "$HOME/.gitconfig" "$HOME/.npmrc" "$HOME/.sheep" "$HOME/.npm" "$HOME/.wrangler" "$HOME/.config/.wrangler"; do test ! -e "$f" || { echo "$f is in the image"; exit 1; }; done`,
+        // `--init` mounts Docker's own init at /usr/sbin/docker-init: the one process that reaps a detached daemon, which a user's machine has and a container does not.
+        `awk '$5 !~ /^\\/(proc|sys|dev|etc\\/(resolv.conf|hostname|hosts)|usr\\/sbin\\/docker-init)(\\/|$)/ && $5 != "/" {print "mounted: " $5; bad=1} END {exit bad}' /proc/self/mountinfo`,
+        `echo "no docker socket; no pnpm, wrangler, or workerd; no git config, npmrc, .sheep, or .npm; nothing mounted but /, /proc, /sys, /dev, the DNS files, and docker-init"`,
+      ].join(" && ");
+      const probed = await run("docker", ["run", "--rm", "--init", tag, "sh", "-c", probe]);
+      if (probed.code !== 0) {
+        console.log(`    the container is not bare (exit ${probed.code}):\n${probed.stdout}${probed.stderr}`.trimEnd());
+        failures.push(`${image}: the container is not bare`);
+        break;
+      }
+      for (const line of probed.stdout.trim().split("\n")) console.log(`    ${line}`);
+      const ringArgs = ["run", "--rm", "--init", tag, "node", "/ring/hermetic.mjs", "--ring", "package", "--repo", "/src.git", sha];
+      console.log(`    docker ${ringArgs.join(" ")}`);
+      const ringStarted = Date.now();
+      const code = await runIndented("docker", ringArgs, {});
+      const ringSeconds = ((Date.now() - ringStarted) / 1000).toFixed(0);
+      if (code !== 0) {
+        console.log(`${image}: FAILED (build ${buildSeconds}s, ring ${ringSeconds}s, exit ${code}); the container's output is above`);
+        failures.push(`${image}: the package ring exited ${code}`);
+        break;
+      }
+      console.log(`${image}: ok (build ${buildSeconds}s, ring ${ringSeconds}s)`);
+    }
+    unchecked.push(
+      "that a person was in the loop: the walk was the package ring's, scripted, with the faux provider",
+      "that the user's machine has git and ps: the image added git (the README's prerequisite, which npm's git installer needs) and procps (this script's own need, to watch for the token)",
+      `that the user's architecture and libc are this image's: docker ${engine}, Debian slim`,
+      "that a user without root can do it: the container ran as root, the image's default",
+      "that the registry is reachable from a user's network: wrangler came through this machine's network, into the container's own npm cache",
+      "that the dog ring's agent would find its way: no coding agent was in the container (collar phase 4)",
+    );
+  } finally {
+    if (keep) console.log(`\nkept: ${context}`);
+    else rmSync(context, { recursive: true, force: true });
+  }
+  console.log("\nnot checked by the machine ring (the package ring's own list is above, per image):");
+  for (const item of unchecked) console.log(`  - ${item}`);
+  console.log(`images kept: ${images.map(ringTag).join(", ")} (docker image rm to drop them)`);
+  if (failures.length > 0) {
+    console.log(`\nmachine ring: FAILED: ${failures.join("; ")}`);
+    process.exit(1);
+  }
+  console.log(`\nmachine ring: ok (${images.length} image${images.length === 1 ? "" : "s"} held)`);
+}
+
+async function main() {
+  const parsed = parseArgs(process.argv.slice(2));
+  const { ring: ringName, ref, repo, spec, commit, keep } = parsed;
+  if (ringName === "machine") {
+    await machineRing(parsed);
+    return;
+  }
+  let ring;
+  try {
+    ring = new Ring({ ref, repo, spec, commit, keep });
+  } catch (error) {
+    usage(`${ref}: ${error.message}`);
+  }
+  if (spec === undefined) console.log(`package ring: ${ref} = ${ring.sha}${repo === root ? "" : ` in ${repo}`}`);
+  else console.log(`package ring: ${spec}${commit ? `, expected to be a build of ${commit}` : ""}`);
   let failure;
   try {
     ring.assertFresh();

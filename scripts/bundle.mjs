@@ -40,7 +40,7 @@
  * `main` pointed at it and `no_bundle` set, the `pen` environment kept.
  */
 import { spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { isBuiltin } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
@@ -244,6 +244,24 @@ function emitWorker() {
   return { wrangler: wranglerVersion(), bytes: readFileSync(join(homeDir, "worker.mjs")).length };
 }
 
+/**
+ * A test seam for the release guard (collar phase 3). `SHEEP_BUNDLE_BREAK=sheep`
+ * or `=pi-client` appends a top-level `throw` to that bundle after it is
+ * built and checked, so a release made with it fails the package ring at
+ * the first step that loads the bundle, and `pnpm release` refuses to move
+ * or push `release`. Proving the guard is the seam's only use; under `CI`
+ * it is refused outright, so a build that could be pushed can never carry it.
+ */
+function breakOnPurpose() {
+  const which = process.env.SHEEP_BUNDLE_BREAK;
+  if (!which) return;
+  if (process.env.CI) throw new Error(`SHEEP_BUNDLE_BREAK=${which} is a laptop's test seam for the release guard, refused under CI`);
+  const file = { sheep: "sheep.mjs", "pi-client": "pi-client.mjs" }[which];
+  if (!file) throw new Error(`SHEEP_BUNDLE_BREAK=${which}: sheep or pi-client`);
+  appendFileSync(join(distDir, file), '\nthrow new Error("broken on purpose: SHEEP_BUNDLE_BREAK was set when this bundle was built");\n');
+  console.error(`bundle: dist/${file} broken on purpose (SHEEP_BUNDLE_BREAK=${which}); the ring must refuse this release`);
+}
+
 /** Builds `dist/` and `home/` from scratch; returns the wrangler version the Worker was built with and the files written. */
 export async function buildRelease() {
   checkPinsAgainstFork();
@@ -259,6 +277,7 @@ export async function buildRelease() {
   files.push(await bundleEntry("dist/pi-client.mjs", join(codingAgent, "src", "experimental", "cli.ts"), join(distDir, "pi-client.mjs")));
   files.push(await bundleEntry("dist/image-resize-worker.js", join(codingAgent, "src", "utils", "image-resize-worker.ts"), join(distDir, "image-resize-worker.js")));
   chmodSync(join(distDir, "pi-client.mjs"), 0o755);
+  breakOnPurpose();
 
   const guide = join(root, "packages", "cli", "agent-guide.md");
   copyFileSync(guide, join(distDir, "agent-guide.md"));

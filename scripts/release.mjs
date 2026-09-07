@@ -24,9 +24,9 @@
  *
  * Nothing of `packages/`, `vendor/`, `docs/`, or `.github/` ships.
  *
- *   pnpm release --no-push   build, commit onto refs/heads/release, print the ref
- *   pnpm release             the same, then push: collar phase 3's, refused here
- *   --force                  skip the clean-tree and pushed-HEAD guards
+ *   pnpm release             build, commit, walk the package ring against the commit, move refs/heads/release, push
+ *   pnpm release --no-push   the same, stopping before the push; prints the ref
+ *   --force                  skip the clean-tree and pushed-HEAD guards; never the ring
  *
  * The commit is made in a temporary index assembled from HEAD, so the
  * working tree is never touched. It gets two parents, the previous release
@@ -34,6 +34,15 @@
  * (no force pushes) and `git log release` answers which commit any install
  * is. The commit's date is the build stamp, so the manifest, `sheep
  * --version`, and `git log` agree.
+ *
+ * The guard (collar phase 3). The commit goes onto `refs/sheep/candidate`
+ * first, and `scripts/hermetic.mjs --ring package` installs it from this
+ * repository through npm's git installer into a fresh prefix, cache, and
+ * HOME and walks journey 1 with the faux provider. Only a walk that held
+ * moves `refs/heads/release`, and only then is it pushed, never with
+ * `--force`. A refused candidate leaves `release` where it was, and the
+ * ring's output says which step failed. CI runs this on every push to
+ * `main` (`.github/workflows/release.yml`); by hand, the same script.
  */
 import { spawnSync } from "node:child_process";
 import { promises as fs } from "node:fs";
@@ -74,6 +83,10 @@ export const SHIPPED_FROM_HEAD = ["README.md", "LICENSE"];
 
 /** The skill's directory, shipped at its own path: added back after the top level is cleared, from the tree like the built files. */
 export const SKILL_DIR = ".agents/skills/sheep";
+
+/** The branch installs come from, and the ref a candidate waits on while the package ring walks it (collar phase 3). */
+export const RELEASE_REF = "refs/heads/release";
+export const CANDIDATE_REF = "refs/sheep/candidate";
 
 /** The Node floor: `node:sqlite` in the CLI's export needs >=22.13, and the fork's own floor is 22.19. */
 export const ENGINES = { node: ">=22.19" };
@@ -147,7 +160,9 @@ async function main() {
   const args = process.argv.slice(2);
   const force = args.includes("--force");
   const push = !args.includes("--no-push");
-  if (push) throw new Error("push is collar phase 3's; run `pnpm release --no-push` (the ref stays in this repository)");
+  for (const arg of args) {
+    if (!["--force", "--no-push"].includes(arg)) throw new Error(`unknown argument ${arg}; --no-push and --force are the two, and nothing skips the ring`);
+  }
 
   // A release names the commit it was built from, so that commit has to be real: not unsaved edits, and not a commit only this laptop has.
   if (!force) {
@@ -210,11 +225,28 @@ async function main() {
     const message = `release ${stamp.commit}: ${subject}\n\nBuilt ${builtAt} with wrangler ${built.wrangler}. Two bundles, the guide, the skill, and the Worker included; no prepare script, no workspaces (isocan #47).\n`;
     const dated = { ...env, GIT_AUTHOR_DATE: builtAt, GIT_COMMITTER_DATE: builtAt };
     const commit = git("commit-tree", tree, ...parents, "-m", message, { env: dated });
-    git("update-ref", "refs/heads/release", commit, "-m", `release from ${stamp.commit}`);
+    console.error(`release: candidate ${commit.slice(0, 7)} built from ${stamp.commit} (${subject}) at ${builtAt}; ${files.length} files`);
 
-    console.error(`release: ${commit.slice(0, 7)} built from ${stamp.commit} (${subject}) at ${builtAt}; ${files.length} files`);
-    console.error("release: not pushed (push is collar phase 3's)");
-    console.log(`refs/heads/release ${commit}`);
+    // The guard. The commit goes onto a candidate ref, the package ring walks it from this repository through npm's git
+    // installer, and only a walk that held moves refs/heads/release. Neither --no-push nor --force skips this: the ring is
+    // what decides a release; --no-push only skips the push. A refused candidate stays at refs/sheep/candidate to be looked at.
+    git("update-ref", CANDIDATE_REF, commit, "-m", `release candidate from ${stamp.commit}`);
+    console.error(`release: walking ${CANDIDATE_REF} in the package ring before ${RELEASE_REF} moves`);
+    const ring = spawnSync(process.execPath, [path.join(root, "scripts", "hermetic.mjs"), "--ring", "package", CANDIDATE_REF], { cwd: root, stdio: "inherit" });
+    if (ring.status !== 0) {
+      const at = previous ? `stays at ${previous.slice(0, 7)}` : "does not exist yet";
+      throw new Error(`the package ring refused the candidate ${commit.slice(0, 7)} (exit ${ring.status ?? "signal"}); ${RELEASE_REF} ${at}; the candidate is at ${CANDIDATE_REF} for \`pnpm hermetic --ring package ${CANDIDATE_REF}\``);
+    }
+    git("update-ref", RELEASE_REF, commit, "-m", `release from ${stamp.commit}`);
+    git("update-ref", "-d", CANDIDATE_REF);
+    console.error(`release: the ring held; ${RELEASE_REF} is ${commit.slice(0, 7)}`);
+
+    if (push) {
+      // Never --force: the branch fast-forwards from its previous tip, which is the commit's first parent.
+      git("push", "origin", `${RELEASE_REF}:${RELEASE_REF}`, { stdio: ["ignore", "inherit", "inherit"] });
+      console.error(`release: pushed; \`npm install -g github:dglazkov/sheep#release\` installs it`);
+    } else console.error(`release: not pushed (--no-push); \`git push origin ${RELEASE_REF}:${RELEASE_REF}\` when ready`);
+    console.log(`${RELEASE_REF} ${commit}`);
   } finally {
     await fs.rm(tmp, { recursive: true, force: true });
   }

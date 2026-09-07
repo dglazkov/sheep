@@ -22,7 +22,7 @@ carries them.
 
 ---
 
-**Where we are: collar phases 0 to 2 CLOSED; collar phases 3 and 4 NOT STARTED. Next: collar phase 3, the machine ring, the guard, and CI.** Planned 7 Sep 2026, the day after pasture closed, from a brainstorm with the shepherd; the shepherd's calls are in the journey's front matter. Phases 0 to 2 built and verified the same morning: the release exists as a ref in this repository, and the package ring installs it with `npx … setup` and walks all of journey 1 against a local home started from the install. Collar phase 3 asks once for the `release` branch and the workflow, and collar phase 4 spends tokens; nothing else waits on a person.
+**Where we are: collar phases 0 to 2 CLOSED; collar phase 3 PART-DONE; collar phase 4 NOT STARTED. Next: collar phase 4, the dog ring, built up to its ⚑ run; then the two asks.** Planned 7 Sep 2026, the day after pasture closed, from a brainstorm with the shepherd; the shepherd's calls are in the journey's front matter. Phases 0 to 2 built and verified the same morning. Phase 3 built and proved here: the machine ring green on two images, the guard refusing a broken bundle, the workflow written; its walk waits on the shepherd for the first push of `release` and the workflow, no money. Phase 4's run waits on the shepherd for the tokens the dog ring spends.
 
 The order is dependency order. Phase 0 is the release itself, the two
 bundles and the Worker in a tree npm can install, and the package ring
@@ -223,7 +223,16 @@ warm network. **⚑** the first push of `release` and the workflow: a
 generated branch and an Actions workflow on the public repository,
 asked once; no money.
 
-**Status: NOT STARTED.**
+**Status: PART-DONE.** 2026-09-07. The machine ring, the guard, and the workflow built and proved here: both images green, a broken bundle refused with the ref unmoved, the release tree 14 files with no `.github/`; the push of `release` and the workflow's first run wait on the shepherd's yes.
+
+**Findings:**
+
+- **2026-09-07 — The machine ring held on both images in under thirty seconds: `node:22-slim` and `node:24-slim`, arm64, git and procps added, nothing mounted, as root;** the install took three seconds and wrangler's fetch five inside each container.
+- **2026-09-07 — A bare repository with an unborn `HEAD` crashes npm's git installer:** `git ls-remote` lists no `HEAD`, and pacote dies with "Cannot read properties of undefined (reading 'sha')". The ring points the bare repository's `HEAD` at the ref it exports.
+- **2026-09-07 — A debt, for collar phase 4: `sheep home stop` waits forever on a zombie.** With no init in a container the detached daemon is never reaped, `kill(pid, 0)` keeps answering, and after SIGKILL the loop in `stopLocalHome` is unbounded. The ring runs `docker --init`; the CLI should bound that loop.
+- **2026-09-07 — The guard refused a bundle broken on purpose at step 1 and left `refs/heads/release` untouched, the candidate parked at `refs/sheep/candidate`;** a good release moves the ref only after twelve ring lines, and neither `--force` nor `--no-push` skips the walk.
+- **2026-09-07 — The workflow cannot reach the release tree:** `release.mjs` drops every top-level entry of `HEAD` but README and LICENSE and demands exactly the design's 14 files, so `.github/` throws; checked by the conductor on a release built from the commit carrying the workflow. Cost: 90 minutes of a subagent, 20 of verification.
+- **2026-09-07 — Open: the first push of `release` and the workflow.** Waits on the shepherd's yes: a generated branch and an Actions workflow on the public repository, no money; then the workflow's two jobs green and `npx github:dglazkov/sheep#release setup` from a fresh `HOME` here close this phase.
 
 ## Phase 4: The dog ring, and the walk
 
