@@ -103305,6 +103305,17 @@ function admitted(request, env) {
   return void 0;
 }
 __name(admitted, "admitted");
+var CHECKOUT_BUILD = { commit: "0.0.0-checkout", builtAt: null };
+function homeBuild() {
+  if (false) return CHECKOUT_BUILD;
+  try {
+    const parsed = JSON.parse('{"commit":"327e623","builtAt":"2026-09-07T22:47:27Z"}');
+    if (typeof parsed.commit === "string" && parsed.commit !== "") return { commit: parsed.commit, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
+  } catch {
+  }
+  return CHECKOUT_BUILD;
+}
+__name(homeBuild, "homeBuild");
 var PEN_DOOR = /^\/s\/([^/]+)\/pen$/;
 var PASTURE = /^\/p\/([^/]+)(\/.*)?$/;
 async function pastureRoute(request, env, name, path4) {
@@ -103385,7 +103396,7 @@ var index_default = {
     }
     if (url.pathname === "/home" && request.method === "GET") {
       const budget = await directory.budget();
-      return Response.json({ serverId: await directory.serverId(), container: env.PEN_CONTAINER !== void 0, ...budget });
+      return Response.json({ serverId: await directory.serverId(), container: env.PEN_CONTAINER !== void 0, build: homeBuild(), ...budget });
     }
     if (url.pathname === "/faux" && request.method === "POST" && env.SHEEP_PROVIDER === "faux") {
       const program = await request.json();
@@ -103422,11 +103433,13 @@ var index_default = {
   }
 };
 export {
+  CHECKOUT_BUILD,
   Directory,
   Pasture,
   PenContainer,
   SessionCell,
-  index_default as default
+  index_default as default,
+  homeBuild
 };
 /*! Bundled license information:
 
