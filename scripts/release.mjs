@@ -24,6 +24,11 @@
  *
  * Nothing of `packages/`, `vendor/`, `docs/`, or `.github/` ships.
  *
+ * Station phase 0: the stamp is computed before the build and handed to
+ * `buildRelease`, so the Worker reports it from `GET /home` and the shipped
+ * `home/wrangler.jsonc` names the pen image at it; the workflow pushes that
+ * image to `IMAGE_REPOSITORY` before running this script.
+ *
  *   pnpm release             build, commit, walk the package ring against the commit, move refs/heads/release, push
  *   pnpm release --no-push   the same, stopping before the push; prints the ref
  *   --force                  skip the clean-tree and pushed-HEAD guards; never the ring
@@ -77,6 +82,15 @@ export const RELEASE_OPTIONAL_DEPENDENCIES = {
   "supports-color": "^10.0.0",
   "@mariozechner/clipboard": "0.3.9",
 };
+
+/**
+ * The pen image's repository on Docker Hub (station phase 0). The workflow
+ * pushes `packages/pen`'s image there tagged with the stamp's commit, and
+ * `scripts/bundle.mjs` names that tag in the shipped `home/wrangler.jsonc`,
+ * so the package and the image name the same commit. The login user is the
+ * namespace, `dglazkov`; the token is the repository's `DOCKERHUB_TOKEN`.
+ */
+export const IMAGE_REPOSITORY = "docker.io/dglazkov/sheep-pen";
 
 /** What ships from HEAD's tree unchanged; everything else at the top level is removed from the release index. */
 export const SHIPPED_FROM_HEAD = ["README.md", "LICENSE"];
@@ -176,9 +190,10 @@ async function main() {
   const subject = git("log", "-1", "--pretty=%s");
   const builtAt = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 
-  // The one thing the release branch has that main doesn't.
+  // The one thing the release branch has that main doesn't. The stamp goes into the build: the Worker carries it
+  // (`GET /home` reports it) and the config names the image at it; the manifest carries it with the wrangler used.
   const { buildRelease } = await import("./bundle.mjs");
-  const built = await buildRelease();
+  const built = await buildRelease({ commit: head.slice(0, 7), builtAt });
   const stamp = { commit: head.slice(0, 7), builtAt, wrangler: built.wrangler };
 
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "sheep-release-"));
@@ -222,7 +237,7 @@ async function main() {
     // First parent: where the branch was. Second: the commit this build is of.
     const previous = tryGit("rev-parse", "--verify", "--quiet", "refs/remotes/origin/release") || tryGit("rev-parse", "--verify", "--quiet", "refs/heads/release");
     const parents = [...(previous ? ["-p", previous] : []), "-p", head];
-    const message = `release ${stamp.commit}: ${subject}\n\nBuilt ${builtAt} with wrangler ${built.wrangler}. Two bundles, the guide, the skill, and the Worker included; no prepare script, no workspaces (isocan #47).\n`;
+    const message = `release ${stamp.commit}: ${subject}\n\nBuilt ${builtAt} with wrangler ${built.wrangler}. Two bundles, the guide, the skill, and the Worker included, stamped ${stamp.commit}; the pen image is ${IMAGE_REPOSITORY}:${stamp.commit}. No prepare script, no workspaces (isocan #47).\n`;
     const dated = { ...env, GIT_AUTHOR_DATE: builtAt, GIT_COMMITTER_DATE: builtAt };
     const commit = git("commit-tree", tree, ...parents, "-m", message, { env: dated });
     console.error(`release: candidate ${commit.slice(0, 7)} built from ${stamp.commit} (${subject}) at ${builtAt}; ${files.length} files`);

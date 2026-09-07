@@ -22,7 +22,7 @@ left the design.
 
 ---
 
-**Where we are: station phase 0 NOT STARTED. Next: station phase 0, the image and the stamp.** Planned 7 Sep 2026, the evening collar closed, from a conversation with the shepherd; the shepherd's calls are in the journey's front matter. [Kennel](../kennel/phases.md) closed on 7 Sep 2026: the config station phase 1 writes is the kennel's, and the Worker's name is `mintName(kennelName(), taken, --name)` from `packages/cli/src/name.ts` with the config's `name` field; kennel's Open roster carries journey 3's walk, which station phase 1 is. Station phase 0 asks once for a Docker Hub token in the repository's secrets; station phase 1 asks for the shepherd's Cloudflare token and the container minutes each walk spends; station phase 4 needs Docker on this laptop.
+**Where we are: station phase 0 PART-DONE; station phases 1 to 4 NOT STARTED. Next: the shepherd's Docker Hub token in the repository's secrets, which closes station phase 0's push and pull; then station phase 1, the deploy and the account ring.** Planned 7 Sep 2026, the evening collar closed, from a conversation with the shepherd; the shepherd's calls are in the journey's front matter. [Kennel](../kennel/phases.md) closed on 7 Sep 2026: the config station phase 1 writes is the kennel's, and the Worker's name is `mintName(kennelName(), taken, --name)` from `packages/cli/src/name.ts` with the config's `name` field; kennel's Open roster carries journey 3's walk, which station phase 1 is. Station phase 0 was built the same evening: the workflow builds the pen image and pushes it when `DOCKERHUB_TOKEN` is in the repository's secrets, the release stamps the Worker and names the image at its commit in the shipped config, `GET /home` carries `build`, `sheep home` prints both stamps and warns on skew, and the package ring showed them equal; only the push and the pull wait, on the token phase 0's Open finding names. Every phase after it waits on a person too: station phase 1 on the shepherd's Cloudflare token and the container minutes each walk spends; station phase 4 on the image being on the registry, and on Docker on this laptop, which is here. Nothing waits on work.
 
 The order is dependency order. Phase 0 is the image on the registry
 and the stamp on the home, because a deploy from the package needs an
@@ -72,7 +72,17 @@ and `pnpm -r typecheck` exit 0. **⚑** a Docker Hub account and an
 access token in the repository's secrets, once; the image is public and
 free.
 
-**Status: NOT STARTED.**
+**Findings.**
+
+- **2026-09-07 — The stamp rides wrangler's `--define` as a JSON string.** `scripts/bundle.mjs` passes `SHEEP_BUILD` to `wrangler deploy --dry-run`; esbuild substitutes inside `typeof`, so `homeBuild()`'s checkout test compiles to a constant in a release and stays a safe global check under `wrangler dev` and the workerd pool, which define nothing.
+- **2026-09-07 — The shipped `pen` environment names `docker.io/dglazkov/sheep-pen:<commit>` and nothing of the checkout's build.** `shippedConfig` drops `image_build_context` and `containers[].name`; the environment's own `name` is still `sheep-pen`, so station phase 1's deploy passes `--name` for both. The checkout's config is untouched.
+- **2026-09-07 — The package ring walked a stamped release: step 6 printed `build.home = build.cli = 1fc8d03 (2026-09-07T22:41:08Z)`.** Run here with `pnpm release --no-push --force` against `HEAD`, the ref reset after. The stopped-case prose is unchanged: the two build lines print only when `GET /home` answered with the token.
+- **2026-09-07 — A local home's skew line says stop, not deploy.** A local home is the package's Worker from the moment it started, so an older home after `npm install -g` is fixed by `sheep home stop`; the station's line is the design's; unstamped sides are reported, never warned about.
+- **2026-09-07 — The image builds for `linux/amd64` on this arm64 laptop under emulation, 403 MB.** The workflow builds it on every run and pushes only with `DOCKERHUB_TOKEN`, the token on stdin as `dglazkov`; without the secret it prints one line and the release goes on.
+- **2026-09-07 — `pnpm release` is the conductor's to run.** Auto mode's classifier refused it to the subagent, with `--force` and without, because the script moves `refs/heads/release`; the subagent proved the pieces and the conductor ran the ring. Cost: 22 minutes of a subagent, 25 of verification.
+- **2026-09-07 — Open: the push and the pull.** `docker pull docker.io/dglazkov/sheep-pen:<commit>` and a workflow-built release's image line wait on the shepherd: a Docker Hub account, a Read & Write access token, `gh secret set DOCKERHUB_TOKEN`; free.
+
+**Status: PART-DONE.** 2026-09-07. Everything but the push built and proved here: the stamped Worker, the shipped config's image line, `GET /home`'s `build`, `sheep home`'s two stamps, and the package ring showing them equal; the workflow's push and the pull from the registry wait on the token the Open finding names.
 
 ## Phase 1: The deploy, and the account ring
 

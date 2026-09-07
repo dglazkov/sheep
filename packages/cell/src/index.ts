@@ -8,6 +8,10 @@
  * Pasture phase 0: `/pastures` is the Directory's list of names, and
  * `/p/<name>/...` is that pasture's object: its meta and herd, its tree,
  * and its secrets' names. No route returns a secret's value.
+ *
+ * Station phase 0: `GET /home` carries `build`, the stamp `scripts/bundle.mjs`
+ * defined into the released Worker as `SHEEP_BUILD`; a checkout reports
+ * `0.0.0-checkout`, and the CLI's `sheep home` compares it to its own.
  */
 import { unknownPasture } from "./directory.ts";
 import { type FauxProgram, isFauxProgram } from "./models.ts";
@@ -31,6 +35,26 @@ function admitted(request: Request, env: Env): Response | undefined {
   const token = header.startsWith("Bearer ") ? header.slice("Bearer ".length) : new URL(request.url).searchParams.get("token");
   if (token !== env.SHEEP_TOKEN) return unauthorized("bad or missing token");
   return undefined;
+}
+
+/** `GET /home`'s `build`: what `scripts/bundle.mjs` defined at release, or the checkout's value when nothing was defined. */
+export interface HomeBuild {
+  commit: string;
+  builtAt: string | null;
+}
+
+export const CHECKOUT_BUILD: HomeBuild = { commit: "0.0.0-checkout", builtAt: null };
+
+/** The stamp the Worker was built with: `SHEEP_BUILD` under a release, the checkout's value under `wrangler dev` and in the test pool. */
+export function homeBuild(): HomeBuild {
+  if (typeof SHEEP_BUILD === "undefined") return CHECKOUT_BUILD;
+  try {
+    const parsed = JSON.parse(SHEEP_BUILD) as Partial<HomeBuild>;
+    if (typeof parsed.commit === "string" && parsed.commit !== "") return { commit: parsed.commit, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
+  } catch {
+    // a define that is not JSON: reported as the checkout's, below
+  }
+  return CHECKOUT_BUILD;
 }
 
 const PEN_DOOR = /^\/s\/([^/]+)\/pen$/;
@@ -123,7 +147,7 @@ export default {
     }
     if (url.pathname === "/home" && request.method === "GET") {
       const budget = await directory.budget();
-      return Response.json({ serverId: await directory.serverId(), container: env.PEN_CONTAINER !== undefined, ...budget });
+      return Response.json({ serverId: await directory.serverId(), container: env.PEN_CONTAINER !== undefined, build: homeBuild(), ...budget });
     }
     if (url.pathname === "/faux" && request.method === "POST" && env.SHEEP_PROVIDER === "faux") {
       // Test-only: the program every cell without one of its own answers from.

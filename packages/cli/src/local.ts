@@ -70,6 +70,40 @@ export function readStamp(): BuildStamp | undefined {
   return undefined;
 }
 
+/** One side of `sheep home`'s build report: a stamp's commit and time, or the checkout's value with no time. */
+export interface BuildSide {
+  commit: string;
+  builtAt: string | null;
+}
+
+/** This command's build as `sheep home` reports it: the manifest's stamp, or the checkout's value. */
+export function cliBuild(): BuildSide {
+  const stamp = readStamp();
+  return stamp === undefined ? { commit: "0.0.0-checkout", builtAt: null } : { commit: stamp.commit, builtAt: stamp.builtAt };
+}
+
+/** A build side as `sheep home` prints it: `<commit> (<builtAt>)`, or `0.0.0-checkout (unstamped)`. */
+export function describeBuild(build: BuildSide): string {
+  return `${build.commit} (${build.builtAt ?? "unstamped"})`;
+}
+
+/**
+ * The one-line skew warning (station phase 0): when both sides carry a
+ * time and the times differ, which is older and what updates it. A local
+ * home is the package's own Worker from the moment it started, so the fix
+ * there is a restart; a station's is a deploy from the newer package; an
+ * older command's is the install. Unstamped sides are reported, not
+ * warned about, and equal stamps say nothing.
+ */
+export function skewLine(home: BuildSide, cli: BuildSide, local: boolean): string | undefined {
+  if (home.builtAt === null || cli.builtAt === null || home.builtAt === cli.builtAt) return undefined;
+  if (home.builtAt < cli.builtAt) {
+    const fix = local ? "`sheep home stop`; the next command restarts it from this package" : "`sheep home deploy` from this package updates it";
+    return `sheep: the home's build ${describeBuild(home)} is older than this command's ${describeBuild(cli)}; ${fix}\n`;
+  }
+  return `sheep: this command's build ${describeBuild(cli)} is older than the home's ${describeBuild(home)}; \`npm install -g github:dglazkov/sheep#release\` updates it\n`;
+}
+
 /** The kennel's local home: `<kennel>/local`, so a directory's home is its own. */
 export function localDir(): string {
   return join(sheepDir(), "local");

@@ -2,7 +2,7 @@ import { kennelDir, loadConfig, sheepDir, type SheepConfig } from "./config.js";
 import { writeSessionFile } from "./export.js";
 import { runAbort, runLog, runPrompt, runStatus, runWait } from "./herd.js";
 import { Home } from "./home.js";
-import { isRefused, localStatus, readStamp, startLocalHome, stopLocalHome, whoAnswers } from "./local.js";
+import { type BuildSide, cliBuild, describeBuild, isRefused, localStatus, readStamp, skewLine, startLocalHome, stopLocalHome, whoAnswers } from "./local.js";
 import { PASTURE_NAME, runPasture } from "./pasture.js";
 import { runPiClient } from "./pi.js";
 import { formatSetup, INSTALL_SPEC, kennelTracked, readGuide, setup, trackedWarning } from "./setup.js";
@@ -48,7 +48,8 @@ usage:
                                             key is held (from ANTHROPIC_API_KEY), or that the faux provider answers instead
   sheep home stop                           stop this kennel's local home
   sheep home                                which kennel, which home the config names, its station's name once minted,
-                                            and whether it answers
+                                            whether it answers, and its build stamp beside this command's, with one line
+                                            on stderr when they differ
 
   sheep pasture new <name> [--repo <url> | --repo .] [--branch <branch>]
                                             make a pasture: a shared tree, a repository or none, and the sheep born into it;
@@ -257,6 +258,9 @@ async function dispatch(command: string, parsed: Parsed, config: SheepConfig, ou
 /**
  * `sheep home local [--faux]`, `sheep home stop`, `sheep home [--json]`.
  * The report names states and paths, never a value from the secrets file.
+ * Station phase 0: a home that answers is asked its build stamp, printed
+ * beside this command's (`--json`: `build: { home, cli }`), and skew is one
+ * line on stderr, never a refusal.
  * Every form says one line on stderr first when git tracks the kennel: a
  * token is in the repository, and the command goes on regardless.
  */
@@ -302,25 +306,45 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
     // first deploy from this kennel: null in JSON until there is one, and a `name:` line in prose only when there is.
     const name = config.name ?? null;
     const nameLine = name === null ? "" : `name: ${name}\n`;
+    // The two stamps (station phase 0): the home's from `GET /home` with the token, once it is known to answer as a sheep
+    // home, and this command's from the manifest beside the bundle. A home that does not answer leaves its side null, and
+    // the prose is what it was; both there, the prose prints both and stderr gets the one-line skew warning, if any.
+    const buildReport = async (home: string | null, answers: boolean, local: boolean): Promise<{ build: { home: BuildSide | null; cli: BuildSide }; lines: string }> => {
+      const cli = cliBuild();
+      let homeBuild: BuildSide | null = null;
+      if (home !== null && answers) {
+        try {
+          homeBuild = await new Home({ home, token: config.token }).build();
+        } catch {
+          homeBuild = null;
+        }
+      }
+      if (homeBuild === null) return { build: { home: null, cli }, lines: "" };
+      const skew = skewLine(homeBuild, cli, local);
+      if (skew !== undefined) output.err(skew);
+      return { build: { home: homeBuild, cli }, lines: `home build: ${describeBuild(homeBuild)}\ncli build: ${describeBuild(cli)}\n` };
+    };
     if (config.local === true) {
       const status = await localStatus();
       const home = status.record?.url ?? config.home ?? null;
+      const { build, lines } = await buildReport(home, status.running, true);
       if (parsed.json) {
-        output.out(`${JSON.stringify({ home, kennel, name, local: true, running: status.running, pid: status.running ? status.record!.pid : null, port: status.record?.port ?? null, stamp: status.record?.stamp ?? null, startedAt: status.running ? status.record!.startedAt : null })}\n`);
+        output.out(`${JSON.stringify({ home, kennel, name, local: true, running: status.running, pid: status.running ? status.record!.pid : null, port: status.record?.port ?? null, stamp: status.record?.stamp ?? null, startedAt: status.running ? status.record!.startedAt : null, build })}\n`);
         return 0;
       }
       output.out(home === null ? "home: (none); run `sheep home local`\n" : `home: ${home} (local, ${status.running ? `running, pid ${status.record!.pid}` : "stopped"})\n`);
-      output.out(`kennel: ${kennel}\n${nameLine}`);
+      output.out(`kennel: ${kennel}\n${nameLine}${lines}`);
       return 0;
     }
     const home = config.home ?? null;
     const answers = home === null ? "nobody" : await whoAnswers(home);
+    const { build, lines } = await buildReport(home, answers === "sheep", false);
     if (parsed.json) {
-      output.out(`${JSON.stringify({ home, kennel, name, local: false, answers: answers === "sheep" })}\n`);
+      output.out(`${JSON.stringify({ home, kennel, name, local: false, answers: answers === "sheep", build })}\n`);
       return 0;
     }
     output.out(home === null ? "home: (none); run `sheep home local`, or pass --home <url>\n" : `home: ${home} (${answers === "sheep" ? "answers" : answers === "other" ? "answers, but not as a sheep home" : "does not answer"})\n`);
-    output.out(`kennel: ${kennel}\n${nameLine}`);
+    output.out(`kennel: ${kennel}\n${nameLine}${lines}`);
     return 0;
   } catch (error) {
     return fail(error instanceof Error ? error.message : String(error));

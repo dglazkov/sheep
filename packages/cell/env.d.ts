@@ -43,6 +43,14 @@ declare namespace Cloudflare {
   }
 }
 interface Env extends Cloudflare.Env {}
+/**
+ * Station phase 0: the build stamp, defined into the released Worker by
+ * `scripts/bundle.mjs` through wrangler's `--define` as a JSON string of
+ * `{ commit, builtAt }`, the manifest's values. A checkout's `wrangler dev`
+ * and the test pool define nothing, so it is undefined there and
+ * `GET /home` reports `0.0.0-checkout`.
+ */
+declare const SHEEP_BUILD: string | undefined;
 declare module "cloudflare:test" {
   interface ProvidedEnv extends Env {}
 }

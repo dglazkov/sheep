@@ -9,7 +9,9 @@
 import { describe, expect, it } from "vitest";
 // The script is plain ESM at the repository root; vitest loads it as is.
 // @ts-expect-error no declarations for the release script
-import { BIN_SHEEP_JS, expectedReleaseFiles, PREPARATION_KEYS, releaseManifest, SKILL_FILE } from "../../../scripts/release.mjs";
+import { BIN_SHEEP_JS, expectedReleaseFiles, IMAGE_REPOSITORY, PREPARATION_KEYS, releaseManifest, SKILL_FILE } from "../../../scripts/release.mjs";
+// @ts-expect-error no declarations for the bundle script
+import { imageReference, shippedConfig } from "../../../scripts/bundle.mjs";
 
 const STAMP = { commit: "194656e", builtAt: "2026-09-07T17:00:00Z", wrangler: "4.129.0" };
 const ROOT_PACKAGE = { name: "sheep", private: true, type: "module", packageManager: "pnpm@10.33.0", scripts: { build: "pnpm -r build", test: "pnpm -r test", release: "node scripts/release.mjs" }, devDependencies: { esbuild: "^0.28.0" } };
@@ -62,6 +64,36 @@ describe("the release manifest", () => {
     expect(expectedReleaseFiles(built, skill)).toEqual(["LICENSE", "README.md", "SKILL.md", "bin/sheep.js", "dist/agent-guide.md", "dist/pi-client.mjs", "dist/sheep.mjs", "home/worker.mjs", "home/wrangler.jsonc", "package.json"]);
     expect(() => expectedReleaseFiles(built.filter((file) => file.file !== "dist/agent-guide.md"), skill)).toThrow(/agent-guide/);
     expect(() => expectedReleaseFiles(built, [])).toThrow(/SKILL\.md/);
+  });
+
+  it("ships the pen environment with the image at the stamp's commit, no build context, and no container name (station phase 0)", () => {
+    const cell = {
+      $schema: "node_modules/wrangler/config-schema.json",
+      name: "sheep",
+      main: "src/index.ts",
+      compatibility_date: "2026-08-22",
+      env: {
+        pen: {
+          name: "sheep-pen",
+          containers: [{ name: "sheep-pen", image: "../pen/Dockerfile", image_build_context: "../pen", class_name: "PenContainer", instance_type: "basic", max_instances: 3 }],
+          vars: { PEN_IDLE: "10m" },
+        },
+      },
+    };
+    expect(IMAGE_REPOSITORY).toBe("docker.io/dglazkov/sheep-pen");
+    expect(imageReference(STAMP.commit)).toBe("docker.io/dglazkov/sheep-pen:194656e");
+    const released = shippedConfig(cell, STAMP) as { env: { pen: Record<string, unknown> } } & Record<string, unknown>;
+    expect(released).not.toHaveProperty("$schema");
+    expect(released).toMatchObject({ name: "sheep", main: "worker.mjs", no_bundle: true, compatibility_date: "2026-08-22" });
+    expect(released.env.pen).toEqual({
+      name: "sheep-pen",
+      containers: [{ image: "docker.io/dglazkov/sheep-pen:194656e", class_name: "PenContainer", instance_type: "basic", max_instances: 3 }],
+      vars: { PEN_IDLE: "10m" },
+    });
+    // No stamp: a checkout build keeps the Dockerfile line, context and name included.
+    const checkout = shippedConfig(cell, undefined) as { env: { pen: { containers: unknown[] } } };
+    expect(checkout.env.pen.containers).toEqual(cell.env.pen.containers);
+    expect(() => shippedConfig({ ...cell, env: { pen: { ...cell.env.pen, containers: [] } } }, STAMP)).toThrow(/exactly one container/);
   });
 
   it("refuses a stamp with a piece missing", () => {

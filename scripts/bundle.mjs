@@ -38,6 +38,18 @@
  * run here where the `link:` dependencies resolve, renamed to
  * `home/worker.mjs`; `home/wrangler.jsonc` is the cell's config with
  * `main` pointed at it and `no_bundle` set, the `pen` environment kept.
+ *
+ * The stamp (station phase 0). `buildRelease({ commit, builtAt })` defines
+ * `SHEEP_BUILD` into the Worker through wrangler's `--define`, a JSON
+ * string of the two values the release manifest carries, and `GET /home`
+ * reports them as `build`; and the shipped config's `pen` environment
+ * names the pen image the same release pushed,
+ * `docker.io/dglazkov/sheep-pen:<commit>`, in place of the checkout's
+ * Dockerfile, with `image_build_context` gone and `containers[].name`
+ * left for deploy to set per Worker (a container application's name is
+ * account-wide; recast phase 1). Run by hand with no stamp, the Worker is
+ * a checkout build (`0.0.0-checkout`) and the config keeps the Dockerfile
+ * line, which is what `wrangler dev --env pen` from a checkout builds.
  */
 import { spawnSync } from "node:child_process";
 import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -46,7 +58,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
-import { RELEASE_DEPENDENCIES, RELEASE_OPTIONAL_DEPENDENCIES } from "./release.mjs";
+import { IMAGE_REPOSITORY, RELEASE_DEPENDENCIES, RELEASE_OPTIONAL_DEPENDENCIES } from "./release.mjs";
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const piRoot = join(root, "vendor", "pi");
@@ -212,13 +224,43 @@ function wranglerVersion() {
   return JSON.parse(readFileSync(join(cellDir, "node_modules", "wrangler", "package.json"), "utf8")).version;
 }
 
-/** `wrangler deploy --dry-run` writes the bundled Worker without deploying; the top-level environment is the one built. */
-function emitWorker() {
+/** The image reference a release's config names: the repository at the stamp's commit, the string the workflow pushes. */
+export function imageReference(commit) {
+  return `${IMAGE_REPOSITORY}:${commit}`;
+}
+
+/**
+ * The shipped config from the cell's (station phase 0). With a stamp, the
+ * `pen` environment's one container names the registry image at the
+ * stamp's commit and drops the checkout's build context and the
+ * container application's name, which deploy sets to the Worker's own.
+ * Without one, the config is the checkout's, Dockerfile line and all.
+ */
+export function shippedConfig(config, stamp) {
+  const { $schema: _schema, name, main: _main, ...rest } = config;
+  const written = { name, main: "worker.mjs", no_bundle: true, ...rest };
+  if (stamp === undefined) return written;
+  const containers = written.env?.pen?.containers;
+  if (!Array.isArray(containers) || containers.length !== 1) throw new Error("the cell's config must have exactly one container in its pen environment");
+  const { name: _containerName, image: _image, image_build_context: _context, ...container } = containers[0];
+  written.env = { ...written.env, pen: { ...written.env.pen, containers: [{ image: imageReference(stamp.commit), ...container }] } };
+  return written;
+}
+
+/**
+ * `wrangler deploy --dry-run` writes the bundled Worker without deploying;
+ * the top-level environment is the one built. With a stamp, `SHEEP_BUILD`
+ * is defined into it, a JSON string of `{ commit, builtAt }`; without one
+ * nothing is defined and the Worker reports the checkout's value.
+ */
+function emitWorker(stamp) {
   const wrangler = join(cellDir, "node_modules", "wrangler", "bin", "wrangler.js");
   if (!existsSync(wrangler)) throw new Error(`wrangler is not installed at ${wrangler}; run pnpm install`);
   const out = mkdtempSync(join(tmpdir(), "sheep-worker-"));
+  // esbuild's define takes a JSON expression: the string, JSON-encoded, so the Worker's `JSON.parse(SHEEP_BUILD)` reads the object back.
+  const define = stamp === undefined ? [] : ["--define", `SHEEP_BUILD:${JSON.stringify(JSON.stringify({ commit: stamp.commit, builtAt: stamp.builtAt }))}`];
   try {
-    const done = spawnSync(process.execPath, [wrangler, "deploy", "--dry-run", "--outdir", out, "--env", ""], {
+    const done = spawnSync(process.execPath, [wrangler, "deploy", "--dry-run", "--outdir", out, "--env", "", ...define], {
       cwd: cellDir,
       encoding: "utf8",
       env: { ...process.env, CI: "1", WRANGLER_SEND_METRICS: "false" },
@@ -233,15 +275,18 @@ function emitWorker() {
   } finally {
     rmSync(out, { recursive: true, force: true });
   }
-  const config = parseJsonc(readFileSync(join(cellDir, "wrangler.jsonc"), "utf8"));
-  delete config.$schema;
-  const { name, main: _main, ...rest } = config;
-  const written = { name, main: "worker.mjs", no_bundle: true, ...rest };
+  const worker = readFileSync(join(homeDir, "worker.mjs"), "utf8");
+  if (stamp !== undefined && !worker.includes(stamp.commit)) throw new Error(`wrangler emitted a Worker without the stamp ${stamp.commit} in it; was --define dropped?`);
+  if (stamp === undefined && !worker.includes("0.0.0-checkout")) throw new Error("wrangler emitted a Worker without the checkout stamp in it");
+  const written = shippedConfig(parseJsonc(readFileSync(join(cellDir, "wrangler.jsonc"), "utf8")), stamp);
   const header =
     "// GENERATED by scripts/bundle.mjs from packages/cell/wrangler.jsonc: `main` is the Worker wrangler emitted\n" +
-    "// beside this file and `no_bundle` serves it as is. The `pen` environment is kept verbatim for the next project.\n";
+    "// beside this file and `no_bundle` serves it as is. The `pen` environment is the deployed home's (station):\n" +
+    (stamp === undefined
+      ? "// a checkout build, so its container is still the Dockerfile; a release names the registry image at its commit.\n"
+      : `// its container is the image the release pushed, ${imageReference(stamp.commit)}, and its name is deploy's to set.\n`);
   writeFileSync(join(homeDir, "wrangler.jsonc"), header + JSON.stringify(written, null, 2) + "\n");
-  return { wrangler: wranglerVersion(), bytes: readFileSync(join(homeDir, "worker.mjs")).length };
+  return { wrangler: wranglerVersion(), bytes: worker.length };
 }
 
 /**
@@ -262,8 +307,18 @@ function breakOnPurpose() {
   console.error(`bundle: dist/${file} broken on purpose (SHEEP_BUNDLE_BREAK=${which}); the ring must refuse this release`);
 }
 
-/** Builds `dist/` and `home/` from scratch; returns the wrangler version the Worker was built with and the files written. */
-export async function buildRelease() {
+/**
+ * Builds `dist/` and `home/` from scratch; returns the wrangler version the
+ * Worker was built with and the files written. `stamp` is the release's
+ * `{ commit, builtAt }`, defined into the Worker and named in the config;
+ * absent, the build is a checkout's.
+ */
+export async function buildRelease(stamp) {
+  if (stamp !== undefined) {
+    for (const key of ["commit", "builtAt"]) {
+      if (typeof stamp[key] !== "string" || stamp[key] === "") throw new Error(`buildRelease: the stamp needs a ${key}`);
+    }
+  }
   checkPinsAgainstFork();
   for (const required of [join(codingAgent, "dist", "index.js"), join(piRoot, "packages", "chord", "dist", "index.js"), join(root, "packages", "cli", "src", "cli.ts")]) {
     if (!existsSync(required)) throw new Error(`missing ${relative(root, required)}: build the fork's packages first (AGENTS.md)`);
@@ -291,7 +346,7 @@ export async function buildRelease() {
     files.push({ file: relative(root, join(themeTarget, name)), bytes: readFileSync(join(themeTarget, name)).length });
   }
 
-  const worker = emitWorker();
+  const worker = emitWorker(stamp);
   files.push({ file: "home/worker.mjs", bytes: worker.bytes });
   files.push({ file: "home/wrangler.jsonc", bytes: readFileSync(join(homeDir, "wrangler.jsonc")).length });
   return { wrangler: worker.wrangler, files };
@@ -301,7 +356,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   buildRelease()
     .then(({ wrangler, files }) => {
       for (const { file, bytes } of files) console.log(`${file}\t${(bytes / 1024).toFixed(0)} KiB`);
-      console.log(`Worker built with wrangler ${wrangler}`);
+      console.log(`Worker built with wrangler ${wrangler}; a checkout build (0.0.0-checkout), the config's container still the Dockerfile`);
     })
     .catch((error) => {
       console.error(`bundle: ${error.message}`);

@@ -19,7 +19,11 @@ import { createServer as createTcpServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import { skewLine } from "../src/local.js";
 import { bin, type Result } from "./local-home.js";
+
+/** This command's side of `sheep home`'s build report, in a checkout: the value, with no time. */
+const CHECKOUT = { commit: "0.0.0-checkout", builtAt: null };
 
 const cellWrangler = new URL("../../cell/node_modules/wrangler/bin/wrangler.js", import.meta.url).pathname;
 
@@ -198,25 +202,110 @@ describe("the local home's record", () => {
     worlds.push(w);
     const none = await w.sheep("home", "--json");
     expect(none.code).toBe(0);
-    expect(JSON.parse(none.stdout)).toEqual({ home: null, kennel: w.kennel, name: null, local: false, answers: false });
+    expect(JSON.parse(none.stdout)).toEqual({ home: null, kennel: w.kennel, name: null, local: false, answers: false, build: { home: null, cli: CHECKOUT } });
     expect((await w.sheep("home")).stdout).toBe(`home: (none); run \`sheep home local\`, or pass --home <url>\nkennel: ${w.kennel}\n`);
 
     const sheepish = await listen("sheep\n");
     try {
       const url = `http://127.0.0.1:${sheepish.port}`;
       await writeFile(w.config, JSON.stringify({ home: url, token: "t" }));
-      expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toEqual({ home: url, kennel: w.kennel, name: null, local: false, answers: true });
+      // A home that answers `sheep` but not `GET /home` (this fake) has no build side: null, and the prose is the plain one.
+      expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toEqual({ home: url, kennel: w.kennel, name: null, local: false, answers: true, build: { home: null, cli: CHECKOUT } });
       expect((await w.sheep("home")).stdout).toBe(`home: ${url} (answers)\nkennel: ${w.kennel}\n`);
       // The station's name, once a deploy has recorded it (kennel phase 1): read like home, in JSON always and in prose as its own line.
       await writeFile(w.config, JSON.stringify({ home: url, token: "t", name: "blog" }));
-      expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toEqual({ home: url, kennel: w.kennel, name: "blog", local: false, answers: true });
+      expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toEqual({ home: url, kennel: w.kennel, name: "blog", local: false, answers: true, build: { home: null, cli: CHECKOUT } });
       expect((await w.sheep("home")).stdout).toBe(`home: ${url} (answers)\nkennel: ${w.kennel}\nname: blog\n`);
       // A --home overrides a local config, and is never the local home.
       await writeFile(w.config, JSON.stringify({ home: "http://127.0.0.1:1", token: "t", local: true }));
-      expect(JSON.parse((await w.sheep("--home", url, "home", "--json")).stdout)).toEqual({ home: url, kennel: w.kennel, name: null, local: false, answers: true });
+      expect(JSON.parse((await w.sheep("--home", url, "home", "--json")).stdout)).toEqual({ home: url, kennel: w.kennel, name: null, local: false, answers: true, build: { home: null, cli: CHECKOUT } });
     } finally {
       sheepish.server.close();
     }
+  });
+});
+
+/** A home that answers `sheep` at the door and the given build from `GET /home`, with the token checked there. */
+function listenHome(build: unknown, token = "t"): Promise<{ server: Server; port: number; asked: string[] }> {
+  const asked: string[] = [];
+  return new Promise((resolve) => {
+    const server = createServer((request, response) => {
+      asked.push(`${request.method} ${request.url} ${request.headers.authorization ?? "(no token)"}`);
+      if (request.url === "/home") {
+        if (request.headers.authorization !== `Bearer ${token}`) {
+          response.statusCode = 401;
+          return response.end("bad or missing token");
+        }
+        response.setHeader("content-type", "application/json");
+        return response.end(JSON.stringify({ serverId: "fake", container: false, build }));
+      }
+      response.end("sheep\n");
+    });
+    server.listen(0, "127.0.0.1", () => resolve({ server, port: (server.address() as { port: number }).port, asked }));
+  });
+}
+
+describe("the two stamps (station phase 0)", () => {
+  it("prints the home's build beside this command's, in prose and in JSON, with the token at GET /home", async () => {
+    const w = await world();
+    worlds.push(w);
+    const stamped = await listenHome({ commit: "1fc8d03", builtAt: "2026-09-07T20:00:00Z" });
+    try {
+      const url = `http://127.0.0.1:${stamped.port}`;
+      await writeFile(w.config, JSON.stringify({ home: url, token: "t" }));
+      const json = await w.sheep("home", "--json");
+      expect(json.code).toBe(0);
+      expect(JSON.parse(json.stdout)).toEqual({ home: url, kennel: w.kennel, name: null, local: false, answers: true, build: { home: { commit: "1fc8d03", builtAt: "2026-09-07T20:00:00Z" }, cli: CHECKOUT } });
+      const prose = await w.sheep("home");
+      expect(prose.stdout).toBe(`home: ${url} (answers)\nkennel: ${w.kennel}\nhome build: 1fc8d03 (2026-09-07T20:00:00Z)\ncli build: 0.0.0-checkout (unstamped)\n`);
+      // A checkout on one side is reported, never warned about.
+      expect(prose.stderr).toBe("");
+      expect(stamped.asked).toContain("GET /home Bearer t");
+
+      // The local case reads the same route through the record's address; the record's pid is this runner's, alive.
+      await record(w, { pid: process.pid, port: stamped.port });
+      const local = await w.sheep("home", "--json");
+      expect(JSON.parse(local.stdout)).toMatchObject({ home: url, local: true, running: true, build: { home: { commit: "1fc8d03", builtAt: "2026-09-07T20:00:00Z" }, cli: CHECKOUT } });
+      expect((await w.sheep("home")).stdout).toBe(`home: ${url} (local, running, pid ${process.pid})\nkennel: ${w.kennel}\nhome build: 1fc8d03 (2026-09-07T20:00:00Z)\ncli build: 0.0.0-checkout (unstamped)\n`);
+    } finally {
+      stamped.server.close();
+    }
+
+    // A home from before the stamp answers /home without one: unstamped, like a checkout.
+    const unstamped = await listenHome(undefined);
+    try {
+      const url = `http://127.0.0.1:${unstamped.port}`;
+      await writeFile(w.config, JSON.stringify({ home: url, token: "t" }));
+      expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toMatchObject({ build: { home: CHECKOUT, cli: CHECKOUT } });
+      expect((await w.sheep("home")).stdout).toBe(`home: ${url} (answers)\nkennel: ${w.kennel}\nhome build: 0.0.0-checkout (unstamped)\ncli build: 0.0.0-checkout (unstamped)\n`);
+    } finally {
+      unstamped.server.close();
+    }
+
+    // The wrong token: the door answers sheep, /home refuses, and the home's side is null with the plain prose.
+    const refused = await listenHome({ commit: "1fc8d03", builtAt: "2026-09-07T20:00:00Z" }, "other");
+    try {
+      const url = `http://127.0.0.1:${refused.port}`;
+      await writeFile(w.config, JSON.stringify({ home: url, token: "t" }));
+      expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toMatchObject({ answers: true, build: { home: null, cli: CHECKOUT } });
+      expect((await w.sheep("home")).stdout).toBe(`home: ${url} (answers)\nkennel: ${w.kennel}\n`);
+    } finally {
+      refused.server.close();
+    }
+  });
+
+  it("warns in one line when both sides are stamped and differ, naming the older one and its fix; says nothing otherwise", () => {
+    const older = { commit: "aaaaaaa", builtAt: "2026-09-07T10:00:00Z" };
+    const newer = { commit: "bbbbbbb", builtAt: "2026-09-07T20:00:00Z" };
+    expect(skewLine(older, newer, false)).toBe("sheep: the home's build aaaaaaa (2026-09-07T10:00:00Z) is older than this command's bbbbbbb (2026-09-07T20:00:00Z); `sheep home deploy` from this package updates it\n");
+    expect(skewLine(older, newer, true)).toBe("sheep: the home's build aaaaaaa (2026-09-07T10:00:00Z) is older than this command's bbbbbbb (2026-09-07T20:00:00Z); `sheep home stop`; the next command restarts it from this package\n");
+    expect(skewLine(newer, older, false)).toBe("sheep: this command's build aaaaaaa (2026-09-07T10:00:00Z) is older than the home's bbbbbbb (2026-09-07T20:00:00Z); `npm install -g github:dglazkov/sheep#release` updates it\n");
+    expect(skewLine(newer, older, true)).toBe(skewLine(newer, older, false));
+    // Equal stamps, and a checkout on either side: nothing.
+    expect(skewLine(newer, { ...newer }, false)).toBeUndefined();
+    expect(skewLine(CHECKOUT, newer, false)).toBeUndefined();
+    expect(skewLine(newer, CHECKOUT, true)).toBeUndefined();
+    expect(skewLine(CHECKOUT, CHECKOUT, true)).toBeUndefined();
   });
 });
 
@@ -285,7 +374,9 @@ describe.skipIf(!existsSync(cellWrangler))("sheep home local, in a checkout", ()
     expect(JSON.parse(await readFile(w.config, "utf8"))).toEqual({ home: namedUrl, token, local: true, name: "blog" });
     const namedStatus = JSON.parse((await w.sheep("home", "--json")).stdout) as { name: string | null; pid: number };
     expect(namedStatus.name).toBe("blog");
-    expect((await w.sheep("home")).stdout).toBe(`home: ${namedUrl} (local, running, pid ${namedStatus.pid})\nkennel: ${w.kennel}\nname: blog\n`);
+    // A running home answers GET /home: both stamps are printed, the checkout's on both sides (station phase 0).
+    expect((await w.sheep("home")).stdout).toBe(`home: ${namedUrl} (local, running, pid ${namedStatus.pid})\nkennel: ${w.kennel}\nname: blog\nhome build: 0.0.0-checkout (unstamped)\ncli build: 0.0.0-checkout (unstamped)\n`);
+    expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toMatchObject({ build: { home: { commit: "0.0.0-checkout", builtAt: null }, cli: { commit: "0.0.0-checkout", builtAt: null } } });
     expect((await w.sheep("home", "stop")).stdout).toBe(`stopped the local home at ${namedUrl}\n`);
     await writeFile(w.config, JSON.stringify({ home: namedUrl, token, local: true }));
 

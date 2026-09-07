@@ -100,7 +100,11 @@
  * no process's arguments: the daemon gets its secrets from `.dev.vars`,
  * mode 600, through `--env-file`. Step 5 is `sheep --agent-help`, which
  * must print `dist/agent-guide.md` from beside the bundle, and setup a
- * second time, which must report everything current. The CLI runs with no
+ * second time, which must report everything current. Step 6's `sheep home
+ * --json`, with the home started on demand, must show the two stamps
+ * equal: `build.home`, which the Worker reports from what
+ * `scripts/bundle.mjs` defined into it, and `build.cli`, the manifest's,
+ * both the release's commit and time (station phase 0). The CLI runs with no
  * `NODE_NO_WARNINGS`: a warning on stderr from `sheep --version` (collar
  * phase 0's `ExperimentalWarning: SQLite`) fails the walk.
  *
@@ -874,8 +878,16 @@ class Ring {
     if (up.code !== 0 || upReport.running !== true || upReport.home !== url || typeof upReport.pid !== "number" || upReport.pid === report.pid || JSON.stringify(upReport.stamp) !== JSON.stringify(stamp)) {
       this.fail("step 6", "sheep home --json", { ...up, stderr: `${up.stderr}\nexpected running at ${url} under a new pid with stamp ${JSON.stringify(stamp)}` });
     }
+    // Station phase 0: the two stamps. The home's, from `GET /home`, is what scripts/bundle.mjs defined into the release's
+    // Worker; the command's is the manifest's. Both must be the release's commit and time: a checkout-built Worker in an
+    // install is a release that did not carry its stamp, and skew between the two is a warning the ring must not see.
+    const build = { commit: stamp.commit, builtAt: stamp.builtAt };
+    if (JSON.stringify(upReport.build?.home) !== JSON.stringify(build) || JSON.stringify(upReport.build?.cli) !== JSON.stringify(build)) {
+      this.fail("step 6", "sheep home --json", { ...up, stderr: `${up.stderr}\nexpected build.home and build.cli both ${JSON.stringify(build)}; got ${JSON.stringify(upReport.build)}` });
+    }
+    if (up.stderr !== "") this.fail("step 6", "sheep home --json", { ...up, stderr: `${up.stderr}\nexpected nothing on stderr: the two stamps are equal, so no skew line` });
     this.homes.set(this.blog, { url, pid: upReport.pid });
-    this.ok("step 6", "sheep home stop; sheep home; sheep ls; sheep home --json", `stopped; "(local, stopped)"; started on demand, pid ${report.pid} → ${upReport.pid}, ${id} listed; stamp ${upReport.stamp.commit} (${upReport.stamp.builtAt}), wrangler ${upReport.stamp.wrangler}`);
+    this.ok("step 6", "sheep home stop; sheep home; sheep ls; sheep home --json", `stopped; "(local, stopped)"; started on demand, pid ${report.pid} → ${upReport.pid}, ${id} listed; stamp ${upReport.stamp.commit} (${upReport.stamp.builtAt}), wrangler ${upReport.stamp.wrangler}; build.home = build.cli = ${build.commit} (${build.builtAt})`);
 
     // Step 7, first half: the export is a SQLite file with the tables the command reports.
     const file = join(this.dir, `${id}.sqlite`);

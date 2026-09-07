@@ -1,8 +1,8 @@
 ---
-status: planned
+status: partial
 since: 2026-09-07
 see: station
-note: "written 7 Sep 2026, the evening collar closed, from a conversation with the shepherd: a home in the cloud, from the package, in one path. The shepherd's calls: a sheep without a container is a writer and not a worker, so the deployed home is the pen home always, the Paid plan asked once, and there is no containerless home to deploy; the config names one home, and `--home` reaches another for one command; the token reaches a second machine through `sheep home join` on stdin, never through a dog's transcript; an API token and never a browser login, because the dog cannot do one; the local home rents a container when Docker is present, so a laptop with Docker gets the whole product with no account, as the last phase. Nothing built."
+note: "written 7 Sep 2026, the evening collar closed, from a conversation with the shepherd: a home in the cloud, from the package, in one path. The shepherd's calls: a sheep without a container is a writer and not a worker, so the deployed home is the pen home always, the Paid plan asked once, and there is no containerless home to deploy; the config names one home, and `--home` reaches another for one command; the token reaches a second machine through `sheep home join` on stdin, never through a dog's transcript; an API token and never a browser login, because the dog cannot do one; the local home rents a container when Docker is present, so a laptop with Docker gets the whole product with no account, as the last phase. Station phase 0 built the same evening, part-done: the workflow builds the pen image and pushes it when the repository holds a Docker Hub token, the release stamps the Worker and names the image at its commit in the shipped config, `GET /home` carries the stamp, `sheep home` prints both stamps and warns on skew, and the package ring showed them equal; the push waits on the token."
 ---
 
 # Station — the journeys

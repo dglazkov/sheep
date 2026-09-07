@@ -10,7 +10,10 @@
 #            This is the ring closest to a user's shell, minutes after the
 #            branch changed, and the one that would have caught isocan's #47.
 #
-# Nothing deploys here; the deployed home from the package is the next project.
+# Station phase 0: the release job also builds packages/pen's image on the runner and pushes it to Docker Hub as
+# docker.io/dglazkov/sheep-pen:<commit>, the seven characters the release manifest's stamp and the shipped
+# home/wrangler.jsonc name, so a station deployed from the package pulls the container its bundle was tested with.
+# Nothing deploys here; `sheep home deploy` from the package is station's later phases.
 name: release
 
 on:
@@ -67,6 +70,28 @@ jobs:
       # main keeps its last good release until the next green commit. The cell's suite runs in workerd.
       - run: pnpm test
       - run: pnpm -r typecheck
+
+      # The pen image, for linux/amd64 (the platform Cloudflare runs), tagged with the same seven characters
+      # scripts/release.mjs stamps the manifest and the config with (`head.slice(0, 7)`, so the commit here is read
+      # the same way). The token is the repository's DOCKERHUB_TOKEN secret, read by docker on stdin and never an
+      # argument; the login user is the namespace, written here. Without the secret (a fork, or before the shepherd
+      # has made one) the image is built and not pushed, the step says so, and the job goes on: the release still
+      # builds and the package ring still walks, and the package it makes installs but cannot deploy a station.
+      - name: Build the pen image; push it to Docker Hub when the token is in the secrets
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          commit="$(git rev-parse HEAD)"
+          image="docker.io/dglazkov/sheep-pen:${commit:0:7}"
+          docker build --platform linux/amd64 --tag "$image" packages/pen
+          if [ -z "$DOCKERHUB_TOKEN" ]; then
+            echo "built $image and did not push it: DOCKERHUB_TOKEN is not in this repository's secrets, so a station deployed from this release has no image to pull"
+            exit 0
+          fi
+          printf '%s' "$DOCKERHUB_TOKEN" | docker login docker.io --username dglazkov --password-stdin
+          docker push "$image"
+          docker logout docker.io
+          echo "pushed $image"
 
       - name: Fetch the release branch the new commit builds on
         run: |

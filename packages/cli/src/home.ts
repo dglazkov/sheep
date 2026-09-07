@@ -51,6 +51,12 @@ export interface TranscriptView {
   entries: Entry[];
 }
 
+/** `GET /home`'s `build`: the commit the Worker was built from and when; `builtAt` null and commit `0.0.0-checkout` from a checkout. */
+export interface HomeBuild {
+  commit: string;
+  builtAt: string | null;
+}
+
 /** The home's HTTP face: the door, the directory, and one cell's routes. */
 export class Home {
   readonly url: URL;
@@ -88,6 +94,18 @@ export class Home {
   async serverId(): Promise<string> {
     const { serverId } = (await (await this.request("/home")).json()) as { serverId: string };
     return serverId;
+  }
+
+  /**
+   * The home's build stamp from `GET /home` (station phase 0): what
+   * `scripts/bundle.mjs` defined into its Worker, or `0.0.0-checkout` with
+   * no time from a checkout's `wrangler dev`. A home from before the stamp
+   * answers without one, and that is reported as unstamped too.
+   */
+  async build(): Promise<HomeBuild> {
+    const { build } = (await (await this.request("/home")).json()) as { build?: Partial<HomeBuild> };
+    if (build && typeof build.commit === "string" && build.commit !== "") return { commit: build.commit, builtAt: typeof build.builtAt === "string" ? build.builtAt : null };
+    return { commit: "0.0.0-checkout", builtAt: null };
   }
 
   /** Every session, newest first; with a pasture, its herd: the sessions born into it. */
