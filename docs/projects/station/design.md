@@ -114,6 +114,15 @@ for one command, as they do today. Named homes and `sheep home use` are a
 surface nobody has asked for; the day two stations are in daily use is
 the day to add it.
 
+Which config is [kennel](../kennel/design.md)'s: the nearest `.sheep/`
+at or above the working directory, `~/.sheep` when there is none. A
+station is deployed from a kennel, named by kennel's rule, the
+directory's name and a counter against the account, minted at the
+first deploy and recorded in that kennel's config as `name`; every
+later deploy and the delete use the recorded name, and a different
+`--name` is refused. Two directories, two stations, two tokens, two
+deletes, on one account. Kennel lands before station phase 1.
+
 `sheep home join <address>` reads the token from stdin, asks the home's
 `GET /` for `sheep` and `GET /home` for its stamp, and writes the config.
 The token travels the way a pasture secret does: piped by a person from

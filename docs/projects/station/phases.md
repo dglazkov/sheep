@@ -22,7 +22,7 @@ left the design.
 
 ---
 
-**Where we are: station phase 0 NOT STARTED. Next: station phase 0, the image and the stamp.** Planned 7 Sep 2026, the evening collar closed, from a conversation with the shepherd; the shepherd's calls are in the journey's front matter. Station phase 0 asks once for a Docker Hub token in the repository's secrets; station phase 1 asks for the shepherd's Cloudflare token and the container minutes each walk spends; station phase 4 needs Docker on this laptop.
+**Where we are: station phase 0 NOT STARTED. Next: station phase 0, the image and the stamp.** Planned 7 Sep 2026, the evening collar closed, from a conversation with the shepherd; the shepherd's calls are in the journey's front matter. Station phase 1 waits on [kennel](../kennel/phases.md): the config it writes is the kennel's, and the Worker's name is kennel phase 1's `mintName` and the config's `name` field, so kennel closes first. Station phase 0 asks once for a Docker Hub token in the repository's secrets; station phase 1 asks for the shepherd's Cloudflare token and the container minutes each walk spends; station phase 4 needs Docker on this laptop.
 
 The order is dependency order. Phase 0 is the image on the registry
 and the stamp on the home, because a deploy from the package needs an
@@ -86,8 +86,11 @@ and plan check through the API; the subdomain registered when absent;
 `wrangler deploy --env pen` over the package's config with the Worker's
 name and the container application named the same; the three secrets
 through stdin; the config written without the `local` marker; the
-report. Run again, a redeploy that keeps secrets. `scripts/hermetic.mjs
---ring account`: the price and the yes, the fresh world, the install,
+report. The name is kennel's: `mintName` over the kennel's directory
+name and the account's Workers and container applications, or `--name`
+at the first deploy, recorded in the kennel's config and read from it
+after; a different `--name` later is refused. Run again, a redeploy
+that keeps secrets. `scripts/hermetic.mjs --ring account`: the price and the yes, the fresh world, the install,
 `sheep home deploy --name sheep-hermetic-<sha>`, journey 1 steps 3 and
 4 with the faux provider set as a var, `sheep home delete` with the
 name on stdin, and the account listed afterwards; a failure after the
