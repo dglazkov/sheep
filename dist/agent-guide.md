@@ -14,7 +14,9 @@ build you are running; `sheep --help` is the verb-by-verb reference.
 `npx github:dglazkov/sheep#release setup` installs it, puts the skill in
 the current directory, and prints the next sentence; `sheep setup` again
 later is harmless and reports what is current. Upgrading is
-`npm install -g github:dglazkov/sheep#release` again.
+`npm install -g github:dglazkov/sheep#release` again; a deployed home is
+then `sheep home deploy` again from the newer package, which `sheep home`
+says on stderr while the home's stamp is older, with every session kept.
 
 Every verb talks to a home, and the first one is on this machine:
 

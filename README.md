@@ -175,7 +175,7 @@ Workers Paid plan:
 ```sh
 export CLOUDFLARE_API_TOKEN=...  ANTHROPIC_API_KEY=...
 sheep home deploy [--name <worker>] [--subdomain <name>]   # the pen home, a container beside every cell; prints the address
-sheep home delete                                          # ends it, after its name is typed
+sheep home delete                                          # lists what goes (sessions, pastures, the application), then ends it after its name is typed
 ```
 
 Without the two variables it prints what it needs and costs, and makes
@@ -184,8 +184,11 @@ the directory's, records it in the kennel's config (`.sheep/config`, or
 `~/.sheep/config` outside a kennel) with the address and the token it
 generated, and sets the secrets through `wrangler secret put` on stdin;
 run again, it redeploys the same Worker from the package it runs from and
-keeps them. `--subdomain` registers a `workers.dev` subdomain when the
-account has none.
+keeps them. That is the upgrade: after `npm install -g` of a newer
+release, `sheep home` says on stderr that the home is older, and `sheep
+home deploy` moves its stamp with every session and pasture kept.
+`--subdomain` registers a `workers.dev` subdomain when the account has
+none.
 
 A second machine joins the same station with the token on stdin, never as
 an argument: pipe it from the first machine's `.sheep/config` or a

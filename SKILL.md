@@ -45,7 +45,8 @@ directories herds its own sheep and shares nothing but the command.
 - **An account for a deployed home**: a home on this machine needs none;
   `sheep home deploy` needs `CLOUDFLARE_API_TOKEN` and `ANTHROPIC_API_KEY`
   exported in the shell, and prints what to ask for when they are not;
-  `sheep home delete` needs the station's name typed at their terminal;
+  `sheep home delete` lists what goes and how many sessions are in it, then
+  needs the station's name typed at their terminal (exit 2 without one);
   `sheep home join <address>` needs its token piped on stdin, never pasted.
 - **A hand at a terminal**: `sheep attach <id>` with no prompt opens pi's
   interactive terminal, theirs to use, not yours.
