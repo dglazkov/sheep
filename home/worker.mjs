@@ -103306,10 +103306,15 @@ function admitted(request, env) {
 }
 __name(admitted, "admitted");
 var CHECKOUT_BUILD = { commit: "0.0.0-checkout", builtAt: null };
+function homeImage() {
+  if (false) return null;
+  return true ? "docker.io/dglazkov2/sheep-pen@sha256:28817231631ca2f0a982584a3ace0f1afe3ccb594d5b6541608ec4a015551903" : null;
+}
+__name(homeImage, "homeImage");
 function homeBuild() {
   if (false) return CHECKOUT_BUILD;
   try {
-    const parsed = JSON.parse('{"commit":"747f923","builtAt":"2026-09-08T00:03:36Z"}');
+    const parsed = JSON.parse('{"commit":"7db59d3","builtAt":"2026-09-08T00:32:09Z"}');
     if (typeof parsed.commit === "string" && parsed.commit !== "") return { commit: parsed.commit, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
   } catch {
   }
@@ -103396,7 +103401,7 @@ var index_default = {
     }
     if (url.pathname === "/home" && request.method === "GET") {
       const budget = await directory.budget();
-      return Response.json({ serverId: await directory.serverId(), container: env.PEN_CONTAINER !== void 0, build: homeBuild(), ...budget });
+      return Response.json({ serverId: await directory.serverId(), container: env.PEN_CONTAINER !== void 0, build: homeBuild(), image: homeImage(), ...budget });
     }
     if (url.pathname === "/faux" && request.method === "POST" && env.SHEEP_PROVIDER === "faux") {
       const program = await request.json();
@@ -103439,7 +103444,8 @@ export {
   PenContainer,
   SessionCell,
   index_default as default,
-  homeBuild
+  homeBuild,
+  homeImage
 };
 /*! Bundled license information:
 

@@ -187,6 +187,17 @@ run again, it redeploys the same Worker from the package it runs from and
 keeps them. `--subdomain` registers a `workers.dev` subdomain when the
 account has none.
 
+A second machine joins the same station with the token on stdin, never as
+an argument: pipe it from the first machine's `.sheep/config` or a
+password manager. It writes this kennel's config (address and token, no
+name: the station is the other kennel's), and prints both build stamps and
+the pen image the station runs, by digest.
+
+```sh
+npx github:dglazkov/sheep#release setup
+sheep home join https://<worker>.<subdomain>.workers.dev < token.txt   # then sheep ls, sheep attach <id>
+```
+
 #### Use it
 
 ```sh
