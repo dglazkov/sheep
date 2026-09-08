@@ -561,6 +561,24 @@ describe("sheep home deploy: steps 2 to 5 against the fake account", () => {
     expect(await readConfig(w.config)).toMatchObject({ name: "blog" });
   });
 
+  it("retries the deploy once, after a gap, when wrangler cannot attach the container application, and says so", async () => {
+    const w = await world();
+    const result = await w.sheep(["home", "deploy", "--json"], { env: { SHEEP_TEST_WRANGLER_FAIL: "deploy-once", SHEEP_TEST_RETRY_MS: "50" } });
+    expect(result.code, result.stderr).toBe(0);
+    expect((JSON.parse(result.stdout) as { deployRetried: boolean; name: string }).deployRetried).toBe(true);
+    expect(result.stderr).toContain("sheep: wrangler could not attach the container application (✘ [ERROR] Could not deploy container application as durable object was not found in list of bindings); retrying once in 0s\n");
+    // Two deploys, the same arguments, then the secrets as ever; the Worker is the one the second deploy registered.
+    const calls = await w.calls();
+    expect(calls.map((call) => call.args[0])).toEqual(["deploy", "deploy", "secret", "secret", "secret"]);
+    expect(calls[0]!.args).toEqual(calls[1]!.args);
+    expect(w.state.deploys.length).toBe(1);
+    expect(await readConfig(w.config)).toMatchObject({ name: "blog" });
+    // A deploy that needed no retry says so.
+    const again = await w.sheep(["home", "deploy", "--json"]);
+    expect(again.code, again.stderr).toBe(0);
+    expect((JSON.parse(again.stdout) as { deployRetried: boolean }).deployRetried).toBe(false);
+  });
+
   it("is exit 1, not a refusal, when wrangler fails after the account was touched", async () => {
     const w = await world();
     const result = await w.sheep(["home", "deploy"], { env: { SHEEP_TEST_WRANGLER_FAIL: "deploy" } });

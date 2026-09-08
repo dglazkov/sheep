@@ -45,9 +45,13 @@ usage:
   sheep --agent-help                        the guide for an agent: what sheep is, the verbs, the home, what needs a person
   sheep --version
 
-  sheep home local [--faux]                 a home on this machine, under the kennel's local/, started if it was not;
+  sheep home local [--faux] [--no-container]
+                                            a home on this machine, under the kennel's local/, started if it was not;
                                             writes the kennel's config when there is none; the report says whether a model
-                                            key is held (from ANTHROPIC_API_KEY), or that the faux provider answers instead
+                                            key is held (from ANTHROPIC_API_KEY), or that the faux provider answers instead.
+                                            With Docker on this machine the home rents a container beside every cell (git,
+                                            node, pnpm, python: sheep can clone, build, test, and push), the image pulled by
+                                            Docker; without Docker, or with --no-container, its sheep read, write, and edit
   sheep home stop                           stop this kennel's local home
   sheep home deploy [--name <worker>] [--subdomain <name>] [--json]
                                             the station: this package's home on the shepherd's Cloudflare account, a
@@ -93,6 +97,7 @@ options:
   --wait          with a prompt to a busy session: stream the queued turn when it starts
   --faux          with home local: the scripted model that answers "ok", for a look at the plumbing without a key;
                   with home deploy: the same provider set as the station's var, the account ring's flag
+  --no-container  with home local: no container even with Docker present; a running home that has one is restarted
   --subdomain <name>  with home deploy: the workers.dev subdomain to register when the account has none
   --no-install    with setup: report the command missing rather than installing it
 
@@ -120,6 +125,7 @@ interface Parsed {
   wait: boolean;
   faux: boolean;
   noInstall: boolean;
+  noContainer: boolean;
   since?: string;
   last?: string;
   timeout?: string;
@@ -128,7 +134,7 @@ interface Parsed {
 
 function parse(argv: readonly string[]): Parsed {
   const args = [...argv];
-  const parsed: Parsed = { rest: [], json: false, detach: false, wait: false, faux: false, noInstall: false };
+  const parsed: Parsed = { rest: [], json: false, detach: false, wait: false, faux: false, noInstall: false, noContainer: false };
   const valued: Record<string, (value: string | undefined) => void> = {
     "--home": (value) => (parsed.home = value),
     "--name": (value) => (parsed.name = value),
@@ -154,6 +160,7 @@ function parse(argv: readonly string[]): Parsed {
     else if (arg === "--wait") parsed.wait = true;
     else if (arg === "--faux") parsed.faux = true;
     else if (arg === "--no-install") parsed.noInstall = true;
+    else if (arg === "--no-container") parsed.noContainer = true;
     else parsed.rest.push(arg);
   }
   return parsed;
@@ -295,6 +302,11 @@ async function dispatch(command: string, parsed: Parsed, config: SheepConfig, ou
  * and the image the home reports beside the stamps (`--json`: `image`).
  * Every form says one line on stderr first when git tracks the kennel: a
  * token is in the repository, and the command goes on regardless.
+ * Station phase 4: `sheep home local` rents a container when Docker
+ * answers, `--no-container` refuses one, the report says which and why;
+ * `sheep home` for a local home reports the record's `container`, and a
+ * home that answers `GET /home` must agree, else the record is stale and
+ * the home is reported as not running.
  */
 async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Promise<number> {
   const sub = parsed.rest[1];
@@ -302,7 +314,7 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
   if (kennelTracked(kennelDir())) output.err(trackedWarning(kennelDir()));
   try {
     if (sub === "local") {
-      const report = await startLocalHome({ faux: parsed.faux, say: output.err });
+      const report = await startLocalHome({ faux: parsed.faux, container: parsed.noContainer ? false : "docker", say: output.err });
       if (parsed.json) {
         output.out(`${JSON.stringify({ home: report.url, kennel, ...report })}\n`);
         return 0;
@@ -319,17 +331,28 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
           : report.config.wrote
             ? `${report.config.path} written`
             : `${report.config.path} names this home`;
-      output.out(`local home: ${report.url} (${report.state}, pid ${report.pid})\nkennel: ${kennel}\nfiles: ${report.dir}\nconfig: ${configLine}\nkey: ${key}\n`);
+      // The container line (station phase 4): running, with what Docker said and how the container reaches the home; or none, with
+      // the reason, which without Docker is the one sentence saying what a container would add and how to get one.
+      const containerLine =
+        report.container === "running"
+          ? `container: running (${report.reason}; the pen environment, ${report.stamp?.image === undefined ? "the image built by Docker from the checkout's Dockerfile" : `the image ${report.stamp.image} pulled by Docker`}; PEN_CELL_ORIGIN ${report.origin}; idle ${report.idle})`
+          : `container: none; ${report.reason}`;
+      // Which config the daemon runs (station phase 4): the derived one, with its one-line Dockerfile, when the container is on and the
+      // package's config names a registry image; a line only then, since otherwise it is the package's own.
+      const daemonLine = report.daemonConfig.derived ? `daemon config: ${report.daemonConfig.path} (derived from the package's; the container is FROM ${report.daemonConfig.from})\n` : "";
+      output.out(`local home: ${report.url} (${report.state}, pid ${report.pid})\nkennel: ${kennel}\nfiles: ${report.dir}\nconfig: ${configLine}\nkey: ${key}\n${containerLine}\n${daemonLine}`);
       return 0;
     }
     if (sub === "stop") {
-      const { stopped, record, unreaped } = await stopLocalHome();
+      const { stopped, record, unreaped, containersRemoved } = await stopLocalHome();
       if (unreaped !== undefined) output.err(`sheep: pid ${unreaped} is still in the process table after SIGKILL (nothing reaps it?); the record's pid is cleared\n`);
       if (parsed.json) {
-        output.out(`${JSON.stringify({ stopped, home: record?.url ?? null, kennel, ...(unreaped === undefined ? {} : { unreaped }) })}\n`);
+        output.out(`${JSON.stringify({ stopped, home: record?.url ?? null, kennel, ...(unreaped === undefined ? {} : { unreaped }), containersRemoved })}\n`);
         return 0;
       }
       output.out(record === undefined ? "no local home has been started here\n" : stopped ? `stopped the local home at ${record.url}\n` : `the local home at ${record.url} was not running\n`);
+      // The home's containers wrangler left behind (station phase 4), removed by name; one line only when there were any.
+      if (containersRemoved > 0) output.out(`removed ${containersRemoved} container${containersRemoved === 1 ? "" : "s"} of the home's (${"workerd-sheep-PenContainer-…"})\n`);
       return 0;
     }
     if (sub === "deploy") {
@@ -416,9 +439,9 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
     // home, and this command's from the manifest beside the bundle. A home that does not answer leaves its side null, and
     // the prose is what it was; both there, the prose prints both and stderr gets the one-line skew warning, if any.
     // Station phase 2: the same answer carries the image the home's config named, an `image:` line when it does.
-    const buildReport = async (home: string | null, answers: boolean, local: boolean): Promise<{ build: { home: BuildSide | null; cli: BuildSide }; image: string | null; lines: string }> => {
+    const buildReport = async (home: string | null, answers: boolean, local: boolean): Promise<{ build: { home: BuildSide | null; cli: BuildSide }; image: string | null; container: boolean | null; lines: string }> => {
       const cli = cliBuild();
-      let stamp: { build: BuildSide; image: string | null } | null = null;
+      let stamp: { build: BuildSide; image: string | null; container: boolean | null } | null = null;
       if (home !== null && answers) {
         try {
           stamp = await new Home({ home, token: config.token }).stamp();
@@ -426,22 +449,35 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
           stamp = null;
         }
       }
-      if (stamp === null) return { build: { home: null, cli }, image: null, lines: "" };
+      if (stamp === null) return { build: { home: null, cli }, image: null, container: null, lines: "" };
       const skew = skewLine(stamp.build, cli, local);
       if (skew !== undefined) output.err(skew);
       const imageLine = stamp.image === null ? "" : `image: ${describeImage(stamp.image)}\n`;
-      return { build: { home: stamp.build, cli }, image: stamp.image, lines: `home build: ${describeBuild(stamp.build)}\ncli build: ${describeBuild(cli)}\n${imageLine}` };
+      return { build: { home: stamp.build, cli }, image: stamp.image, container: stamp.container, lines: `home build: ${describeBuild(stamp.build)}\ncli build: ${describeBuild(cli)}\n${imageLine}` };
     };
     if (config.local === true) {
       const status = await localStatus();
       const home = status.record?.url ?? config.home ?? null;
-      const { build, image, lines } = await buildReport(home, status.running, true);
+      let { running } = status;
+      const answered = await buildReport(home, running, true);
+      let { build, image, lines } = answered;
+      const reported = answered.container;
+      // The record's container choice (station phase 4), which a home that answers must agree with: a home reporting otherwise is
+      // not the one the record describes, so the record is stale and the home is reported as not running.
+      const container = status.record?.container ?? null;
+      if (running && reported !== null && container !== null && reported !== container) {
+        output.err(`sheep: the record says the local home ${container ? "has" : "has no"} container and the home at ${home} reports otherwise; a stale record, so the home is reported as not running\n`);
+        running = false;
+        build = { home: null, cli: build.cli };
+        image = null;
+        lines = "";
+      }
       if (parsed.json) {
-        output.out(`${JSON.stringify({ home, kennel, name, local: true, running: status.running, pid: status.running ? status.record!.pid : null, port: status.record?.port ?? null, stamp: status.record?.stamp ?? null, startedAt: status.running ? status.record!.startedAt : null, build, image })}\n`);
+        output.out(`${JSON.stringify({ home, kennel, name, local: true, running, pid: running ? status.record!.pid : null, port: status.record?.port ?? null, stamp: status.record?.stamp ?? null, startedAt: running ? status.record!.startedAt : null, container, build, image })}\n`);
         return 0;
       }
-      output.out(home === null ? "home: (none); run `sheep home local`\n" : `home: ${home} (local, ${status.running ? `running, pid ${status.record!.pid}` : "stopped"})\n`);
-      output.out(`kennel: ${kennel}\n${nameLine}${lines}`);
+      output.out(home === null ? "home: (none); run `sheep home local`\n" : `home: ${home} (local, ${running ? `running, pid ${status.record!.pid}` : "stopped"})\n`);
+      output.out(`kennel: ${kennel}\n${nameLine}${running ? `container: ${container ? "yes" : "no"}\n` : ""}${lines}`);
       return 0;
     }
     const home = config.home ?? null;

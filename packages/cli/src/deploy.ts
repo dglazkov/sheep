@@ -494,6 +494,8 @@ export interface DeployReport {
   state: "deployed" | "redeployed";
   /** Whether the address answered `sheep` within a minute of the deploy. */
   answers: boolean;
+  /** Station phase 4: whether `wrangler deploy` was run a second time after failing to attach the container application. */
+  deployRetried: boolean;
   account: Account;
   plan: { id: string; state: string; price: string };
   subdomain: { name: string; registered: boolean };
@@ -566,6 +568,18 @@ const READ_RETRIES = 3;
 const retryMs = (): number => {
   const seam = Number(process.env.SHEEP_TEST_RETRY_MS);
   return Number.isFinite(seam) && seam >= 0 ? seam : 5_000;
+};
+/**
+ * Wrangler's one transient (station phase 4): right after a rollout, a
+ * redeploy uploads the Worker and then fails to attach the container
+ * application, "Could not deploy container application as durable
+ * object was not found in list of bindings". The same deploy is run once
+ * more after this gap (`SHEEP_TEST_RETRY_MS` shortens it in tests).
+ */
+const CONTAINER_ATTACH_LINE = "Could not deploy container application";
+const deployRetryMs = (): number => {
+  const seam = Number(process.env.SHEEP_TEST_RETRY_MS);
+  return Number.isFinite(seam) && seam >= 0 ? seam : 20_000;
 };
 
 /**
@@ -751,7 +765,16 @@ export async function deploy(options: DeployOptions = {}): Promise<DeployReport>
   // Before a redeploy, the application as it is: a new image makes the deploy a rollout, and this is what it rolls from.
   const before = taken.applications.some((application) => application.name === name) ? await api.applicationState(account.id, name) : undefined;
   say(`sheep: ${state === "deployed" ? "deploying" : "redeploying"} ${name} as ${home} with the image ${derived.image}${faux ? " and the faux provider" : ""}\n`);
-  const deployed = await wrangler(bin, ["deploy", "--config", derived.path, "--env", "pen", ...(faux ? ["--var", "SHEEP_PROVIDER:faux"] : [])], { token, accountId: account.id, cwd });
+  const deployArgs = ["deploy", "--config", derived.path, "--env", "pen", ...(faux ? ["--var", "SHEEP_PROVIDER:faux"] : [])];
+  let deployed = await wrangler(bin, deployArgs, { token, accountId: account.id, cwd });
+  let deployRetried = false;
+  if (deployed.code !== 0 && `${deployed.stdout}\n${deployed.stderr}`.includes(CONTAINER_ATTACH_LINE)) {
+    const line = `${deployed.stdout}\n${deployed.stderr}`.split("\n").find((candidate) => candidate.includes(CONTAINER_ATTACH_LINE))?.trim() ?? CONTAINER_ATTACH_LINE;
+    say(`sheep: wrangler could not attach the container application (${line}); retrying once in ${Math.round(deployRetryMs() / 1000)}s\n`);
+    await sleep(deployRetryMs());
+    deployRetried = true;
+    deployed = await wrangler(bin, deployArgs, { token, accountId: account.id, cwd });
+  }
   if (deployed.code !== 0) throw new Error(`wrangler deploy --config ${derived.path} --env pen exited ${deployed.code}:\n${tail(deployed)}`);
 
   // 4. The secrets, each on stdin. The token is generated once and kept in the config; a redeploy reuses the config's.
@@ -808,6 +831,7 @@ export async function deploy(options: DeployOptions = {}): Promise<DeployReport>
     name,
     state,
     answers,
+    deployRetried,
     account,
     plan: { ...plan, price: PLAN.price },
     subdomain: { name: subdomain, registered },

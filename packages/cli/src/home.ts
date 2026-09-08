@@ -61,6 +61,8 @@ export interface HomeBuild {
 export interface HomeStamp {
   build: HomeBuild;
   image: string | null;
+  /** Station phase 4: whether the home has a container beside every cell, as `GET /home` reports it; null when it does not say. */
+  container: boolean | null;
 }
 
 /** The home's HTTP face: the door, the directory, and one cell's routes. */
@@ -119,10 +121,10 @@ export class Home {
    * from before the field, answers none, and that is null.
    */
   async stamp(): Promise<HomeStamp> {
-    const answer = (await (await this.request("/home")).json()) as { build?: Partial<HomeBuild>; image?: unknown };
+    const answer = (await (await this.request("/home")).json()) as { build?: Partial<HomeBuild>; image?: unknown; container?: unknown };
     const { build } = answer;
     const known = build && typeof build.commit === "string" && build.commit !== "" ? { commit: build.commit, builtAt: typeof build.builtAt === "string" ? build.builtAt : null } : { commit: "0.0.0-checkout", builtAt: null };
-    return { build: known, image: typeof answer.image === "string" && answer.image !== "" ? answer.image : null };
+    return { build: known, image: typeof answer.image === "string" && answer.image !== "" ? answer.image : null, container: typeof answer.container === "boolean" ? answer.container : null };
   }
 
   /** Every session, newest first; with a pasture, its herd: the sessions born into it. */

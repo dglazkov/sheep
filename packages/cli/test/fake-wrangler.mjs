@@ -9,8 +9,15 @@
  * was given and registers the Worker and the container application it
  * names; `delete` removes the Worker. `SHEEP_TEST_WRANGLER_FAIL=deploy`
  * makes the deploy exit 1 with wrangler's kind of message.
+ *
+ * Station phase 4: `dev` plays the local home's daemon for
+ * `test/local.test.ts`: it listens on `--port` until SIGTERM, answering
+ * `sheep` at the door, `[]` at `/sessions`, and at `/home` a `container`
+ * that is true exactly when `--env pen` was among its arguments, which is
+ * how the test reads which environment the CLI chose.
  */
 import { appendFileSync, readFileSync } from "node:fs";
+import { createServer } from "node:http";
 
 const args = process.argv.slice(2);
 const token = process.env.CLOUDFLARE_API_TOKEN;
@@ -35,10 +42,34 @@ appendFileSync(
     env: { CI: process.env.CI, WRANGLER_SEND_METRICS: process.env.WRANGLER_SEND_METRICS, token: Boolean(token), account: process.env.CLOUDFLARE_ACCOUNT_ID ?? null, tokenInArgs: Boolean(token) && args.some((arg) => arg.includes(token)) },
   })}\n`,
 );
-const config = flag("--config") ? JSON.parse(readFileSync(flag("--config"), "utf8")) : undefined;
-if (args[0] === "deploy") {
+// The derived config is JSON; the checkout's `wrangler.jsonc`, which `dev` gets, is not, and `dev` never reads it.
+const config = flag("--config") && args[0] !== "dev" ? JSON.parse(readFileSync(flag("--config"), "utf8")) : undefined;
+if (args[0] === "dev") {
+  const container = args.some((arg, i) => arg === "--env" && args[i + 1] === "pen");
+  const server = createServer((request, response) => {
+    if (request.url === "/home") {
+      response.setHeader("content-type", "application/json");
+      return response.end(JSON.stringify({ serverId: "fake-dev", container, build: undefined, image: null }));
+    }
+    if (request.url === "/sessions") {
+      response.setHeader("content-type", "application/json");
+      return response.end("[]");
+    }
+    response.end("sheep\n");
+  });
+  server.listen(Number(flag("--port")), "127.0.0.1");
+  process.on("SIGTERM", () => process.exit(0));
+} else if (args[0] === "deploy") {
   if (process.env.SHEEP_TEST_WRANGLER_FAIL === "deploy") {
     console.error("✘ [ERROR] A request to the Cloudflare API (/accounts/x/workers/scripts/y) failed.\n\n  the fake refused this deploy [code: 10000]");
+    process.exit(1);
+  }
+  // `deploy-once` (station phase 4): the first deploy of the run uploads and then fails wrangler's way after a rollout; the
+  // second succeeds. The log, appended above, says which this is.
+  const deploysBefore = readFileSync(process.env.SHEEP_TEST_WRANGLER_LOG, "utf8").trim().split("\n").filter((line) => line && JSON.parse(line).args[0] === "deploy").length;
+  if (process.env.SHEEP_TEST_WRANGLER_FAIL === "deploy-once" && deploysBefore === 1) {
+    console.log(`Total Upload: 1234.56 KiB / gzip: 234.56 KiB\nUploaded ${config.env.pen.name} (2.34 sec)`);
+    console.error("✘ [ERROR] Could not deploy container application as durable object was not found in list of bindings");
     process.exit(1);
   }
   const pen = config.env.pen;

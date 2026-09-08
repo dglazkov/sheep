@@ -36,13 +36,18 @@ config: <dir>/.sheep/config written
 key: not held; export ANTHROPIC_API_KEY and run `sheep home local` again
 ```
 
-(The paths are spelled out in full.) That last line is the one thing you
-cannot do alone. Ask the shepherd to export `ANTHROPIC_API_KEY` in the
+The `key:` line is the one thing you cannot do alone. Ask the shepherd to export `ANTHROPIC_API_KEY` in the
 shell you run in, then run `sheep home local` again; it answers `key:
 held, in <dir>/.sheep/local/.dev.vars`. Never ask for the key in the chat,
 and never pass it as an argument: the home reads it from that file and
 nothing else. `sheep home local --faux` runs a scripted model that answers
 "ok" to everything, for a look at the plumbing without a key.
+
+A `container:` line follows: with Docker on the machine the home rents
+one beside every cell and its sheep can clone, build, test, and push;
+without, one sentence says what a container would add and how to get one,
+and the sheep read, write, and edit. Tell the shepherd that sentence when
+the work needs a repository.
 
 The home stops with `sheep home stop` and is started again by the next
 verb that needs it, which says so on stderr. `sheep home` reports which
@@ -52,8 +57,8 @@ kennel it found, which home the config names, and whether it answers;
 this package's home on the shepherd's Cloudflare account, a container
 beside every cell: with `CLOUDFLARE_API_TOKEN` and `ANTHROPIC_API_KEY` in
 the shell you run in it deploys, prints the address, and writes the
-kennel's config; without them it prints what it needs and costs, and the
-one sentence to ask the shepherd with, and makes nothing. `sheep home
+kennel's config; without them it prints what it needs and costs, and makes
+nothing. `sheep home
 delete` ends that station after its name is typed at a terminal. `sheep
 home join <address>` is a second machine's way in: the station's token is
 one line of stdin, piped by the shepherd from the first machine's config,
@@ -110,9 +115,10 @@ stderr as `sheep: …` with exit 2.
   `<id>.sqlite` by default, and prints the file and its table counts.
 
 A sheep has pi's tools: `read`, `write`, and `edit` on a workspace in its
-cell, and `bash`, a shell in the cell with the usual text tools. On a home
-with no container there is no `git`, no `node`, no package manager; the
-shell says so plainly when asked.
+cell, and `bash`, a shell in the cell with the usual text tools. With a
+container the shell has `git`, `node`, `pnpm`, and `python` too; without
+one there is no `git`, no `node`, no package manager, and the shell says
+so when asked.
 
 ## Pastures: a herd on one tree
 
@@ -151,8 +157,8 @@ Three things, and only these:
 1. **A model key.** Ask the shepherd to `export ANTHROPIC_API_KEY`, then
    run `sheep home local` again. Never ask them to paste the key into the
    chat; never write it into a file yourself.
-2. **An account for a deployed home.** The local home needs none. A home
-   in the cloud is a later project; if the shepherd asks for one, say that.
+2. **An account for a deployed home.** The local home needs none; `sheep
+   home deploy` says what it needs when the shepherd wants one.
 3. **A hand at a terminal.** `sheep new` or `sheep attach <id>` with no
    prompt opens pi's interactive terminal on the sheep, from the same
    build, on any machine with the config. It is the shepherd's window into
