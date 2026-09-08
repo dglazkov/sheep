@@ -56,8 +56,12 @@ usage:
                                             costs and exits 2. The name is the kennel's, minted at the first deploy and
                                             recorded in the config; run again, it redeploys the same Worker from this
                                             package and keeps its secrets
-  sheep home delete [--name <worker>]       end the station: the Worker, its objects, and its container application,
-                                            after the name is typed at a terminal (one line of stdin without one)
+  sheep home delete [--name <worker>] [--json]
+                                            end the station: lists what goes (the Worker at its address, its Durable
+                                            Objects, its container application, how many sessions and pastures are in
+                                            it, the config), then waits for the name typed at a terminal (one line of
+                                            stdin without one; anything else is exit 2 with nothing deleted); deletes
+                                            all of it and clears the config
   sheep home join <address> [--json]        a second machine's way in: the station's token is one line of stdin, piped,
                                             never an argument; the home is asked to answer as a sheep home and to take the
                                             token, then this kennel's config names it; prints the address, both stamps,
@@ -279,7 +283,10 @@ async function dispatch(command: string, parsed: Parsed, config: SheepConfig, ou
  * and station phase 1's `sheep home deploy [--name] [--subdomain] [--faux]
  * [--json]` and `sheep home delete [--name] [--json]` (`deploy.ts`): a
  * refusal that made nothing is exit 2, a failure after the account was
- * touched is exit 1.
+ * touched is exit 1. Station phase 3: the delete prints its listing (what
+ * goes, and the session and pasture counts) on stdout before the prompt,
+ * and `sessions deleted: <n>` after its three lines; `--json` carries the
+ * listing and the counts in the report, and prints nothing before it.
  * The report names states and paths, never a value from the secrets file.
  * Station phase 0: a home that answers is asked its build stamp, printed
  * beside this command's (`--json`: `build: { home, cli }`), and skew is one
@@ -339,6 +346,27 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
         containers.healthy >= 1
           ? `containers: ${containers.healthy} healthy (${containers.seconds}s)\n`
           : `containers: none healthy yet after ${containers.seconds}s (${containers.starting} starting, ${containers.scheduling} scheduling); \`sheep new\` may have to wait\n`;
+      const { rollout } = report;
+      const from = rollout.from === null ? "" : `, from ${rollout.from}`;
+      const atStep = rollout.step === null ? "" : ` at step ${rollout.step}`;
+      const rolloutLine =
+        rollout.status === "none"
+          ? "rollout: none\n"
+          : rollout.status === "completed"
+            ? `rollout: completed (${rollout.seconds}s)${from}\n`
+            : rollout.status === "rolling"
+              ? `rollout:${atStep}, ${rollout.healthy ?? "?"} healthy (${rollout.seconds}s); the platform finishes it${from}\n`
+              : rollout.status === "unknown"
+                ? "rollout: unknown (the account API did not answer)\n"
+                : `rollout: ${rollout.status} after ${rollout.seconds}s${atStep}; the old image${rollout.from === null ? "" : ` (${rollout.from})`} serves until it completes\n`;
+      const stampLine =
+        report.build.cli.builtAt === null
+          ? "stamp: not compared (this command is unstamped)\n"
+          : report.build.home === null
+            ? "stamp: unknown (the home did not answer)\n"
+            : report.stamp.moved
+              ? `stamp: moved (${report.stamp.seconds}s)\n`
+              : `stamp: not moved after ${report.stamp.seconds}s; the home still reports ${describeBuild(report.build.home)}\n`;
       output.out(
         `home: ${report.home} (${report.state}; ${report.answers ? "answers" : "not answering yet; a fresh Worker takes a moment"})\n` +
           `name: ${report.name}\n` +
@@ -348,6 +376,8 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
           `config: ${report.config.path} names the station\n` +
           builds +
           containersLine +
+          rolloutLine +
+          stampLine +
           `next: ${report.next}\n`,
       );
       return 0;

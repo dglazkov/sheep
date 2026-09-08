@@ -1,14 +1,16 @@
 /**
  * The station, without an account (station phase 1): `sheep home deploy`'s
  * five steps and its refusals, the derived config, the name rule meeting
- * the account, and `sheep home delete`'s stdin rule, driven through
- * `bin/sheep.js` against a fake account API, a fake station, and the fake
- * wrangler in `fake-wrangler.mjs`, through the three seams `deploy.ts`
- * reads from its environment. Nothing here touches an account; the account
- * ring (`scripts/hermetic.mjs --ring account`) walks the real one.
+ * the account, and `sheep home delete`'s listing, counts, and stdin rule
+ * (station phase 3), driven through `bin/sheep.js` against a fake account
+ * API, a fake station answering `/sessions` and `/pastures` with its
+ * token, and the fake wrangler in `fake-wrangler.mjs`, through the three
+ * seams `deploy.ts` reads from its environment. Nothing here touches an
+ * account; the account ring (`scripts/hermetic.mjs --ring account`) walks
+ * the real one.
  */
 import { spawn } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
@@ -31,16 +33,24 @@ interface FakeState {
   /** What a `PUT` of the subdomain answers: the name, or an error the API would send. */
   subdomainPut: "ok" | "taken";
   workers: string[];
-  applications: { id: string; name: string }[];
+  /** An application: `image` is what its configuration names; `pending` and `rollout` while a redeploy with a new image rolls out. */
+  applications: { id: string; name: string; image?: string; pending?: string; rollout?: { status: string; target: string } }[];
   /** What an application's health answers: healthy at once, `starting` on the first poll and healthy after, or failed. */
   health: "healthy" | "starting-then-healthy" | "failed";
   polls: number;
+  /**
+   * What a redeploy with a new image does (station phase 3): the image set at once; a rollout whose first step runs, then
+   * a gap before the second, then both done and the image moved on the third poll; one whose second step stays under way
+   * with the image not moved; one that `failed`; or an API that drops the connection on every rollouts read.
+   */
+  rollout: "none" | "progressing-then-completed" | "rolling-stays" | "failed" | "dies";
+  rolloutPolls: number;
   deploys: { name: string; container: string; image: string; vars: string[] }[];
   requests: { method: string; path: string; auth: string | undefined }[];
 }
 
 function fresh(): FakeState {
-  return { plan: "workers_paid", subdomain: "fake", subdomainPut: "ok", workers: ["learner", "sheep", "sheep-pen"], applications: [{ id: "a03d94e0-75b4-454d-b8c8-4882bfcad73d", name: "sheep-pen" }], deploys: [], requests: [], health: "healthy", polls: 0 };
+  return { plan: "workers_paid", subdomain: "fake", subdomainPut: "ok", workers: ["learner", "sheep", "sheep-pen"], applications: [{ id: "a03d94e0-75b4-454d-b8c8-4882bfcad73d", name: "sheep-pen" }], deploys: [], requests: [], health: "healthy", polls: 0, rollout: "none", rolloutPolls: 0 };
 }
 
 const json = async (request: IncomingMessage): Promise<Record<string, unknown>> => {
@@ -66,7 +76,15 @@ function fakeAccount(state: FakeState): Promise<{ server: Server; url: string }>
       const body = (await json(request)) as { name: string; container: string; image: string; vars: string[] };
       state.deploys.push(body);
       if (!state.workers.includes(body.name)) state.workers.push(body.name);
-      if (!state.applications.some((application) => application.name === body.container)) state.applications.push({ id: `app-${state.applications.length + 1}`, name: body.container });
+      const existing = state.applications.find((application) => application.name === body.container);
+      if (existing === undefined) state.applications.push({ id: `app-${state.applications.length + 1}`, name: body.container, image: body.image });
+      else if (state.rollout === "none" || existing.image === body.image) existing.image = body.image;
+      else {
+        // A new image: the platform starts a rollout, and the configuration keeps naming the old image until it completes (7 Sep 2026).
+        existing.pending = body.image;
+        existing.rollout = { status: "progressing", target: body.image };
+        state.rolloutPolls = 0;
+      }
       return response.end("{}");
     }
     if (path === "/_fake/delete") {
@@ -112,14 +130,45 @@ function fakeAccount(state: FakeState): Promise<{ server: Server; url: string }>
             : { active: 1, assigned: 2, healthy: 2, stopped: 0, failed: 0, scheduling: 0, starting: 0 };
       return envelope(
         response,
-        state.applications.map((application) => ({
-          ...application,
+        state.applications.map(({ id, name, image, pending }) => ({
+          id,
+          name,
           account_id: ACCOUNT.id,
-          configuration: { image: "registry.cloudflare.com/x/y@sha256:0" },
+          version: pending === undefined ? 2 : 1,
+          configuration: { image: image ?? "registry.cloudflare.com/x/y@sha256:0" },
           durable_objects: { namespace_id: "ns" },
           health: { errors: state.health === "failed" ? ["image pull failed: manifest unknown"] : [], instances },
         })),
       );
+    }
+    // The rollouts (7 Sep 2026): one row while a new image rolls out, `progressing` with the versions and the target image, then `completed`.
+    const rolling = /^\/accounts\/[^/]+\/containers\/applications\/([^/]+)\/rollouts$/.exec(path);
+    if (rolling && request.method === "GET") {
+      const application = state.applications.find((candidate) => candidate.id === rolling[1]);
+      if (application === undefined) return refuse(response, 404, 10007, "application not found");
+      if (application.rollout === undefined) return envelope(response, []);
+      state.rolloutPolls++;
+      // The account API dropping the connection: what a deploy saw once at 35 s into a rollout ("fetch failed").
+      if (state.rollout === "dies") return request.socket.destroy();
+      if (state.rollout === "failed") application.rollout.status = "failed";
+      else if (state.rollout === "progressing-then-completed" && state.rolloutPolls > 2 && application.pending !== undefined) {
+        application.rollout.status = "completed";
+        application.image = application.pending;
+        delete application.pending;
+      }
+      // Two steps, as the account's rolling strategy has them: 34% of the instances, then 100%, the second starting a while after the
+      // first ends. Progressing-then-completed: step 1 on the first poll, the gap on the second, both done on the third; rolling-stays: step 2 under way from the second poll on, forever.
+      const polls = state.rolloutPolls;
+      const stepStatus = (step: 1 | 2) => {
+        if (state.rollout === "failed") return step === 1 ? "failed" : "pending";
+        if (state.rollout === "rolling-stays") return step === 1 ? (polls >= 2 ? "completed" : "progressing") : polls >= 2 ? "progressing" : "pending";
+        return step === 1 ? (polls >= 2 ? "completed" : "progressing") : polls >= 3 ? "completed" : "pending";
+      };
+      const steps = [
+        { id: "step-1", status: stepStatus(1), step_size: { percentage: 34 }, description: "Step 1", started_at: "2026-09-08T01:00:00Z" },
+        { id: "step-2", status: stepStatus(2), step_size: { percentage: 100 }, description: "Step 2", started_at: polls >= 2 ? "2026-09-08T01:01:17Z" : null },
+      ];
+      return envelope(response, [{ id: "rollout-1", status: application.rollout.status, kind: "full_auto", strategy: "rolling", current_version: 1, target_version: 2, target_configuration: { image: application.rollout.target }, steps }]);
     }
     const deleting = /^\/accounts\/[^/]+\/containers\/applications\/([^/]+)$/.exec(path);
     if (deleting && request.method === "DELETE") {
@@ -132,12 +181,29 @@ function fakeAccount(state: FakeState): Promise<{ server: Server; url: string }>
   return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve({ server, url: `http://127.0.0.1:${(server.address() as { port: number }).port}` })));
 }
 
-/** The station's door: `GET /` answers `sheep`, `GET /home` the stamp, and what bearer each carried is kept. */
-function fakeStation(auths: (string | undefined)[]): Promise<{ server: Server; url: string }> {
+/** What the fake station holds: its sessions and its pastures, as `GET /sessions` and `GET /pastures` list them, with the token. */
+interface StationState {
+  token: string;
+  sessions: { id: string; name: string | null; createdAt: number; state: string; pasture: string | null; task: string | null }[];
+  pastures: { name: string; createdAt: number }[];
+}
+
+/**
+ * The station's door: `GET /` answers `sheep`, `GET /home` the stamp; the
+ * listings need the station's bearer, a 401 otherwise (the home's
+ * `admitted`); what bearer each request carried is kept.
+ */
+function fakeStation(auths: (string | undefined)[], state: StationState): Promise<{ server: Server; url: string }> {
   const server = createServer((request, response) => {
     auths.push(request.headers.authorization);
     if (request.url === "/") return response.end("sheep\n");
     if (request.url === "/home") return response.end(JSON.stringify({ serverId: "fake-station", container: true, build: STAMP }));
+    if (request.headers.authorization !== `Bearer ${state.token}`) {
+      response.statusCode = 401;
+      return response.end("unauthorized");
+    }
+    if (request.url === "/sessions") return response.end(JSON.stringify(state.sessions));
+    if (request.url === "/pastures") return response.end(JSON.stringify(state.pastures));
     response.statusCode = 404;
     response.end("no");
   });
@@ -153,6 +219,7 @@ interface World {
   state: FakeState;
   api: string;
   station: string;
+  stationState: StationState;
   stationAuths: (string | undefined)[];
   /** The CLI in `blog`, with `HOME` the world's root, the seams set, and the token and key in the environment unless dropped. */
   sheep: (args: string[], options?: { drop?: ("CLOUDFLARE_API_TOKEN" | "ANTHROPIC_API_KEY")[]; stdin?: string; env?: Record<string, string> }) => Promise<Result>;
@@ -165,8 +232,11 @@ afterAll(async () => {
   for (const world of made) await world.close();
 });
 
+/** The station's token as a deployed kennel's config records it: what the fake station admits. */
+const STATION_TOKEN = "t".repeat(48);
+
 /** A fresh world: `<root>/blog/.sheep` the kennel (so the minted name is `blog`), the fakes up, the log empty. */
-async function world(state: FakeState = fresh()): Promise<World> {
+async function world(state: FakeState = fresh(), stationState: StationState = { token: STATION_TOKEN, sessions: [], pastures: [] }): Promise<World> {
   const root = realpathSync(await mkdtemp(join(tmpdir(), "sheep-deploy-")));
   const blog = join(root, "blog");
   const kennel = join(blog, ".sheep");
@@ -174,7 +244,7 @@ async function world(state: FakeState = fresh()): Promise<World> {
   const log = join(root, "wrangler.log");
   const account = await fakeAccount(state);
   const stationAuths: (string | undefined)[] = [];
-  const station = await fakeStation(stationAuths);
+  const station = await fakeStation(stationAuths, stationState);
   const sheep: World["sheep"] = (args, options = {}) => {
     const env: Record<string, string | undefined> = {
       ...process.env,
@@ -209,12 +279,14 @@ async function world(state: FakeState = fresh()): Promise<World> {
     await new Promise((resolve) => station.server.close(resolve));
     await rm(root, { recursive: true, force: true });
   };
-  const made1: World = { root, blog, kennel, config: join(kennel, "config"), log, state, api: account.url, station: station.url, stationAuths, sheep, calls, close };
+  const made1: World = { root, blog, kennel, config: join(kennel, "config"), log, state, api: account.url, station: station.url, stationState, stationAuths, sheep, calls, close };
   made.push(made1);
   return made1;
 }
 
 const readConfig = async (path: string): Promise<Record<string, unknown>> => JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
+/** The station token a `--json` deploy report's config was written with: read back from the kennel the report names. */
+const config0 = (result: Result): string => JSON.parse(readFileSync((JSON.parse(result.stdout) as { config: { path: string } }).config.path, "utf8")).token as string;
 
 describe("sheep home deploy: step 1, nothing without the two variables", () => {
   it("refuses without the token, naming the permissions, the plan's price, the minutes, and the ask; and asks nothing of the account", async () => {
@@ -261,6 +333,12 @@ describe("sheep home deploy: steps 2 to 5 against the fake account", () => {
     expect(report.config).toEqual({ path: w.config, wrangler: join(w.kennel, "deploy", "wrangler.jsonc") });
     expect(report.build).toEqual({ home: STAMP, cli: { commit: "0.0.0-checkout", builtAt: null } });
     expect(report.containers).toEqual({ healthy: 2, starting: 0, scheduling: 0, failed: 0, seconds: 0 });
+    // A first deploy is no rollout: nothing was there to roll from, and the rollouts were not asked for.
+    expect(report.rollout).toEqual({ status: "none", step: null, healthy: null, seconds: 0, from: null });
+    expect(w.state.requests.some((request) => request.path.endsWith("/rollouts"))).toBe(false);
+    // The stamp is read after the waits, once: this command is unstamped, so nothing moved and nothing was polled for.
+    expect(report.stamp).toEqual({ moved: false, seconds: 0 });
+    expect(w.stationAuths.filter((auth) => auth === `Bearer ${config0(result)}`)).toHaveLength(1);
     expect(report.next).toBe('sheep new -- "…"');
     // Progress on stderr, and the skew line: the fake station is stamped and this checkout is not, so nothing is warned.
     expect(result.stderr).toContain(`sheep: account ${ACCOUNT.name} (${ACCOUNT.id}), Workers Paid (Paid)\n`);
@@ -324,6 +402,8 @@ describe("sheep home deploy: steps 2 to 5 against the fake account", () => {
     expect(second.state).toBe("redeployed");
     expect(second.name).toBe("blog");
     expect(second.home).toBe(home);
+    // The same image again: the application was read before the deploy, and no rollout followed.
+    expect(second.rollout).toEqual({ status: "none", step: null, healthy: null, seconds: 0, from: null });
     expect(await readConfig(w.config)).toEqual(config);
     const later = (await w.calls()).slice(4);
     expect(later.map((call) => call.args[0])).toEqual(["deploy", "secret", "secret", "secret"]);
@@ -334,7 +414,7 @@ describe("sheep home deploy: steps 2 to 5 against the fake account", () => {
     const prose = await w.sheep(["home", "deploy", "--faux"]);
     expect(prose.code).toBe(0);
     expect(prose.stdout).toBe(
-      `home: ${home} (redeployed; answers)\nname: blog\naccount: ${ACCOUNT.name} (${ACCOUNT.id}), workers_paid Paid, 5 USD a month; subdomain fake\nimage: ../pen/Dockerfile; the faux provider answers every prompt, no model is spent\nkennel: ${w.kennel}\nconfig: ${w.config} names the station\nhome build: 2b71e46 (2026-09-07T23:30:00Z)\ncli build: 0.0.0-checkout (unstamped)\ncontainers: 2 healthy (0s)\nnext: sheep new -- "…"\n`,
+      `home: ${home} (redeployed; answers)\nname: blog\naccount: ${ACCOUNT.name} (${ACCOUNT.id}), workers_paid Paid, 5 USD a month; subdomain fake\nimage: ../pen/Dockerfile; the faux provider answers every prompt, no model is spent\nkennel: ${w.kennel}\nconfig: ${w.config} names the station\nhome build: 2b71e46 (2026-09-07T23:30:00Z)\ncli build: 0.0.0-checkout (unstamped)\ncontainers: 2 healthy (0s)\nrollout: none\nstamp: not compared (this command is unstamped)\nnext: sheep new -- "…"\n`,
     );
     // Without --faux, no --var at all.
     const plain = await w.sheep(["home", "deploy", "--json"]);
@@ -399,6 +479,76 @@ describe("sheep home deploy: steps 2 to 5 against the fake account", () => {
     expect(result.stderr).toContain("sheep: waiting for a container instance of blog to be healthy\n");
     // Polled until healthy: the two `starting` answers, then the healthy one, after the four wrangler calls.
     expect(w.state.polls).toBe(3);
+    expect(await readConfig(w.config)).toMatchObject({ name: "blog" });
+  });
+
+  it("waits for the rollout a new image starts, and reports it completed with the image it rolled from", { timeout: 60_000 }, async () => {
+    const OLD = "docker.io/dglazkov2/sheep-pen@sha256:6d1848d95eb4e0d749b27a56a7cc20ee9354ba4a78747a4ce79929b45a4ea55c";
+    const NEW = join(cellConfig, "..", "..", "pen", "Dockerfile");
+    const rolling = async (mode: FakeState["rollout"]): Promise<World> => {
+      const w = await world({ ...fresh(), rollout: mode, workers: ["sheep", "blog"], applications: [{ id: "app-blog", name: "blog", image: OLD }] });
+      await writeFile(w.config, JSON.stringify({ home: address("blog", "fake"), token: STATION_TOKEN, name: "blog" }));
+      return w;
+    };
+    const w = await rolling("progressing-then-completed");
+    const result = await w.sheep(["home", "deploy", "--json"]);
+    expect(result.code, result.stderr).toBe(0);
+    const report = JSON.parse(result.stdout) as Record<string, any>;
+    expect(report.state).toBe("redeployed");
+    expect(report.rollout).toMatchObject({ status: "completed", step: "2 of 2 (100%)", healthy: 2, from: OLD });
+    // Step 1, the gap, then both steps done and the image moved: three polls five seconds apart; the application names the new image only then.
+    expect(report.rollout.seconds).toBeGreaterThanOrEqual(10);
+    expect(w.state.rolloutPolls).toBe(3);
+    expect(w.state.applications).toEqual([{ id: "app-blog", name: "blog", image: NEW, rollout: { status: "completed", target: NEW } }]);
+    expect(result.stderr).toContain(`sheep: waiting for the rollout of ${NEW} to blog\n`);
+    expect(w.state.requests.filter((request) => request.path.endsWith("/rollouts")).every((request) => request.method === "GET" && request.path === `/accounts/${ACCOUNT.id}/containers/applications/app-blog/rollouts`)).toBe(true);
+
+    // The prose line, on a second rollout.
+    const again = await rolling("progressing-then-completed");
+    const prose = await again.sheep(["home", "deploy"]);
+    expect(prose.code, prose.stderr).toBe(0);
+    expect(prose.stdout).toMatch(new RegExp(`\ncontainers: 2 healthy \\(0s\\)\nrollout: completed \\(\\d+s\\), from ${OLD.replace(/[.@]/g, "\\$&")}\nstamp: not compared \\(this command is unstamped\\)\nnext: `));
+
+    // The last step under way with a healthy instance ends the wait as `rolling`: the platform finishes it, and the image has not moved yet.
+    const stays = await rolling("rolling-stays");
+    const rollingResult = await stays.sheep(["home", "deploy", "--json"]);
+    expect(rollingResult.code, rollingResult.stderr).toBe(0);
+    const rollingReport = JSON.parse(rollingResult.stdout) as Record<string, any>;
+    expect(rollingReport.rollout).toMatchObject({ status: "rolling", step: "2 of 2 (100%)", healthy: 2, from: OLD });
+    expect(stays.state.rolloutPolls).toBe(2);
+    expect(stays.state.applications[0]).toMatchObject({ image: OLD, pending: NEW });
+    const staysProse = await rolling("rolling-stays");
+    const rollingProse = await staysProse.sheep(["home", "deploy"]);
+    expect(rollingProse.code, rollingProse.stderr).toBe(0);
+    expect(rollingProse.stdout).toMatch(new RegExp(`\nrollout: at step 2 of 2 \\(100%\\), 2 healthy \\(\\d+s\\); the platform finishes it, from ${OLD.replace(/[.@]/g, "\\$&")}\nstamp: `));
+  });
+
+  it("retries a read the account API drops, three times, and ends the rollout wait as unknown rather than failing", { timeout: 30_000 }, async () => {
+    const OLD = "docker.io/dglazkov2/sheep-pen@sha256:6d1848d95eb4e0d749b27a56a7cc20ee9354ba4a78747a4ce79929b45a4ea55c";
+    const w = await world({ ...fresh(), rollout: "dies", workers: ["sheep", "blog"], applications: [{ id: "app-blog", name: "blog", image: OLD }] });
+    await writeFile(w.config, JSON.stringify({ home: address("blog", "fake"), token: STATION_TOKEN, name: "blog" }));
+    const result = await w.sheep(["home", "deploy", "--json"], { env: { SHEEP_TEST_RETRY_MS: "100" } });
+    expect(result.code, result.stderr).toBe(0);
+    const report = JSON.parse(result.stdout) as Record<string, any>;
+    expect(report.rollout).toEqual({ status: "unknown", step: null, healthy: null, seconds: 0, from: OLD });
+    // One read, three retries, each said once; then the deploy went on to the stamp and the report.
+    expect(w.state.rolloutPolls).toBe(4);
+    expect(result.stderr.match(/sheep: the account API did not answer \(fetch failed\); retrying\n/g)).toHaveLength(3);
+    expect(await readConfig(w.config)).toMatchObject({ name: "blog" });
+    const prose = await w.sheep(["home", "deploy"], { env: { SHEEP_TEST_RETRY_MS: "100" } });
+    expect(prose.code, prose.stderr).toBe(0);
+    expect(prose.stdout).toContain("\nrollout: unknown (the account API did not answer)\n");
+  });
+
+  it("is exit 1 when the rollout fails, the Worker deployed and the config written", { timeout: 30_000 }, async () => {
+    const w = await world({ ...fresh(), rollout: "failed", workers: ["sheep", "blog"], applications: [{ id: "app-blog", name: "blog", image: "docker.io/dglazkov2/sheep-pen:old" }] });
+    await writeFile(w.config, JSON.stringify({ home: address("blog", "fake"), token: STATION_TOKEN, name: "blog" }));
+    const result = await w.sheep(["home", "deploy"]);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("to the container application blog failed (version 1 → 2); the old image serves");
+    // The rollouts were asked once: the first answer already named the failure, and the stamp was never read (the deploy threw before it).
+    expect(w.state.rolloutPolls).toBe(1);
+    expect((await w.calls()).map((call) => call.args[0])).toEqual(["deploy", "secret", "secret", "secret"]);
     expect(await readConfig(w.config)).toMatchObject({ name: "blog" });
   });
 
@@ -498,40 +648,57 @@ describe("the derived config", () => {
 });
 
 describe("sheep home delete", () => {
+  const born = (id: string, name: string | null, pasture: string | null = null) => ({ id, name, createdAt: 1_757_000_000_000, state: "idle", pasture, task: null });
+  /** A deployed kennel: the config names blog with the station's token; the account holds it; the station holds three sheep and one pasture. */
   const station = async (): Promise<World> => {
-    const w = await world({ ...fresh(), workers: ["sheep", "sheep-pen", "blog"], applications: [{ id: "app-pen", name: "sheep-pen" }, { id: "app-blog", name: "blog" }] });
-    await writeFile(w.config, JSON.stringify({ home: address("blog", "fake"), token: "t".repeat(48), name: "blog" }));
+    const w = await world(
+      { ...fresh(), workers: ["sheep", "sheep-pen", "blog"], applications: [{ id: "app-pen", name: "sheep-pen" }, { id: "app-blog", name: "blog" }] },
+      { token: STATION_TOKEN, sessions: [born("11111111-1111-4111-8111-111111111111", "older-sheep"), born("22222222-2222-4222-8222-222222222222", null), born("33333333-3333-4333-8333-333333333333", "typo", "ring-1")], pastures: [{ name: "ring-1", createdAt: 1_757_000_000_000 }] },
+    );
+    await writeFile(w.config, JSON.stringify({ home: address("blog", "fake"), token: STATION_TOKEN, name: "blog" }));
     return w;
   };
+  const listing = (w: World, application = "app-blog", sessions = "3", pastures = "1") =>
+    `deleting blog: the Worker at ${address("blog", "fake")}, its Durable Objects, and its container application blog\nsessions: ${sessions}\npastures: ${pastures}\ncontainer application: ${application}\nconfig: ${w.config}\n`;
 
-  it("deletes nothing on an empty line or the wrong name, and exits 2", async () => {
+  it("prints the listing, then deletes nothing on an empty line or the wrong name, and exits 2", async () => {
     const w = await station();
-    const empty = await w.sheep(["home", "delete"], { stdin: "\n" });
+    // stdin at end of file, as `sheep home delete </dev/null`: the listing is printed, then the refusal.
+    const empty = await w.sheep(["home", "delete"], { stdin: "" });
     expect(empty.code).toBe(2);
-    expect(empty.stderr).toContain("nothing typed; nothing deleted (the name is blog)");
+    expect(empty.stdout).toBe(listing(w));
+    expect(empty.stderr).toBe("sheep: nothing typed; nothing deleted (the name is blog)\n");
+    // The station was asked its two listings with the config's token, and the account only GETs.
+    expect(w.stationAuths).toContain(`Bearer ${STATION_TOKEN}`);
+    expect(w.state.requests.every((request) => request.method === "GET")).toBe(true);
     const wrong = await w.sheep(["home", "delete"], { stdin: "blog-2\n" });
     expect(wrong.code).toBe(2);
+    expect(wrong.stdout).toBe(listing(w));
     expect(wrong.stderr).toContain("blog-2 is not blog; nothing deleted");
     expect(await w.calls()).toEqual([]);
-    expect(w.state.requests).toEqual([]);
+    expect(w.state.requests.every((request) => request.method === "GET")).toBe(true);
     expect(w.state.workers).toContain("blog");
     expect(w.state.applications.map((application) => application.name)).toContain("blog");
     expect(await readConfig(w.config)).toMatchObject({ name: "blog" });
-    // Nothing without the token, and a --name that is not the recorded one is refused before the prompt.
+    // Nothing without the token, and a --name that is not the recorded one is refused before the account is asked at all.
+    const asked = w.state.requests.length;
     const noToken = await w.sheep(["home", "delete"], { stdin: "blog\n", drop: ["CLOUDFLARE_API_TOKEN"] });
     expect(noToken.code).toBe(2);
+    expect(noToken.stdout).toBe("");
     expect(noToken.stderr).toContain("sheep home delete needs CLOUDFLARE_API_TOKEN");
     const other = await w.sheep(["home", "delete", "--name", "other"], { stdin: "other\n" });
     expect(other.code).toBe(2);
+    expect(other.stdout).toBe("");
     expect(other.stderr).toContain("this kennel's station is blog");
+    expect(w.state.requests).toHaveLength(asked);
     expect(await w.calls()).toEqual([]);
   });
 
-  it("with the name typed: wrangler delete --force over the derived config, the application by id, the config cleared, one line each", async () => {
+  it("with the name typed: the listing, wrangler delete --force over the derived config, the application by id, the config cleared, and the sessions deleted", async () => {
     const w = await station();
     const result = await w.sheep(["home", "delete"], { stdin: "blog\n" });
     expect(result.code, result.stderr).toBe(0);
-    expect(result.stdout).toBe(`deleted the Worker blog and its objects\ndeleted the container application blog (app-blog)\nconfig: ${w.config} removed\n`);
+    expect(result.stdout).toBe(`${listing(w)}deleted the Worker blog and its objects\ndeleted the container application blog (app-blog)\nconfig: ${w.config} removed\nsessions deleted: 3\n`);
     const calls = await w.calls();
     expect(calls).toHaveLength(1);
     expect(calls[0]!.args).toEqual(["delete", "--config", join(w.kennel, "deploy", "wrangler.jsonc"), "--env", "pen", "--force"]);
@@ -539,19 +706,68 @@ describe("sheep home delete", () => {
     expect(w.state.workers).toEqual(["sheep", "sheep-pen"]);
     expect(w.state.applications).toEqual([{ id: "app-pen", name: "sheep-pen" }]);
     expect(w.state.requests.filter((request) => request.method === "DELETE").map((request) => request.path)).toEqual([`/accounts/${ACCOUNT.id}/containers/applications/app-blog`]);
+    // The one DELETE came after every GET: nothing was written to the account before the name was typed.
+    const methods = w.state.requests.map((request) => request.method);
+    expect(methods.lastIndexOf("GET")).toBeLessThan(methods.indexOf("DELETE"));
     expect(existsSync(w.config)).toBe(false);
     expect(existsSync(join(w.kennel, "deploy"))).toBe(false);
   });
 
-  it("keeps a config with more in it, and says when the account holds no Worker or application of the name", async () => {
-    const w = await world({ ...fresh(), workers: ["sheep"], applications: [] });
-    await writeFile(w.config, JSON.stringify({ home: address("blog", "fake"), token: "t".repeat(48), name: "blog", extra: "kept" }));
+  it("--json carries the listing and the report; the counts are unknown when the token is not the station's, or the config has none", async () => {
+    const w = await station();
     const result = await w.sheep(["home", "delete", "--json"], { stdin: "blog\n" });
     expect(result.code, result.stderr).toBe(0);
-    expect(JSON.parse(result.stdout)).toEqual({ name: "blog", account: ACCOUNT, worker: "absent", application: null, config: { path: w.config, state: "cleared" } });
+    expect(JSON.parse(result.stdout)).toEqual({
+      name: "blog",
+      account: ACCOUNT,
+      listing: { home: address("blog", "fake"), sessions: 3, pastures: 1, application: { id: "app-blog" }, config: w.config },
+      worker: "deleted",
+      application: { id: "app-blog", state: "deleted" },
+      config: { path: w.config, state: "removed" },
+      sessionsDeleted: 3,
+    });
+
+    // A token the station refuses (401 to the listings): the counts are unknown, and the delete still goes through.
+    const stale = await station();
+    await writeFile(stale.config, JSON.stringify({ home: address("blog", "fake"), token: "not-the-station-token", name: "blog" }));
+    const unknown = await stale.sheep(["home", "delete"], { stdin: "blog\n" });
+    expect(unknown.code, unknown.stderr).toBe(0);
+    expect(unknown.stdout).toBe(`${listing(stale, "app-blog", "unknown (the home did not answer)", "unknown (the home did not answer)")}deleted the Worker blog and its objects\ndeleted the container application blog (app-blog)\nconfig: ${stale.config} removed\nsessions deleted: unknown\n`);
+
+    // No token in the config at all: the station is not asked, and the counts are unknown.
+    const bare = await station();
+    await writeFile(bare.config, JSON.stringify({ home: address("blog", "fake") }));
+    const before = bare.stationAuths.length;
+    const untold = await bare.sheep(["home", "delete", "--name", "blog", "--json"], { stdin: "" });
+    expect(untold.code).toBe(2);
+    expect(untold.stdout).toBe("");
+    expect(bare.stationAuths).toHaveLength(before);
+    expect(bare.state.workers).toContain("blog");
+  });
+
+  it("keeps a config with more in it, and says when the account holds no Worker or application of the name", async () => {
+    const w = await world({ ...fresh(), workers: ["sheep"], applications: [] });
+    await writeFile(w.config, JSON.stringify({ home: address("blog", "fake"), token: STATION_TOKEN, name: "blog", extra: "kept" }));
+    const result = await w.sheep(["home", "delete", "--json"], { stdin: "blog\n" });
+    expect(result.code, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({
+      name: "blog",
+      account: ACCOUNT,
+      listing: { home: address("blog", "fake"), sessions: 0, pastures: 0, application: null, config: w.config },
+      worker: "absent",
+      application: null,
+      config: { path: w.config, state: "cleared" },
+      sessionsDeleted: 0,
+    });
     expect(await w.calls()).toEqual([]);
     expect(await readConfig(w.config)).toEqual({ extra: "kept" });
+    // In prose, the same: no application on the account, and none deleted.
+    await writeFile(w.config, JSON.stringify({ home: address("blog", "fake"), token: STATION_TOKEN, name: "blog", extra: "kept" }));
+    const prose = await w.sheep(["home", "delete"], { stdin: "blog\n" });
+    expect(prose.code, prose.stderr).toBe(0);
+    expect(prose.stdout).toBe(`${listing(w, "none on the account", "0", "0")}no Worker named blog on ${ACCOUNT.name}\nno container application named blog\nconfig: ${w.config} cleared\nsessions deleted: 0\n`);
     // With no station named anywhere, there is nothing to type for.
+    await writeFile(w.config, JSON.stringify({ extra: "kept" }));
     const none = await w.sheep(["home", "delete"], { stdin: "blog\n" });
     expect(none.code).toBe(2);
     expect(none.stderr).toContain("this kennel names no station");

@@ -27,12 +27,17 @@
  * command typechecks and is testable; a deploy from a checkout is not a
  * supported path.
  *
- * `sheep home delete` is the end of a station, in its first form: the
- * Worker's name typed at a terminal, or one line of stdin when there is
- * none, and nothing happens unless the line is the name; then `wrangler
- * delete --force`, the container application of that name deleted through
- * the API by its id, since `wrangler delete` leaves it behind, and the
- * config cleared of `home`, `token`, and `name`.
+ * `sheep home delete` is the end of a station (station phase 3, whole).
+ * Before the prompt, the listing of what goes: the Worker at its address,
+ * its Durable Objects, its container application by id, and how many
+ * sessions and pastures are in it, read from `GET /sessions` and `GET
+ * /pastures` with the config's token (`unknown` when the config has no
+ * token or the home does not answer). Then the Worker's name typed at a
+ * terminal, or one line of stdin when there is none, and nothing happens
+ * unless the line is the name; then `wrangler delete --force`, the
+ * container application of that name deleted through the API by its id,
+ * since `wrangler delete` leaves it behind, and the config cleared of
+ * `home`, `token`, and `name`. Every request before the prompt is a GET.
  *
  * Secrets travel in environments and on stdin, never as arguments:
  * `CLOUDFLARE_API_TOKEN` reaches wrangler and the API client through the
@@ -40,11 +45,12 @@
  * `SHEEP_ANTHROPIC_API_KEY`, and `PEN_CELL_ORIGIN` through `wrangler secret
  * put`'s stdin. Nothing here prints a value of any of them.
  *
- * Three test seams, read from the environment and stripped by every ring:
+ * Four test seams, read from the environment and stripped by every ring:
  * `SHEEP_TEST_ACCOUNT_API` stands in for `https://api.cloudflare.com/client/v4`;
  * `SHEEP_TEST_WRANGLER` is a script run under node in wrangler's place;
  * `SHEEP_TEST_STATION_URL` is asked `GET /` and `GET /home` in place of
- * the station's address. The tests under `test/deploy.test.ts` drive the
+ * the station's address; `SHEEP_TEST_RETRY_MS` shortens the gap between
+ * a wait's retried reads. The tests under `test/deploy.test.ts` drive the
  * five steps and the refusals through them against a fake account and a
  * fake wrangler, touching no account; the account ring walks the real one.
  */
@@ -260,9 +266,71 @@ export class AccountApi {
     };
   }
 
+  /** The application of that name as the account holds it now: its id, the image its configuration names, its version, and its health. */
+  async applicationState(accountId: string, name: string): Promise<ApplicationState | undefined> {
+    type Row = { id: string; name: string; version?: unknown; configuration?: { image?: unknown }; health?: { errors?: unknown[]; instances?: Record<string, number> } };
+    const found = (await this.must<Row[]>("GET", `/accounts/${accountId}/containers/applications`)).find((application) => application.name === name);
+    if (found === undefined) return undefined;
+    const instances = found.health?.instances ?? {};
+    const count = (key: string) => (typeof instances[key] === "number" ? instances[key] : 0);
+    return {
+      id: found.id,
+      image: typeof found.configuration?.image === "string" ? found.configuration.image : null,
+      version: typeof found.version === "number" ? found.version : null,
+      health: {
+        errors: (found.health?.errors ?? []).map((error) => (typeof error === "string" ? error : JSON.stringify(error))),
+        instances: { healthy: count("healthy"), starting: count("starting"), scheduling: count("scheduling"), failed: count("failed"), active: count("active") },
+      },
+    };
+  }
+
+  /**
+   * The application's rollouts (station phase 3): a redeploy whose image
+   * differs is a rollout the platform runs after `wrangler deploy` returns,
+   * replacing the instances over minutes; until it completes a sheep rents
+   * the old image. Each is its status, the versions, and the image it
+   * targets; the list may come bare or under `rollouts`.
+   */
+  async rollouts(accountId: string, applicationId: string): Promise<Rollout[]> {
+    type Step = { id?: unknown; status?: unknown; description?: unknown; step_size?: { percentage?: unknown } };
+    type Row = { id?: unknown; status?: unknown; current_version?: unknown; target_version?: unknown; target_configuration?: { image?: unknown }; steps?: unknown };
+    const result = await this.must<Row[] | { rollouts?: Row[] }>("GET", `/accounts/${accountId}/containers/applications/${applicationId}/rollouts`);
+    const rows = Array.isArray(result) ? result : Array.isArray(result?.rollouts) ? result.rollouts : [];
+    return rows.map((row) => ({
+      id: typeof row.id === "string" ? row.id : null,
+      status: typeof row.status === "string" ? row.status : "unknown",
+      currentVersion: typeof row.current_version === "number" ? row.current_version : null,
+      targetVersion: typeof row.target_version === "number" ? row.target_version : null,
+      targetImage: typeof row.target_configuration?.image === "string" ? row.target_configuration.image : null,
+      steps: (Array.isArray(row.steps) ? (row.steps as Step[]) : []).map((step) => ({
+        status: typeof step.status === "string" ? step.status : "unknown",
+        percentage: typeof step.step_size?.percentage === "number" ? step.step_size.percentage : null,
+        description: typeof step.description === "string" ? step.description : null,
+      })),
+    }));
+  }
+
   async deleteApplication(accountId: string, applicationId: string): Promise<void> {
     await this.must<unknown>("DELETE", `/accounts/${accountId}/containers/applications/${applicationId}`);
   }
+}
+
+/** A container application as the account holds it: what `deploy` reads before a redeploy and polls after it. */
+export interface ApplicationState {
+  id: string;
+  image: string | null;
+  version: number | null;
+  health: ApplicationHealth;
+}
+
+export interface Rollout {
+  id: string | null;
+  status: string;
+  currentVersion: number | null;
+  targetVersion: number | null;
+  targetImage: string | null;
+  /** The rollout's steps (a rolling strategy: 34% of the instances, then 100%), each with its status and size. */
+  steps: { status: string; percentage: number | null; description: string | null }[];
 }
 
 /* The derived config. */
@@ -346,14 +414,20 @@ export function deployDir(): string {
   return join(sheepDir(), "deploy");
 }
 
-/** Writes `<kennel>/deploy/wrangler.jsonc` for the name; returns its path and the image it names. */
-export function writeDerivedConfig(name: string, stamp: BuildStamp | undefined = readStamp()): { path: string; image: string } {
+/**
+ * Writes `<kennel>/deploy/wrangler.jsonc` for the name; returns its path,
+ * the image the base names (what the report prints), and the image as
+ * written, which is what the account's application will name (the same
+ * for a registry reference; absolute for a checkout's Dockerfile path).
+ */
+export function writeDerivedConfig(name: string, stamp: BuildStamp | undefined = readStamp()): { path: string; image: string; configured: string } {
   const base = baseConfigPath(stamp);
   const derived = deriveConfig(readFileSync(base, "utf8"), base, name);
   mkdirSync(deployDir(), { recursive: true });
   const path = join(deployDir(), "wrangler.jsonc");
   writeFileSync(path, derived.text);
-  return { path, image: derived.image };
+  const written = JSON.parse(derived.text) as { env: { pen: { containers: { image: string }[] } } };
+  return { path, image: derived.image, configured: written.env.pen.containers[0]!.image };
 }
 
 /* wrangler. */
@@ -436,25 +510,157 @@ export interface DeployReport {
    * have to wait.
    */
   containers: { healthy: number; starting: number; scheduling: number; failed: number; seconds: number };
+  /**
+   * The rollout (station phase 3): a redeploy whose image differs from the
+   * application's is a rollout the platform runs after wrangler returns,
+   * replacing the instances over minutes; `completed` once the application's
+   * configuration names the new image, `progressing` when the budget ran
+   * out first (the old image serves until it completes), `none` on a first
+   * deploy or a redeploy of the same image. `from` is the image before.
+   */
+  rollout: {
+    /**
+     * `completed`: the rollout says so and the application names the image; `rolling`: its last step is under way with a
+     * healthy instance, and the platform finishes it; `progressing`: the budget ran out first; `unknown`: the account API
+     * stopped answering; `none`: no rollout.
+     */
+    status: "none" | "completed" | "rolling" | "progressing" | "unknown" | string;
+    /** The step under way when the wait ended, `2 of 2 (100%)`; null without one. */
+    step: string | null;
+    /** Healthy instances at the last read; null without one. */
+    healthy: number | null;
+    seconds: number;
+    from: string | null;
+  };
+  /**
+   * Whether the home's stamp is this command's after the waits (station
+   * phase 3): a deployment takes seconds to propagate, so a redeploy polls
+   * `GET /home` until the stamp moved, up to a minute; a first deploy reads
+   * it once. `moved` is false when the command is unstamped (a checkout),
+   * the home did not answer, or the minute ran out.
+   */
+  stamp: { moved: boolean; seconds: number };
   next: string;
 }
 
 /** How long deploy waits for a healthy container instance: within the three-minute budget, after the deploy itself. */
 const CONTAINERS_WAIT_MS = 150_000;
 const CONTAINERS_POLL_MS = 3_000;
+/**
+ * The whole wait's budget when a rollout follows: the instances, then the
+ * rollout, polled every five seconds with a progress line every thirty.
+ * A rolling rollout on the account is two steps, 34% then 100%, the second
+ * starting about 77 s after the first; the whole took 150 s one evening
+ * and more than 243 s the same night (station phase 3).
+ */
+const ROLLOUT_WAIT_MS = 300_000;
+const ROLLOUT_POLL_MS = 5_000;
+const ROLLOUT_SAY_MS = 30_000;
+/** A rollout's statuses that mean it will not complete. */
+const ROLLOUT_FAILED = new Set(["failed", "reverted", "rolled_back"]);
+/** How long a redeploy waits for `GET /home` to report this command's stamp. */
+const STAMP_WAIT_MS = 60_000;
+const STAMP_POLL_MS = 2_000;
+/** A read that throws (the network, a timeout, a 5xx) is retried this many times, this far apart; `SHEEP_TEST_RETRY_MS` shortens the gap in tests, and every ring strips it. */
+const READ_RETRIES = 3;
+const retryMs = (): number => {
+  const seam = Number(process.env.SHEEP_TEST_RETRY_MS);
+  return Number.isFinite(seam) && seam >= 0 ? seam : 5_000;
+};
+
+/**
+ * A read of the account API or the home during a wait, retried: a thrown
+ * error (the network, a timeout, a body that is not the API's) is said
+ * once on stderr and tried again, three times; three failures end the
+ * read as `undefined`, and the wait reports what it knows rather than
+ * failing a deploy the account has already taken (station phase 3).
+ */
+async function retried<T>(what: string, read: () => Promise<T>, say: (text: string) => void): Promise<{ ok: true; value: T } | { ok: false }> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return { ok: true, value: await read() };
+    } catch (error) {
+      if (attempt >= READ_RETRIES) return { ok: false };
+      const message = error instanceof Error ? error.message : String(error);
+      say(`sheep: ${what} did not answer (${message.split("\n")[0]}); retrying\n`);
+      await sleep(retryMs());
+    }
+  }
+}
+
+/** A rollout's step under way: the last step that has started and not completed, else the first pending one, else the last; `2 of 2 (100%)`. */
+function currentStep(rollout: Rollout): { index: number; total: number; text: string; last: boolean; underWay: boolean } | undefined {
+  const { steps } = rollout;
+  if (steps.length === 0) return undefined;
+  const started = (step: Rollout["steps"][number]) => step.status !== "completed" && step.status !== "pending" && step.status !== "not_started";
+  let index = steps.findIndex(started);
+  const underWay = index !== -1;
+  if (index === -1) index = steps.findIndex((step) => step.status === "pending" || step.status === "not_started");
+  if (index === -1) index = steps.length - 1;
+  const step = steps[index]!;
+  return { index, total: steps.length, text: `${index + 1} of ${steps.length}${step.percentage === null ? "" : ` (${step.percentage}%)`}`, last: index === steps.length - 1, underWay };
+}
+
+/**
+ * Waits for the rollout that a redeploy with a new image starts: the one
+ * among the application's rollouts targeting the derived config's image.
+ * None found is `none`. A status that is a failure word, or an error the
+ * application names, is an `Error` (exit 1). Running out of the budget is
+ * reported as `progressing`, not thrown: the Worker is deployed, and the
+ * platform finishes the rollout on its own.
+ */
+async function waitForRollout(api: AccountApi, accountId: string, name: string, image: string, before: ApplicationState | undefined, deadline: number, say: (text: string) => void): Promise<DeployReport["rollout"]> {
+  const started = Date.now();
+  const seconds = () => Math.round((Date.now() - started) / 1000);
+  if (before === undefined) return { status: "none", step: null, healthy: null, seconds: 0, from: null };
+  const from = before.image !== image ? before.image : null;
+  let lastSaid = started;
+  let step: string | null = null;
+  let healthy: number | null = null;
+  const unknown = () => ({ status: "unknown", step, healthy, seconds: seconds(), from });
+  for (;;) {
+    // The rollout first, then the application: a rollout seen completed is followed by the configuration naming the image in the same round.
+    const rollouts = await retried("the account API", () => api.rollouts(accountId, before.id), say);
+    if (!rollouts.ok) return unknown();
+    const rollout = rollouts.value.find((candidate) => candidate.targetImage === image);
+    if (rollout === undefined) return { status: "none", step: null, healthy, seconds: seconds(), from };
+    if (ROLLOUT_FAILED.has(rollout.status)) throw new Error(`the rollout of ${image} to the container application ${name} ${rollout.status} (version ${rollout.currentVersion ?? "?"} → ${rollout.targetVersion ?? "?"}); the old image serves; \`sheep home deploy\` again retries the rollout`);
+    const current = currentStep(rollout);
+    step = current?.text ?? null;
+    const read = await retried("the account API", () => api.applicationState(accountId, name), say);
+    if (!read.ok) return unknown();
+    const state = read.value;
+    if (state === undefined) return { status: "none", step, healthy, seconds: seconds(), from };
+    if (state.health.errors.length > 0) throw new Error(`the container application ${name} reports an error during its rollout: ${state.health.errors.join("; ")}; the Worker is deployed, and \`sheep home deploy\` again retries the rollout`);
+    const { instances } = state.health;
+    healthy = instances.healthy;
+    if (rollout.status === "completed" && state.image === image) return { status: "completed", step, healthy, seconds: seconds(), from };
+    // The last step under way with a healthy instance: the platform finishes it on its own (a rollout's status stayed `progressing` past 600 s once).
+    if (current?.last && current.underWay && instances.healthy >= 1) return { status: "rolling", step, healthy, seconds: seconds(), from };
+    if (Date.now() >= deadline) return { status: "progressing", step, healthy, seconds: seconds(), from };
+    if (Date.now() - lastSaid >= ROLLOUT_SAY_MS) {
+      lastSaid = Date.now();
+      say(`sheep: rollout to ${name}: ${step === null ? "" : `step ${step}, `}${instances.healthy} healthy, ${instances.starting} starting, ${instances.scheduling} scheduling, ${seconds()}s\n`);
+    }
+    await sleep(ROLLOUT_POLL_MS);
+  }
+}
 
 /**
  * Waits until the application of the Worker's name has a healthy instance;
  * an instance that failed, or an error the application names, is an
  * `Error` (exit 1); running out of time is reported, not thrown.
  */
-async function waitForContainers(api: AccountApi, accountId: string, name: string): Promise<DeployReport["containers"]> {
+async function waitForContainers(api: AccountApi, accountId: string, name: string, say: (text: string) => void): Promise<DeployReport["containers"]> {
   const started = Date.now();
   const deadline = started + CONTAINERS_WAIT_MS;
   let last: ApplicationHealth | undefined;
   for (;;) {
-    last = await api.applicationHealth(accountId, name);
+    const read = await retried("the account API", () => api.applicationHealth(accountId, name), say);
     const seconds = Math.round((Date.now() - started) / 1000);
+    // The API stopped answering: the last counts seen, and the deploy goes on; the Worker is deployed either way.
+    if (!read.ok) return { ...pick(last), seconds };
+    last = read.value;
     if (last !== undefined) {
       if (last.errors.length > 0 || last.instances.failed > 0) {
         throw new Error(`the container application ${name} is not healthy: ${last.instances.failed} failed, ${last.instances.healthy} healthy${last.errors.length > 0 ? `; ${last.errors.join("; ")}` : ""}; the Worker is deployed, and \`sheep home deploy\` again retries the rollout`);
@@ -542,6 +748,8 @@ export async function deploy(options: DeployOptions = {}): Promise<DeployReport>
   const derived = writeDerivedConfig(name, stamp);
   const cwd = dirname(derived.path);
   const faux = options.faux === true;
+  // Before a redeploy, the application as it is: a new image makes the deploy a rollout, and this is what it rolls from.
+  const before = taken.applications.some((application) => application.name === name) ? await api.applicationState(account.id, name) : undefined;
   say(`sheep: ${state === "deployed" ? "deploying" : "redeploying"} ${name} as ${home} with the image ${derived.image}${faux ? " and the faux provider" : ""}\n`);
   const deployed = await wrangler(bin, ["deploy", "--config", derived.path, "--env", "pen", ...(faux ? ["--var", "SHEEP_PROVIDER:faux"] : [])], { token, accountId: account.id, cwd });
   if (deployed.code !== 0) throw new Error(`wrangler deploy --config ${derived.path} --env pen exited ${deployed.code}:\n${tail(deployed)}`);
@@ -557,9 +765,18 @@ export async function deploy(options: DeployOptions = {}): Promise<DeployReport>
     if (put.code !== 0) throw new Error(`wrangler secret put ${secret} --config ${derived.path} --env pen exited ${put.code}:\n${tail(put)}`);
   }
 
-  // 5. The config, without the local marker; then the address asked, the container application waited for, and the stamps.
+  // 5. The config, without the local marker; then the container application waited for, the rollout, and only then the address and the stamp.
   const { local: _local, ...rest } = existing ?? {};
   writeConfigFile({ ...rest, home, token: sheepToken, name });
+  say(`sheep: waiting for a container instance of ${name} to be healthy\n`);
+  const waitStarted = Date.now();
+  const containers = await waitForContainers(api, account.id, name, say);
+  // Then the rollout, when the image changed: the instances above may all be the old image's until it completes.
+  if (before !== undefined && before.image !== derived.configured) say(`sheep: waiting for the rollout of ${derived.configured} to ${name}\n`);
+  const rollout = await waitForRollout(api, account.id, name, derived.configured, before, waitStarted + ROLLOUT_WAIT_MS, say);
+  // The address, then the stamp: after the waits, since a deployment takes seconds to propagate and a redeploy's `GET /home`
+  // answered the old build when read right after wrangler (station phase 3). A redeploy polls until the stamp is this
+  // command's, up to a minute; a first deploy, or an unstamped command, reads it once.
   const probe = process.env.SHEEP_TEST_STATION_URL ?? home;
   const deadline = Date.now() + 60_000;
   let answers = false;
@@ -570,16 +787,22 @@ export async function deploy(options: DeployOptions = {}): Promise<DeployReport>
     }
     await sleep(1_000);
   }
+  const cli = cliBuild();
   let homeBuild: BuildSide | null = null;
+  const stampReport: DeployReport["stamp"] = { moved: false, seconds: 0 };
   if (answers) {
-    try {
-      homeBuild = await new Home({ home: probe, token: sheepToken }).build();
-    } catch {
-      homeBuild = null;
+    const stampStarted = Date.now();
+    const stampDeadline = stampStarted + STAMP_WAIT_MS;
+    const client = new Home({ home: probe, token: sheepToken });
+    for (;;) {
+      const read = await retried("the home", () => client.build(), say);
+      homeBuild = read.ok ? read.value : null;
+      stampReport.moved = homeBuild !== null && homeBuild.commit === cli.commit && homeBuild.builtAt === cli.builtAt;
+      stampReport.seconds = Math.round((Date.now() - stampStarted) / 1000);
+      if (!read.ok || stampReport.moved || state === "deployed" || cli.builtAt === null || Date.now() >= stampDeadline) break;
+      await sleep(STAMP_POLL_MS);
     }
   }
-  say(`sheep: waiting for a container instance of ${name} to be healthy\n`);
-  const containers = await waitForContainers(api, account.id, name);
   return {
     home,
     name,
@@ -592,8 +815,10 @@ export async function deploy(options: DeployOptions = {}): Promise<DeployReport>
     faux,
     config: { path: configPath(), wrangler: derived.path },
     kennel: sheepDir(),
-    build: { home: homeBuild, cli: cliBuild() },
+    build: { home: homeBuild, cli },
     containers,
+    rollout,
+    stamp: stampReport,
     next: 'sheep new -- "…"',
   };
 }
@@ -608,12 +833,60 @@ export interface DeleteOptions {
   say?: (text: string) => void;
 }
 
+/**
+ * What the delete lists before it asks (station phase 3): the address, the
+ * counts from the home with the config's token (`null` when the config
+ * has no token for this station or the home did not answer), the
+ * container application's id when the account has one, and the config.
+ */
+export interface DeleteListing {
+  home: string | null;
+  sessions: number | null;
+  pastures: number | null;
+  application: { id: string } | null;
+  config: string;
+}
+
 export interface DeleteReport {
   name: string;
   account: Account;
+  listing: DeleteListing;
   worker: "deleted" | "absent";
   application: { id: string; state: "deleted" } | null;
   config: { path: string; state: "cleared" | "removed" | "absent" };
+  /** The listing's session count when the Worker was deleted, 0 when there was none to delete, null when the count was unknown. */
+  sessionsDeleted: number | null;
+}
+
+/** How long the listing waits for the home's two answers: a station that does not answer is reported as unknown, not waited for. */
+const LISTING_TIMEOUT_MS = 10_000;
+
+/**
+ * The counts, from `GET /sessions` and `GET /pastures` with the token:
+ * `null` for both when there is no token or the home does not answer as a
+ * sheep home, and `null` for either when its request fails.
+ */
+async function countAtHome(home: string | null, token: string | undefined): Promise<{ sessions: number | null; pastures: number | null }> {
+  const none = { sessions: null, pastures: null };
+  if (home === null || token === undefined || token === "") return none;
+  if ((await whoAnswers(home)) !== "sheep") return none;
+  const client = new Home({ home, token });
+  const within = <T>(promise: Promise<T>): Promise<T | null> =>
+    Promise.race([promise.catch(() => null), new Promise<null>((resolveTimeout) => setTimeout(() => resolveTimeout(null), LISTING_TIMEOUT_MS).unref())]);
+  const [sessions, pastures] = await Promise.all([within(client.list()), within(client.pastures())]);
+  return { sessions: Array.isArray(sessions) ? sessions.length : null, pastures: Array.isArray(pastures) ? pastures.length : null };
+}
+
+/** The listing as prose: the sentence naming what goes, then one line each, as `sheep home delete` prints them before the prompt. */
+export function describeListing(name: string, listing: DeleteListing): string {
+  const unknown = "unknown (the home did not answer)";
+  return [
+    `deleting ${name}: the Worker at ${listing.home ?? "(no address known)"}, its Durable Objects, and its container application ${name}`,
+    `sessions: ${listing.sessions ?? unknown}`,
+    `pastures: ${listing.pastures ?? unknown}`,
+    `container application: ${listing.application === null ? "none on the account" : listing.application.id}`,
+    `config: ${listing.config}`,
+  ].join("\n");
 }
 
 /** One line: at a terminal, asked for on stderr and typed; otherwise the first line of stdin, or nothing. */
@@ -638,9 +911,9 @@ export function readLine(prompt: string): Promise<string> {
 }
 
 /**
- * `sheep home delete`. The sentence before the prompt names what goes;
- * the listing of what is in it, and its session count, is station phase
- * 3's. A `Refusal` before anything is deleted is exit 2.
+ * `sheep home delete`. The listing before the prompt names what goes and
+ * how much is in it; the account is asked with GETs alone until the name
+ * is typed. A `Refusal` before anything is deleted is exit 2.
  */
 export async function deleteStation(options: DeleteOptions = {}): Promise<DeleteReport> {
   const say = options.say ?? (() => {});
@@ -655,14 +928,24 @@ export async function deleteStation(options: DeleteOptions = {}): Promise<Delete
   const token = process.env.CLOUDFLARE_API_TOKEN;
   if (!token) throw new Refusal(`sheep home delete needs CLOUDFLARE_API_TOKEN in the environment, the token the deploy used; nothing was deleted. Ask: ${ASK_TOKEN}`);
 
-  // The confirmation: the name, typed, or nothing happens.
-  const confirm = options.confirm ?? readLine;
-  const typed = await confirm(`deleting ${name}: the Worker, its objects, and its container application\ntype the name to confirm: `);
-  if (typed !== name) throw new Refusal(typed === "" ? `nothing typed; nothing deleted (the name is ${name})` : `${typed} is not ${name}; nothing deleted`);
-
+  // The listing: the account's side (GETs), then the home's counts with the config's token, when the config names this station.
   const api = new AccountApi(token);
   const account = await api.account();
-  const taken = await api.taken(account.id);
+  const [taken, subdomain] = await Promise.all([api.taken(account.id), api.subdomain(account.id)]);
+  const found = taken.applications.find((candidate) => candidate.name === name);
+  const home = subdomain === undefined ? (typeof existing?.home === "string" ? existing.home : null) : address(name, subdomain);
+  // The token is this station's when the config records the name, or names the address; a joined kennel deleting another name has none for it.
+  const configToken = typeof existing?.token === "string" && (recorded === name || (home !== null && existing.home === home)) ? existing.token : undefined;
+  const probe = process.env.SHEEP_TEST_STATION_URL ?? home;
+  const counts = await countAtHome(probe, configToken);
+  const listing: DeleteListing = { home, ...counts, application: found === undefined ? null : { id: found.id }, config: configPath() };
+  say(`${describeListing(name, listing)}\n`);
+
+  // The confirmation: the name, typed, or nothing happens.
+  const confirm = options.confirm ?? readLine;
+  const typed = await confirm("type the name to confirm: ");
+  if (typed !== name) throw new Refusal(typed === "" ? `nothing typed; nothing deleted (the name is ${name})` : `${typed} is not ${name}; nothing deleted`);
+
   const stamp = readStamp();
   const derived = writeDerivedConfig(name, stamp);
   const cwd = dirname(derived.path);
@@ -677,7 +960,6 @@ export async function deleteStation(options: DeleteOptions = {}): Promise<Delete
   say(worker === "deleted" ? `deleted the Worker ${name} and its objects\n` : `no Worker named ${name} on ${account.name}\n`);
 
   let application: DeleteReport["application"] = null;
-  const found = taken.applications.find((candidate) => candidate.name === name);
   if (found !== undefined) {
     await api.deleteApplication(account.id, found.id);
     application = { id: found.id, state: "deleted" };
@@ -698,5 +980,8 @@ export async function deleteStation(options: DeleteOptions = {}): Promise<Delete
   }
   rmSync(deployDir(), { recursive: true, force: true });
   say(config === "absent" ? `config: none at ${configPath()}\n` : `config: ${configPath()} ${config}\n`);
-  return { name, account, worker, application, config: { path: configPath(), state: config } };
+  // The sessions went with the Worker's objects: the listing's count, or none when there was no Worker to delete.
+  const sessionsDeleted = worker === "deleted" ? listing.sessions : 0;
+  say(`sessions deleted: ${sessionsDeleted ?? "unknown"}\n`);
+  return { name, account, listing, worker, application, config: { path: configPath(), state: config }, sessionsDeleted };
 }

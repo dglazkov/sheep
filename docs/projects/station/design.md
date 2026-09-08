@@ -110,7 +110,9 @@ real account.
 
 Run again, it redeploys the same Worker from the package it runs from,
 keeps every secret, and reports the stamp moving. That is the upgrade,
-and there is no other.
+and there is no other. A new image is a rollout the platform runs after
+the deploy, two steps over minutes; deploy waits until the last step is
+under way with a healthy instance, and says so (station phase 3).
 
 ## Two machines, and one config
 

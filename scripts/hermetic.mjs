@@ -19,6 +19,7 @@
  *   --dry-run                              dog ring: build, probe, add the skill, print the `claude -p` command, and stop before it; no key is needed
  *                                          account ring: the preflight alone: the price, the account, its listing, the image on the registry; nothing deployed
  *   --name <worker>                        account ring: the station's name (default sheep-hermetic-<sha>)
+ *   --older <ref>                          account ring: the release deployed first and upgraded from (default: the ref's first parent when it is a release commit; refused otherwise)
  *   --budget <usd>                         dog ring: Claude Code's --max-budget-usd (default 5)
  *   --timeout <minutes>                    dog ring: the container is killed after this long (default 30)
  *   --agent <name>                         dog ring: claude-code, the only dog so far
@@ -172,6 +173,29 @@
  * branches deleted afterwards through a `GIT_ASKPASS` helper reading the
  * environment, so the scratch repository is left as found. Without the
  * variable the step is one `skip` line and the ring goes on.
+ *
+ * Station phase 3 makes the walk an upgrade (journey 4) and the delete
+ * whole. `--older <ref>` names the release deployed first; its default is
+ * the ring ref's first parent when that ref is a release commit with two
+ * parents (a release's first parent is the release before it; a candidate
+ * built here has `origin/release` as its first parent), and the ring
+ * refuses to guess otherwise. Preflight reads both stamps and both images
+ * and asks the registry for the older's too. The walk installs the older
+ * release into the fresh prefix (`npx <older spec> setup`), refuses
+ * without the token (a1), deploys the older (a2), mints one sheep and one
+ * pasture on it (a2b), then upgrades: `npm install -g <newer spec>` into
+ * the same prefix, `sheep --version` naming the newer stamp, `sheep home`
+ * printing the skew line on stderr (the home older than the command,
+ * naming `sheep home deploy`), and `sheep home deploy --faux --json`
+ * redeploying the same Worker from the newer package (`redeployed`, the
+ * stamp moved, the image the newer's, a container healthy) with the
+ * older's sheep and pasture still listed and the sheep's turn still in
+ * `sheep log` (the "up" step). Then a3 to a8 as before, on the newer, and
+ * a6 last: the delete's listing (the Worker at its address, its Durable
+ * Objects, its container application by id, `sessions: <n>` and
+ * `pastures: <n>` counted against what the walk minted, the config),
+ * the three lines, `sessions deleted: <n>`, and the account listed with
+ * the name absent and the listing equal to the one before the walk.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -204,7 +228,7 @@ const GITHUB_URLS = ["https://github.com/dglazkov/sheep.git", "git+https://githu
 
 function usage(message) {
   console.error(
-    `hermetic: ${message}\nusage: pnpm hermetic --ring package|machine [ref] [--repo <path>] [--spec <spec> [--commit <sha>]] [--image <name>] [--keep]\n       pnpm hermetic --ring dog [ref|${INSTALL_SPEC}] [--repo <path>] [--commit <sha>] [--image <name>] [--yes] [--dry-run] [--budget <usd>] [--timeout <minutes>] [--agent claude-code] [--keep]\n       pnpm hermetic --ring account [ref|${INSTALL_SPEC}] [--repo <path>] [--commit <sha>] [--yes] [--dry-run] [--name <worker>] [--keep]`,
+    `hermetic: ${message}\nusage: pnpm hermetic --ring package|machine [ref] [--repo <path>] [--spec <spec> [--commit <sha>]] [--image <name>] [--keep]\n       pnpm hermetic --ring dog [ref|${INSTALL_SPEC}] [--repo <path>] [--commit <sha>] [--image <name>] [--yes] [--dry-run] [--budget <usd>] [--timeout <minutes>] [--agent claude-code] [--keep]\n       pnpm hermetic --ring account [ref|${INSTALL_SPEC}] [--repo <path>] [--commit <sha>] [--older <ref>] [--yes] [--dry-run] [--name <worker>] [--keep]`,
   );
   process.exit(2);
 }
@@ -225,6 +249,8 @@ function parseArgs(argv) {
     timeout: 30,
     agent: DOG_AGENT,
     name: undefined,
+    // The account ring's older release (station phase 3): a ref in --repo, deployed first and upgraded from.
+    older: undefined,
     // The container's half of the dog ring, and what the outer half tells it: never typed by hand.
     inside: false,
     redirect: false,
@@ -257,6 +283,7 @@ function parseArgs(argv) {
     else if (flag === "--timeout") parsed.timeout = Number(value(flag));
     else if (flag === "--agent") parsed.agent = value(flag);
     else if (flag === "--name") parsed.name = value(flag);
+    else if (flag === "--older") parsed.older = value(flag);
     else if (flag === "--inside") parsed.inside = true;
     else if (flag === "--redirect") parsed.redirect = true;
     else if (flag === "--expect") parsed.expect = value(flag);
@@ -292,6 +319,7 @@ function parseArgs(argv) {
   }
   if (parsed.name !== undefined && parsed.ring !== "account") usage("--name is the account ring's");
   if (parsed.name !== undefined && !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(parsed.name)) usage(`--name ${parsed.name} is not a Worker name`);
+  if (parsed.older !== undefined && parsed.ring !== "account") usage("--older is the account ring's");
   if (parsed.images.length > 0 && parsed.ring === "account") usage("--image is the machine and dog rings'");
   if (parsed.ring === "dog") {
     if (parsed.spec !== undefined && parsed.spec !== INSTALL_SPEC) usage(`the dog types the README's spec, ${INSTALL_SPEC}; a spec that is not that one cannot be what it installs (a ref installs through /src.git)`);
@@ -408,6 +436,23 @@ class Ring {
     this.watches = [];
   }
 
+  /**
+   * Which release the ring installs and asserts against (station phase 3):
+   * the account ring installs the older release first and switches to the
+   * newer at the upgrade, so `install()` and every step read one of the
+   * two from here. Returns what was there, to switch back with.
+   */
+  use({ sha, ref, spec, stamp, git }) {
+    const previous = { sha: this.sha, ref: this.ref, spec: this.spec, stamp: this.stamp, git: this.git };
+    this.sha = sha;
+    this.ref = ref;
+    this.spec = spec;
+    this.stamp = stamp;
+    // The older is always a ref in a repository, so it brings its `git`; a spec-mode newer brings none, as before.
+    this.git = git;
+    return previous;
+  }
+
   /** The kennel `sheep setup` made in a working directory: `<dir>/.sheep`, where the config and the local home live. */
   kennel(dir) {
     return join(dir, ".sheep");
@@ -442,7 +487,7 @@ class Ring {
       if (key.startsWith("npm_") || key.startsWith("PNPM_") || key === "NODE_OPTIONS" || key === "NODE_PATH" || key === "INIT_CWD") continue;
       // No home, no token, no key: the walk gets its home from the config the installed command writes, and runs the faux provider.
       if (key === "SHEEP_HOME" || key === "SHEEP_TOKEN" || key === "ANTHROPIC_API_KEY" || key === "SHEEP_INSTALL_SPEC") continue;
-      // No account, and none of the test seams: the account ring hands the token to one command's environment; a fake would be a facade.
+      // No account, and none of the test seams (the fake account, wrangler, and station, and SHEEP_TEST_RETRY_MS): the account ring hands the token to one command's environment; a fake would be a facade.
       if (key.startsWith("CLOUDFLARE_") || key.startsWith("SHEEP_TEST_")) continue;
       // The scratch repository's token reaches `sheep pasture secret set`'s stdin and the branch delete's helper, and no command's environment.
       if (key === "LAMB_PLAYGROUND_TOKEN") continue;
@@ -1711,7 +1756,7 @@ async function registryDigest(image) {
  * ring's, and `env()` drops every `CLOUDFLARE_*` and `SHEEP_TEST_*`
  * variable, so the token reaches one command's environment by name.
  */
-async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: wantedName }) {
+async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: wantedName, older: olderRef }) {
   const token = process.env.CLOUDFLARE_API_TOKEN;
   if (!token) {
     console.error("hermetic: the account ring needs CLOUDFLARE_API_TOKEN in its environment: the shepherd's token for the account the station goes on, which sheep home deploy takes the same way; nothing was done");
@@ -1726,16 +1771,24 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
   } catch (error) {
     usage(`${ref}: ${error.message}`);
   }
+  // The older release (station phase 3): named by --older, or the ref's first parent when the ref is a release commit; never guessed.
+  let older;
+  try {
+    older = olderRelease({ ring, repo, ref, spec, olderRef });
+  } catch (error) {
+    usage(error.message);
+  }
   const api = accountApi(token);
   // The second machine is a container (station phase 2): Docker is needed for the walk, and its absence is known before anything is made.
   const docker = spawnSync("docker", ["version", "--format", "{{.Server.Version}} {{.Server.Os}}/{{.Server.Arch}}"], { encoding: "utf8" });
   const engine = docker.error || docker.status !== 0 ? undefined : docker.stdout.trim();
   let failure;
-  const station = { deployed: false, name: undefined, home: undefined, account: undefined, subdomain: undefined, image: undefined, digest: undefined, tagDigest: undefined, engine };
+  const station = { deployed: false, name: undefined, home: undefined, account: undefined, subdomain: undefined, image: undefined, digest: undefined, tagDigest: undefined, engine, older, minted: [], pastures: [] };
   try {
-    // Preflight: the account, the plan, the subdomain, the listing, and the image the ref's config names, on the registry.
-    if (spec === undefined) console.log(`account ring: ${ref} = ${ring.sha}${repo === root ? "" : ` in ${repo}`}`);
-    else console.log(`account ring: ${spec}${commit ? `, expected to be a build of ${commit}` : ""}`);
+    // Preflight: the account, the plan, the subdomain, the listing, and the images both configs name, on the registry.
+    if (spec === undefined) console.log(`account ring: ${ref} = ${ring.sha}${repo === root ? "" : ` in ${repo}`}; sheep ${ring.stamp.commit} (${ring.stamp.builtAt}), the newer`);
+    else console.log(`account ring: ${spec}${commit ? `, expected to be a build of ${commit}` : ""}, the newer`);
+    console.log(`older: ${older.ref} = ${older.sha}${repo === root ? "" : ` in ${repo}`}; sheep ${older.stamp.commit} (${older.stamp.builtAt}), deployed first and upgraded from`);
     station.account = await api.account();
     const plan = await api.plan(station.account.id);
     if (plan === undefined) throw new Error(`the account ${station.account.name} (${station.account.id}) is not on the Workers Paid plan, which containers need; deploy would refuse it, and the ring stops here`);
@@ -1745,26 +1798,31 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
     console.log(`account: ${station.account.name} (${station.account.id}); plan ${plan.id} ${plan.state}, ${plan.price} ${plan.currency} ${plan.frequency}; subdomain ${station.subdomain}.workers.dev`);
     console.log(`  Workers: ${before.workers.join(", ") || "(none)"}`);
     console.log(`  container applications: ${before.applications.map((application) => `${application.name} (${application.id})`).join(", ") || "(none)"}`);
+    // The older's image, from its tree; then the newer's, from its tree or, for a spec, from the install after the upgrade.
+    older.image = imageOf(parseJsonc(older.git("show", `${older.sha}:home/wrangler.jsonc`)));
+    if (typeof older.image !== "string") throw new Error(`${older.ref}'s home/wrangler.jsonc names no image in its pen container; a release does`);
+    await checkImage(older, older.stamp, "older image");
     if (ring.sha !== undefined) {
       station.image = imageOf(parseJsonc(ring.git("show", `${ring.sha}:home/wrangler.jsonc`)));
       if (typeof station.image !== "string") throw new Error(`${ref}'s home/wrangler.jsonc names no image in its pen container; a release does`);
-      await checkImage(station, ring.stamp);
-    } else console.log("image: read from the install's home/wrangler.jsonc after step 1 (a spec has no tree to read before)");
+      await checkImage(station, ring.stamp, "image");
+    } else console.log("image: read from the install's home/wrangler.jsonc after the upgrade (a spec has no tree to read before)");
     console.log(engine === undefined ? "docker: none answers; the second machine (a7) is a container, so the walk needs it" : `docker: ${engine}; the second machine (a7) is a container from node:24-slim`);
     if (engine === undefined && !dryRun) throw new Error(`the account ring's second machine is a container, and no Docker answers here (docker version: ${docker.error ? docker.error.message : (docker.stderr || docker.stdout || "").trim()}); nothing was deployed`);
-    station.name = wantedName ?? (ring.sha !== undefined ? `sheep-hermetic-${ring.sha.slice(0, 7)}` : undefined);
+    // The name: the newer's sha (a spec has none until the upgrade, so --commit names it, else the older's sha and a note).
+    station.name = wantedName ?? `sheep-hermetic-${(ring.sha ?? commit ?? older.sha).slice(0, 7)}`;
     if (station.name !== undefined && (before.workers.includes(station.name) || before.applications.some((application) => application.name === station.name))) {
       throw new Error(`the account already holds ${station.name}; a ring that left it behind failed, and deploy would refuse the name: delete it first (sheep home delete --name ${station.name}, or wrangler delete and wrangler containers delete)`);
     }
-    console.log(`station: ${station.name ?? "sheep-hermetic-<the install's commit>"} at https://${station.name ?? "<name>"}.${station.subdomain}.workers.dev, deleted at the end whatever happens`);
+    console.log(`station: ${station.name} at https://${station.name}.${station.subdomain}.workers.dev, deleted at the end whatever happens`);
 
     // The price and the yes, before anything is made.
     console.log(
       [
         "",
         "the account ring spends on the shepherd's account.",
-        `  the Workers Paid plan is already paid, ${PLAN_PRICE}; the walk deploys one Worker with a container application, runs one container for one`,
-        "  command (minutes at Cloudflare's per-minute container rate: cents), redeploys it once, and deletes both at the end, or on failure.",
+        `  the Workers Paid plan is already paid, ${PLAN_PRICE}; the walk deploys one Worker with a container application from the older release, runs containers for a`,
+        "  few commands (minutes at Cloudflare's per-minute container rate: cents), redeploys it from the newer release and once more, and deletes both at the end, or on failure.",
         `  the key is used for nothing: the station runs the faux provider (ANTHROPIC_API_KEY ${key ? "is in the environment and becomes the secret" : "is not set; a placeholder string becomes the secret"}).`,
         "  the token and the key go to sheep home deploy's environment, and to nothing else of this ring.",
       ].join("\n"),
@@ -1785,18 +1843,13 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
       }
       console.log("");
 
-      // The world and the install: the package ring's.
+      // The world and the install: the package ring's, of the older release; the newer is what the upgrade step installs over it.
+      const newer = ring.use(older);
       ring.assertFresh();
       await ring.install();
-      if (station.name === undefined) station.name = `sheep-hermetic-${ring.stamp.commit.slice(0, 7)}`;
+      console.log(`installed: sheep ${ring.stamp.commit} (${ring.stamp.builtAt}), wrangler ${ring.stamp.wrangler}; the older, upgraded in the walk`);
       station.home = `https://${station.name}.${station.subdomain}.workers.dev`;
-      if (station.image === undefined) {
-        // A spec: the install's config is the first tree there is to read the image from.
-        station.image = imageOf(parseJsonc(readFileSync(join(ring.pkg, "home", "wrangler.jsonc"), "utf8")));
-        if (typeof station.image !== "string") throw new Error("the install's home/wrangler.jsonc names no image in its pen container; a release does");
-        await checkImage(station, ring.stamp);
-      }
-      await accountWalk(ring, api, station, { token, key: keyForDeploy, placeholder: key === undefined || key === "", before, spec, commit });
+      await accountWalk(ring, api, station, { token, key: keyForDeploy, placeholder: key === undefined || key === "", before, spec, commit, newer });
     }
   } catch (error) {
     failure = error;
@@ -1824,7 +1877,9 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
     "journey 2 step 2: pi's interactive terminal on the second machine, which needs a TTY; the container attached with none and pi's client said so",
     "journey 3 step 2: that a sheep ran the repository's tests; the faux program edited, committed, and pushed, and ran no tests",
     "journey 5 step 2: the image digest read from the container itself: the platform gives a container ids, not a digest, so the ring read the reference the Worker carries beside its stamp and the application's configured image, and asked the registry what the tag is",
-    "station phase 3: the delete's listing of what goes and how many sessions are in it; the ring typed the name and read the three lines",
+    `journey 4 step 1: the user's string, npm install -g ${INSTALL_SPEC}; the ring upgraded with ${spec ?? `git+file://${repo}#<the ref's sha>`} into the same prefix`,
+    `journey 4 step 1: a month or a year of releases between the two; the upgrade was from ${older.stamp.commit} to the ring's ref, one release apart unless --older said otherwise`,
+    "journey 4 step 2: the name typed at a terminal, and the refusal with none: the ring piped the name on stdin, and packages/cli/test/deploy.test.ts drives the refusal",
   );
   ring.report(failure, "account");
   ring.cleanup();
@@ -1849,43 +1904,93 @@ async function deleteStation(ring, api, station, token) {
 }
 
 /**
- * What the ref's config names and what the registry holds (station phase
- * 2): a digest-named image is asked for by digest, and the tag at the
- * stamp's commit is asked for too and must be that digest; a tag-named
- * image (a release built by hand) is asked for by tag, and the digest the
- * registry answers is printed, not asserted against anything. Sets
- * `station.digest` (what the config's reference resolves to on the
- * registry) and `station.tagDigest`.
+ * The older release (station phase 3): `--older <ref>` in the repository,
+ * or the ring ref's first parent when that ref is a release commit with
+ * two parents (a release's first parent is the release before it; a
+ * candidate's is `origin/release`). Never guessed: a spec with no
+ * `--older`, a ref with one parent, or a parent with no stamp is a usage
+ * error naming the flag. The older must be a different build, built
+ * before the newer, or the upgrade would be a facade.
  */
-async function checkImage(station, stamp) {
-  const parsed = parseImage(station.image);
-  if (parsed === undefined) throw new Error(`the config's image ${station.image} is not a docker.io reference by tag or by digest`);
-  const registry = await registryDigest(station.image);
-  if (registry.error !== undefined) throw new Error(`the image ${station.image} is not on the registry: ${registry.error}; the deploy would fail on the pull`);
-  station.digest = registry.digest;
+function olderRelease({ ring, repo, ref, spec, olderRef }) {
+  const git = gitIn(repo);
+  let sha;
+  let named;
+  if (olderRef !== undefined) {
+    named = olderRef;
+    try {
+      sha = git("rev-parse", "--verify", `${olderRef}^{commit}`);
+    } catch (error) {
+      throw new Error(`--older ${olderRef}: ${error.message}`);
+    }
+  } else {
+    if (spec !== undefined) throw new Error(`the account ring upgrades from an older release, and a spec has no history to take one from: pass --older <ref>, a release commit in ${repo}`);
+    const parents = git("log", "-1", "--format=%P", ring.sha).split(" ").filter(Boolean);
+    if (parents.length !== 2) throw new Error(`${ref} (${ring.sha}) has ${parents.length} parent${parents.length === 1 ? "" : "s"}, so it is not a release commit with a release before it; pass --older <ref>`);
+    sha = parents[0];
+    named = `${ref}^1`;
+  }
+  let stamp;
+  try {
+    stamp = JSON.parse(git("show", `${sha}:package.json`)).sheep;
+  } catch {
+    stamp = undefined;
+  }
+  if (typeof stamp?.commit !== "string" || typeof stamp?.builtAt !== "string" || typeof stamp?.wrangler !== "string") {
+    throw new Error(`${named} (${sha}) carries no build stamp in its package.json; the older must be a release commit: pass --older <ref>`);
+  }
+  if (ring.stamp !== undefined) {
+    if (sha === ring.sha || stamp.commit === ring.stamp.commit) throw new Error(`the older release ${named} (${sha}) is the ring's own build, ${stamp.commit}; an upgrade from a release to itself proves nothing: pass --older <ref>`);
+    if (!(stamp.builtAt < ring.stamp.builtAt)) throw new Error(`${named} was built ${stamp.builtAt}, not before the ring's ref (${ring.stamp.builtAt}); the older must be older`);
+  }
+  return { git, ref: named, sha, spec: `git+file://${repo}#${sha}`, stamp, image: undefined, digest: undefined, tagDigest: undefined };
+}
+
+/**
+ * What a config names and what the registry holds (station phase 2): a
+ * digest-named image is asked for by digest, and the tag at the stamp's
+ * commit is asked for too and must be that digest; a tag-named image (a
+ * release built by hand) is asked for by tag, and the digest the registry
+ * answers is printed, not asserted against anything. Sets
+ * `target.digest` (what the config's reference resolves to on the
+ * registry) and `target.tagDigest`; `target` is the station (the newer)
+ * or the older release (station phase 3), and `label` heads the line.
+ */
+async function checkImage(target, stamp, label = "image") {
+  const parsed = parseImage(target.image);
+  if (parsed === undefined) throw new Error(`the config's image ${target.image} is not a docker.io reference by tag or by digest`);
+  const registry = await registryDigest(target.image);
+  if (registry.error !== undefined) throw new Error(`the image ${target.image} is not on the registry: ${registry.error}; the deploy would fail on the pull`);
+  target.digest = registry.digest;
   if (parsed.digest !== undefined) {
-    if (station.digest !== parsed.digest) throw new Error(`the registry answered ${station.digest} for ${station.image}, not the digest the reference names`);
+    if (target.digest !== parsed.digest) throw new Error(`the registry answered ${target.digest} for ${target.image}, not the digest the reference names`);
     const tag = `docker.io/${parsed.repository}:${stamp.commit}`;
     const byTag = await registryDigest(tag);
     if (byTag.error !== undefined) throw new Error(`the tag ${tag}, the release's commit, is not on the registry: ${byTag.error}`);
-    station.tagDigest = byTag.digest;
-    if (station.tagDigest !== parsed.digest) throw new Error(`the config names ${station.image}, but the registry's digest for the tag ${tag} is ${station.tagDigest}; the release named a digest that is not its commit's push`);
-    console.log(`image: ${station.image} (by digest; the tag ${tag} on Docker Hub is that digest)`);
+    target.tagDigest = byTag.digest;
+    if (target.tagDigest !== parsed.digest) throw new Error(`the config names ${target.image}, but the registry's digest for the tag ${tag} is ${target.tagDigest}; the release named a digest that is not its commit's push`);
+    console.log(`${label}: ${target.image} (by digest; the tag ${tag} on Docker Hub is that digest)`);
   } else {
-    station.tagDigest = station.digest;
-    console.log(`image: ${station.image} (by tag; a release built by hand names the tag; the registry's digest for it is ${station.digest})`);
+    target.tagDigest = target.digest;
+    console.log(`${label}: ${target.image} (by tag; a release built by hand names the tag; the registry's digest for it is ${target.digest})`);
   }
-  if (typeof stamp?.image === "string" && stamp.image !== station.image) throw new Error(`the manifest's sheep.image is ${stamp.image}; the config names ${station.image}`);
+  if (typeof stamp?.image === "string" && stamp.image !== target.image) throw new Error(`the manifest's sheep.image is ${stamp.image}; the config names ${target.image}`);
 }
 
-/** The station's walk: the steps a1 to a8, one line each, from blog; `station.deployed` is set the moment the deploy is attempted. */
-async function accountWalk(ring, api, station, { token, key, placeholder, before, spec, commit }) {
-  const { name, home, account } = station;
+/**
+ * The station's walk: the steps a1 to a8, one line each, from blog;
+ * `station.deployed` is set the moment the deploy is attempted. The ring
+ * runs the older release through a2b, then the upgrade step ("up")
+ * installs the newer over it and every step after asserts the newer.
+ */
+async function accountWalk(ring, api, station, { token, key, placeholder, before, spec, commit, newer }) {
+  const { name, home, account, older } = station;
   const withToken = { ...ring.env(), CLOUDFLARE_API_TOKEN: token, ANTHROPIC_API_KEY: key };
   const needles = [token, key];
   const watch = watchPs(needles, 25);
-  const stamp = ring.stamp;
-  const build = { commit: stamp.commit, builtAt: stamp.builtAt };
+  // The older's stamp through a2b; the upgrade step reassigns both to the newer's.
+  let stamp = ring.stamp;
+  let build = { commit: stamp.commit, builtAt: stamp.builtAt };
   const parse = (step, command, result) => {
     try {
       return JSON.parse(result.stdout);
@@ -1904,7 +2009,7 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     if (JSON.stringify(afterRefusal) !== JSON.stringify(before)) ring.fail("a1", "the account's listing after the refused deploy", { stdout: JSON.stringify(afterRefusal), stderr: `expected ${JSON.stringify(before)}`, code: 1 });
     ring.ok("a1", "sheep home deploy (no token)", `exit 2: "${refused.stderr.split("\n")[0].replace(/^sheep: /, "")}"; nothing in the kennel; the account's listing identical before and after (${before.workers.length} Workers, ${before.applications.length} applications)`);
 
-    // Step 2: the deploy, timed; the address answers; the two stamps are equal; the config names the station with no local marker.
+    // Step 2: the deploy of the older release, timed; the address answers; the two stamps are equal; the config names the station with no local marker.
     station.deployed = true;
     const startedAt = Date.now();
     const deployed = await ring.sheep(["home", "deploy", "--faux", "--name", name, "--json"], { env: withToken });
@@ -1913,8 +2018,7 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     if (deployed.code !== 0 || report.name !== name || report.home !== home || report.state !== "deployed" || report.answers !== true) {
       ring.fail("a2", `sheep home deploy --faux --name ${name} --json`, { ...deployed, stderr: `${deployed.stderr}\nexpected exit 0, name ${name}, home ${home}, state deployed, answers true` });
     }
-    if (station.image !== undefined && report.image !== station.image) ring.fail("a2", `sheep home deploy --faux --name ${name} --json`, { ...deployed, stderr: `the report's image is ${report.image}; the ref's config names ${station.image}` });
-    station.image = report.image;
+    if (report.image !== older.image) ring.fail("a2", `sheep home deploy --faux --name ${name} --json`, { ...deployed, stderr: `the report's image is ${report.image}; the older release's config names ${older.image}` });
     if (Number(seconds) >= 180) ring.fail("a2", `sheep home deploy --faux --name ${name} --json`, { ...deployed, stderr: `${seconds}s; the deploy must finish under three minutes` });
     if (!(report.containers?.healthy >= 1)) ring.fail("a2", `sheep home deploy --faux --name ${name} --json`, { ...deployed, stderr: `${deployed.stderr}\nexpected a healthy container instance; got ${JSON.stringify(report.containers)}` });
     if (!(await answers(home))) ring.fail("a2", `curl ${home}/`, { stdout: "", stderr: `${home} does not answer sheep`, code: 1 });
@@ -1929,12 +2033,12 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     if (homed.code !== 0 || homeReport.home !== home || homeReport.name !== name || homeReport.local !== false || homeReport.answers !== true || JSON.stringify(homeReport.build?.home) !== JSON.stringify(build) || JSON.stringify(homeReport.build?.cli) !== JSON.stringify(build) || homed.stderr !== "") {
       ring.fail("a2", "sheep home --json", { ...homed, stderr: `${homed.stderr}\nexpected home ${home}, name ${name}, local false, answers true, build.home = build.cli = ${JSON.stringify(build)}, nothing on stderr` });
     }
-    // The image (station phase 2): what the Worker reports beside its stamp is the config's line, and what the account says the application runs.
-    if (homeReport.image !== station.image) ring.fail("a2", "sheep home --json", { ...homed, stderr: `${homed.stderr}\nGET /home reports the image ${homeReport.image}; the config names ${station.image}` });
+    // The image (station phase 2): what the Worker reports beside its stamp is the older config's line, and what the account says the application runs.
+    if (homeReport.image !== older.image) ring.fail("a2", "sheep home --json", { ...homed, stderr: `${homed.stderr}\nGET /home reports the image ${homeReport.image}; the older release's config names ${older.image}` });
     const application = await api.application(account.id, name);
     if (application === undefined) ring.fail("a2", `GET /accounts/${account.id}/containers/applications`, { stdout: "", stderr: `no container application named ${name}`, code: 1 });
-    if (application.image !== station.image) ring.fail("a2", `GET /accounts/${account.id}/containers/applications`, { stdout: JSON.stringify(application), stderr: `the application's configuration.image is ${application.image}; the config names ${station.image}`, code: 1 });
-    station.applicationImage = application.image;
+    if (application.image !== older.image) ring.fail("a2", `GET /accounts/${account.id}/containers/applications`, { stdout: JSON.stringify(application), stderr: `the application's configuration.image is ${application.image}; the older release's config names ${older.image}`, code: 1 });
+    station.applicationId = application.id;
     // wrangler came once, into the ring's ~/.sheep/tools, and nothing else is under HOME/.sheep.
     const tools = join(ring.home, ".sheep", "tools");
     const wranglerPkg = join(tools, "node_modules", "wrangler", "package.json");
@@ -1943,12 +2047,101 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     const dotSheep = readdirSync(join(ring.home, ".sheep")).sort();
     if (JSON.stringify(dotSheep) !== JSON.stringify(["tools"])) ring.fail("a2", `ls ${join(ring.home, ".sheep")}`, { stdout: dotSheep.join("\n"), stderr: "expected tools alone under HOME/.sheep", code: 1 });
     const derived = JSON.parse(readFileSync(join(ring.kennel(ring.blog), "deploy", "wrangler.jsonc"), "utf8"));
-    if (derived.name !== name || derived.env?.pen?.name !== name || derived.env?.pen?.containers?.[0]?.name !== name || imageOf(derived) !== station.image) {
-      ring.fail("a2", `cat ${join(ring.kennel(ring.blog), "deploy", "wrangler.jsonc")}`, { stdout: JSON.stringify(derived), stderr: `expected every name ${name} and the image ${station.image}`, code: 1 });
+    if (derived.name !== name || derived.env?.pen?.name !== name || derived.env?.pen?.containers?.[0]?.name !== name || imageOf(derived) !== older.image) {
+      ring.fail("a2", `cat ${join(ring.kennel(ring.blog), "deploy", "wrangler.jsonc")}`, { stdout: JSON.stringify(derived), stderr: `expected every name ${name} and the image ${older.image}`, code: 1 });
     }
-    ring.ok("a2", `sheep home deploy --faux --name ${name} --json (in blog)`, `${seconds}s; ${home} answers sheep; containers ${report.containers.healthy} healthy after ${report.containers.seconds}s; account ${report.account.name}, ${report.plan.id} ${report.plan.state}; wrangler ${stamp.wrangler} fetched into ~/.sheep/tools; <blog>/.sheep/config names the station, no local marker; deploy/wrangler.jsonc names ${name} three times; the key secret is ${placeholder ? "a placeholder (no ANTHROPIC_API_KEY here; the faux provider uses none)" : "the environment's ANTHROPIC_API_KEY"}`);
-    ring.ok("a2", "sheep home --json (in blog)", `home ${home}, name ${name}, answers; build.home = build.cli = ${build.commit} (${build.builtAt}); nothing on stderr`);
-    ring.ok("a2", `GET /home; GET /accounts/${account.id.slice(0, 6)}…/containers/applications`, `image ${station.image}: the Worker reports it, the application ${application.id} is configured with it${station.tagDigest !== undefined && station.image.includes("@sha256:") ? `, and the registry's digest for the tag at ${stamp.commit} is it` : " (by tag; a release built by hand)"}`);
+    ring.ok("a2", `sheep home deploy --faux --name ${name} --json (in blog, the older release)`, `${seconds}s; ${home} answers sheep; containers ${report.containers.healthy} healthy after ${report.containers.seconds}s; account ${report.account.name}, ${report.plan.id} ${report.plan.state}; wrangler ${stamp.wrangler} fetched into ~/.sheep/tools; <blog>/.sheep/config names the station, no local marker; deploy/wrangler.jsonc names ${name} three times; the key secret is ${placeholder ? "a placeholder (no ANTHROPIC_API_KEY here; the faux provider uses none)" : "the environment's ANTHROPIC_API_KEY"}`);
+    ring.ok("a2", "sheep home --json (in blog)", `home ${home}, name ${name}, answers; build.home = build.cli = ${build.commit} (${build.builtAt}), the older; nothing on stderr`);
+    ring.ok("a2", `GET /home; GET /accounts/${account.id.slice(0, 6)}…/containers/applications`, `image ${older.image}: the Worker reports it, the application ${application.id} is configured with it${older.tagDigest !== undefined && older.image.includes("@sha256:") ? `, and the registry's digest for the tag at ${stamp.commit} is it` : " (by tag; a release built by hand)"}`);
+
+    // Step 2b (station phase 3): on the older release, one sheep with a turn, and one pasture with no repository; both must survive the upgrade.
+    const olderCreated = await ring.sheep(["new", "--name", "older-sheep", "--", "hello"]);
+    const olderSheep = /^session ([0-9a-f-]{36})\n/.exec(olderCreated.stderr)?.[1];
+    if (olderCreated.code !== 0 || olderCreated.stdout !== `${FAUX_REPLY}\n` || !olderSheep) ring.fail("a2b", 'sheep new --name older-sheep -- "hello"', olderCreated);
+    station.minted.push(olderSheep);
+    const olderPasture = await ring.sheep(["pasture", "new", "older"]);
+    if (olderPasture.code !== 0 || !olderPasture.stdout.startsWith("older\t\t")) ring.fail("a2b", "sheep pasture new older", { ...olderPasture, stderr: `${olderPasture.stderr}\nexpected "older\\t\\t<branch>": a pasture with no repository` });
+    station.pastures.push("older");
+    const olderRows = parse("a2b", "sheep ls --json (in blog)", await ring.sheep(["ls", "--json"]));
+    const olderRow = olderRows.find((row) => row.id === olderSheep);
+    if (olderRow === undefined || olderRow.name !== "older-sheep") ring.fail("a2b", "sheep ls --json (in blog)", { stdout: JSON.stringify(olderRows), stderr: `expected ${olderSheep} named older-sheep`, code: 1 });
+    const olderPastures = await ring.sheep(["pasture", "ls"]);
+    if (olderPastures.code !== 0 || !olderPastures.stdout.split("\n").some((line) => line.startsWith("older\t"))) ring.fail("a2b", "sheep pasture ls (in blog)", olderPastures);
+    ring.ok("a2b", 'sheep new --name older-sheep -- "hello"; sheep pasture new older; sheep ls; sheep pasture ls (on the older release)', `${FAUX_REPLY}; ${olderSheep} (older-sheep) listed; the pasture older listed, ${olderPasture.stdout.trim().split("\t")[2]} branch, no repository`);
+
+    // The upgrade (journey 4 step 1): the newer package into the same prefix; the command names it; sheep home warns; the redeploy moves the stamp and keeps every row.
+    const upStarted = Date.now();
+    const upgraded = await run("npm", ["install", "-g", newer.spec], { env: ring.env(), cwd: ring.blog });
+    const upSeconds = ((Date.now() - upStarted) / 1000).toFixed(0);
+    if (upgraded.code !== 0) ring.fail("up", `npm install -g ${newer.spec}`, upgraded);
+    // The newer's stamp, from the install: a ref's must be the ref's own; a spec's must be a build of --commit when given, and not the older's.
+    const installedStamp = JSON.parse(readFileSync(join(ring.pkg, "package.json"), "utf8")).sheep;
+    if (typeof installedStamp?.commit !== "string" || typeof installedStamp?.builtAt !== "string" || typeof installedStamp?.wrangler !== "string") ring.fail("up", `cat ${join(ring.pkg, "package.json")}`, { stdout: JSON.stringify(installedStamp), stderr: "expected a build stamp after the upgrade", code: 1 });
+    if (newer.stamp !== undefined && JSON.stringify({ commit: installedStamp.commit, builtAt: installedStamp.builtAt }) !== JSON.stringify({ commit: newer.stamp.commit, builtAt: newer.stamp.builtAt })) {
+      ring.fail("up", `npm install -g ${newer.spec}; cat ${join(ring.pkg, "package.json")}`, { stdout: JSON.stringify(installedStamp), stderr: `expected the ref's stamp ${JSON.stringify(newer.stamp)}`, code: 1 });
+    }
+    if (commit !== undefined && !commit.startsWith(installedStamp.commit)) ring.fail("up", `npm install -g ${newer.spec}`, { stdout: JSON.stringify(installedStamp), stderr: `expected a build of ${commit}`, code: 1 });
+    if (installedStamp.commit === older.stamp.commit || !(older.stamp.builtAt < installedStamp.builtAt)) ring.fail("up", `npm install -g ${newer.spec}`, { stdout: JSON.stringify(installedStamp), stderr: `the upgrade installed ${installedStamp.commit} (${installedStamp.builtAt}), not a build newer than the older's ${older.stamp.commit} (${older.stamp.builtAt})`, code: 1 });
+    ring.use({ ...newer, stamp: newer.stamp ?? installedStamp });
+    stamp = ring.stamp;
+    build = { commit: stamp.commit, builtAt: stamp.builtAt };
+    if (station.image === undefined) {
+      // A spec: the install's config is the first tree there is to read the newer's image from.
+      station.image = imageOf(parseJsonc(readFileSync(join(ring.pkg, "home", "wrangler.jsonc"), "utf8")));
+      if (typeof station.image !== "string") ring.fail("up", `cat ${join(ring.pkg, "home", "wrangler.jsonc")}`, { stdout: "", stderr: "the install's home/wrangler.jsonc names no image in its pen container; a release does", code: 1 });
+      await checkImage(station, stamp, "image");
+    }
+    console.log(`installed: sheep ${stamp.commit} (${stamp.builtAt}), wrangler ${stamp.wrangler}; the newer, over the older in ${upSeconds}s`);
+    const version = await ring.sheep(["--version"]);
+    const expectedVersion = `sheep ${stamp.commit} (${stamp.builtAt})\n`;
+    if (version.code !== 0 || version.stdout !== expectedVersion || version.stderr !== "") ring.fail("up", "sheep --version", { ...version, stderr: `${version.stderr}\nexpected ${JSON.stringify(expectedVersion)} and an empty stderr` });
+    // The skew line: the home is the older build, this command the newer, and the fix named is the deploy.
+    const skewed = await ring.sheep(["home"]);
+    const skewLine = `sheep: the home's build ${older.stamp.commit} (${older.stamp.builtAt}) is older than this command's ${stamp.commit} (${stamp.builtAt}); \`sheep home deploy\` from this package updates it\n`;
+    if (skewed.code !== 0 || skewed.stderr !== skewLine || !skewed.stdout.includes(`home build: ${older.stamp.commit} (${older.stamp.builtAt})\ncli build: ${stamp.commit} (${stamp.builtAt})\n`)) {
+      ring.fail("up", "sheep home (in blog, the newer command against the older home)", { ...skewed, stderr: `${skewed.stderr}\nexpected exactly the skew line on stderr: ${JSON.stringify(skewLine)}` });
+    }
+    // The redeploy from the newer package: the same Worker, the stamp moved, the newer image, a container healthy.
+    const upDeployStarted = Date.now();
+    const upDeployed = await ring.sheep(["home", "deploy", "--faux", "--json"], { env: withToken });
+    const upDeploySeconds = ((Date.now() - upDeployStarted) / 1000).toFixed(0);
+    const upReport = parse("up", "sheep home deploy --faux --json (the newer package)", upDeployed);
+    if (upDeployed.code !== 0 || upReport.name !== name || upReport.home !== home || upReport.state !== "redeployed" || upReport.answers !== true || JSON.stringify(upReport.build?.home) !== JSON.stringify(build) || JSON.stringify(upReport.build?.cli) !== JSON.stringify(build) || upReport.image !== station.image || !(upReport.containers?.healthy >= 1)) {
+      ring.fail("up", "sheep home deploy --faux --json (the newer package)", { ...upDeployed, stderr: `${upDeployed.stderr}\nexpected the same name and home, state redeployed, answers true, build.home = build.cli = ${JSON.stringify(build)}, image ${station.image}, a healthy container instance` });
+    }
+    // The rollout (station phase 3): a new image is a rollout the platform runs after wrangler returns; deploy waits until it completed, or until
+    // its last step is under way with a healthy instance (`rolling`), which the platform finishes on its own. Anything else fails the step.
+    const rolloutOk = upReport.rollout?.status === "completed" || upReport.rollout?.status === "rolling";
+    if (!rolloutOk || upReport.rollout.from !== older.image) {
+      ring.fail("up", "sheep home deploy --faux --json (the newer package)", { ...upDeployed, stderr: `${upDeployed.stderr}\nexpected rollout.status completed or rolling, from ${older.image}; got ${JSON.stringify(upReport.rollout)}` });
+    }
+    const rolloutNote = upReport.rollout.status === "completed" ? `the rollout from the older image completed in ${upReport.rollout.seconds}s` : `the rollout from the older image was at step ${upReport.rollout.step} with ${upReport.rollout.healthy} healthy after ${upReport.rollout.seconds}s, left to the platform`;
+    // The stamp moved (station phase 3): read after the waits and polled, since a deployment takes seconds to propagate.
+    if (upReport.stamp?.moved !== true) ring.fail("up", "sheep home deploy --faux --json (the newer package)", { ...upDeployed, stderr: `${upDeployed.stderr}\nexpected stamp.moved true; got ${JSON.stringify(upReport.stamp)}` });
+    const upConfig = JSON.parse(readFileSync(ring.configOf(ring.blog), "utf8"));
+    if (upConfig.token !== config.token || upConfig.name !== name || upConfig.home !== home) ring.fail("up", `cat ${ring.configOf(ring.blog)}`, { stdout: JSON.stringify({ ...upConfig, token: "…" }), stderr: "expected the same token, name, and home after the upgrade", code: 1 });
+    const upHomed = await ring.sheep(["home", "--json"]);
+    const upHome = parse("up", "sheep home --json (after the upgrade)", upHomed);
+    if (upHomed.code !== 0 || JSON.stringify(upHome.build?.home) !== JSON.stringify(build) || JSON.stringify(upHome.build?.cli) !== JSON.stringify(build) || upHome.image !== station.image || upHomed.stderr !== "") {
+      ring.fail("up", "sheep home --json (after the upgrade)", { ...upHomed, stderr: `${upHomed.stderr}\nexpected build.home = build.cli = ${JSON.stringify(build)}, image ${station.image}, and nothing on stderr: the warning stops` });
+    }
+    // The application: the same one; its image is the newer's when the rollout completed, and printed, not asserted, while it is still rolling.
+    const upApplication = await api.application(account.id, name);
+    if (upApplication === undefined || upApplication.id !== application.id || (upReport.rollout.status === "completed" && upApplication.image !== station.image)) {
+      ring.fail("up", `GET /accounts/${account.id}/containers/applications`, { stdout: JSON.stringify(upApplication), stderr: `expected the same application ${application.id}${upReport.rollout.status === "completed" ? ` configured with ${station.image}` : ""}`, code: 1 });
+    }
+    station.applicationImage = upApplication.image;
+    if (upReport.rollout.status === "rolling") console.log(`  the application ${application.id} is configured with ${upApplication.image} while the rollout runs`);
+    // Every row survived: the sheep and its turn, and the pasture.
+    const upRows = parse("up", "sheep ls --json (after the upgrade)", await ring.sheep(["ls", "--json"]));
+    const upRow = upRows.find((row) => row.id === olderSheep);
+    if (upRow === undefined || upRow.name !== "older-sheep") ring.fail("up", "sheep ls --json (after the upgrade)", { stdout: JSON.stringify(upRows), stderr: `expected ${olderSheep} (older-sheep), minted on the older release, still listed`, code: 1 });
+    const upPastures = await ring.sheep(["pasture", "ls"]);
+    if (upPastures.code !== 0 || !upPastures.stdout.split("\n").some((line) => line.startsWith("older\t"))) ring.fail("up", "sheep pasture ls (after the upgrade)", { ...upPastures, stderr: `${upPastures.stderr}\nexpected the pasture older, made on the older release, still listed` });
+    const upLog = await ring.sheep(["log", olderSheep]);
+    if (upLog.code !== 0 || !upLog.stdout.includes("hello") || !upLog.stdout.includes(FAUX_REPLY)) ring.fail("up", `sheep log ${olderSheep} (after the upgrade)`, { ...upLog, stderr: `${upLog.stderr}\nexpected the turn from the older release: "hello" and "${FAUX_REPLY}"` });
+    ring.ok("up", `npm install -g <newer spec>; sheep --version; sheep home; sheep home deploy --faux --json (in blog)`, `${upSeconds}s to install ${stamp.commit} over ${older.stamp.commit}; sheep home warned on stderr that the home ${older.stamp.commit} is older and named \`sheep home deploy\`; redeployed ${name} in ${upDeploySeconds}s, stamp ${older.stamp.commit} → ${build.commit} (${build.builtAt}), image ${station.image}, containers ${upReport.containers.healthy} healthy after ${upReport.containers.seconds}s, ${rolloutNote}, the stamp moved in ${upReport.stamp.seconds}s; the warning stopped`);
+    ring.ok("up", `sheep ls --json; sheep pasture ls; sheep log ${olderSheep} (after the upgrade)`, `${olderSheep} (older-sheep) and the pasture older still listed; the log still holds "hello" → "${FAUX_REPLY}": a redeploy of the same tags over the same names kept the rows`);
 
     // Step 3: the faux program through the address, then a sheep whose shell names git, node, and pnpm from the container.
     const program = { steps: [{ tool: { name: "bash", args: { command: "git --version && node --version && pnpm --version" } } }, { text: "git, node, pnpm" }] };
@@ -1965,6 +2158,7 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     if (logged.code !== 0 || !logged.stdout.includes("git version")) ring.fail("a3", `sheep log ${id}`, { ...logged, stderr: `${logged.stderr}\nexpected the tool result naming git version` });
     const versions = { git: /git version (\S+)/.exec(logged.stdout)?.[1], node: /\n(v\d+\.\d+\.\d+)\n/.exec(logged.stdout)?.[1], pnpm: /\n(\d+\.\d+\.\d+)\n/.exec(logged.stdout)?.[1] };
     station.sheep = id;
+    station.minted.push(id);
     ring.ok("a3", `POST /faux; sheep new -- "${sentence}"; sheep log ${id}`, `${newSeconds}s; "git, node, pnpm"; the shell in the container: git version ${versions.git ?? "?"}, node ${versions.node ?? "?"}, pnpm ${versions.pnpm ?? "?"}`);
     console.log(`image: ${station.image}${station.image.includes("@sha256:") ? " (by digest)" : ` (by tag; ${station.digest} on the registry)`}`);
 
@@ -2014,15 +2208,28 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     // Step 8 (station phase 2): journey 3 against the scratch repository, when its token is here; one skip line otherwise.
     await journeyThree(ring, station, { needles });
 
-    // Step 6: the delete, the name on stdin; then the account listed, the last lines.
+    // Step 6: the delete, the name on stdin: the listing first (station phase 3), counted against what the walk minted; then the account listed, the last lines.
     const { deleted, after, left } = await deleteStation(ring, api, station, token);
     const lines = deleted.stdout.trim().split("\n");
-    if (deleted.code !== 0 || lines[0] !== `deleted the Worker ${name} and its objects` || !lines[1]?.startsWith(`deleted the container application ${name} (`) || lines[2] !== `config: ${join(realpathSync(ring.kennel(ring.blog)), "config")} removed`) {
-      ring.fail("a6", `sheep home delete --name ${name} (the name on stdin)`, { ...deleted, stderr: `${deleted.stderr}\nexpected the three lines: the Worker, the application, the config removed` });
+    const configLine = join(realpathSync(ring.kennel(ring.blog)), "config");
+    const expectedListing = [
+      `deleting ${name}: the Worker at ${home}, its Durable Objects, and its container application ${name}`,
+      `sessions: ${station.minted.length}`,
+      `pastures: ${station.pastures.length}`,
+      `container application: ${station.applicationId}`,
+      `config: ${configLine}`,
+    ];
+    const wrongListing = expectedListing.findIndex((line, index) => lines[index] !== line);
+    if (deleted.code !== 0 || wrongListing !== -1) {
+      ring.fail("a6", `sheep home delete --name ${name} (the name on stdin)`, { ...deleted, stderr: `${deleted.stderr}\nexpected the listing before the prompt, line ${wrongListing + 1} being ${JSON.stringify(expectedListing[wrongListing])}: ${station.minted.length} sessions (${station.minted.join(", ")}), ${station.pastures.length} pastures (${station.pastures.join(", ")}), the application ${station.applicationId}` });
+    }
+    const report6 = lines.slice(expectedListing.length);
+    if (report6[0] !== `deleted the Worker ${name} and its objects` || report6[1] !== `deleted the container application ${name} (${station.applicationId})` || report6[2] !== `config: ${configLine} removed` || report6[3] !== `sessions deleted: ${station.minted.length}` || report6.length !== 4) {
+      ring.fail("a6", `sheep home delete --name ${name} (the name on stdin)`, { ...deleted, stderr: `${deleted.stderr}\nexpected, after the listing, the three lines: the Worker, the application ${station.applicationId}, the config removed; then sessions deleted: ${station.minted.length}` });
     }
     if (existsSync(ring.configOf(ring.blog)) || existsSync(join(ring.kennel(ring.blog), "deploy"))) ring.fail("a6", `ls -a ${ring.kennel(ring.blog)}`, { stdout: readdirSync(ring.kennel(ring.blog)).join("\n"), stderr: "expected the config and deploy/ gone", code: 1 });
     if (left.length > 0) ring.fail("a6", "the account's listing after the delete", { stdout: left.join("\n"), stderr: `expected no Worker and no container application named ${name}`, code: 1 });
-    ring.ok("a6", `sheep home delete --name ${name} (the name on stdin)`, `${lines.join("; ").replace(ring.dir, "<ring>")}; the account holds neither`);
+    ring.ok("a6", `sheep home delete --name ${name} (the name on stdin)`, `listed ${station.minted.length} sessions and ${station.pastures.length} pastures (${station.pastures.join(", ")}), the application ${station.applicationId}; then ${report6.join("; ").replace(ring.dir, "<ring>")}; the account holds neither`);
     console.log(`  Workers: ${after.workers.join(", ") || "(none)"}`);
     console.log(`  container applications: ${after.applications.map((application) => `${application.name} (${application.id})`).join(", ") || "(none)"}`);
     if (JSON.stringify(after) !== JSON.stringify(before)) ring.fail("a6", "the account's listing after the walk", { stdout: JSON.stringify(after), stderr: `expected the listing from before the walk: ${JSON.stringify(before)}`, code: 1 });
@@ -2315,6 +2522,7 @@ async function journeyThree(ring, station, { needles }) {
     if (before.length > 0) ring.fail("a8", `git ls-remote ${PLAYGROUND} refs/heads/${branch("*")}`, { stdout: before.join("\n"), stderr: `branches of this ring's name are already on the repository; a ring that left them behind failed: git push --delete ${PLAYGROUND} ${before.join(" ")}`, code: 1 });
     const made = await ring.sheep(["pasture", "new", pasture, "--repo", PLAYGROUND]);
     if (made.code !== 0 || !made.stdout.startsWith(`${pasture}\t${PLAYGROUND}\t`)) ring.fail("a8", `sheep pasture new ${pasture} --repo ${PLAYGROUND}`, made);
+    station.pastures.push(pasture);
     const secret = await ring.sheep(["pasture", "secret", "set", pasture, "GIT_TOKEN"], { input: `${playground}\n` });
     if (secret.code !== 0 || secret.stdout !== `${pasture}\tGIT_TOKEN\n`) ring.fail("a8", `sheep pasture secret set ${pasture} GIT_TOKEN (the token on stdin)`, { ...secret, stdout: secret.stdout.split(playground).join("<token>"), stderr: secret.stderr.split(playground).join("<token>") });
     const secretNames = await ring.sheep(["pasture", "secret", "ls", pasture]);
@@ -2329,6 +2537,7 @@ async function journeyThree(ring, station, { needles }) {
       const id = born.stdout.trim();
       if (born.code !== 0 || !/^[0-9a-f-]{36}$/.test(id)) ring.fail("a8", `sheep new --pasture ${pasture} --name ${name} --detach`, born);
       ids[name] = id;
+      station.minted.push(id);
       const program = {
         steps: [
           { tool: { name: "bash", args: { command: `git checkout -b ${branch(name)}` } } },
