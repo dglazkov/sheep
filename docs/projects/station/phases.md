@@ -195,7 +195,7 @@ deletion, asked by name; container minutes.
 
 - **2026-09-07 — The upgrade walked in the ring and on `sheep-2`.** The release before deployed, a sheep and a pasture minted on it, the newer installed over it, the skew line printed, the redeploy keeping the token and every row; `sheep-2`'s sessions survived its own.
 - **2026-09-07 — A redeploy with a new image is a rollout, not a deploy.** `wrangler deploy` returns with the application naming the old image; a rolling rollout, 34% then 100%, replaces instances over 150 s or more; deploy waits to the last step with a healthy instance, 300 s at most, and reports it.
-- **2026-09-07 — A rollout's status can stay `progressing` past 600 s with every instance healthy,** while `sheep-2`'s completed in 150 s; so `rolling` is a deploy's end too, and the platform finishes it.
+- **2026-09-07 — A rollout's status can stay `progressing` past 600 s with every instance healthy,** while `sheep-2`'s completed in 150 s; so `rolling` ends a deploy too, and the platform finishes it.
 - **2026-09-07 — A Worker deployment takes seconds to reach `GET /home`:** read right after `wrangler deploy`, the stamp was the older's; deploy reads it after the waits, polling a redeploy's up to a minute.
 - **2026-09-07 — One dropped API read killed a deploy the account had taken** (`fetch failed` at 35 s); every read in a wait is retried three times, and one that keeps failing ends the wait as `unknown`, never exit 1.
 - **2026-09-07 — The delete asks the account before the person:** five listing lines from GETs, `</dev/null` refusing with exit 2 and no DELETE, on `sheep-2` too; the ring read `sessions: 2`, `pastures: 1`. Sixteen lines held, 13994 `ps` samples clean. Cost: 55 minutes of a subagent over four passes, 95 of verification.
