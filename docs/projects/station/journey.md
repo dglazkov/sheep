@@ -180,8 +180,10 @@ account.
 Acceptance criteria:
 
 - The local home with a container is pen's local rig from the installed
-  package: the same image, the same config, no Dockerfile on the
-  machine.
+  package: the same image, the same config, nothing built on the
+  machine. The one-line `FROM <image by digest>` the home hands wrangler
+  is a pull, not a build, and yields the registry's image id for id
+  (station phase 4).
 - The machine ring cannot walk this journey, since its container has
   no Docker; the walk is the conductor's, on this laptop, and the ring
   says so.

@@ -193,9 +193,15 @@ asserts the name is gone. It prints the image digest the container ran.
 ## The local home, whole
 
 `sheep home local` on a machine with Docker starts the `pen` environment:
-`wrangler dev --env pen` over the package's config, the registry image
-pulled by Docker, `PEN_CELL_ORIGIN` the address Docker reaches the host
-by, `host.docker.internal` on a Mac and the bridge address on Linux.
+`wrangler dev --env pen` over a config derived from the package's,
+`<kennel>/local/wrangler.jsonc`, whose container is a one-line
+Dockerfile beside it, `FROM <the release's image by digest>`: wrangler
+demands a Cloudflare login before it will pull any registry image
+locally, public or not, while its Dockerfile path asks Docker, and Docker
+pulls the digest, so the image is the registry's, id for id, with no
+account in the loop (station phase 4). `PEN_CELL_ORIGIN` is the address
+Docker reaches the host by, `host.docker.internal` on a Mac and the
+bridge address on Linux.
 Without Docker it is collar's home and says what a container would add.
 This is the last phase, because it is the one that makes the first five
 minutes the product, and because deploy is what the shepherd asked for.
