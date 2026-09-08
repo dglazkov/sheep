@@ -12,7 +12,9 @@ command, and a release proved by installing it the way a user would.
 directory, found the way git finds `.git`, so dogs in several
 directories share nothing but the command. [Project station](docs/projects/station/design.md)
 gave the dog a home in the cloud, `sheep home deploy` from the package in
-one path, and the local home a container when Docker answers. Setup and usage are in [README.md](README.md).
+one path, and the local home a container when Docker answers. [Project eyes](docs/projects/eyes/design.md) is planned: a sheep that
+can look at what it wrote, through the platform's Chromium, from its
+shell. Setup and usage are in [README.md](README.md).
 Read a project's `phases.md` for where its work stands and what the next
 phase is; [docs/projects/README.md](docs/projects/README.md) lists them.
 `/conduct <project>` is how a phase is run: briefed to a subagent, proved
