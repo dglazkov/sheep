@@ -160,11 +160,11 @@ token for the scratch repository; container minutes.
 
 **Findings.**
 
-- **2026-09-07 — Journey 2 walked twice: in the ring and on `sheep-2`.** A container from the machine ring's image installed the release, joined with the token on stdin, listed the sheep, attached promptless, and saw the turn end; on `sheep-2` a real model's turn finished 45 seconds after the first terminal was killed.
+- **2026-09-07 — Journey 2 walked twice: in the ring and on `sheep-2`.** A container installed the release, joined with the token on stdin, listed the sheep, attached promptless, and saw the turn end; on `sheep-2` a real model's turn finished 45 seconds after the first terminal was killed.
 - **2026-09-07 — The image by digest is the workflow's to know, and Cloudflare deploys it.** `docker push` prints the digest and the release runs after it; the release from 7db59d3 names `…@sha256:28817231…`, and the ring's three-way check, Worker, config, application, held on it, the container running.
-- **2026-09-07 — The account API echoes a Docker Hub reference verbatim** as the application's `configuration.image`, so the equality needs no normalising; the platform gives a container ids, never its digest, so `GET /home` carries the reference the release defined.
-- **2026-09-07 — `sheep home join` drops `name` and `local`:** the station's name is the deploying kennel's record, and a later deploy from the joined kennel mints its own; the token is one line of stdin, and `--token` or a second positional is refused before any request.
-- **2026-09-07 — A joined machine warns on skew at once:** `sheep-2` runs 62b177e and the joining command was 747f923, so the join printed the older home's line; the redeploy from the newer package is journey 4's.
+- **2026-09-07 — The account API echoes a Docker Hub reference verbatim** as `configuration.image`; the platform gives a container ids, never its digest, so `GET /home` carries the reference the release defined.
+- **2026-09-07 — `sheep home join` drops `name` and `local`:** the station's name is the deploying kennel's record; the token is one line of stdin, and `--token` or a second positional is refused before any request.
+- **2026-09-07 — A joined machine warns on skew at once:** `sheep-2` runs 62b177e and the joining command was 747f923, so the join printed the older home's line.
 - **2026-09-07 — The ring held thirteen lines three times: deploy 46 to 90 s, the second machine's container 27 s, up to 5616 `ps` samples clean.** Once in four runs the abandoned faux turn did not end within the second machine's wait; not reproduced. Cost: 20 minutes of a subagent, 55 of verification.
 - **2026-09-07 — Open: journey 3 on the account.** Built and skipped: the account ring walks it when `LAMB_PLAYGROUND_TOKEN`, a fine-grained token for `dglazkov/lamb-playground` with contents read and write, is in its environment. It waits on the shepherd; free.
 
