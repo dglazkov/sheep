@@ -44,6 +44,13 @@ Nothing is on npm. The first five minutes, as the dog walks them:
    and where. No account is needed. (`--faux` runs a scripted model instead,
    for a look at the plumbing without a key.)
 
+   With Docker Desktop (or the docker engine) on the machine, the same
+   command gives the home a container beside every cell, pulled from the
+   registry as the release named it: the sheep have `git`, `node`, `pnpm`,
+   and `python`, and can clone, build, test, and push. Without Docker the
+   report says so in one sentence, and the sheep read, write, and edit.
+   `--no-container` asks for none. `sheep home` says which the home has.
+
    The **kennel** is `.sheep/` at or above the working directory, found the
    way git finds `.git`, and `~/.sheep` when there is none: this directory's
    config, its token, and its own local home. Open a dog in each of several
@@ -73,7 +80,10 @@ Nothing is on npm. The first five minutes, as the dog walks them:
 
 Every release is proved before it is pushed by installing it the way you
 do, into a fresh prefix, cache, and `HOME`, and walking the steps above
-with the scripted model: `pnpm hermetic --ring package`.
+with the scripted model: `pnpm hermetic --ring package`. With `--docker`,
+on a machine with Docker, the walk's home has a container: a sheep names
+its tools from the registry's image, and the container is gone after the
+idle period.
 
 ## Developing sheep
 
