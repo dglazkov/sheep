@@ -224,17 +224,32 @@ function wranglerVersion() {
   return JSON.parse(readFileSync(join(cellDir, "node_modules", "wrangler", "package.json"), "utf8")).version;
 }
 
-/** The image reference a release's config names: the repository at the stamp's commit, the string the workflow pushes. */
-export function imageReference(commit) {
+/** A registry digest as `docker push` prints it and the config names it: `sha256:` and 64 hex characters. */
+export const IMAGE_DIGEST = /^sha256:[0-9a-f]{64}$/;
+
+/**
+ * The image reference a release's config names: the repository by the
+ * digest the registry gave the tag when the release knows it, else the
+ * repository at the stamp's commit, the tag the workflow pushes.
+ */
+export function imageReference(commit, digest) {
+  if (digest !== undefined) {
+    if (!IMAGE_DIGEST.test(digest)) throw new Error(`the image digest must be sha256:<64 hex>, not ${JSON.stringify(digest)}`);
+    return `${IMAGE_REPOSITORY}@${digest}`;
+  }
   return `${IMAGE_REPOSITORY}:${commit}`;
 }
 
+/** Whether a reference names its image by digest or by tag: what `sheep home` says beside the reference. */
+export const imageBy = (reference) => (reference.includes("@sha256:") ? "digest" : "tag");
+
 /**
  * The shipped config from the cell's (station phase 0). With a stamp, the
- * `pen` environment's one container names the registry image at the
- * stamp's commit and drops the checkout's build context and the
- * container application's name, which deploy sets to the Worker's own.
- * Without one, the config is the checkout's, Dockerfile line and all.
+ * `pen` environment's one container names the registry image, by the
+ * stamp's digest when it has one and at the stamp's commit otherwise, and
+ * drops the checkout's build context and the container application's
+ * name, which deploy sets to the Worker's own. Without one, the config is
+ * the checkout's, Dockerfile line and all.
  */
 export function shippedConfig(config, stamp) {
   const { $schema: _schema, name, main: _main, ...rest } = config;
@@ -243,22 +258,27 @@ export function shippedConfig(config, stamp) {
   const containers = written.env?.pen?.containers;
   if (!Array.isArray(containers) || containers.length !== 1) throw new Error("the cell's config must have exactly one container in its pen environment");
   const { name: _containerName, image: _image, image_build_context: _context, ...container } = containers[0];
-  written.env = { ...written.env, pen: { ...written.env.pen, containers: [{ image: imageReference(stamp.commit), ...container }] } };
+  written.env = { ...written.env, pen: { ...written.env.pen, containers: [{ image: imageReference(stamp.commit, stamp.imageDigest), ...container }] } };
   return written;
 }
 
 /**
  * `wrangler deploy --dry-run` writes the bundled Worker without deploying;
  * the top-level environment is the one built. With a stamp, `SHEEP_BUILD`
- * is defined into it, a JSON string of `{ commit, builtAt }`; without one
- * nothing is defined and the Worker reports the checkout's value.
+ * is defined into it, a JSON string of `{ commit, builtAt }`, and
+ * `SHEEP_IMAGE`, the reference the config names; without one nothing is
+ * defined and the Worker reports the checkout's value and no image.
  */
 function emitWorker(stamp) {
   const wrangler = join(cellDir, "node_modules", "wrangler", "bin", "wrangler.js");
   if (!existsSync(wrangler)) throw new Error(`wrangler is not installed at ${wrangler}; run pnpm install`);
   const out = mkdtempSync(join(tmpdir(), "sheep-worker-"));
+  const image = stamp === undefined ? undefined : imageReference(stamp.commit, stamp.imageDigest);
   // esbuild's define takes a JSON expression: the string, JSON-encoded, so the Worker's `JSON.parse(SHEEP_BUILD)` reads the object back.
-  const define = stamp === undefined ? [] : ["--define", `SHEEP_BUILD:${JSON.stringify(JSON.stringify({ commit: stamp.commit, builtAt: stamp.builtAt }))}`];
+  const define =
+    stamp === undefined
+      ? []
+      : ["--define", `SHEEP_BUILD:${JSON.stringify(JSON.stringify({ commit: stamp.commit, builtAt: stamp.builtAt }))}`, "--define", `SHEEP_IMAGE:${JSON.stringify(image)}`];
   try {
     const done = spawnSync(process.execPath, [wrangler, "deploy", "--dry-run", "--outdir", out, "--env", "", ...define], {
       cwd: cellDir,
@@ -277,6 +297,7 @@ function emitWorker(stamp) {
   }
   const worker = readFileSync(join(homeDir, "worker.mjs"), "utf8");
   if (stamp !== undefined && !worker.includes(stamp.commit)) throw new Error(`wrangler emitted a Worker without the stamp ${stamp.commit} in it; was --define dropped?`);
+  if (stamp !== undefined && !worker.includes(image)) throw new Error(`wrangler emitted a Worker without the image ${image} in it; was --define dropped?`);
   if (stamp === undefined && !worker.includes("0.0.0-checkout")) throw new Error("wrangler emitted a Worker without the checkout stamp in it");
   const written = shippedConfig(parseJsonc(readFileSync(join(cellDir, "wrangler.jsonc"), "utf8")), stamp);
   const header =
@@ -284,9 +305,9 @@ function emitWorker(stamp) {
     "// beside this file and `no_bundle` serves it as is. The `pen` environment is the deployed home's (station):\n" +
     (stamp === undefined
       ? "// a checkout build, so its container is still the Dockerfile; a release names the registry image at its commit.\n"
-      : `// its container is the image the release pushed, ${imageReference(stamp.commit)}, and its name is deploy's to set.\n`);
+      : `// its container is the image the release pushed, ${image}, by ${imageBy(image)}, and its name is deploy's to set.\n`);
   writeFileSync(join(homeDir, "wrangler.jsonc"), header + JSON.stringify(written, null, 2) + "\n");
-  return { wrangler: wranglerVersion(), bytes: worker.length };
+  return { wrangler: wranglerVersion(), bytes: worker.length, image };
 }
 
 /**
@@ -309,15 +330,17 @@ function breakOnPurpose() {
 
 /**
  * Builds `dist/` and `home/` from scratch; returns the wrangler version the
- * Worker was built with and the files written. `stamp` is the release's
- * `{ commit, builtAt }`, defined into the Worker and named in the config;
- * absent, the build is a checkout's.
+ * Worker was built with, the image reference the config names (undefined
+ * for a checkout build), and the files written. `stamp` is the release's
+ * `{ commit, builtAt, imageDigest? }`, defined into the Worker and named
+ * in the config; absent, the build is a checkout's.
  */
 export async function buildRelease(stamp) {
   if (stamp !== undefined) {
     for (const key of ["commit", "builtAt"]) {
       if (typeof stamp[key] !== "string" || stamp[key] === "") throw new Error(`buildRelease: the stamp needs a ${key}`);
     }
+    if (stamp.imageDigest !== undefined && !IMAGE_DIGEST.test(stamp.imageDigest)) throw new Error(`buildRelease: imageDigest must be sha256:<64 hex>, not ${JSON.stringify(stamp.imageDigest)}`);
   }
   checkPinsAgainstFork();
   for (const required of [join(codingAgent, "dist", "index.js"), join(piRoot, "packages", "chord", "dist", "index.js"), join(root, "packages", "cli", "src", "cli.ts")]) {
@@ -349,7 +372,7 @@ export async function buildRelease(stamp) {
   const worker = emitWorker(stamp);
   files.push({ file: "home/worker.mjs", bytes: worker.bytes });
   files.push({ file: "home/wrangler.jsonc", bytes: readFileSync(join(homeDir, "wrangler.jsonc")).length });
-  return { wrangler: worker.wrangler, files };
+  return { wrangler: worker.wrangler, image: worker.image, files };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

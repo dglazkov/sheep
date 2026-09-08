@@ -52,7 +52,11 @@ beside every cell: with `CLOUDFLARE_API_TOKEN` and `ANTHROPIC_API_KEY` in
 the shell you run in it deploys, prints the address, and writes the
 kennel's config; without them it prints what it needs and costs, and the
 one sentence to ask the shepherd with, and makes nothing. `sheep home
-delete` ends that station after its name is typed at a terminal.
+delete` ends that station after its name is typed at a terminal. `sheep
+home join <address>` is a second machine's way in: the station's token is
+one line of stdin, piped by the shepherd from the first machine's config,
+never an argument and never something you ask them to paste; it writes this
+kennel's config and prints both stamps and the image.
 
 ## The kennel
 

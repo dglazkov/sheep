@@ -3,10 +3,12 @@
  * defines into the released Worker. The test pool defines nothing, so what
  * this sees is the checkout's value; the shape is what the CLI's `sheep home`
  * reads, and the package ring sees the release's values in the same field.
+ * Station phase 2: `image` beside it, `null` here where nothing was
+ * defined; the account ring reads the release's reference from it.
  */
 import { SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { CHECKOUT_BUILD, homeBuild } from "../src/index.ts";
+import { CHECKOUT_BUILD, homeBuild, homeImage } from "../src/index.ts";
 
 const headers = { authorization: "Bearer test-token" };
 
@@ -19,6 +21,16 @@ describe("GET /home's build stamp", () => {
     expect(home.build?.builtAt === null || typeof home.build?.builtAt === "string").toBe(true);
     expect(home.build).toEqual({ commit: "0.0.0-checkout", builtAt: null });
     expect(homeBuild()).toEqual(CHECKOUT_BUILD);
+  });
+
+  it("carries image: string | null beside it, null where no image was defined (station phase 2)", async () => {
+    const response = await SELF.fetch("https://sheep.test/home", { headers });
+    expect(response.status).toBe(200);
+    const home = (await response.json()) as { image?: unknown };
+    expect("image" in home).toBe(true);
+    expect(home.image === null || typeof home.image === "string").toBe(true);
+    expect(home.image).toBeNull();
+    expect(homeImage()).toBeNull();
   });
 
   it("is behind the door like the rest of /home", async () => {

@@ -57,6 +57,12 @@ export interface HomeBuild {
   builtAt: string | null;
 }
 
+/** `GET /home`'s stamp and image together (station phase 2): `image` is the pen image the home's config named, by digest or by tag, and null from a checkout or a home from before it. */
+export interface HomeStamp {
+  build: HomeBuild;
+  image: string | null;
+}
+
 /** The home's HTTP face: the door, the directory, and one cell's routes. */
 export class Home {
   readonly url: URL;
@@ -103,9 +109,20 @@ export class Home {
    * answers without one, and that is reported as unstamped too.
    */
   async build(): Promise<HomeBuild> {
-    const { build } = (await (await this.request("/home")).json()) as { build?: Partial<HomeBuild> };
-    if (build && typeof build.commit === "string" && build.commit !== "") return { commit: build.commit, builtAt: typeof build.builtAt === "string" ? build.builtAt : null };
-    return { commit: "0.0.0-checkout", builtAt: null };
+    return (await this.stamp()).build;
+  }
+
+  /**
+   * The stamp and the image from one `GET /home` (station phase 2): the
+   * image is what `scripts/bundle.mjs` defined into the Worker beside the
+   * stamp, the reference the shipped config names; a checkout, or a home
+   * from before the field, answers none, and that is null.
+   */
+  async stamp(): Promise<HomeStamp> {
+    const answer = (await (await this.request("/home")).json()) as { build?: Partial<HomeBuild>; image?: unknown };
+    const { build } = answer;
+    const known = build && typeof build.commit === "string" && build.commit !== "" ? { commit: build.commit, builtAt: typeof build.builtAt === "string" ? build.builtAt : null } : { commit: "0.0.0-checkout", builtAt: null };
+    return { build: known, image: typeof answer.image === "string" && answer.image !== "" ? answer.image : null };
   }
 
   /** Every session, newest first; with a pasture, its herd: the sessions born into it. */

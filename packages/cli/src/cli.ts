@@ -3,7 +3,8 @@ import { deleteStation, deploy, Refusal } from "./deploy.js";
 import { writeSessionFile } from "./export.js";
 import { runAbort, runLog, runPrompt, runStatus, runWait } from "./herd.js";
 import { Home } from "./home.js";
-import { type BuildSide, cliBuild, describeBuild, isRefused, localStatus, readStamp, skewLine, startLocalHome, stopLocalHome, whoAnswers } from "./local.js";
+import { join } from "./join.js";
+import { type BuildSide, cliBuild, describeBuild, describeImage, isRefused, localStatus, readStamp, skewLine, startLocalHome, stopLocalHome, whoAnswers } from "./local.js";
 import { PASTURE_NAME, runPasture } from "./pasture.js";
 import { runPiClient } from "./pi.js";
 import { formatSetup, INSTALL_SPEC, kennelTracked, readGuide, setup, trackedWarning } from "./setup.js";
@@ -57,9 +58,13 @@ usage:
                                             package and keeps its secrets
   sheep home delete [--name <worker>]       end the station: the Worker, its objects, and its container application,
                                             after the name is typed at a terminal (one line of stdin without one)
+  sheep home join <address> [--json]        a second machine's way in: the station's token is one line of stdin, piped,
+                                            never an argument; the home is asked to answer as a sheep home and to take the
+                                            token, then this kennel's config names it; prints the address, both stamps,
+                                            and the image
   sheep home                                which kennel, which home the config names, its station's name once minted,
                                             whether it answers, and its build stamp beside this command's, with one line
-                                            on stderr when they differ
+                                            on stderr when they differ; the pen image its config named, when it says
 
   sheep pasture new <name> [--repo <url> | --repo .] [--branch <branch>]
                                             make a pasture: a shared tree, a repository or none, and the sheep born into it;
@@ -278,7 +283,9 @@ async function dispatch(command: string, parsed: Parsed, config: SheepConfig, ou
  * The report names states and paths, never a value from the secrets file.
  * Station phase 0: a home that answers is asked its build stamp, printed
  * beside this command's (`--json`: `build: { home, cli }`), and skew is one
- * line on stderr, never a refusal.
+ * line on stderr, never a refusal. Station phase 2: `sheep home join
+ * <address>` (`join.ts`), the token on stdin, exit 2 for every refusal;
+ * and the image the home reports beside the stamps (`--json`: `image`).
  * Every form says one line on stderr first when git tracks the kennel: a
  * token is in the repository, and the command goes on regardless.
  */
@@ -336,7 +343,7 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
         `home: ${report.home} (${report.state}; ${report.answers ? "answers" : "not answering yet; a fresh Worker takes a moment"})\n` +
           `name: ${report.name}\n` +
           `account: ${report.account.name} (${report.account.id}), ${report.plan.id} ${report.plan.state}, ${report.plan.price}; subdomain ${report.subdomain.name}${report.subdomain.registered ? " (registered now)" : ""}\n` +
-          `image: ${report.image}${report.faux ? "; the faux provider answers every prompt, no model is spent" : ""}\n` +
+          `image: ${report.image.startsWith("docker.io/") ? describeImage(report.image) : report.image}${report.faux ? "; the faux provider answers every prompt, no model is spent" : ""}\n` +
           `kennel: ${kennel}\n` +
           `config: ${report.config.path} names the station\n` +
           builds +
@@ -350,7 +357,26 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
       if (parsed.json) output.out(`${JSON.stringify(report)}\n`);
       return 0;
     }
-    if (sub !== undefined) return fail(`unknown home command: ${sub}; sheep home [local [--faux] | stop | deploy [--name <worker>] [--subdomain <name>] | delete [--name <worker>]]`);
+    if (sub === "join") {
+      const address = parsed.rest[2];
+      if (address === undefined) return fail("join needs the station's address: sheep home join https://<worker>.<subdomain>.workers.dev, with the token on stdin");
+      const report = await join({ address, extra: parsed.rest.slice(3), say: output.err });
+      if (report.skew !== null) output.err(report.skew);
+      if (parsed.json) {
+        output.out(`${JSON.stringify(report)}\n`);
+        return 0;
+      }
+      output.out(
+        `home: ${report.home} (joined; answers)\n` +
+          `kennel: ${report.kennel}\n` +
+          `config: ${report.config.path} names the station; no name, since it was deployed from another kennel\n` +
+          `home build: ${describeBuild(report.build.home)}\ncli build: ${describeBuild(report.build.cli)}\n` +
+          (report.image === null ? "image: (the home reports none)\n" : `image: ${describeImage(report.image)}\n`) +
+          "next: sheep ls\n",
+      );
+      return 0;
+    }
+    if (sub !== undefined) return fail(`unknown home command: ${sub}; sheep home [local [--faux] | stop | deploy [--name <worker>] [--subdomain <name>] | delete [--name <worker>] | join <address>]`);
 
     // Which home the config names, and whether it answers. The station's name (kennel phase 1) is the config's record of the
     // first deploy from this kennel: null in JSON until there is one, and a `name:` line in prose only when there is.
@@ -359,27 +385,29 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
     // The two stamps (station phase 0): the home's from `GET /home` with the token, once it is known to answer as a sheep
     // home, and this command's from the manifest beside the bundle. A home that does not answer leaves its side null, and
     // the prose is what it was; both there, the prose prints both and stderr gets the one-line skew warning, if any.
-    const buildReport = async (home: string | null, answers: boolean, local: boolean): Promise<{ build: { home: BuildSide | null; cli: BuildSide }; lines: string }> => {
+    // Station phase 2: the same answer carries the image the home's config named, an `image:` line when it does.
+    const buildReport = async (home: string | null, answers: boolean, local: boolean): Promise<{ build: { home: BuildSide | null; cli: BuildSide }; image: string | null; lines: string }> => {
       const cli = cliBuild();
-      let homeBuild: BuildSide | null = null;
+      let stamp: { build: BuildSide; image: string | null } | null = null;
       if (home !== null && answers) {
         try {
-          homeBuild = await new Home({ home, token: config.token }).build();
+          stamp = await new Home({ home, token: config.token }).stamp();
         } catch {
-          homeBuild = null;
+          stamp = null;
         }
       }
-      if (homeBuild === null) return { build: { home: null, cli }, lines: "" };
-      const skew = skewLine(homeBuild, cli, local);
+      if (stamp === null) return { build: { home: null, cli }, image: null, lines: "" };
+      const skew = skewLine(stamp.build, cli, local);
       if (skew !== undefined) output.err(skew);
-      return { build: { home: homeBuild, cli }, lines: `home build: ${describeBuild(homeBuild)}\ncli build: ${describeBuild(cli)}\n` };
+      const imageLine = stamp.image === null ? "" : `image: ${describeImage(stamp.image)}\n`;
+      return { build: { home: stamp.build, cli }, image: stamp.image, lines: `home build: ${describeBuild(stamp.build)}\ncli build: ${describeBuild(cli)}\n${imageLine}` };
     };
     if (config.local === true) {
       const status = await localStatus();
       const home = status.record?.url ?? config.home ?? null;
-      const { build, lines } = await buildReport(home, status.running, true);
+      const { build, image, lines } = await buildReport(home, status.running, true);
       if (parsed.json) {
-        output.out(`${JSON.stringify({ home, kennel, name, local: true, running: status.running, pid: status.running ? status.record!.pid : null, port: status.record?.port ?? null, stamp: status.record?.stamp ?? null, startedAt: status.running ? status.record!.startedAt : null, build })}\n`);
+        output.out(`${JSON.stringify({ home, kennel, name, local: true, running: status.running, pid: status.running ? status.record!.pid : null, port: status.record?.port ?? null, stamp: status.record?.stamp ?? null, startedAt: status.running ? status.record!.startedAt : null, build, image })}\n`);
         return 0;
       }
       output.out(home === null ? "home: (none); run `sheep home local`\n" : `home: ${home} (local, ${status.running ? `running, pid ${status.record!.pid}` : "stopped"})\n`);
@@ -388,9 +416,9 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
     }
     const home = config.home ?? null;
     const answers = home === null ? "nobody" : await whoAnswers(home);
-    const { build, lines } = await buildReport(home, answers === "sheep", false);
+    const { build, image, lines } = await buildReport(home, answers === "sheep", false);
     if (parsed.json) {
-      output.out(`${JSON.stringify({ home, kennel, name, local: false, answers: answers === "sheep", build })}\n`);
+      output.out(`${JSON.stringify({ home, kennel, name, local: false, answers: answers === "sheep", build, image })}\n`);
       return 0;
     }
     output.out(home === null ? "home: (none); run `sheep home local`, or pass --home <url>\n" : `home: ${home} (${answers === "sheep" ? "answers" : answers === "other" ? "answers, but not as a sheep home" : "does not answer"})\n`);

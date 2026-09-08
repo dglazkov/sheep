@@ -51,6 +51,13 @@ interface Env extends Cloudflare.Env {}
  * `GET /home` reports `0.0.0-checkout`.
  */
 declare const SHEEP_BUILD: string | undefined;
+/**
+ * Station phase 2: the pen image the release's config names, defined in by
+ * `scripts/bundle.mjs` beside the stamp: by digest when the workflow's push
+ * came first, by tag from a release built by hand. Undefined in a checkout,
+ * where `GET /home` reports `image: null`.
+ */
+declare const SHEEP_IMAGE: string | undefined;
 declare module "cloudflare:test" {
   interface ProvidedEnv extends Env {}
 }

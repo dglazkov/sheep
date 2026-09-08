@@ -37,11 +37,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { configPath, readConfigFile, sheepDir, writeConfigFile } from "./config.js";
 
-/** The release's build stamp, `sheep` in the manifest beside the code; absent in a checkout. */
+/** The release's build stamp, `sheep` in the manifest beside the code; absent in a checkout. `image` is the pen image the release named, by digest or by tag (station phase 2); a manifest from before it has none. */
 export interface BuildStamp {
   commit: string;
   builtAt: string;
   wrangler: string;
+  image?: string;
 }
 
 /** `home.json`: what the last start recorded. `pid` is null once `sheep home stop` has stopped it. */
@@ -62,7 +63,7 @@ export function readStamp(): BuildStamp | undefined {
     const manifest = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8")) as { sheep?: Partial<BuildStamp> };
     const stamp = manifest.sheep;
     if (stamp && typeof stamp.commit === "string" && typeof stamp.builtAt === "string" && typeof stamp.wrangler === "string") {
-      return { commit: stamp.commit, builtAt: stamp.builtAt, wrangler: stamp.wrangler };
+      return { commit: stamp.commit, builtAt: stamp.builtAt, wrangler: stamp.wrangler, ...(typeof stamp.image === "string" && stamp.image !== "" ? { image: stamp.image } : {}) };
     }
   } catch {
     // no manifest beside the code
@@ -85,6 +86,11 @@ export function cliBuild(): BuildSide {
 /** A build side as `sheep home` prints it: `<commit> (<builtAt>)`, or `0.0.0-checkout (unstamped)`. */
 export function describeBuild(build: BuildSide): string {
   return `${build.commit} (${build.builtAt ?? "unstamped"})`;
+}
+
+/** An image reference as `sheep home` prints it (station phase 2): the reference, and whether it names the image by digest or by tag. */
+export function describeImage(image: string): string {
+  return `${image} (by ${image.includes("@sha256:") ? "digest" : "tag"})`;
 }
 
 /**

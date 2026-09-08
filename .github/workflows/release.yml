@@ -13,7 +13,9 @@
 # Station phase 0: the release job also builds packages/pen's image on the runner and pushes it to Docker Hub as
 # docker.io/dglazkov2/sheep-pen:<commit>, the seven characters the release manifest's stamp and the shipped
 # home/wrangler.jsonc name, so a station deployed from the package pulls the container its bundle was tested with.
-# Nothing deploys here; `sheep home deploy` from the package is station's later phases.
+# Station phase 2: the push step captures the digest the registry answered and exports it to the release step as
+# SHEEP_IMAGE_DIGEST, so the shipped config and the Worker name the image by digest, docker.io/dglazkov2/sheep-pen@sha256:…;
+# a run that did not push names the tag. Nothing deploys here; `sheep home deploy` from the package is station's later phases.
 name: release
 
 on:
@@ -77,6 +79,9 @@ jobs:
       # argument; the login user is the namespace, written here. Without the secret (a fork, or before the shepherd
       # has made one) the image is built and not pushed, the step says so, and the job goes on: the release still
       # builds and the package ring still walks, and the package it makes installs but cannot deploy a station.
+      # The digest (station phase 2): `docker push` prints `<tag>: digest: sha256:… size: …`, and the step keeps that
+      # digest, or `docker inspect`'s RepoDigests when the line is missing, and exports it through $GITHUB_ENV as
+      # SHEEP_IMAGE_DIGEST (not a secret) for the release step, which names the image by it.
       - name: Build the pen image; push it to Docker Hub when the token is in the secrets
         env:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -89,9 +94,18 @@ jobs:
             exit 0
           fi
           printf '%s' "$DOCKERHUB_TOKEN" | docker login docker.io --username dglazkov2 --password-stdin
-          docker push "$image"
+          docker push "$image" | tee "$RUNNER_TEMP/push.log"
           docker logout docker.io
-          echo "pushed $image"
+          digest="$(sed -n 's/.*digest: \(sha256:[0-9a-f]\{64\}\).*/\1/p' "$RUNNER_TEMP/push.log" | tail -n 1)"
+          if [ -z "$digest" ]; then
+            digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$image" | sed -n 's/.*@\(sha256:[0-9a-f]\{64\}\)$/\1/p')"
+          fi
+          if [ -z "$digest" ]; then
+            echo "pushed $image but read no digest from the push or from docker inspect; the release names the tag"
+            exit 0
+          fi
+          echo "SHEEP_IMAGE_DIGEST=$digest" >> "$GITHUB_ENV"
+          echo "pushed $image, digest $digest; the release names the image by it"
 
       - name: Fetch the release branch the new commit builds on
         run: |

@@ -12,6 +12,10 @@
  * Station phase 0: `GET /home` carries `build`, the stamp `scripts/bundle.mjs`
  * defined into the released Worker as `SHEEP_BUILD`; a checkout reports
  * `0.0.0-checkout`, and the CLI's `sheep home` compares it to its own.
+ * Station phase 2: `GET /home` carries `image` too, the pen image the
+ * release's config names, defined in as `SHEEP_IMAGE` beside the stamp,
+ * since nothing on the platform tells a container its own digest; a
+ * checkout reports `null`.
  */
 import { unknownPasture } from "./directory.ts";
 import { type FauxProgram, isFauxProgram } from "./models.ts";
@@ -44,6 +48,17 @@ export interface HomeBuild {
 }
 
 export const CHECKOUT_BUILD: HomeBuild = { commit: "0.0.0-checkout", builtAt: null };
+
+/**
+ * The pen image this Worker's config names (station phase 2): `SHEEP_IMAGE`
+ * under a release, `docker.io/dglazkov2/sheep-pen@sha256:…` when the
+ * release knew the digest and `…:<commit>` when it named the tag; `null`
+ * from a checkout, whose container is a Dockerfile.
+ */
+export function homeImage(): string | null {
+  if (typeof SHEEP_IMAGE === "undefined") return null;
+  return typeof SHEEP_IMAGE === "string" && SHEEP_IMAGE !== "" ? SHEEP_IMAGE : null;
+}
 
 /** The stamp the Worker was built with: `SHEEP_BUILD` under a release, the checkout's value under `wrangler dev` and in the test pool. */
 export function homeBuild(): HomeBuild {
@@ -147,7 +162,7 @@ export default {
     }
     if (url.pathname === "/home" && request.method === "GET") {
       const budget = await directory.budget();
-      return Response.json({ serverId: await directory.serverId(), container: env.PEN_CONTAINER !== undefined, build: homeBuild(), ...budget });
+      return Response.json({ serverId: await directory.serverId(), container: env.PEN_CONTAINER !== undefined, build: homeBuild(), image: homeImage(), ...budget });
     }
     if (url.pathname === "/faux" && request.method === "POST" && env.SHEEP_PROVIDER === "faux") {
       // Test-only: the program every cell without one of its own answers from.

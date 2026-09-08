@@ -140,10 +140,42 @@
  * and the station's `SHEEP_TOKEN` across the whole walk. A failure after
  * the deploy deletes first and says so. Without `ANTHROPIC_API_KEY`, a
  * placeholder is set as the secret, since the faux provider uses none.
+ *
+ * Station phase 2 adds two steps between the redeploy and the delete, and
+ * the image by digest. The image: the ref's config names the pen image,
+ * by digest when the workflow's push came before the release; the ring
+ * asks Docker Hub for the digest of the tag at the release's commit and
+ * asserts the two are the same, then after the deploy asserts `GET
+ * /home`'s `image` equals the config's line and the deployed container
+ * application's `configuration.image`. That is "the ring says which". The
+ * second machine (journey 2, step a7): a container from the machine
+ * ring's image (`node:24-slim`, the ref as `/src.git`), run with `--rm
+ * --init -i` and nothing mounted, the station's token piped on its stdin,
+ * the address and the sheep's id as arguments; inside, this script's
+ * other half (`--second`, never typed by hand) installs the release from
+ * `/src.git` into a fresh world under the container's HOME, runs `sheep
+ * home join <address>` with the token from its own stdin, `sheep home
+ * --json`, `sheep ls --json` listing the sheep the first machine minted,
+ * a promptless `sheep attach <id>`, and then, once the outer half has
+ * started a turn on that sheep from `blog` with `sheep attach <id> -- …`
+ * and killed that process with SIGKILL two seconds in (lamb's journey 2:
+ * the first terminal closed mid-turn), `sheep wait <id>` and `sheep log
+ * <id>` showing the turn's end. The token is asserted absent from `ps`
+ * inside the container as it is outside. Journey 3 (step a8): pasture's
+ * journey 1 against `dglazkov/lamb-playground` with the shepherd's
+ * fine-grained token, read from `LAMB_PLAYGROUND_TOKEN` in this process's
+ * environment and piped into `sheep pasture secret set`: two sheep born
+ * into a pasture named for the commit, each cloning at birth in its
+ * container, each pushing a branch with the pasture's credential and
+ * naming it in the tree; both branches seen on GitHub anonymously, the
+ * token absent from every transcript, export, and `ps` sample; the two
+ * branches deleted afterwards through a `GIT_ASKPASS` helper reading the
+ * environment, so the scratch repository is left as found. Without the
+ * variable the step is one `skip` line and the ring goes on.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { createInterface } from "node:readline";
@@ -197,6 +229,11 @@ function parseArgs(argv) {
     inside: false,
     redirect: false,
     expect: undefined,
+    // The container's half of the account ring's second machine (station phase 2), and what the outer half tells it: never typed by hand.
+    second: false,
+    address: undefined,
+    sheep: undefined,
+    expectImage: undefined,
   };
   const value = (flag) => {
     const next = args.shift();
@@ -223,6 +260,10 @@ function parseArgs(argv) {
     else if (flag === "--inside") parsed.inside = true;
     else if (flag === "--redirect") parsed.redirect = true;
     else if (flag === "--expect") parsed.expect = value(flag);
+    else if (flag === "--second") parsed.second = true;
+    else if (flag === "--address") parsed.address = value(flag);
+    else if (flag === "--sheep") parsed.sheep = value(flag);
+    else if (flag === "--expect-image") parsed.expectImage = value(flag);
     else if (flag.startsWith("--")) usage(`unknown flag ${flag}`);
     else if (positional !== undefined) usage(`one ref at most: ${positional} and ${flag}`);
     else positional = flag;
@@ -242,6 +283,10 @@ function parseArgs(argv) {
   for (const [flag, on] of [["--inside", parsed.inside], ["--redirect", parsed.redirect], ["--expect", parsed.expect !== undefined]]) {
     if (on && parsed.ring !== "dog") usage(`${flag} is the dog ring's`);
   }
+  for (const [flag, on] of [["--second", parsed.second], ["--address", parsed.address !== undefined], ["--sheep", parsed.sheep !== undefined], ["--expect-image", parsed.expectImage !== undefined]]) {
+    if (on && parsed.ring !== "account") usage(`${flag} is the account ring's second machine's`);
+  }
+  if (parsed.second && (parsed.address === undefined || parsed.sheep === undefined || parsed.expectImage === undefined)) usage("--second needs --address, --sheep, and --expect-image; the outer half passes them, and nobody types them");
   for (const [flag, on] of [["--yes", parsed.yes], ["--dry-run", parsed.dryRun]]) {
     if (on && parsed.ring !== "dog" && parsed.ring !== "account") usage(`${flag} is the dog and account rings'`);
   }
@@ -325,7 +370,7 @@ class Ring {
    * spec alone (`github:dglazkov/sheep#release`: no repository, and the
    * build stamp is read from the install; `--commit` says what it must be).
    */
-  constructor({ ref, repo, spec, commit, keep }) {
+  constructor({ ref, repo, spec, commit, keep, dir }) {
     if (spec === undefined) {
       this.git = gitIn(repo);
       // The ref first: a ref that does not resolve leaves no directory behind.
@@ -344,7 +389,8 @@ class Ring {
     }
     this.commit = commit;
     this.keep = keep;
-    this.dir = mkdtempSync(join(tmpdir(), "sheep-ring-"));
+    // The world: a temp directory, or the one the caller made (the second machine's, under the container's HOME).
+    this.dir = dir ?? mkdtempSync(join(tmpdir(), "sheep-ring-"));
     this.prefix = join(this.dir, "prefix");
     this.cache = join(this.dir, "npm-cache");
     this.home = join(this.dir, "home");
@@ -398,6 +444,8 @@ class Ring {
       if (key === "SHEEP_HOME" || key === "SHEEP_TOKEN" || key === "ANTHROPIC_API_KEY" || key === "SHEEP_INSTALL_SPEC") continue;
       // No account, and none of the test seams: the account ring hands the token to one command's environment; a fake would be a facade.
       if (key.startsWith("CLOUDFLARE_") || key.startsWith("SHEEP_TEST_")) continue;
+      // The scratch repository's token reaches `sheep pasture secret set`'s stdin and the branch delete's helper, and no command's environment.
+      if (key === "LAMB_PLAYGROUND_TOKEN") continue;
       inherited[key] = value;
     }
     const stripped = this.stripped();
@@ -591,11 +639,11 @@ class Ring {
     console.log(line);
   }
 
-  skip(step, why) {
+  skip(step, why, journey = "journey 1") {
     const line = `skip  ${step.padEnd(8)} ${why}`;
     this.lines.push(line);
     console.log(line);
-    this.unchecked.push(`journey 1 ${step}: ${why}`);
+    this.unchecked.push(`${journey} ${step}: ${why}`);
   }
 
   fail(step, command, result) {
@@ -1028,22 +1076,30 @@ class Ring {
   }
 }
 
-/** Streams a command's output line by line under an indent; resolves with the exit code. */
-function runIndented(command, args, options, indent = "    ") {
+/** Streams a command's output line by line under an indent; resolves with the exit code. `onLine` sees each line as it arrives; `input` goes to stdin, which is otherwise ignored. */
+function runIndented(command, args, options, indent = "    ", onLine = undefined) {
+  const { input, ...rest } = options ?? {};
   return new Promise((resolveRun, reject) => {
-    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], ...options });
+    const child = spawn(command, args, { stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"], ...rest });
+    if (input !== undefined) child.stdin.end(input);
     let pending = "";
     const emit = (chunk) => {
       pending += chunk.toString("utf8");
       const lines = pending.split("\n");
       pending = lines.pop();
-      for (const line of lines) console.log(indent + line);
+      for (const line of lines) {
+        console.log(indent + line);
+        onLine?.(line);
+      }
     };
     child.stdout.on("data", emit);
     child.stderr.on("data", emit);
     child.once("error", reject);
     child.once("close", (code, signal) => {
-      if (pending) console.log(indent + pending);
+      if (pending) {
+        console.log(indent + pending);
+        onLine?.(pending);
+      }
       resolveRun(code ?? (signal ? 1 : 0));
     });
   });
@@ -1575,6 +1631,11 @@ function accountApi(token) {
     async deleteApplication(accountId, applicationId) {
       await call("DELETE", `/accounts/${accountId}/containers/applications/${applicationId}`);
     },
+    /** The container application of that name, with the image its configuration names: what the deployed station's container runs. */
+    async application(accountId, name) {
+      const found = (await call("GET", `/accounts/${accountId}/containers/applications`)).result.find((application) => application.name === name);
+      return found === undefined ? undefined : { id: found.id, name: found.name, image: found.configuration?.image };
+    },
   };
 }
 
@@ -1605,15 +1666,24 @@ function parseJsonc(text) {
 /** The image a config's `pen` environment names, whatever the namespace: the ring hardcodes none. */
 const imageOf = (config) => config?.env?.pen?.containers?.[0]?.image;
 
+/** A docker.io reference taken apart: the repository, and the tag or the digest it names the image by. */
+function parseImage(image) {
+  const match = /^docker\.io\/([^:@]+)(?::([^:/@]+)|@(sha256:[0-9a-f]{64}))$/.exec(typeof image === "string" ? image : "");
+  if (!match) return undefined;
+  return { repository: match[1], tag: match[2], digest: match[3] };
+}
+
 /**
- * Whether Docker Hub has the tag, asked the way a pull begins: an
- * anonymous pull token for the repository, then a `HEAD` of the manifest.
- * Returns the digest the registry names for it, or the registry's answer.
+ * Whether Docker Hub has the image, asked the way a pull begins: an
+ * anonymous pull token for the repository, then a `HEAD` of the manifest,
+ * by tag or by digest. Returns the digest the registry names for it, or
+ * the registry's answer.
  */
 async function registryDigest(image) {
-  const match = /^docker\.io\/([^:@]+):([^:/@]+)$/.exec(image);
-  if (!match) return { error: `${image} is not a docker.io reference with a tag` };
-  const [, repository, tag] = match;
+  const parsed = parseImage(image);
+  if (parsed === undefined) return { error: `${image} is not a docker.io reference with a tag or a digest` };
+  const { repository } = parsed;
+  const tag = parsed.tag ?? parsed.digest;
   try {
     const auth = await fetch(`https://auth.docker.io/token?service=registry.docker.io&scope=repository:${repository}:pull`, { signal: AbortSignal.timeout(20_000) });
     const { token } = await auth.json();
@@ -1657,8 +1727,11 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
     usage(`${ref}: ${error.message}`);
   }
   const api = accountApi(token);
+  // The second machine is a container (station phase 2): Docker is needed for the walk, and its absence is known before anything is made.
+  const docker = spawnSync("docker", ["version", "--format", "{{.Server.Version}} {{.Server.Os}}/{{.Server.Arch}}"], { encoding: "utf8" });
+  const engine = docker.error || docker.status !== 0 ? undefined : docker.stdout.trim();
   let failure;
-  const station = { deployed: false, name: undefined, home: undefined, account: undefined, subdomain: undefined, image: undefined, digest: undefined };
+  const station = { deployed: false, name: undefined, home: undefined, account: undefined, subdomain: undefined, image: undefined, digest: undefined, tagDigest: undefined, engine };
   try {
     // Preflight: the account, the plan, the subdomain, the listing, and the image the ref's config names, on the registry.
     if (spec === undefined) console.log(`account ring: ${ref} = ${ring.sha}${repo === root ? "" : ` in ${repo}`}`);
@@ -1675,11 +1748,10 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
     if (ring.sha !== undefined) {
       station.image = imageOf(parseJsonc(ring.git("show", `${ring.sha}:home/wrangler.jsonc`)));
       if (typeof station.image !== "string") throw new Error(`${ref}'s home/wrangler.jsonc names no image in its pen container; a release does`);
-      const registry = await registryDigest(station.image);
-      if (registry.error !== undefined) throw new Error(`the image ${station.image} is not on the registry: ${registry.error}; the deploy would fail on the pull`);
-      station.digest = registry.digest;
-      console.log(`image: ${station.image} (${station.digest}, on Docker Hub)`);
+      await checkImage(station, ring.stamp);
     } else console.log("image: read from the install's home/wrangler.jsonc after step 1 (a spec has no tree to read before)");
+    console.log(engine === undefined ? "docker: none answers; the second machine (a7) is a container, so the walk needs it" : `docker: ${engine}; the second machine (a7) is a container from node:24-slim`);
+    if (engine === undefined && !dryRun) throw new Error(`the account ring's second machine is a container, and no Docker answers here (docker version: ${docker.error ? docker.error.message : (docker.stderr || docker.stdout || "").trim()}); nothing was deployed`);
     station.name = wantedName ?? (ring.sha !== undefined ? `sheep-hermetic-${ring.sha.slice(0, 7)}` : undefined);
     if (station.name !== undefined && (before.workers.includes(station.name) || before.applications.some((application) => application.name === station.name))) {
       throw new Error(`the account already holds ${station.name}; a ring that left it behind failed, and deploy would refuse the name: delete it first (sheep home delete --name ${station.name}, or wrangler delete and wrangler containers delete)`);
@@ -1718,7 +1790,13 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
       await ring.install();
       if (station.name === undefined) station.name = `sheep-hermetic-${ring.stamp.commit.slice(0, 7)}`;
       station.home = `https://${station.name}.${station.subdomain}.workers.dev`;
-      await accountWalk(ring, api, station, { token, key: keyForDeploy, placeholder: key === undefined || key === "", before });
+      if (station.image === undefined) {
+        // A spec: the install's config is the first tree there is to read the image from.
+        station.image = imageOf(parseJsonc(readFileSync(join(ring.pkg, "home", "wrangler.jsonc"), "utf8")));
+        if (typeof station.image !== "string") throw new Error("the install's home/wrangler.jsonc names no image in its pen container; a release does");
+        await checkImage(station, ring.stamp);
+      }
+      await accountWalk(ring, api, station, { token, key: keyForDeploy, placeholder: key === undefined || key === "", before, spec, commit });
     }
   } catch (error) {
     failure = error;
@@ -1743,8 +1821,9 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
   }
   ring.unchecked.push(
     "journey 1 step 2: a real key from ANTHROPIC_API_KEY and a real model at the station; the ring set the faux provider as a var, and the key it put is unused",
-    "journey 5 step 1: sheep home join from a second machine, and journey 3 against the scratch repository (station phase 2)",
-    "journey 5 step 2: the image digest the container ran, read from the container itself (station phase 2); the ring printed the tag's digest from the registry",
+    "journey 2 step 2: pi's interactive terminal on the second machine, which needs a TTY; the container attached with none and pi's client said so",
+    "journey 3 step 2: that a sheep ran the repository's tests; the faux program edited, committed, and pushed, and ran no tests",
+    "journey 5 step 2: the image digest read from the container itself: the platform gives a container ids, not a digest, so the ring read the reference the Worker carries beside its stamp and the application's configured image, and asked the registry what the tag is",
     "station phase 3: the delete's listing of what goes and how many sessions are in it; the ring typed the name and read the three lines",
   );
   ring.report(failure, "account");
@@ -1769,8 +1848,38 @@ async function deleteStation(ring, api, station, token) {
   return { deleted, after, left };
 }
 
-/** The station's walk: the six steps, one line each, from blog; `station.deployed` is set the moment the deploy is attempted. */
-async function accountWalk(ring, api, station, { token, key, placeholder, before }) {
+/**
+ * What the ref's config names and what the registry holds (station phase
+ * 2): a digest-named image is asked for by digest, and the tag at the
+ * stamp's commit is asked for too and must be that digest; a tag-named
+ * image (a release built by hand) is asked for by tag, and the digest the
+ * registry answers is printed, not asserted against anything. Sets
+ * `station.digest` (what the config's reference resolves to on the
+ * registry) and `station.tagDigest`.
+ */
+async function checkImage(station, stamp) {
+  const parsed = parseImage(station.image);
+  if (parsed === undefined) throw new Error(`the config's image ${station.image} is not a docker.io reference by tag or by digest`);
+  const registry = await registryDigest(station.image);
+  if (registry.error !== undefined) throw new Error(`the image ${station.image} is not on the registry: ${registry.error}; the deploy would fail on the pull`);
+  station.digest = registry.digest;
+  if (parsed.digest !== undefined) {
+    if (station.digest !== parsed.digest) throw new Error(`the registry answered ${station.digest} for ${station.image}, not the digest the reference names`);
+    const tag = `docker.io/${parsed.repository}:${stamp.commit}`;
+    const byTag = await registryDigest(tag);
+    if (byTag.error !== undefined) throw new Error(`the tag ${tag}, the release's commit, is not on the registry: ${byTag.error}`);
+    station.tagDigest = byTag.digest;
+    if (station.tagDigest !== parsed.digest) throw new Error(`the config names ${station.image}, but the registry's digest for the tag ${tag} is ${station.tagDigest}; the release named a digest that is not its commit's push`);
+    console.log(`image: ${station.image} (by digest; the tag ${tag} on Docker Hub is that digest)`);
+  } else {
+    station.tagDigest = station.digest;
+    console.log(`image: ${station.image} (by tag; a release built by hand names the tag; the registry's digest for it is ${station.digest})`);
+  }
+  if (typeof stamp?.image === "string" && stamp.image !== station.image) throw new Error(`the manifest's sheep.image is ${stamp.image}; the config names ${station.image}`);
+}
+
+/** The station's walk: the steps a1 to a8, one line each, from blog; `station.deployed` is set the moment the deploy is attempted. */
+async function accountWalk(ring, api, station, { token, key, placeholder, before, spec, commit }) {
   const { name, home, account } = station;
   const withToken = { ...ring.env(), CLOUDFLARE_API_TOKEN: token, ANTHROPIC_API_KEY: key };
   const needles = [token, key];
@@ -1820,6 +1929,12 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     if (homed.code !== 0 || homeReport.home !== home || homeReport.name !== name || homeReport.local !== false || homeReport.answers !== true || JSON.stringify(homeReport.build?.home) !== JSON.stringify(build) || JSON.stringify(homeReport.build?.cli) !== JSON.stringify(build) || homed.stderr !== "") {
       ring.fail("a2", "sheep home --json", { ...homed, stderr: `${homed.stderr}\nexpected home ${home}, name ${name}, local false, answers true, build.home = build.cli = ${JSON.stringify(build)}, nothing on stderr` });
     }
+    // The image (station phase 2): what the Worker reports beside its stamp is the config's line, and what the account says the application runs.
+    if (homeReport.image !== station.image) ring.fail("a2", "sheep home --json", { ...homed, stderr: `${homed.stderr}\nGET /home reports the image ${homeReport.image}; the config names ${station.image}` });
+    const application = await api.application(account.id, name);
+    if (application === undefined) ring.fail("a2", `GET /accounts/${account.id}/containers/applications`, { stdout: "", stderr: `no container application named ${name}`, code: 1 });
+    if (application.image !== station.image) ring.fail("a2", `GET /accounts/${account.id}/containers/applications`, { stdout: JSON.stringify(application), stderr: `the application's configuration.image is ${application.image}; the config names ${station.image}`, code: 1 });
+    station.applicationImage = application.image;
     // wrangler came once, into the ring's ~/.sheep/tools, and nothing else is under HOME/.sheep.
     const tools = join(ring.home, ".sheep", "tools");
     const wranglerPkg = join(tools, "node_modules", "wrangler", "package.json");
@@ -1833,6 +1948,7 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     }
     ring.ok("a2", `sheep home deploy --faux --name ${name} --json (in blog)`, `${seconds}s; ${home} answers sheep; containers ${report.containers.healthy} healthy after ${report.containers.seconds}s; account ${report.account.name}, ${report.plan.id} ${report.plan.state}; wrangler ${stamp.wrangler} fetched into ~/.sheep/tools; <blog>/.sheep/config names the station, no local marker; deploy/wrangler.jsonc names ${name} three times; the key secret is ${placeholder ? "a placeholder (no ANTHROPIC_API_KEY here; the faux provider uses none)" : "the environment's ANTHROPIC_API_KEY"}`);
     ring.ok("a2", "sheep home --json (in blog)", `home ${home}, name ${name}, answers; build.home = build.cli = ${build.commit} (${build.builtAt}); nothing on stderr`);
+    ring.ok("a2", `GET /home; GET /accounts/${account.id.slice(0, 6)}…/containers/applications`, `image ${station.image}: the Worker reports it, the application ${application.id} is configured with it${station.tagDigest !== undefined && station.image.includes("@sha256:") ? `, and the registry's digest for the tag at ${stamp.commit} is it` : " (by tag; a release built by hand)"}`);
 
     // Step 3: the faux program through the address, then a sheep whose shell names git, node, and pnpm from the container.
     const program = { steps: [{ tool: { name: "bash", args: { command: "git --version && node --version && pnpm --version" } } }, { text: "git, node, pnpm" }] };
@@ -1850,7 +1966,7 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     const versions = { git: /git version (\S+)/.exec(logged.stdout)?.[1], node: /\n(v\d+\.\d+\.\d+)\n/.exec(logged.stdout)?.[1], pnpm: /\n(\d+\.\d+\.\d+)\n/.exec(logged.stdout)?.[1] };
     station.sheep = id;
     ring.ok("a3", `POST /faux; sheep new -- "${sentence}"; sheep log ${id}`, `${newSeconds}s; "git, node, pnpm"; the shell in the container: git version ${versions.git ?? "?"}, node ${versions.node ?? "?"}, pnpm ${versions.pnpm ?? "?"}`);
-    console.log(`image: ${station.image}${station.digest ? ` (${station.digest} on the registry)` : ""}`);
+    console.log(`image: ${station.image}${station.image.includes("@sha256:") ? " (by digest)" : ` (by tag; ${station.digest} on the registry)`}`);
 
     // Step 4: pi becomes a kennel first (the package ring's k2.2; without it `sheep home local` falls back to ~/.sheep), then
     // the local home in pi, reached from blog with --home for one command; blog's config keeps naming the station.
@@ -1892,6 +2008,12 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     if (!stillThere.some((row) => row.id === id)) ring.fail("a5", "sheep ls --json (after the redeploy)", { stdout: JSON.stringify(stillThere), stderr: `expected ${id} still listed`, code: 1 });
     ring.ok("a5", "sheep home deploy --faux --json (again, no --name)", `${againSeconds}s; redeployed ${name} at ${home}, the same token, stamp ${second.build.home.commit} (${second.build.home.builtAt}); containers ${second.containers.healthy} healthy after ${second.containers.seconds}s; ${id} still listed`);
 
+    // Step 7 (station phase 2): the second machine, a container, joins the station and watches a turn the first machine left running.
+    await secondMachine(ring, station, { sheepId: id, spec, commit });
+
+    // Step 8 (station phase 2): journey 3 against the scratch repository, when its token is here; one skip line otherwise.
+    await journeyThree(ring, station, { needles });
+
     // Step 6: the delete, the name on stdin; then the account listed, the last lines.
     const { deleted, after, left } = await deleteStation(ring, api, station, token);
     const lines = deleted.stdout.trim().split("\n");
@@ -1909,9 +2031,370 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     watch.stop();
     const leak = watch.line();
     if (leak) ring.fail("walk", "ps -Ao pid=,args= (polled)", { stdout: leak.replace(token, "<CLOUDFLARE_API_TOKEN>").replace(key, "<ANTHROPIC_API_KEY>"), stderr: "a secret was seen in a process's arguments during the walk", code: 1 });
-    ring.ok("walk", "ps (polled every 25 ms from a1)", `${watch.samples()} samples; the token, the key, the station's SHEEP_TOKEN, and pi's in no process's arguments`);
+    ring.ok("walk", "ps (polled every 25 ms from a1)", `${watch.samples()} samples; the token, the key, the station's SHEEP_TOKEN, pi's, and the repository's token in no process's arguments`);
   } finally {
     watch.stop();
+  }
+}
+
+/* The second machine (station phase 2, journey 2). */
+
+/** The image the second machine is: the machine ring's, from node:24-slim, so "two machines" is a container with nothing but Node, git, and ps. */
+const SECOND_IMAGE = "node:24-slim";
+
+/** The turn the first machine leaves running: one text step after a delay, so the terminal that started it is gone long before it ends. */
+const SECOND_TURN = { text: "the turn outlived the terminal that started it", delayMs: 20_000 };
+const SECOND_PROMPT = "Finish this after I am gone.";
+/** How long after `sheep attach <id> -- …` starts that process is killed: lamb's journey 2, the first terminal closed mid-turn. */
+const KILL_AFTER_MS = 2_000;
+
+/**
+ * The outer half of step a7, from this machine: the context, the image,
+ * the probe, and one container running `--second` with the token on its
+ * stdin and nothing else of this ring. The container's lines stream
+ * indented; the line that says it attached is the cue to start the turn
+ * from `blog` and kill that process two seconds in. The container's exit
+ * code is the inner half's verdict; the outer half then reads the
+ * transcript from this side too.
+ */
+async function secondMachine(ring, station, { sheepId, spec, commit }) {
+  const { home, token: stationToken } = station;
+  const context = mkdtempSync(join(tmpdir(), "sheep-second-"));
+  const bare = join(context, "src.git");
+  const tag = ringTag(SECOND_IMAGE);
+  const name = `sheep-second-${process.pid}`;
+  try {
+    // The build context: the ref as a bare repository (an empty directory for a spec), this script, and the Dockerfile: the machine ring's shape.
+    if (ring.sha !== undefined) {
+      gitIn(context)("init", "--quiet", "--bare", "src.git");
+      ring.git("push", "--quiet", bare, `${ring.sha}:refs/heads/ring`);
+      gitIn(bare)("symbolic-ref", "HEAD", "refs/heads/ring");
+    } else mkdirSync(bare);
+    copyFileSync(fileURLToPath(import.meta.url), join(context, "hermetic.mjs"));
+    copyFileSync(join(root, "scripts", "hermetic", "Dockerfile"), join(context, "Dockerfile"));
+    console.log(`  second machine: ${SECOND_IMAGE} + git + procps, the ref as /src.git; context ${context}`);
+    let buildSeconds;
+    try {
+      buildSeconds = await buildImage(context, SECOND_IMAGE, tag, []);
+    } catch (error) {
+      ring.fail("a7", `docker build (${SECOND_IMAGE})`, { stdout: "", stderr: error.message, code: 1 });
+    }
+    const probed = await run("docker", ["run", "--rm", "--init", tag, "sh", "-c", probeScript()]);
+    if (probed.code !== 0) ring.fail("a7", "docker run … sh -c <probe>", probed);
+    for (const line of probed.stdout.trim().split("\n")) console.log(`  ${line}`);
+
+    // The container: the token on stdin, the address, the sheep, and the image it must see as arguments; nothing mounted.
+    const inside = ["node", "/ring/hermetic.mjs", "--ring", "account", "--second", "--address", home, "--sheep", sheepId, "--expect-image", station.image, ...(ring.sha !== undefined ? ["--repo", "/src.git", ring.sha] : ["--spec", spec, ...(commit ? ["--commit", commit] : [])])];
+    const runArgs = ["run", "--rm", "--init", "-i", "--name", name, tag, ...inside];
+    console.log(`  docker ${runArgs.join(" ")}  (stdin: the station's token, one line)`);
+    let turn;
+    let attachedAt;
+    let killedAt;
+    let started = false;
+    const startTurn = async () => {
+      // The cue came: the second machine attached and is waiting. The first machine starts a turn and closes its terminal mid-turn.
+      attachedAt = Date.now();
+      const posted = await fetch(`${home}/s/${encodeURIComponent(sheepId)}/faux`, { method: "POST", headers: { authorization: `Bearer ${stationToken}`, "content-type": "application/json" }, body: JSON.stringify({ steps: [SECOND_TURN] }), signal: AbortSignal.timeout(30_000) });
+      if (posted.status !== 200) throw new Error(`POST /s/${sheepId}/faux answered ${posted.status}: ${await posted.text()}`);
+      let child;
+      const timer = new Promise((resolveKill) =>
+        setTimeout(() => {
+          killedAt = Date.now();
+          child?.kill("SIGKILL");
+          resolveKill();
+        }, KILL_AFTER_MS),
+      );
+      const result = await ring.sheep(["attach", sheepId, "--", SECOND_PROMPT], { onSpawn: (spawned) => (child = spawned) });
+      await timer;
+      console.log(`  first machine: sheep attach ${sheepId} -- "${SECOND_PROMPT}" started the turn and was killed with SIGKILL after ${((killedAt - attachedAt) / 1000).toFixed(1)}s (exit ${result.code}; stdout ${JSON.stringify(result.stdout.slice(0, 80))})`);
+      const rows = JSON.parse((await ring.sheep(["ls", "--json"])).stdout);
+      const row = rows.find((candidate) => candidate.id === sheepId);
+      if (row?.state !== "running") throw new Error(`after the kill, ${sheepId} is ${row?.state ?? "not listed"}, not running: the prompt did not reach the cell in ${KILL_AFTER_MS / 1000}s, or the turn ended with the terminal`);
+      console.log(`  first machine: sheep ls --json says ${sheepId} is running with its terminal gone`);
+    };
+    const containerStarted = Date.now();
+    const code = await runIndented("docker", runArgs, { input: `${stationToken}\n` }, "    ", (line) => {
+      if (!started && /^second: attached to /.test(line)) {
+        started = true;
+        turn = startTurn().catch((error) => {
+          console.log(`  first machine: ${error.message}`);
+          spawnSync("docker", ["kill", name], { stdio: "ignore" });
+          const failure = new Error(`a7: the first machine's turn: ${error.message}`);
+          failure.ring = { step: "a7", command: `POST /s/${sheepId}/faux; sheep attach ${sheepId} -- "${SECOND_PROMPT}" (killed at ${KILL_AFTER_MS / 1000}s); sheep ls --json`, result: { stdout: "", stderr: error.message, code: 1 } };
+          throw failure;
+        });
+      }
+    });
+    const containerSeconds = ((Date.now() - containerStarted) / 1000).toFixed(0);
+    if (turn !== undefined) await turn;
+    if (!started) ring.fail("a7", `docker ${runArgs.join(" ")}`, { stdout: "", stderr: `the container exited ${code} after ${containerSeconds}s without attaching; its output is above`, code });
+    if (code !== 0) ring.fail("a7", `docker ${runArgs.join(" ")}`, { stdout: "", stderr: `the container exited ${code} after ${containerSeconds}s; its output is above`, code });
+
+    // From this side too: the turn ended, and the transcript shows the prompt and the text.
+    const logged = await ring.sheep(["log", sheepId]);
+    if (logged.code !== 0 || !logged.stdout.includes(SECOND_PROMPT) || !logged.stdout.includes(SECOND_TURN.text)) ring.fail("a7", `sheep log ${sheepId} (in blog)`, { ...logged, stderr: `${logged.stderr}\nexpected the prompt and "${SECOND_TURN.text}"` });
+    const rows = JSON.parse((await ring.sheep(["ls", "--json"])).stdout);
+    if (rows.find((row) => row.id === sheepId)?.state !== "idle") ring.fail("a7", "sheep ls --json (in blog)", { stdout: JSON.stringify(rows), stderr: `expected ${sheepId} idle after the turn`, code: 1 });
+    ring.ok("a7", `docker run --rm --init -i ${tag} … --second (the token on stdin); sheep attach ${sheepId} -- … killed at ${KILL_AFTER_MS / 1000}s (in blog)`, `build ${buildSeconds}s, container ${containerSeconds}s; the second machine installed the release, joined ${home}, listed ${sheepId}, attached, and saw the turn end ${SECOND_TURN.delayMs / 1000}s after the first terminal was killed; sheep log here shows "${SECOND_TURN.text}"`);
+  } finally {
+    rmSync(context, { recursive: true, force: true });
+  }
+}
+
+/**
+ * The inner half of step a7, in the container: the token from stdin,
+ * the package ring's world and install from `/src.git` under the
+ * container's HOME, `sheep home join`, `sheep home`, `sheep ls`, a
+ * promptless `sheep attach`, the cue, then `sheep wait` and `sheep log`
+ * on the turn the first machine left running. `ps` is read while join
+ * runs: the token is in no process's arguments here either. Prints
+ * nothing that holds the token.
+ */
+async function secondInside({ ref, repo, spec, commit, address, sheep: sheepId, expectImage }) {
+  if (root !== "/" || !existsSync("/ring/hermetic.mjs") || !existsSync("/.dockerenv")) {
+    console.error("hermetic: --second is the container's half of the account ring's second machine; run pnpm hermetic --ring account");
+    process.exit(2);
+  }
+  const token = await new Promise((resolveToken) => {
+    let text = "";
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", (chunk) => (text += chunk));
+    process.stdin.on("end", () => resolveToken(text.split("\n")[0].trim()));
+    process.stdin.on("error", () => resolveToken(""));
+    process.stdin.resume();
+  });
+  const redact = (text) => (token ? String(text).split(token).join("<SHEEP_TOKEN>") : String(text));
+  const print = (text) => console.log(redact(text));
+  const ok = (step, command, note) => print(`ok    ${step.padEnd(8)} ${command}${note ? `  → ${note}` : ""}`);
+  const fail = (step, command, result) => {
+    print(`\nFAIL  ${step}: ${command} (exit ${result.code})`);
+    if (result.stdout?.trim()) print(`--- stdout ---\n${result.stdout.trimEnd()}`);
+    if (result.stderr?.trim()) print(`--- stderr ---\n${result.stderr.trimEnd()}`);
+    process.exit(1);
+  };
+  if (token === "") fail("second", "read stdin", { stdout: "", stderr: "no token on stdin; the outer half pipes one line", code: 2 });
+  print(`second: token read from stdin (${token.length} characters); station ${address}; sheep ${sheepId}`);
+
+  // The world: the package ring's, under this container's HOME, with the release installed from /src.git (or the spec).
+  const world = join(homedir(), "second");
+  mkdirSync(world);
+  let ring;
+  try {
+    ring = new Ring({ ref, repo, spec, commit, keep: false, dir: world });
+    ring.assertFresh();
+    await ring.install();
+  } catch (error) {
+    if (error.ring) fail(error.ring.step, error.ring.command, error.ring.result);
+    fail("second", "the world and the install", { stdout: "", stderr: error.stack ?? error.message, code: 1 });
+  }
+  const stamp = ring.stamp;
+  const build = { commit: stamp.commit, builtAt: stamp.builtAt };
+  const parse = (step, command, result) => {
+    try {
+      return JSON.parse(result.stdout);
+    } catch {
+      fail(step, command, result);
+    }
+  };
+  const tokenWatch = watchPs([token], 15);
+  try {
+    // Journey 2 step 1: join, the token on stdin; the config names the station with no local marker and no name.
+    const joined = await ring.sheep(["home", "join", address, "--json"], { input: `${token}\n` });
+    const report = parse("second", `sheep home join ${address} --json (in blog)`, joined);
+    if (joined.code !== 0 || report.home !== address || report.image !== expectImage || JSON.stringify(report.build?.home) !== JSON.stringify(build) || JSON.stringify(report.build?.cli) !== JSON.stringify(build) || report.skew !== null) {
+      fail("second", `sheep home join ${address} --json`, { ...joined, stdout: redact(joined.stdout), stderr: `${redact(joined.stderr)}\nexpected home ${address}, image ${expectImage}, build.home = build.cli = ${JSON.stringify(build)}, no skew` });
+    }
+    const config = JSON.parse(readFileSync(ring.configOf(ring.blog), "utf8"));
+    if (JSON.stringify(Object.keys(config).sort()) !== JSON.stringify(["home", "token"]) || config.home !== address || config.token !== token) {
+      fail("second", `cat ${ring.configOf(ring.blog)}`, { stdout: JSON.stringify({ ...config, token: "…" }), stderr: `expected exactly {home: ${address}, token}: no local marker, no name (the station is the other kennel's)`, code: 1 });
+    }
+    ok("second", `sheep home join ${address} --json (the token on stdin)`, `joined; image ${report.image}; build.home = build.cli = ${build.commit} (${build.builtAt}); <blog>/.sheep/config is {home, token}, no name, no local marker`);
+    print(`second: image ${report.image}`);
+
+    // `sheep home`: the station named, not local, answering, the stamps equal, the image reported.
+    const homed = await ring.sheep(["home", "--json"]);
+    const homeReport = parse("second", "sheep home --json", homed);
+    if (homed.code !== 0 || homeReport.home !== address || homeReport.name !== null || homeReport.local !== false || homeReport.answers !== true || JSON.stringify(homeReport.build?.home) !== JSON.stringify(build) || JSON.stringify(homeReport.build?.cli) !== JSON.stringify(build) || homeReport.image !== expectImage || homed.stderr !== "") {
+      fail("second", "sheep home --json", { ...homed, stderr: `${homed.stderr}\nexpected home ${address}, name null, local false, answers true, build.home = build.cli = ${JSON.stringify(build)}, image ${expectImage}, nothing on stderr` });
+    }
+    ok("second", "sheep home --json (in blog)", `home ${address}, name null, local false, answers; build.home = build.cli = ${build.commit} (${build.builtAt}); image ${homeReport.image}`);
+
+    // `sheep ls`: the sheep the first machine minted, idle.
+    const listed = await ring.sheep(["ls", "--json"]);
+    const rows = parse("second", "sheep ls --json", listed);
+    const row = Array.isArray(rows) ? rows.find((candidate) => candidate.id === sheepId) : undefined;
+    if (listed.code !== 0 || row === undefined) fail("second", "sheep ls --json", { ...listed, stderr: `${listed.stderr}\nexpected ${sheepId}, the sheep the first machine minted` });
+    if (row.state !== "idle") fail("second", "sheep ls --json", { ...listed, stderr: `${listed.stderr}\nexpected ${sheepId} idle before the first machine's turn; it is ${row.state}` });
+    ok("second", "sheep ls --json (in blog)", `${rows.length} sheep at the station; ${sheepId} (${row.name ?? "unnamed"}) listed, idle: minted from the first machine, seen from the second`);
+
+    // Journey 2 step 2, without a terminal: pi's client attaches, says so, and exits.
+    const attached = await ring.sheep(["attach", sheepId]);
+    if (attached.code !== 0 || !attached.stdout.includes(`\t${sheepId}\tattached`)) fail("second", `sheep attach ${sheepId}`, { ...attached, stderr: `${attached.stderr}\nexpected pi's client to attach and say so` });
+    ok("second", `sheep attach ${sheepId} (no prompt, no terminal)`, "attached through pi's client, and exited");
+    // The cue the outer half waits for, then the first machine starts a turn and closes its terminal.
+    print(`second: attached to ${sheepId}; waiting for the first machine's turn`);
+    const deadline = Date.now() + 90_000;
+    let running;
+    for (;;) {
+      const again = parse("second", "sheep ls --json (polling)", await ring.sheep(["ls", "--json"]));
+      running = again.find((candidate) => candidate.id === sheepId);
+      if (running?.state === "running") break;
+      if (Date.now() >= deadline) fail("second", "sheep ls --json (polled 90s)", { stdout: JSON.stringify(running), stderr: `${sheepId} never went running: the first machine did not start a turn`, code: 1 });
+      await new Promise((resolveSleep) => setTimeout(resolveSleep, 500));
+    }
+    const runningAt = Date.now();
+    print(`second: ${sheepId} is running`);
+
+    // Journey 2 step 3: the first terminal is gone; the turn finishes; this machine's wait and log show the end of it.
+    const waited = await ring.sheep(["wait", "--timeout", "120", sheepId]);
+    const waitSeconds = ((Date.now() - runningAt) / 1000).toFixed(0);
+    if (waited.code !== 0 || !waited.stdout.startsWith(`${sheepId}\t`) || !waited.stdout.includes(SECOND_TURN.text)) fail("second", `sheep wait ${sheepId}`, { ...waited, stderr: `${waited.stderr}\nexpected exit 0 and the turn's last message "${SECOND_TURN.text}"` });
+    const logged = await ring.sheep(["log", sheepId]);
+    if (logged.code !== 0 || !logged.stdout.includes(SECOND_PROMPT) || !logged.stdout.includes(SECOND_TURN.text)) fail("second", `sheep log ${sheepId}`, { ...logged, stderr: `${logged.stderr}\nexpected the first machine's prompt and the turn's end` });
+    const tail = logged.stdout.trimEnd().split("\n").slice(-3).join(" | ");
+    ok("second", `sheep wait ${sheepId}; sheep log ${sheepId}`, `the turn ended ${waitSeconds}s after it was seen running, its terminal long gone; the log ends: ${tail}`);
+  } finally {
+    tokenWatch.stop();
+  }
+  const leak = tokenWatch.line();
+  if (leak) fail("second", "ps -Ao pid=,args= (polled)", { stdout: redact(leak), stderr: "the token was in a process's arguments inside the container", code: 1 });
+  ok("second", "ps (polled every 15 ms from join)", `${tokenWatch.samples()} samples; the token in no process's arguments in the container`);
+  print(`second: HOME holds ${readdirSync(homedir()).sort().join(", ")}; the world ${world.replace(homedir(), "~")} holds ${readdirSync(world).sort().join(", ")}`);
+  print("\ninside: ok");
+}
+
+/* Journey 3 (station phase 2): a repository, on the station. */
+
+const PLAYGROUND = "https://github.com/dglazkov/lamb-playground.git";
+const PLAYGROUND_VAR = "LAMB_PLAYGROUND_TOKEN";
+
+/**
+ * Pasture's journey 1 on the station, with the faux provider: the sheep's
+ * steps are a program, and the clone at birth is the cell's. Two sheep,
+ * two branches on GitHub, the token nowhere the criterion names; then the
+ * branches deleted with the token through a `GIT_ASKPASS` helper that
+ * reads the environment, so the scratch repository is left as found.
+ * Runs only with `LAMB_PLAYGROUND_TOKEN` in the ring's environment; one
+ * `skip` line otherwise.
+ */
+async function journeyThree(ring, station, { needles }) {
+  const playground = process.env[PLAYGROUND_VAR];
+  if (!playground) {
+    ring.skip("a8", `${PLAYGROUND_VAR} is not in the environment, so journey 3 against ${PLAYGROUND} was not walked: two sheep, two branches, the token nowhere`, "journey 3");
+    return;
+  }
+  needles.push(playground);
+  const { home, token: stationToken } = station;
+  const pasture = `ring-${ring.stamp.commit.slice(0, 7)}`;
+  const branch = (name) => `sheep/${pasture}-${name}`;
+  const names = ["typo", "links"];
+  const tasks = { typo: "Fix the typo in README.md on a branch, commit, push.", links: "Fix the dead links in docs/ on a branch, commit, push." };
+  const gitEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
+  const lsRemote = () => {
+    const done = spawnSync("git", ["ls-remote", PLAYGROUND, `refs/heads/${branch("*")}`], { encoding: "utf8", env: gitEnv, cwd: ring.blog });
+    if (done.status !== 0) throw new Error(`git ls-remote ${PLAYGROUND} failed: ${(done.stderr || "").trim()}`);
+    return (done.stdout || "").trim().split("\n").filter(Boolean).map((line) => line.split("\t")[1].replace(/^refs\/heads\//, ""));
+  };
+  // The helper: git asks it for the username and the password; it answers from the environment the delete runs with, and never from a URL.
+  const askpass = join(ring.dir, "askpass.sh");
+  writeFileSync(askpass, `#!/bin/sh\ncase "$1" in\n  Username*) printf '%s\\n' x-access-token ;;\n  *) printf '%s\\n' "$${PLAYGROUND_VAR}" ;;\nesac\n`, { mode: 0o700 });
+  const deleteBranches = () => {
+    const results = [];
+    for (const name of names) {
+      const done = spawnSync("git", ["push", "--delete", PLAYGROUND, branch(name)], { encoding: "utf8", cwd: ring.blog, env: { ...gitEnv, GIT_ASKPASS: askpass, [PLAYGROUND_VAR]: playground } });
+      results.push(`${branch(name)}: ${done.status === 0 ? "deleted" : `not deleted (exit ${done.status}: ${(done.stderr || "").trim().split("\n").at(-1) ?? ""})`}`);
+    }
+    return results;
+  };
+  const started = Date.now();
+  const ids = {};
+  let pushed = false;
+  try {
+    // Step 1: the pasture on the scratch repository, the token into its secret on stdin, the brief put.
+    const before = lsRemote();
+    if (before.length > 0) ring.fail("a8", `git ls-remote ${PLAYGROUND} refs/heads/${branch("*")}`, { stdout: before.join("\n"), stderr: `branches of this ring's name are already on the repository; a ring that left them behind failed: git push --delete ${PLAYGROUND} ${before.join(" ")}`, code: 1 });
+    const made = await ring.sheep(["pasture", "new", pasture, "--repo", PLAYGROUND]);
+    if (made.code !== 0 || !made.stdout.startsWith(`${pasture}\t${PLAYGROUND}\t`)) ring.fail("a8", `sheep pasture new ${pasture} --repo ${PLAYGROUND}`, made);
+    const secret = await ring.sheep(["pasture", "secret", "set", pasture, "GIT_TOKEN"], { input: `${playground}\n` });
+    if (secret.code !== 0 || secret.stdout !== `${pasture}\tGIT_TOKEN\n`) ring.fail("a8", `sheep pasture secret set ${pasture} GIT_TOKEN (the token on stdin)`, { ...secret, stdout: secret.stdout.split(playground).join("<token>"), stderr: secret.stderr.split(playground).join("<token>") });
+    const secretNames = await ring.sheep(["pasture", "secret", "ls", pasture]);
+    if (secretNames.code !== 0 || secretNames.stdout !== "GIT_TOKEN\n") ring.fail("a8", `sheep pasture secret ls ${pasture}`, secretNames);
+    const brief = `# ${pasture}\n\nA scratch repository. Make a branch, one small change under notes/, commit, name the branch in /pasture/notes/<your name>.md, push.\n`;
+    const put = await ring.sheep(["pasture", "put", pasture, "BRIEF.md"], { input: brief });
+    if (put.code !== 0) ring.fail("a8", `sheep pasture put ${pasture} BRIEF.md`, put);
+
+    // Step 4: each sheep born detached into the pasture (the cell clones at birth, before any turn), given its program, then its task.
+    for (const name of names) {
+      const born = await ring.sheep(["new", "--pasture", pasture, "--name", name, "--detach"]);
+      const id = born.stdout.trim();
+      if (born.code !== 0 || !/^[0-9a-f-]{36}$/.test(id)) ring.fail("a8", `sheep new --pasture ${pasture} --name ${name} --detach`, born);
+      ids[name] = id;
+      const program = {
+        steps: [
+          { tool: { name: "bash", args: { command: `git checkout -b ${branch(name)}` } } },
+          { tool: { name: "bash", args: { command: `mkdir -p notes && printf 'The %s sheep of the account ring at %s was here.\\n' ${name} ${ring.stamp.commit} > notes/${name}.md && git add -A && git commit -q -m "ring ${ring.stamp.commit}: ${name}"` } } },
+          { tool: { name: "bash", args: { command: `printf '${branch(name)}\\n' | pasture put notes/${name}.md` } } },
+          { tool: { name: "bash", args: { command: `git push -u origin ${branch(name)}` } } },
+          { text: `pushed ${branch(name)}` },
+        ],
+      };
+      const posted = await fetch(`${home}/s/${encodeURIComponent(id)}/faux`, { method: "POST", headers: { authorization: `Bearer ${stationToken}`, "content-type": "application/json" }, body: JSON.stringify(program), signal: AbortSignal.timeout(30_000) });
+      if (posted.status !== 200) ring.fail("a8", `POST /s/${id}/faux`, { stdout: await posted.text(), stderr: `status ${posted.status}`, code: 1 });
+      const asked = await ring.sheep(["attach", id, "--detach", "--", tasks[name]]);
+      if (asked.code !== 0) ring.fail("a8", `sheep attach ${id} --detach -- "${tasks[name]}"`, asked);
+    }
+    pushed = true;
+    // Step 5: both turns end; the last message of each names its branch.
+    const waited = await ring.sheep(["wait", "--timeout", "300", ids.typo, ids.links]);
+    for (const name of names) {
+      if (waited.code !== 0 || !waited.stdout.includes(`${ids[name]}\tpushed ${branch(name)}`)) ring.fail("a8", `sheep wait ${ids.typo} ${ids.links}`, { ...waited, stderr: `${waited.stderr}\nexpected ${ids[name]} to end with "pushed ${branch(name)}"` });
+    }
+    const workSeconds = ((Date.now() - started) / 1000).toFixed(0);
+
+    // Step 6: the herd, and the pasture column.
+    const herd = await ring.sheep(["pasture", pasture]);
+    if (herd.code !== 0) ring.fail("a8", `sheep pasture ${pasture}`, herd);
+    const herdRows = herd.stdout.trimEnd().split("\n").slice(4).map((row) => row.split("\t"));
+    for (const name of names) {
+      const row = herdRows.find((candidate) => candidate[0] === ids[name]);
+      if (row === undefined || row[1] !== name || row[2] !== "idle" || row[4] !== tasks[name]) ring.fail("a8", `sheep pasture ${pasture}`, { ...herd, stderr: `${herd.stderr}\nexpected ${ids[name]}\t${name}\tidle\t…\t${tasks[name]}` });
+    }
+    if (!herd.stdout.startsWith(`name: ${pasture}\nrepo: ${PLAYGROUND}\n`)) ring.fail("a8", `sheep pasture ${pasture}`, { ...herd, stderr: `${herd.stderr}\nexpected the meta to name ${PLAYGROUND}` });
+    const inPasture = JSON.parse((await ring.sheep(["ls", "--pasture", pasture, "--json"])).stdout).map((row) => row.id).sort();
+    if (JSON.stringify(inPasture) !== JSON.stringify(Object.values(ids).sort())) ring.fail("a8", `sheep ls --pasture ${pasture} --json`, { stdout: inPasture.join("\n"), stderr: `expected exactly ${Object.values(ids).join(", ")}`, code: 1 });
+
+    // Step 8: the note names the branch, and both branches are on GitHub, seen anonymously from this laptop.
+    const note = await ring.sheep(["pasture", "cat", pasture, "notes/typo.md"]);
+    if (note.code !== 0 || note.stdout !== `${branch("typo")}\n`) ring.fail("a8", `sheep pasture cat ${pasture} notes/typo.md`, { ...note, stderr: `${note.stderr}\nexpected "${branch("typo")}"` });
+    const onGitHub = lsRemote().sort();
+    if (JSON.stringify(onGitHub) !== JSON.stringify(names.map(branch).sort())) ring.fail("a8", `git ls-remote ${PLAYGROUND} refs/heads/${branch("*")}`, { stdout: onGitHub.join("\n"), stderr: `expected ${names.map(branch).join(" and ")}`, code: 1 });
+
+    // The criterion: the token is in no transcript, no export, and no process's arguments (the watch runs on).
+    const logs = {};
+    for (const name of names) {
+      const logged = await ring.sheep(["log", ids[name]]);
+      if (logged.code !== 0) ring.fail("a8", `sheep log ${ids[name]}`, logged);
+      if (logged.stdout.includes(playground)) ring.fail("a8", `sheep log ${ids[name]}`, { stdout: "(withheld)", stderr: "the repository's token is in the transcript", code: 1 });
+      if (!/git clone/.test(logged.stdout) || !logged.stdout.includes(`pushed ${branch(name)}`)) ring.fail("a8", `sheep log ${ids[name]}`, { ...logged, stderr: `${logged.stderr}\nexpected the birth's git clone and the push` });
+      logs[name] = logged.stdout;
+    }
+    const file = join(ring.dir, `${ids.typo}.sqlite`);
+    const exported = await ring.sheep(["export", ids.typo, file]);
+    if (exported.code !== 0 || !existsSync(file)) ring.fail("a8", `sheep export ${ids.typo} ${file}`, exported);
+    if (readFileSync(file).includes(playground)) ring.fail("a8", `grep <token> ${file}`, { stdout: "(withheld)", stderr: "the repository's token is in the export's bytes", code: 1 });
+    const clonedIn = /git clone[^\n]*/.exec(logs.typo)?.[0] ?? "git clone";
+    ring.ok("a8", `sheep pasture new ${pasture} --repo …lamb-playground.git; secret set GIT_TOKEN (stdin); put BRIEF.md; sheep new --pasture ${pasture} --name typo|links --detach; sheep wait`, `${workSeconds}s; born ${ids.typo} (typo) and ${ids.links} (links), each cloning at birth ("${clonedIn.slice(0, 60)}"), each pushing; the herd lists both idle with their tasks; notes/typo.md says ${branch("typo")}`);
+    ring.ok("a8", `git ls-remote ${PLAYGROUND} 'refs/heads/${branch("*")}' (anonymous, from this laptop)`, `${onGitHub.join(", ")}`);
+    ring.ok("a8", `sheep log ${ids.typo}; sheep log ${ids.links}; sheep export ${ids.typo}`, `the repository's token in neither transcript, not in the export's bytes (${readFileSync(file).length} bytes), and, by the poll, in no process's arguments`);
+    console.log(`  the container the sheep worked in was ${station.image}${station.applicationImage !== undefined ? ` (the application's configured image)` : ""}`);
+  } finally {
+    if (pushed) {
+      const deleted = deleteBranches();
+      const left = lsRemote();
+      console.log(`  ${PLAYGROUND}: ${deleted.join("; ")}; ${left.length === 0 ? "no branches of this ring's name remain" : `STILL THERE: ${left.join(", ")}`}`);
+      if (left.length > 0) ring.unchecked.push(`journey 3: the scratch repository is not as found: ${left.join(", ")} remain; git push --delete ${PLAYGROUND} ${left.join(" ")}`);
+    }
+    rmSync(askpass, { force: true });
   }
 }
 
@@ -1928,7 +2411,8 @@ async function main() {
     return;
   }
   if (ringName === "account") {
-    await accountRing(parsed);
+    if (parsed.second) await secondInside(parsed);
+    else await accountRing(parsed);
     return;
   }
   let ring;

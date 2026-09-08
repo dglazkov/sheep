@@ -202,7 +202,7 @@ describe("the local home's record", () => {
     worlds.push(w);
     const none = await w.sheep("home", "--json");
     expect(none.code).toBe(0);
-    expect(JSON.parse(none.stdout)).toEqual({ home: null, kennel: w.kennel, name: null, local: false, answers: false, build: { home: null, cli: CHECKOUT } });
+    expect(JSON.parse(none.stdout)).toEqual({ home: null, kennel: w.kennel, name: null, local: false, answers: false, build: { home: null, cli: CHECKOUT }, image: null });
     expect((await w.sheep("home")).stdout).toBe(`home: (none); run \`sheep home local\`, or pass --home <url>\nkennel: ${w.kennel}\n`);
 
     const sheepish = await listen("sheep\n");
@@ -210,15 +210,15 @@ describe("the local home's record", () => {
       const url = `http://127.0.0.1:${sheepish.port}`;
       await writeFile(w.config, JSON.stringify({ home: url, token: "t" }));
       // A home that answers `sheep` but not `GET /home` (this fake) has no build side: null, and the prose is the plain one.
-      expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toEqual({ home: url, kennel: w.kennel, name: null, local: false, answers: true, build: { home: null, cli: CHECKOUT } });
+      expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toEqual({ home: url, kennel: w.kennel, name: null, local: false, answers: true, build: { home: null, cli: CHECKOUT }, image: null });
       expect((await w.sheep("home")).stdout).toBe(`home: ${url} (answers)\nkennel: ${w.kennel}\n`);
       // The station's name, once a deploy has recorded it (kennel phase 1): read like home, in JSON always and in prose as its own line.
       await writeFile(w.config, JSON.stringify({ home: url, token: "t", name: "blog" }));
-      expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toEqual({ home: url, kennel: w.kennel, name: "blog", local: false, answers: true, build: { home: null, cli: CHECKOUT } });
+      expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toEqual({ home: url, kennel: w.kennel, name: "blog", local: false, answers: true, build: { home: null, cli: CHECKOUT }, image: null });
       expect((await w.sheep("home")).stdout).toBe(`home: ${url} (answers)\nkennel: ${w.kennel}\nname: blog\n`);
       // A --home overrides a local config, and is never the local home.
       await writeFile(w.config, JSON.stringify({ home: "http://127.0.0.1:1", token: "t", local: true }));
-      expect(JSON.parse((await w.sheep("--home", url, "home", "--json")).stdout)).toEqual({ home: url, kennel: w.kennel, name: null, local: false, answers: true, build: { home: null, cli: CHECKOUT } });
+      expect(JSON.parse((await w.sheep("--home", url, "home", "--json")).stdout)).toEqual({ home: url, kennel: w.kennel, name: null, local: false, answers: true, build: { home: null, cli: CHECKOUT }, image: null });
     } finally {
       sheepish.server.close();
     }
@@ -256,7 +256,7 @@ describe("the two stamps (station phase 0)", () => {
       await writeFile(w.config, JSON.stringify({ home: url, token: "t" }));
       const json = await w.sheep("home", "--json");
       expect(json.code).toBe(0);
-      expect(JSON.parse(json.stdout)).toEqual({ home: url, kennel: w.kennel, name: null, local: false, answers: true, build: { home: { commit: "1fc8d03", builtAt: "2026-09-07T20:00:00Z" }, cli: CHECKOUT } });
+      expect(JSON.parse(json.stdout)).toEqual({ home: url, kennel: w.kennel, name: null, local: false, answers: true, build: { home: { commit: "1fc8d03", builtAt: "2026-09-07T20:00:00Z" }, cli: CHECKOUT }, image: null });
       const prose = await w.sheep("home");
       expect(prose.stdout).toBe(`home: ${url} (answers)\nkennel: ${w.kennel}\nhome build: 1fc8d03 (2026-09-07T20:00:00Z)\ncli build: 0.0.0-checkout (unstamped)\n`);
       // A checkout on one side is reported, never warned about.

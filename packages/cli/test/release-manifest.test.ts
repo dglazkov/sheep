@@ -11,9 +11,10 @@ import { describe, expect, it } from "vitest";
 // @ts-expect-error no declarations for the release script
 import { BIN_SHEEP_JS, expectedReleaseFiles, IMAGE_REPOSITORY, PREPARATION_KEYS, releaseManifest, SKILL_FILE } from "../../../scripts/release.mjs";
 // @ts-expect-error no declarations for the bundle script
-import { imageReference, shippedConfig } from "../../../scripts/bundle.mjs";
+import { IMAGE_DIGEST, imageBy, imageReference, shippedConfig } from "../../../scripts/bundle.mjs";
 
-const STAMP = { commit: "194656e", builtAt: "2026-09-07T17:00:00Z", wrangler: "4.129.0" };
+const DIGEST = "sha256:48101e13000000000000000000000000000000000000000000000000abcdef01";
+const STAMP = { commit: "194656e", builtAt: "2026-09-07T17:00:00Z", wrangler: "4.129.0", image: `docker.io/dglazkov2/sheep-pen@${DIGEST}` };
 const ROOT_PACKAGE = { name: "sheep", private: true, type: "module", packageManager: "pnpm@10.33.0", scripts: { build: "pnpm -r build", test: "pnpm -r test", release: "node scripts/release.mjs" }, devDependencies: { esbuild: "^0.28.0" } };
 
 describe("the release manifest", () => {
@@ -48,12 +49,13 @@ describe("the release manifest", () => {
     }
   });
 
-  it("names the command, the Node floor, and the build stamp under a sheep key", () => {
+  it("names the command, the Node floor, and the build stamp under a sheep key, the image in it (station phase 2)", () => {
     expect(manifest.name).toBe("sheep");
     expect(manifest.type).toBe("module");
     expect(manifest.bin).toEqual({ sheep: "bin/sheep.js" });
     expect(manifest.engines).toEqual({ node: ">=22.19" });
     expect(manifest.sheep).toEqual(STAMP);
+    expect(Object.keys(manifest.sheep as object)).toEqual(["commit", "builtAt", "wrangler", "image"]);
     expect(manifest).not.toHaveProperty("commit");
     expect(BIN_SHEEP_JS).toMatch(/^#!\/usr\/bin\/env node\nimport \{ main \} from "\.\.\/dist\/sheep\.mjs";\n/);
   });
@@ -82,7 +84,8 @@ describe("the release manifest", () => {
     };
     expect(IMAGE_REPOSITORY).toBe("docker.io/dglazkov2/sheep-pen");
     expect(imageReference(STAMP.commit)).toBe("docker.io/dglazkov2/sheep-pen:194656e");
-    const released = shippedConfig(cell, STAMP) as { env: { pen: Record<string, unknown> } } & Record<string, unknown>;
+    // No digest in the stamp handed to the bundle (a build by hand): the tag.
+    const released = shippedConfig(cell, { commit: STAMP.commit, builtAt: STAMP.builtAt }) as { env: { pen: Record<string, unknown> } } & Record<string, unknown>;
     expect(released).not.toHaveProperty("$schema");
     expect(released).toMatchObject({ name: "sheep", main: "worker.mjs", no_bundle: true, compatibility_date: "2026-08-22" });
     expect(released.env.pen).toEqual({
@@ -96,8 +99,22 @@ describe("the release manifest", () => {
     expect(() => shippedConfig({ ...cell, env: { pen: { ...cell.env.pen, containers: [] } } }, STAMP)).toThrow(/exactly one container/);
   });
 
+  it("names the image by digest when the release knows it, and by tag when it does not (station phase 2)", () => {
+    expect(IMAGE_DIGEST.test(DIGEST)).toBe(true);
+    expect(IMAGE_DIGEST.test("sha256:abc")).toBe(false);
+    expect(imageReference(STAMP.commit, DIGEST)).toBe(`docker.io/dglazkov2/sheep-pen@${DIGEST}`);
+    expect(() => imageReference(STAMP.commit, "not-a-digest")).toThrow(/sha256:<64 hex>/);
+    expect(imageBy(`docker.io/dglazkov2/sheep-pen@${DIGEST}`)).toBe("digest");
+    expect(imageBy("docker.io/dglazkov2/sheep-pen:194656e")).toBe("tag");
+    const cell = { name: "sheep", main: "src/index.ts", env: { pen: { name: "sheep-pen", containers: [{ name: "sheep-pen", image: "../pen/Dockerfile", image_build_context: "../pen", class_name: "PenContainer", instance_type: "basic", max_instances: 3 }] } } };
+    const byDigest = shippedConfig(cell, { commit: STAMP.commit, builtAt: STAMP.builtAt, imageDigest: DIGEST }) as { env: { pen: { containers: { image: string }[] } } };
+    expect(byDigest.env.pen.containers).toEqual([{ image: `docker.io/dglazkov2/sheep-pen@${DIGEST}`, class_name: "PenContainer", instance_type: "basic", max_instances: 3 }]);
+    expect(() => shippedConfig(cell, { commit: STAMP.commit, builtAt: STAMP.builtAt, imageDigest: "sha256:short" })).toThrow(/sha256:<64 hex>/);
+  });
+
   it("refuses a stamp with a piece missing", () => {
-    expect(() => releaseManifest(ROOT_PACKAGE, { commit: "194656e", builtAt: "2026-09-07T17:00:00Z" })).toThrow(/wrangler/);
+    expect(() => releaseManifest(ROOT_PACKAGE, { commit: "194656e", builtAt: "2026-09-07T17:00:00Z", image: STAMP.image })).toThrow(/wrangler/);
+    expect(() => releaseManifest(ROOT_PACKAGE, { commit: "194656e", builtAt: "2026-09-07T17:00:00Z", wrangler: "4.129.0" })).toThrow(/image/);
     expect(() => releaseManifest(ROOT_PACKAGE, undefined)).toThrow(/commit/);
   });
 });
