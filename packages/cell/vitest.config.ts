@@ -2,6 +2,14 @@ import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  /**
+   * Eighteen cases in here had been annotated to thirty seconds one at a
+   * time; the default measures the runner, not the cell. A workerd test
+   * boots an isolate, and an eyes test may fetch a Chrome the first time it
+   * runs. Thirty seconds is the ceiling for the category; a case that needs
+   * longer still says so.
+   */
+  test: { testTimeout: 30_000 },
   plugins: [
     cloudflareTest({
       wrangler: { configPath: "./wrangler.jsonc" },
