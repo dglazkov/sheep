@@ -75,7 +75,7 @@ constructs no `Eyes` and says so in one typed place. The suite passes
 with `~/.cache/puppeteer` emptied first, which the phase's findings
 record with the download's size and time. **⚑** none.
 
-**Status: PLANNED.**
+**Status: NOT STARTED.**
 
 ## Phase 1: The look
 
@@ -109,7 +109,7 @@ the image block; journey 2 with a real model, the Vite app built into a
 syncing directory and looked at from the rows. **⚑** none; the model's
 key is the shepherd's, as every walk's.
 
-**Status: PLANNED.**
+**Status: NOT STARTED.**
 
 ## Phase 2: The station
 
@@ -138,4 +138,4 @@ account --yes <ref>` green. **⚑ provision:** the upgrade of `sheep-2`
 and the ring's station on the shepherd's account, and the browser
 minutes both spend, ten a session at most.
 
-**Status: PLANNED.**
+**Status: NOT STARTED.**
