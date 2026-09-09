@@ -1,8 +1,8 @@
 ---
-status: planned
+status: partial
 since: 2026-09-08
 see: eyes
-note: "written 8 Sep 2026, the afternoon of the spike, from a conversation with the shepherd: sheep are to become decent frontend engineers, and for that they need eyes. The shepherd's calls: the sheep asks with a `look` program in its shell, not a fifth tool, and reads the PNG with the read tool it has; one browser per cell kept ten minutes, the shared per-home browser a debt; the eyes read the workspace rows, and the container's dev server is a later project; a fixed handful of flags, `--script` the open door. Nothing built."
+note: "written 8 Sep 2026, the afternoon of the spike, from a conversation with the shepherd: sheep are to become decent frontend engineers, and for that they need eyes. The shepherd's calls: the sheep asks with a `look` program in its shell, not a fifth tool, and reads the PNG with the read tool it has; one browser per cell kept ten minutes, the shared per-home browser a debt; the eyes read the workspace rows, and the container's dev server is a later project; a fixed handful of flags, `--script` the open door. Eyes phase 0 closed the same day: the `Eyes` class over the browser binding and the cell's files table, the interception that answers `http://sheep.invalid` out of the rows and lets every other origin through, the report as one pure function, and the session kept warm in a row by id; journey 4 steps 1 and 3 hold in workerd, the spike's fixture rendering from the rows with its bug, its 404, its console, its tree, and its counter at 2 after two clicks, and a cell with no `BROWSER` building no eyes. The Chrome miniflare fetches lives in the wrangler cache, not `~/.cache/puppeteer` as the design first said. Journey 4 step 2, the `look` program through the shell, is eyes phase 1, and journeys 1, 2, and 3 are unwalked."
 ---
 
 # Eyes — the journeys
@@ -141,5 +141,5 @@ Acceptance criteria:
 
 - Every proof runs in workerd through `@cloudflare/vitest-pool-workers`;
   none is a Node test of the browser.
-- The suite passes on a machine with an empty `~/.cache/puppeteer`, the
-  Chrome fetched by the first test that needs it, and in CI.
+- The suite passes on a machine with an empty wrangler cache, the Chrome
+  fetched by the first test that needs it, and in CI.

@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@cloudflare/containers": "0.3.7",
+    "@cloudflare/puppeteer": "1.4.0",
     "@earendil-works/chord": "link:../../vendor/pi/packages/chord",
     "@earendil-works/pi-agent-core": "link:../../vendor/pi/packages/agent",
     "@earendil-works/pi-ai": "link:../../vendor/pi/packages/ai",

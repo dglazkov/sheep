@@ -20,13 +20,19 @@ renders from the files table alone.
 
 ---
 
-**Where we are: nothing built. Next: eyes phase 0.** Planned 8 Sep 2026,
-the afternoon of the spike, from a conversation with the shepherd; the
-shepherd's calls are in the journey's front matter. The spike is
-[docs/spikes/eyes](../../spikes/eyes/README.md): the numbers, the
-findings, and the Worker the eyes are lifted from. ⚑ steps: eyes phase
-2 deploys to the shepherd's account and spends browser minutes; the
-account ring spends them on every run.
+**Where we are: eyes phase 0 closed 8 Sep 2026. Next: eyes phase 1.**
+Planned the afternoon of the spike, from a conversation with the
+shepherd; the shepherd's calls are in the journey's front matter. The
+spike is [docs/spikes/eyes](../../spikes/eyes/README.md): the numbers,
+the findings, and the Worker the eyes are lifted from; its README is
+left as the record of what was tried, so it still names the puppeteer
+cache this project's phase 0 found to be the wrong one. The eyes
+themselves are built and proved in workerd; nothing yet asks them for a
+look. Eyes phase 1 waits on no person: the `look` program, the prompt's
+paragraph, and journeys 1 and 2 walked on this laptop with a real model.
+⚑ steps: eyes phase 2 deploys to the shepherd's account and spends
+browser minutes; the account ring spends them on every run. That is the
+one thing in this project that waits on the shepherd.
 
 The order is dependency order. Phase 0 is the eyes: the class, the
 binding, the interception over the rows, the session, and the workerd
@@ -72,10 +78,21 @@ the button, the counter at `2` after two clicks, `--root` serving a
 hashed asset from a subdirectory, a missing path as one error, and the
 session id kept across two looks. A cell with no `BROWSER` in its env
 constructs no `Eyes` and says so in one typed place. The suite passes
-with `~/.cache/puppeteer` emptied first, which the phase's findings
-record with the download's size and time. **⚑** none.
+with the wrangler cache's `chrome` emptied first (`~/Library/Caches/
+.wrangler/chrome` on macOS, `~/.cache/.wrangler/chrome` on Linux), which
+the phase's findings record with the download's size and time. **⚑**
+none.
 
-**Status: NOT STARTED.**
+**Findings.**
+
+- **2026-09-08 — The Chrome the eyes need lives in the wrangler cache, not `~/.cache/puppeteer`.** Miniflare installs it through `xdgAppPaths(".wrangler").cache()` at a version it pins, 126.0.6478.182, 283 MB unpacked. This phase's Proof, the design, and journey 4 all named a directory the pool never touches.
+- **2026-09-08 — The download costs about six seconds, and the suite passes without it.** The eyes suite ran 17 s with that cache emptied against 11 s warm, `Downloading browser…` in the log; the whole cell suite's cold run sits inside its warm noise, 23 s against 28 s.
+- **2026-09-08 — A 404 the eyes answer reaches the page twice.** Once as the status, again as `net::ERR_ABORTED` on the request the browser abandoned, so the report blames each request at most once and a stylesheet the sheep never wrote is the one line `404 /gone.css`.
+- **2026-09-08 — The eyes let every other origin through, where the spike aborted them.** The design's call, built as written. Journey 2's criterion, that a page leaning on a CDN renders and the request list names the origin, is not walked until a page actually fetches one.
+- **2026-09-08 — The binding rides `scripts/bundle.mjs` untouched.** `shippedConfig` spreads the cell's config, so `pnpm bundle` put `browser` at both the top level and `env.pen` of `home/wrangler.jsonc` with no change to the script; eyes phase 2's first proof clause needs no code.
+- **2026-09-08 — `eyesFor(env, files, sql)` is the one typed place that decides.** A cell in the test pool always has `BROWSER`, so the negative case is proved by passing an env with it undefined; eyes phase 1 should ask the factory for `/home` rather than take a field the pool can never leave empty.
+
+**Status: CLOSED.** 2026-09-08. The eyes render the spike's fixture from the rows in workerd and see the bug, the 404, both console levels, the tree, and the counter at `2`; `--root`, `--full`, a missing path, and the kept session id all hold; a cell with no `BROWSER` builds no `Eyes`. Verified by the conductor, cold cache included, and falsified by two mutations.
 
 ## Phase 1: The look
 
@@ -122,7 +139,7 @@ and the local home's start saying that the first look fetches a Chrome.
 `scripts/hermetic.mjs`: the package ring walks journey 1 steps 1 to 4
 with the faux provider on the local home; the account ring walks the
 same on its station. `README.md`, `SKILL.md`, and `sheep --agent-help`
-say what a sheep can see. CI's cache holds `~/.cache/puppeteer`.
+say what a sheep can see. CI's cache holds `~/.cache/.wrangler/chrome`.
 
 **Not this phase:** Nothing open above.
 

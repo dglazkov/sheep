@@ -8,6 +8,12 @@ declare namespace Cloudflare {
     PEN_CONTAINER?: DurableObjectNamespace<import("./src/pen/container.ts").PenContainer>;
     /** Pen phase 5: the Worker Loader, tier 1. Absent, `node` has no isolate and the table says so. */
     LOADER?: WorkerLoader;
+    /**
+     * Eyes phase 0: Browser Run, the platform's Chromium, bound at the top level and in `env.pen`.
+     * Absent, this home has no eyes: a station deployed before this release, where `eyesFor` builds
+     * no `Eyes`, `/home` says `eyes: false`, and the sheep is told nothing about looking.
+     */
+    BROWSER?: Fetcher;
     /** Bearer token every request must carry. */
     SHEEP_TOKEN?: string;
     /** "1" allows requests with no token, for local use only. */

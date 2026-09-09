@@ -119,9 +119,11 @@ bundle.mjs` copies the config into `home/wrangler.jsonc` and `sheep home
 deploy` keeps the `pen` environment verbatim, so the station gets eyes
 from the release with no change to station's path. `sheep home local`
 runs the same config under wrangler, and wrangler's local browser is a
-Chrome that `@puppeteer/browsers` puts in `~/.cache/puppeteer` the
-first time a look is asked for; the first look on a machine pays that
-download and start, and the home's report says so.
+Chrome that miniflare puts in the wrangler cache the first time a look
+is asked for, `~/Library/Caches/.wrangler/chrome` on macOS and
+`~/.cache/.wrangler/chrome` on Linux, at a version miniflare pins; the
+first look on a machine pays that download and start, and the home's
+report says so.
 
 ## What the sheep is told
 

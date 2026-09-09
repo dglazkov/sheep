@@ -17,6 +17,11 @@
     { "tag": "v2", "new_sqlite_classes": ["Directory"] },
     { "tag": "v4", "new_sqlite_classes": ["Pasture"] }
   ],
+  // Eyes phase 0: Browser Run, the platform's own Chromium. Repeated in `env.pen` below, since a
+  // binding is not inherited into a named environment; a home deployed before this release has neither
+  // and no eyes. Locally, wrangler and the test pool launch a Chrome from the wrangler cache,
+  // `~/Library/Caches/.wrangler/chrome` on macOS and `~/.cache/.wrangler/chrome` on Linux.
+  "browser": { "binding": "BROWSER" },
   "vars": {
     "SHEEP_MODEL": "claude-sonnet-5"
   },
@@ -54,6 +59,8 @@
       ],
       // Pen phase 5: tier 1, the fresh isolate. Pen's only: the top level is journey 6's home with no container and has no loader.
       "worker_loaders": [{ "binding": "LOADER" }],
+      // Eyes phase 0: the same binding as the top level's, repeated because a named environment inherits none.
+      "browser": { "binding": "BROWSER" },
       "vars": {
         "SHEEP_MODEL": "claude-sonnet-5",
         "PEN_IDLE": "10m"
