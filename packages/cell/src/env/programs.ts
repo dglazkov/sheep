@@ -25,6 +25,7 @@
  * the image, when there is one.
  */
 import { type CommandNode, getCommandNames, parse, type ScriptNode, type SimpleCommandNode, type WordNode } from "just-bash/browser";
+import { LOOK_PROGRAM } from "./look-command.ts";
 
 /**
  * What a home has: whether a container can be rented for a command, and,
@@ -39,6 +40,8 @@ export interface Home {
   isolate?: boolean;
   /** Pen phase 5: whether a container is up right now, socket open. Absent, none is. Tier 1 is chosen only when none is. */
   containerUp?: boolean;
+  /** Eyes phase 1: whether this home has the browser binding, so `look` is in the shell. Absent, it is not: a station deployed before that release. */
+  eyes?: boolean;
 }
 
 export const NO_CONTAINER: Home = { container: false };
@@ -192,8 +195,18 @@ export function isolateReadOnly(home: Home): string {
   return `the workspace is read-only in tier 1, the fresh isolate; print the result instead, or ${where}`;
 }
 
+/**
+ * The sentence for `look` on a home without eyes (eyes phase 1): the shell's
+ * not-found annotation and the router's refusal both say it, byte for byte.
+ * `look` is the eyes' or nobody's — no tier has it — so a home with a
+ * container says this too rather than sending the line to a container
+ * where the program does not exist.
+ */
+export const NO_EYES_NOTICE = "this home has no eyes; a station upgraded from this release has them";
+
 /** The sentence for refusing one program: which tier would have it, and whether this home has one. */
 export function refusalSentence(program: string, home: Home): string {
+  if (program === LOOK_PROGRAM && home.eyes !== true) return NO_EYES_NOTICE;
   if (!hasContainer(home)) {
     // Tier 1 has `node`, in one shape; a `node` line refused here is one it could not take.
     if (home.isolate === true && programNamed(program)?.isolate === true) return isolateRefusal();
@@ -417,8 +430,10 @@ export function programsOf(script: ScriptNode): Array<string | null> {
  *
  * `also` is what this cell's just-bash has beyond the registry: the
  * custom commands it was made with (pasture phase 2's `pasture`, in a
- * pastured cell). They are tier 0, since just-bash has them, and no row
- * here names them.
+ * pastured cell; eyes phase 1's `look`, in a cell with eyes). They are
+ * tier 0, since just-bash has them, and no row here names them. A `look`
+ * that is not in `also` is a `look` on a home without eyes, and no tier
+ * has it: refused with its own sentence, never sent to the container.
  */
 export function classify(command: string, home: Home, exists?: (file: string) => boolean, also?: ReadonlySet<string>): Route {
   let script: ScriptNode;
@@ -443,7 +458,7 @@ export function classify(command: string, home: Home, exists?: (file: string) =>
     if (first === undefined) return { tier: 0, programs };
     return { refused: first, sentence: refusalSentence(first, home), programs };
   }
-  const absent = named.find((name) => programNamed(name)?.container === false);
+  const absent = named.find((name) => programNamed(name)?.container === false || (name === LOOK_PROGRAM && home.eyes !== true));
   if (absent !== undefined) return { refused: absent, sentence: refusalSentence(absent, home), programs };
   return { tier: 2, programs };
 }

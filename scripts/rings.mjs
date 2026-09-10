@@ -85,6 +85,7 @@ export const RINGS = {
     "packages/cell/test/flock.test.ts",
     "packages/cell/test/isolate.test.ts",
     "packages/cell/test/lease.test.ts",
+    "packages/cell/test/look-command.test.ts",
     "packages/cell/test/mount.test.ts",
     "packages/cell/test/pasture-command.test.ts",
     "packages/cell/test/pasture.test.ts",

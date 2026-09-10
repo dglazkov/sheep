@@ -1,7 +1,9 @@
 /**
  * The system prompt. `systemPrompt(home)` is the cell's own, as lamb built
  * it and as it was at commit 1b4a42d, byte for byte: a pastureless sheep's
- * prompt is this and nothing more, and a test holds it as a literal.
+ * prompt is this and nothing more, and a test holds it as a literal. Eyes
+ * phase 1 adds one paragraph after the shell's line, only when the home
+ * has eyes; a home without gets the literal, unchanged.
  *
  * For a sheep born into a pasture, `cellSystemPrompt` appends the pasture
  * paragraph (its name, its repository and branch when it has one,
@@ -35,16 +37,32 @@ import { type Home, shellSystemPromptLine } from "./env/programs.ts";
 import { DEFAULT_BRANCH } from "./pasture.ts";
 import { PASTURE_ROOT, PastureCall, type PastureSource } from "./workspace/mount.ts";
 
-/** The prompt the cell built before pasture: lamb's lines, and pen's home line, resolved at every call. */
+/** The prompt the cell built before pasture: lamb's lines, and pen's home line, resolved at every call; with eyes, the eyes' paragraph after the shell's line. */
 export function systemPrompt(home: Home): string {
   return [
     "You are a coding agent working in a session that lives in a cell, not on a machine.",
     "Working directory: /workspace",
     "Use the read, write, edit, and bash tools to inspect and change files.",
     shellSystemPromptLine(home),
+    ...(home.eyes === true ? [EYES_PARAGRAPH] : []),
     "Keep answers short and technical.",
   ].join("\n");
 }
+
+/**
+ * The paragraph a sheep with eyes is told (eyes phase 1): what `look`
+ * does, its flags, that the PNG is read with the read tool, and pen's rule
+ * that `dist`, `build`, and `node_modules` stay in the container, so a
+ * build to look at goes to a directory that syncs. One paragraph, the
+ * design's words; a home without eyes says nothing of it.
+ */
+export const EYES_PARAGRAPH =
+  "This home has eyes: `look <path>` in the bash tool renders a workspace page in a real browser and prints what the page said while it rendered: errors (uncaught exceptions and any request that failed), console, and the accessibility tree, then a closing line naming the PNG it wrote. " +
+  "The path is a workspace file, relative to the working directory, and a directory means its index.html; the page loads at http://sheep.invalid/<path relative to the root>, so relative stylesheets, module scripts, images, and a fetch of the page's own JSON resolve to the files beside it, and an absolute /assets/x.js resolves from the root. " +
+  "The flags: `--root <dir>` mounts a directory at / (a relative path is then taken under it), `--click <selector>` and `--fill <selector> <text>` act in the order given once the page is idle, `--viewport <w>x<h>` (1024x768 unless said), `--full` captures the whole scroll height, and `--out <file>` names the PNG (look.png in the working directory unless said, overwritten). " +
+  "Read the PNG with the read tool to see the picture. " +
+  "dist, build, node_modules, and anything in .gitignore stay in the container and never sync back to the workspace, so a build you want to look at goes to a directory that syncs: `vite build --outDir site`, then `look --root site index.html`. " +
+  "There is no --script; the flags are all there is.";
 
 /** The pasture a cell was born into, as the prompt builder needs it. */
 export interface CellPasture {

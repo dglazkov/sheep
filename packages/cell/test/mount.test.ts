@@ -19,7 +19,7 @@ import type { SessionSummary } from "../src/directory.ts";
 import type { CellExecutionEnv } from "../src/env/execution-env.ts";
 import { shellNotice } from "../src/env/programs.ts";
 import { setFauxScript } from "../src/models.ts";
-import { parseSkill, pastureParagraph, skillFault, systemPrompt } from "../src/prompt.ts";
+import { EYES_PARAGRAPH, parseSkill, pastureParagraph, skillFault, systemPrompt } from "../src/prompt.ts";
 // pi's own formatter, from the leaf pasture phase 4's fork commit made of it, which is the module the cell imports.
 import { formatSkillsForPrompt } from "../../../vendor/pi/packages/coding-agent/dist/core/skills-prompt.js";
 import { PASTURE_READ_ONLY, PASTURE_ROOT } from "../src/workspace/mount.ts";
@@ -127,6 +127,12 @@ const PROMPT_CONTAINER_WITH_ISOLATE =
   `One exception: a line of exactly \`node <file> [args…]\`, the file a workspace script ending in .mjs, .js, or .cjs, runs in a fresh isolate instead of the container while no container is up; ${ISOLATE_DESCRIBED}; while a container is up, or when the line has more in it, node runs in the container. ` +
   "There is no cargo in either. Say so plainly when asked for something neither can do, rather than pretending it ran." +
   CLOSING;
+/**
+ * The pool's cells have eyes (`BROWSER` is bound in wrangler.jsonc), so the prompt a cell here builds carries the eyes'
+ * paragraph after the shell's line (eyes phase 1). The literals above are what a home without eyes says, and
+ * `systemPrompt` is held to them below, unchanged; this is the same literal with the one paragraph a sighted home adds.
+ */
+const PROMPT_IN_THE_POOL = PROMPT_NO_CONTAINER_WITH_ISOLATE.replace(CLOSING, `\n${EYES_PARAGRAPH}${CLOSING}`);
 
 describe("pasture phase 1: the mount", () => {
   it("journey 2 steps 2, 4, 5 as read paths: a file put through the object is read by read, cat, and find, changed, and gone, with no restart", async () => {
@@ -243,7 +249,7 @@ describe("pasture phase 1: the mount", () => {
 
     const prompt = await promptOf(id, "what do you know?");
     // The cell's own lines first, as they are for a pastureless sheep on this home, which has the loader.
-    expect(prompt.startsWith(`${PROMPT_NO_CONTAINER_WITH_ISOLATE}\n`)).toBe(true);
+    expect(prompt.startsWith(`${PROMPT_IN_THE_POOL}\n`)).toBe(true);
     const paragraph = pastureParagraph("skilled", null, "main");
     expect(paragraph).toContain("`pasture`");
     expect(paragraph).toContain("`pasture put <path> [file]`");
@@ -283,7 +289,7 @@ describe("pasture phase 1: the mount", () => {
     const block = formatSkillsForPrompt(skills, "read");
     expect(block).toContain("&quot;Quotes&quot;, &lt;tags&gt;, &amp; &apos;apostrophes&apos;");
     expect(block).not.toContain("hidden");
-    expect(sampled).toBe(`${PROMPT_NO_CONTAINER_WITH_ISOLATE}\n${pastureParagraph("sampled", null, "main")}${block}`);
+    expect(sampled).toBe(`${PROMPT_IN_THE_POOL}\n${pastureParagraph("sampled", null, "main")}${block}`);
 
     // Journey 2 step 4: the brief changes while the sheep lives; its next turn has the new one.
     await object.put("BRIEF.md", encode("# The brief, second edition\n\nRun nothing.\n"));
@@ -293,7 +299,7 @@ describe("pasture phase 1: the mount", () => {
     // A pasture with no brief and no skills: the paragraph, and nothing after it.
     await pasture("bare");
     const bare = await promptOf((await born("bare-reader", "bare")).id, "hello");
-    expect(bare).toBe(`${PROMPT_NO_CONTAINER_WITH_ISOLATE}\n${pastureParagraph("bare", null, "main")}`);
+    expect(bare).toBe(`${PROMPT_IN_THE_POOL}\n${pastureParagraph("bare", null, "main")}`);
   });
 
   it("journey 4 steps 1 and 2 criteria: a pastureless sheep's prompt is the literal, its CellFs has no second backing, and its shell has no /pasture", async () => {
@@ -305,7 +311,7 @@ describe("pasture phase 1: the mount", () => {
     const { id, pasture: none } = await born("lamb");
     expect(none).toBeNull();
     // The prompt the cell built for its model call is the literal, whole.
-    expect(await promptOf(id, "list the workspace")).toBe(PROMPT_NO_CONTAINER_WITH_ISOLATE);
+    expect(await promptOf(id, "list the workspace")).toBe(PROMPT_IN_THE_POOL);
     await inCell(id, async (cell) => {
       expect(cell.pasture).toBeUndefined();
       expect(cell.fs.pasture).toBeUndefined();

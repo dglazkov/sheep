@@ -16,8 +16,12 @@
  * release's config names, defined in as `SHEEP_IMAGE` beside the stamp,
  * since nothing on the platform tells a container its own digest; a
  * checkout reports `null`.
+ * Eyes phase 1: `GET /home` carries `eyes`, whether the Worker has the
+ * browser binding, asked of the one place that decides (`hasEyes`), so
+ * `sheep home` can print it beside the container.
  */
-import { unknownPasture } from "./directory.ts";
+import { type Budget, unknownPasture } from "./directory.ts";
+import { hasEyes } from "./eyes/eyes.ts";
 import { type FauxProgram, isFauxProgram } from "./models.ts";
 import { badPastureName, isPastureName, isSecretName } from "./pasture.ts";
 
@@ -70,6 +74,24 @@ export function homeBuild(): HomeBuild {
     // a define that is not JSON: reported as the checkout's, below
   }
   return CHECKOUT_BUILD;
+}
+
+/** `GET /home`'s body: what this home has, for `sheep home` to print. */
+export interface HomeReport extends Budget {
+  serverId: string;
+  /** Whether a container can be rented here: `PEN_CONTAINER` is bound. */
+  container: boolean;
+  /** Whether this home has eyes: `BROWSER` is bound, so every sheep's shell has `look` (eyes phase 1). */
+  eyes: boolean;
+  build: HomeBuild;
+  image: string | null;
+}
+
+/** The report for one env: the Directory's server id and budget, and what the bindings say the home has. */
+export async function homeReport(env: Env): Promise<HomeReport> {
+  const directory = env.DIRECTORY.getByName("home");
+  const budget = await directory.budget();
+  return { serverId: await directory.serverId(), container: env.PEN_CONTAINER !== undefined, eyes: hasEyes(env), build: homeBuild(), image: homeImage(), ...budget };
 }
 
 const PEN_DOOR = /^\/s\/([^/]+)\/pen$/;
@@ -160,10 +182,7 @@ export default {
       const pasture = url.searchParams.get("pasture");
       return Response.json(pasture === null ? await directory.list() : await directory.herd(pasture));
     }
-    if (url.pathname === "/home" && request.method === "GET") {
-      const budget = await directory.budget();
-      return Response.json({ serverId: await directory.serverId(), container: env.PEN_CONTAINER !== undefined, build: homeBuild(), image: homeImage(), ...budget });
-    }
+    if (url.pathname === "/home" && request.method === "GET") return Response.json(await homeReport(env));
     if (url.pathname === "/faux" && request.method === "POST" && env.SHEEP_PROVIDER === "faux") {
       // Test-only: the program every cell without one of its own answers from.
       const program: unknown = await request.json();

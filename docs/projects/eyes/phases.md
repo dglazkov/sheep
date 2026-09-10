@@ -20,18 +20,21 @@ renders from the files table alone.
 
 ---
 
-**Where we are: eyes phase 0 closed 8 Sep 2026. Next: eyes phase 1.**
-Planned the afternoon of the spike, from a conversation with the
-shepherd; the shepherd's calls are in the journey's front matter. The
-spike is [docs/spikes/eyes](../../spikes/eyes/README.md): the numbers,
-the findings, and the Worker the eyes are lifted from; its README is
-left as the record of what was tried, so it still names the puppeteer
-cache this project's phase 0 found to be the wrong one. The eyes
-themselves are built and proved in workerd; nothing yet asks them for a
-look. Eyes phase 1 waits on no person: the `look` program, the prompt's
-paragraph, and journeys 1 and 2 walked on this laptop with a real model.
-⚑ steps: eyes phase 2 deploys to the shepherd's account and spends
-browser minutes; the account ring spends them on every run. That is the
+**Where we are: eyes phases 0 and 1 closed, 8 and 9 Sep 2026. Next:
+eyes phase 2.** Planned the afternoon of the spike, from a conversation
+with the shepherd; the shepherd's calls are in the journey's front
+matter. The spike is [docs/spikes/eyes](../../spikes/eyes/README.md):
+the numbers, the findings, and the Worker the eyes are lifted from; its
+README is left as the record of what was tried, so it still names the
+puppeteer cache this project's phase 0 found to be the wrong one. The
+eyes are built and proved in workerd, and a sheep on the local home asks
+them for a look: `look` is in its shell, the prompt says so, and
+journeys 1 and 2 were walked on this laptop with a real model, a Vite
+app built in the container and looked at from the rows. Eyes phase 2 is
+the station: the release carrying the binding, `eyes` in the home's
+report, the rings, and journey 3 on the account. Its local parts wait
+on no one; ⚑ steps: the upgrade of `sheep-2` and the ring's station on
+the shepherd's account, and the browser minutes both spend. That is the
 one thing in this project that waits on the shepherd.
 
 The order is dependency order. Phase 0 is the eyes: the class, the
@@ -126,7 +129,16 @@ the image block; journey 2 with a real model, the Vite app built into a
 syncing directory and looked at from the rows. **⚑** none; the model's
 key is the shepherd's, as every walk's.
 
-**Status: NOT STARTED.**
+**Findings.**
+
+- **2026-09-09 — puppeteer's pruned snapshot takes a page with nothing focusable for one leaf.** Journey 2's built page printed `RootWebArea "app"` alone while the picture showed the table; `interestingOnly` stops at a focusable named root with no focusable child. The eyes take the snapshot whole and cut it by their own rule.
+- **2026-09-09 — The prompt's one paragraph was enough.** Journey 1's sheep looked with two `--click`s in one line and read the PNG unasked; journey 2's ran `vite build --outDir site` and `look --root app/site index.html` on its own, from `npm create vite` to the picture in 39 s.
+- **2026-09-09 — `look --root site index.html` reads two ways, and the program takes both.** Relative to the working directory it is outside the root; the program then reads it under the root, so the design's example and the `ls` spelling name the same page.
+- **2026-09-09 — Chrome asks for `/favicon.ico` once per browser session.** The first look at a page without an icon lists its 404; the second, in the same session, lists none, which the walk showed and the report-equality test dodges with an inline icon.
+- **2026-09-09 — The request list names another origin, through the eyes and not the report.** A page loading lodash from cdn.jsdelivr.net rendered with it and `seen.requests` named the origin, on this laptop's network; the report prints failures only, so journey 2's criterion is walked in the pool, not read by a sheep.
+- **2026-09-09 — Every look on the local home took 1.1 to 1.4 s, the first included.** The wrangler cache was warm from eyes phase 0; the launch a cold machine pays is eyes phase 2's hermetic ring to measure.
+
+**Status: CLOSED.** 2026-09-09. `look` is in every sighted sheep's shell and routes nowhere else; the prompt carries the paragraph only with eyes; `/home` says `eyes`; the suite holds each flag, the report byte for byte, the PNG from the rows, and the blind home's line; journeys 1 and 2 walked on the local home with a real model, the tree hole the walk found fixed and proved.
 
 ## Phase 2: The station
 

@@ -56,8 +56,11 @@ look <path> [--root <dir>] [--click <selector>]… [--fill <selector> <text>]…
 ```
 
 `<path>` is a workspace file, relative to the working directory or
-absolute under `/workspace`; a directory means its `index.html`. The
-page is loaded at `http://sheep.invalid/<path relative to the root>`,
+absolute under `/workspace`; a directory means its `index.html`. With
+`--root`, a relative path that falls outside the root is read under the
+root instead, so `look --root site index.html` and `look --root site
+site/index.html` both name the built page (eyes phase 1). The page is
+loaded at `http://sheep.invalid/<path relative to the root>`,
 so relative stylesheets, module scripts, images, and a `fetch` of the
 page's own JSON resolve to the rows beside it, and an absolute
 `/assets/x.js` resolves from the root. `--root <dir>` mounts a
@@ -72,8 +75,12 @@ The report is four short sections, in the order a sheep should read
 them: `errors`, the page's uncaught exceptions and any request that
 failed, 404 or aborted, one per line; `console`, each message with its
 level; `tree`, puppeteer's accessibility snapshot indented one level per
-depth, roles and names and values; and one closing line, `wrote
-look.png 1024x768 in 2.3s`. Nothing is truncated but the tree, at two
+depth, roles and names and values, taken whole and cut by the eyes to
+the nodes that say something: no `none`, `generic`, or `InlineTextBox`
+node, and no text that only repeats its parent's name or value, since puppeteer's
+own pruning (`interestingOnly`) takes a page with no focusable element
+for one leaf and reports its root alone (eyes phase 1); and one closing
+line, `wrote look.png 1024x768 in 2.3s`. Nothing is truncated but the tree, at two
 hundred lines with a line saying so. A look that fails to render, a
 missing path, a browser that could not be had, is a plain error line and
 exit 1, the program's own `{stdout, stderr, exitCode}`, since just-bash

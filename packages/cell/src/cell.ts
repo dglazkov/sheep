@@ -32,6 +32,7 @@ import { DurableObject } from "cloudflare:workers";
 import { BIRTH_ENTRY, BIRTH_TAIL_BYTES, BIRTH_TAIL_LINES, BIRTH_TIMEOUT_S, type BirthData, type BirthRecord, birthCommand, birthProjector } from "./birth.ts";
 import { type LaneState, taskOf } from "./directory.ts";
 import { CellExecutionEnv, type ContainerLineResult } from "./env/execution-env.ts";
+import { eyesFor } from "./eyes/eyes.ts";
 import { type CellModels, createCellModels, type FauxProgram, isFauxProgram } from "./models.ts";
 import { CredentialBroker, homeMinter, pastureMinter, type PastureSecrets } from "./pen/broker.ts";
 import { DEFAULT_IDLE } from "./pen/container.ts";
@@ -162,6 +163,9 @@ export class SessionCell extends DurableObject<Env> {
     const env = new CellExecutionEnv(this.ctx.storage.sql, {
       ...(lease === undefined ? {} : { container: lease, containerUp: () => lease.socket !== undefined, killTimeoutMs: seconds(this.env.PEN_KILL_TIMEOUT, 10) * 1000 }),
       ...(loader === undefined ? {} : { isolate: new Isolate(loader, { cpuMs: seconds(this.env.PEN_ISOLATE_CPU_MS, DEFAULT_CPU_MS) }) }),
+      // The eyes (eyes phase 1), over the env's own files table and this cell's SQLite for the session row; `eyesFor` decides
+      // whether this home has any, and a home without the binding gets none and no `look`.
+      eyes: (files) => eyesFor(this.env, files, this.ctx.storage.sql),
       // The mount and the program, both over the one stub: what the program puts, the mount's next call reads.
       ...(pasture === undefined || object === undefined
         ? {}

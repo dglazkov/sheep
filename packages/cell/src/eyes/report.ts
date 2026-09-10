@@ -59,6 +59,60 @@ export interface Seen {
   out: string;
 }
 
+/**
+ * The roles the eyes cut out of the whole snapshot, hoisting their
+ * children up a level: layout nodes that say nothing about the page.
+ */
+export const PRUNED_ROLES: ReadonlySet<string> = new Set(["none", "generic", "InlineTextBox"]);
+
+/**
+ * The whole snapshot cut to the nodes that say something (eyes phase 1).
+ * puppeteer's own pruning, `interestingOnly`, takes a page with no
+ * focusable element for one leaf and reports its root alone: in its
+ * `isLeafNode` a focusable node with a name is a leaf when nothing under
+ * it is focusable, and Chrome marks the `RootWebArea` focusable. So the
+ * eyes take the snapshot whole and cut it here, by two rules: a node
+ * whose role is `none`, `generic`, or `InlineTextBox` is dropped and its
+ * children hoisted a level, so the depth is the depth of what is said;
+ * and a `StaticText` whose name only repeats the nearest kept ancestor's
+ * name, or its value as a string, is dropped, so `heading "People"` is
+ * not followed by `StaticText "People"` and `textbox "name" "Dolly"` not
+ * by `StaticText "Dolly"`. Everything else stays: roles, names, values.
+ * The root is never dropped. A pure function of the snapshot, so the
+ * shape is asserted without a browser.
+ */
+export function pruneTree(node: AxNode | null): AxNode | null {
+  if (node === null) return null;
+  return kept(node);
+}
+
+/** `node` with its subtree pruned: its kept children are the pruned children of the whole subtree under it. */
+function kept(node: AxNode): AxNode {
+  const { children: _children, ...own } = node;
+  const children = prunedChildren(node.children ?? [], node);
+  return children.length === 0 ? own : { ...own, children };
+}
+
+/** Whether a text node only repeats what its nearest kept ancestor already says: its name, or its value. */
+function repeats(text: AxNode, ancestor: AxNode): boolean {
+  if (text.role !== "StaticText" || text.name === undefined || text.name === "") return false;
+  return text.name === ancestor.name || (ancestor.value !== undefined && text.name === String(ancestor.value));
+}
+
+function prunedChildren(children: readonly AxNode[], ancestor: AxNode): AxNode[] {
+  const out: AxNode[] = [];
+  for (const child of children) {
+    if (PRUNED_ROLES.has(child.role)) {
+      // Hoisted: the children take this node's place, at its depth, under the same kept ancestor.
+      out.push(...prunedChildren(child.children ?? [], ancestor));
+      continue;
+    }
+    if (repeats(child, ancestor)) continue;
+    out.push(kept(child));
+  }
+  return out;
+}
+
 /** The tree is cut here, and says so. Everything else in the report is whole. */
 export const TREE_LINES = 200;
 

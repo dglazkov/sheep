@@ -24,7 +24,7 @@ import type { SessionCell } from "../src/cell.ts";
 import type { SessionSummary } from "../src/directory.ts";
 import type { CellExecutionEnv } from "../src/env/execution-env.ts";
 import { contentTypeOf, DEFAULT_VIEWPORT, Eyes, eyesFor, LookError, ORIGIN } from "../src/eyes/eyes.ts";
-import { closing, pngSize, report, type Seen, TREE_LINES, treeLines } from "../src/eyes/report.ts";
+import { type AxNode, closing, pngSize, PRUNED_ROLES, pruneTree, report, type Seen, TREE_LINES, treeLines } from "../src/eyes/report.ts";
 
 const headers = { authorization: "Bearer test-token", "content-type": "application/json" };
 
@@ -58,6 +58,13 @@ const SITE: Record<string, string> = {
 <script type="module" src="/assets/app-a1b2c3d4.js"></script><style>body{margin:0}#tall{height:3000px}</style></head>
 <body><h1>Built</h1><div id="tall"></div></body></html>`,
   "site/assets/app-a1b2c3d4.js": `console.log("the hashed asset ran");`,
+};
+
+/** A page as a Vite build might leave one: a heading and a table of cells, and nothing focusable — no button, link, input, or tabindex. */
+const SIMPLE: Record<string, string> = {
+  "simple/index.html": `<!doctype html><html><head><meta charset="utf-8"><title>app</title><link rel="icon" href="data:,"></head>
+<body><div id="app"><h1>People</h1><table><thead><tr><th>ID</th><th>Name</th></tr></thead>
+<tbody><tr><td>1</td><td>Dolly</td></tr><tr><td>2</td><td>Shaun</td></tr><tr><td>3</td><td>Blackie</td></tr></tbody></table></div></body></html>`,
 };
 
 function home(path: string, init?: RequestInit): Promise<Response> {
@@ -114,6 +121,59 @@ describe("the report, without a browser", () => {
     expect(lines.filter((line) => /^ {4}n\d+$/.test(line)).length).toBe(TREE_LINES - 1);
     expect(text).toContain(`… ${401 - TREE_LINES} more lines of tree, not shown`);
     expect(lines.filter((line) => line.startsWith("  error ")).length).toBe(300);
+  });
+
+  it("cuts the whole snapshot to the nodes that say something: no none, generic, or InlineTextBox, children hoisted, and no text that only repeats its parent", () => {
+    // The simple page's whole snapshot, as puppeteer returns it with `interestingOnly: false`.
+    const whole: AxNode = {
+      role: "RootWebArea",
+      name: "app",
+      children: [
+        {
+          role: "none",
+          children: [
+            {
+              role: "none",
+              children: [
+                { role: "heading", name: "People", children: [{ role: "StaticText", name: "People", children: [{ role: "InlineTextBox", name: "People" }] }] },
+                {
+                  role: "table",
+                  children: [
+                    {
+                      role: "none",
+                      children: [
+                        { role: "row", children: [{ role: "columnheader", name: "ID", children: [{ role: "StaticText", name: "ID", children: [{ role: "InlineTextBox", name: "ID" }] }] }] },
+                        { role: "row", children: [{ role: "gridcell", name: "1", children: [{ role: "StaticText", name: "1", children: [{ role: "InlineTextBox", name: "1" }] }] }] },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    expect(treeLines(pruneTree(whole))).toEqual([`RootWebArea "app"`, `  heading "People"`, `  table`, `    row`, `      columnheader "ID"`, `    row`, `      gridcell "1"`]);
+    // Text that says more than its parent stays; a text that only repeats a textbox's value goes, as one that repeats a
+    // heading's name does; a generic wrapper is hoisted through, not lost.
+    const said: AxNode = {
+      role: "RootWebArea",
+      name: "notes",
+      children: [
+        { role: "generic", children: [{ role: "paragraph", children: [{ role: "StaticText", name: "Hello, world." }] }] },
+        { role: "textbox", name: "name", value: "Dolly", children: [{ role: "generic", children: [{ role: "StaticText", name: "Dolly" }] }] },
+        { role: "StaticText", name: "notes" },
+        { role: "InlineTextBox", name: "stray" },
+      ],
+    };
+    expect(treeLines(pruneTree(said))).toEqual([`RootWebArea "notes"`, `  paragraph`, `    StaticText "Hello, world."`, `  textbox "name" "Dolly"`]);
+    // A number's value is compared as the text it prints as.
+    expect(treeLines(pruneTree({ role: "spinbutton", name: "count", value: 2, children: [{ role: "StaticText", name: "2" }] }))).toEqual([`spinbutton "count" "2"`]);
+    // The root is never dropped, nothing is a `none`, and `null` stays `null`.
+    expect(pruneTree({ role: "none", children: [{ role: "heading", name: "x" }] })).toEqual({ role: "none", children: [{ role: "heading", name: "x" }] });
+    expect(pruneTree(null)).toBeNull();
+    expect([...PRUNED_ROLES].sort()).toEqual(["InlineTextBox", "generic", "none"]);
   });
 
   it("reads a PNG's size out of its header", () => {
@@ -204,6 +264,26 @@ describe("the eyes in workerd", () => {
         expect(pngSize(full.png).width).toBe(DEFAULT_VIEWPORT.width);
         expect(pngSize(full.png).height).toBeGreaterThan(3000);
         expect(full.report.trimEnd().split("\n").at(-1)).toBe(`wrote look.png 1024x${pngSize(full.png).height} in ${(full.seen.ms / 1000).toFixed(1)}s`);
+      });
+    },
+    LOOK_TIMEOUT_MS,
+  );
+
+  it(
+    "journey 2 step 2: a page with nothing focusable still has its heading and every cell in the tree, and no layout node",
+    async () => {
+      await looker("simple", SIMPLE, async (eyes) => {
+        const seen = await eyes.look({ path: "/workspace/simple/index.html", root: "/workspace/simple" });
+        const tree = treeLines(seen.seen.tree);
+        expect(tree.length).toBeGreaterThan(1);
+        expect(tree[0]).toBe(`RootWebArea "app"`);
+        expect(tree).toContain(`  heading "People"`);
+        expect(tree.join("\n")).toContain("table");
+        for (const cell of ["ID", "Name", "1", "Dolly", "2", "Shaun", "3", "Blackie"]) expect(tree.some((line) => line.endsWith(` "${cell}"`)), cell).toBe(true);
+        for (const line of tree) expect(line.trim().split(" ")[0], line).not.toMatch(/^(none|generic|InlineTextBox)$/);
+        // The heading's text is said once: the heading, and no StaticText that only repeats it.
+        expect(tree.filter((line) => line.includes(`"People"`))).toEqual([`  heading "People"`]);
+        expect(seen.report).toContain(`gridcell "Blackie"`);
       });
     },
     LOOK_TIMEOUT_MS,

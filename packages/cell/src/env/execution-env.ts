@@ -28,6 +28,10 @@
  * Pasture phase 4: with a pasture whose tree has `setup.sh`, the container
  * path runs it once per container, after the sync-in and before the
  * command, with the pasture's other secrets in that run alone.
+ * Eyes phase 1: with `eyes`, the shell of each run is made with the `look`
+ * command (`env/look-command.ts`) over this env's files table, and the
+ * router counts the name as tier 0; `home.eyes` says so. Without, just-bash
+ * is made as before and `look` is its not-found line with the eyes' sentence.
  */
 import type { Context } from "@earendil-works/pi-agent-core";
 import {
@@ -44,14 +48,16 @@ import {
   type ShellExecResult,
 } from "@earendil-works/pi-agent-core";
 import type { ManifestEntry, Refused } from "@sheep/pen/protocol";
-import { Bash } from "just-bash/browser";
+import { Bash, type Command } from "just-bash/browser";
 import { posix } from "node:path";
+import type { Eyes } from "../eyes/eyes.ts";
 import { Checkout, CheckoutInterrupted } from "../pen/checkout.ts";
 import { type Isolate, IsolateEnded } from "../pen/isolate.ts";
 import { ContainerRun, KillUnanswered, type RunEnd, RunInterrupted } from "../pen/run.ts";
 import { CellFs } from "../workspace/cell-fs.ts";
 import { type FileRow, FilesTable, FsError, isReadable, MAX_FILE_BYTES, normalizePath, TEMP_ROOT, WORKSPACE_ROOT } from "../workspace/files.ts";
 import { annotateReadOnly, isPasturePath, PASTURE_ROOT, PastureCall, type PastureRow, type PastureSource, readOnly } from "../workspace/mount.ts";
+import { LOOK_PROGRAMS, lookCommand } from "./look-command.ts";
 import { PASTURE_PROGRAMS, type PastureProgram, pastureCommand } from "./pasture-command.ts";
 import {
   annotateCommandNotFound,
@@ -202,6 +208,12 @@ export interface CellExecutionEnvOptions {
   pasture?: PastureSource & SetupSecrets;
   /** The program's needs, for a sheep with a pasture: its name, this sheep's id, the object, and the directory's herd. Absent, the shell has no `pasture`. */
   pastureProgram?: PastureProgram;
+  /**
+   * Eyes phase 1: the cell's eyes, built over this env's own files table so a look renders the rows the shell writes;
+   * `eyesFor` is the one place that decides, and returns `undefined` on a home without the binding. Absent, or
+   * returning nothing, the shell has no `look` and `home.eyes` is false.
+   */
+  eyes?: (files: FilesTable) => Eyes | undefined;
 }
 
 /** How a command ended, before the capture is settled. */
@@ -233,6 +245,10 @@ export class CellExecutionEnv implements ExecutionEnv {
   readonly pasture: (PastureSource & SetupSecrets) | undefined;
   /** The program, or `undefined` for a pastureless cell, whose shell is made without it. */
   readonly pastureProgram: PastureProgram | undefined;
+  /** The eyes, or `undefined` on a home without them, whose shell is made without `look`. */
+  readonly eyes: Eyes | undefined;
+  /** What this cell's just-bash has beyond the registry — the custom commands its shell is made with — for the router to count as tier 0; `undefined` when there are none. */
+  private readonly custom: ReadonlySet<string> | undefined;
   private readonly shellEnv: Record<string, string>;
   private readonly container: ContainerLease | undefined;
   private readonly containerUp: (() => boolean) | undefined;
@@ -249,6 +265,9 @@ export class CellExecutionEnv implements ExecutionEnv {
     this.fs = new CellFs(this.files);
     this.pasture = options.pasture;
     this.pastureProgram = options.pastureProgram;
+    this.eyes = options.eyes?.(this.files);
+    const custom = [...(this.pastureProgram === undefined ? [] : PASTURE_PROGRAMS), ...(this.eyes === undefined ? [] : LOOK_PROGRAMS)];
+    this.custom = custom.length === 0 ? undefined : new Set(custom);
     this.container = options.container;
     this.containerUp = options.containerUp;
     this.isolate = options.isolate;
@@ -264,7 +283,7 @@ export class CellExecutionEnv implements ExecutionEnv {
 
   /** What this home has, as the table sees it: the static half, without asking about the budget. */
   get home(): Home {
-    return { container: this.container !== undefined, isolate: this.isolate !== undefined, containerUp: this.containerUp?.() === true };
+    return { container: this.container !== undefined, isolate: this.isolate !== undefined, containerUp: this.containerUp?.() === true, eyes: this.eyes !== undefined };
   }
 
   /** What this home has right now: the static half plus the budget, asked of the lease. */
@@ -518,8 +537,9 @@ export class CellExecutionEnv implements ExecutionEnv {
     const home = this.container === undefined ? this.home : await this.homeNow();
     let route: Route = { tier: 0, programs: [] };
     if (this.container !== undefined || this.isolate !== undefined) {
-      // The program is tier 0 in a pastured cell: a line of `pasture put …` stays in just-bash on a home with a container too.
-      const classified = classify(command, home, (file) => this.isWorkspaceFile(file, cwd), this.pastureProgram === undefined ? undefined : PASTURE_PROGRAMS);
+      // The custom commands are tier 0: a line of `pasture put …` in a pastured cell, or `look …` in a cell with eyes, stays in
+      // just-bash on a home with a container too.
+      const classified = classify(command, home, (file) => this.isWorkspaceFile(file, cwd), this.custom);
       if (this.container !== undefined || ("tier" in classified && classified.tier === 1)) route = classified;
     }
     const environment = options?.inheritEnv === false ? { ...options.env } : { ...this.shellEnv, ...options?.env };
@@ -558,8 +578,9 @@ export class CellExecutionEnv implements ExecutionEnv {
   /**
    * Tier 0: just-bash over the rows, as the shell always ran it; `fs`
    * carries this call's mount when the cell has a pasture, and then, and
-   * only then, just-bash is made with the `pasture` command over it. A
-   * pastureless cell's just-bash is made exactly as before.
+   * only then, just-bash is made with the `pasture` command over it; with
+   * eyes, and only then, with the `look` command over the files table. A
+   * cell with neither has its just-bash made exactly as before.
    */
   private async runInShell(
     command: string,
@@ -583,12 +604,15 @@ export class CellExecutionEnv implements ExecutionEnv {
     signal?.addEventListener("abort", onAbort, { once: true });
 
     const program = this.pastureProgram;
+    const customCommands: Command[] = [];
+    if (program !== undefined && fs.pasture !== undefined) customCommands.push(pastureCommand(program, fs.pasture));
+    if (this.eyes !== undefined) customCommands.push(lookCommand(this.eyes, this.files));
     const bash = new Bash({
       fs,
       cwd,
       env: { ...environment, PWD: cwd },
       executionLimits: EXECUTION_LIMITS,
-      ...(program === undefined || fs.pasture === undefined ? {} : { customCommands: [pastureCommand(program, fs.pasture)] }),
+      ...(customCommands.length === 0 ? {} : { customCommands }),
     });
 
     try {

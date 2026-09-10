@@ -24,7 +24,7 @@
 import type { Browser, HTTPRequest, Page } from "@cloudflare/puppeteer";
 import { posix } from "node:path";
 import { type FilesTable, normalizePath, WORKSPACE_ROOT } from "../workspace/files.ts";
-import { type AxNode, type ConsoleLine, pngSize, report, type RequestLine, type Seen } from "./report.ts";
+import { type AxNode, type ConsoleLine, pngSize, pruneTree, report, type RequestLine, type Seen } from "./report.ts";
 import { EyesSession } from "./session.ts";
 
 /** The address the workspace is mounted at inside the browser. Nothing serves it. */
@@ -89,8 +89,13 @@ export class LookError extends Error {
  * than reading the env themselves, so there is one answer to "does this
  * home have eyes" and one place to change it.
  */
-export function eyesFor(env: Env, files: FilesTable, sql: SqlStorage): Eyes | undefined {
+export function eyesFor(env: Pick<Env, "BROWSER">, files: FilesTable, sql: SqlStorage): Eyes | undefined {
   return env.BROWSER === undefined ? undefined : new Eyes(env.BROWSER, files, sql);
+}
+
+/** Whether this home has eyes at all: the same test `eyesFor` makes, for `/home` to report without building any (eyes phase 1). */
+export function hasEyes(env: Pick<Env, "BROWSER">): boolean {
+  return env.BROWSER !== undefined;
 }
 
 export class Eyes {
@@ -182,7 +187,8 @@ export class Eyes {
       await page.goto(url, { waitUntil: "networkidle0", timeout: GOTO_TIMEOUT_MS });
       await act(page, request.actions ?? []);
       const png = new Uint8Array(await page.screenshot({ type: "png", fullPage: request.full === true }));
-      const tree = (await page.accessibility.snapshot()) as AxNode | null;
+      // Whole, then cut by the eyes' own rule: puppeteer's `interestingOnly` reports a page with nothing focusable as its root alone.
+      const tree = pruneTree((await page.accessibility.snapshot({ interestingOnly: false })) as AxNode | null);
       const seen: Seen = { errors, console: messages, requests, tree, ...pngSize(png), ms: Date.now() - started, out };
       return { png, report: report(seen), seen };
     } finally {

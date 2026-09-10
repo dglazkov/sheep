@@ -185,7 +185,7 @@ describe("a lamb home has no tier 1", () => {
       state.storage.sql.exec("DROP TABLE IF EXISTS file_chunks");
       const cell = new CellExecutionEnv(state.storage.sql);
       expect(cell.home.isolate).toBeFalsy();
-      expect(cell.home).toEqual({ container: false, isolate: false, containerUp: false });
+      expect(cell.home).toEqual({ container: false, isolate: false, containerUp: false, eyes: false });
       await write(cell, { "compute.mjs": 'console.log("never");' });
       expect(classify("node compute.mjs", cell.home)).toMatchObject({ refused: "node", sentence: SHELL_NOTICE });
       expect(classify("node compute.mjs", await cell.homeNow())).not.toMatchObject({ tier: 1 });
@@ -426,12 +426,12 @@ describe("a node line while a container is up goes to the container, and to the 
       "up",
       async (cell) => {
         await write(cell, { "compute.mjs": 'console.log("from the isolate");' });
-        expect(cell.home).toEqual({ container: true, isolate: true, containerUp: false });
+        expect(cell.home).toEqual({ container: true, isolate: true, containerUp: false, eyes: false });
         expect((await bash(cell, "node compute.mjs")).text).toBe("from the isolate\n");
         expect(rents).toBe(0);
         expect((await bash(cell, "pnpm test")).text).toBe("1 passed\n");
         expect(rents).toBe(1);
-        expect(cell.home).toEqual({ container: true, isolate: true, containerUp: true });
+        expect(cell.home).toEqual({ container: true, isolate: true, containerUp: true, eyes: false });
         expect((await bash(cell, "node compute.mjs")).text).toBe("from the container\n");
         expect(rents).toBe(2);
         await new Promise((resolve) => setTimeout(resolve, 25));
