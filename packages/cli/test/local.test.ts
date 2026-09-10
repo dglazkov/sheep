@@ -124,7 +124,11 @@ async function deadPid(): Promise<number> {
  * keeps answering for it until the parent goes.
  */
 async function zombiePid(): Promise<{ pid: number; reap: () => void }> {
-  const parent = spawn("sh", ["-c", `"${process.execPath}" -e "console.log(process.pid)" & exec sleep 60`], { stdio: ["ignore", "pipe", "ignore"] });
+  // `process.stdout.write` of a string, not `console.log` of a number: console.log sends the number
+  // through util.inspect, which paints it yellow when the environment asks for colour (FORCE_COLOR is
+  // set in some terminals and agents), and `Number("\u001b[33m123\u001b[39m")` is NaN. The pid then
+  // names no process and this reads a zombie as already reaped.
+  const parent = spawn("sh", ["-c", `"${process.execPath}" -e "process.stdout.write(String(process.pid) + String.fromCharCode(10))" & exec sleep 60`], { stdio: ["ignore", "pipe", "ignore"] });
   let out = "";
   const pid = await new Promise<number>((resolve) => {
     parent.stdout.on("data", (chunk: Buffer) => {

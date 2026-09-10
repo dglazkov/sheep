@@ -23,6 +23,15 @@ by the conductor, recorded, committed whole.
 - **Proofs run in workerd, never in Node.** `packages/cell` tests go
   through `@cloudflare/vitest-pool-workers`. A test that passes in Node
   proves that Node works.
+- **Every test is in a ring, and the ring says what it needs.** Inside
+  this checkout: `checkout` runs in this process, `command` spawns the
+  built command against fakes, `home` starts a real `wrangler dev`.
+  Outward from it, `hermetic.mjs`'s four: `package`, `machine`, `dog`,
+  `account`. `pnpm test` runs the inner three, which is what a phase's
+  proof means; `pnpm test --ring <name>` runs one, and `--list` shows
+  them. Membership is written down in `scripts/rings.mjs` and a guard
+  (`packages/cli/test/rings.test.ts`) fails when a file's ring and what
+  the file actually does disagree. A new test file goes in a ring.
 - **Pi is a dependency, never a copy.** `vendor/pi` is a submodule tracking
   the `sheep` branch of `github.com/dglazkov/pi`, which is upstream pi plus
   a few small commits; `git log upstream/main..sheep` in it is the whole
@@ -38,7 +47,9 @@ by the conductor, recorded, committed whole.
 git submodule update --init
 (cd vendor/pi && npm ci --ignore-scripts && for p in chord tui telemetry ai agent session-backends/sqlite-node protocol client server coding-agent; do (cd packages/$p && npm run build); done)
 pnpm install
-pnpm test          # every package's suite; the cell's runs in workerd
+pnpm test          # the inner rings: checkout, command, home
+pnpm test --list   # what is in each ring
+pnpm test --ring checkout   # this process alone; the inner loop
 cp packages/cell/.dev.vars.example packages/cell/.dev.vars   # then fill in SHEEP_TOKEN and SHEEP_ANTHROPIC_API_KEY
 pnpm --filter @sheep/cell dev        # a local home on :8787 (wrangler), reading .dev.vars
 SHEEP_HOME=http://127.0.0.1:8787 SHEEP_TOKEN=... node packages/cli/bin/sheep.js new -- "hello"

@@ -1,5 +1,6 @@
 import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
 import { defineConfig } from "vitest/config";
+import { ringConfig } from "../../scripts/rings.mjs";
 
 export default defineConfig({
   /**
@@ -9,7 +10,8 @@ export default defineConfig({
    * runs. Thirty seconds is the ceiling for the category; a case that needs
    * longer still says so.
    */
-  test: { testTimeout: 30_000 },
+  // `SHEEP_RING` narrows this to one ring's files; unset, everything here runs.
+  test: { testTimeout: 30_000, ...ringConfig("packages/cell") },
   plugins: [
     cloudflareTest({
       wrangler: { configPath: "./wrangler.jsonc" },

@@ -25,6 +25,11 @@
  *   --timeout <minutes>                    dog ring: the container is killed after this long (default 30)
  *   --agent <name>                         dog ring: claude-code, the only dog so far
  *
+ * These are the outer rings, which prove a release. The inner three —
+ * `checkout`, `command`, `home` — are `pnpm test --ring <name>` and prove
+ * this checkout; `scripts/rings.mjs` holds both halves of the ladder and
+ * the reasoning. The rule is the same on either side of it.
+ *
  * The rings are one script with one walk: the ring chooses the environment,
  * never the steps. The machine ring exports the ref into a build context as
  * a bare repository, builds an image from `node:22-slim` and one from
