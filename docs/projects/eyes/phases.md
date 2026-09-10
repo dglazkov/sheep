@@ -20,9 +20,8 @@ renders from the files table alone.
 
 ---
 
-**Where we are: eyes phases 0 and 1 closed, 8 and 9 Sep 2026; eyes
-phase 2 PART-DONE 9 Sep 2026. Next: eyes phase 2's account walk, which
-waits on the shepherd.** Planned the afternoon of the spike, from a
+**Where we are: done. Eyes phases 0, 1, and 2 closed, 8 and 9 Sep
+2026; nothing waits on anyone.** Planned the afternoon of the spike, from a
 conversation with the shepherd; the shepherd's calls are in the
 journey's front matter. The spike is
 [docs/spikes/eyes](../../spikes/eyes/README.md): the numbers, the
@@ -34,10 +33,13 @@ and journeys 1 and 2 were walked here with a real model. The release
 guards the binding, `sheep home` says `eyes: yes|no`, the local home's
 start says where the first look's Chrome goes, the package ring walks
 journey 1 steps 1 to 4 with the faux provider in a fresh `HOME`, and
-the account ring carries the same walk, unrun. What is left is journey
-3 on the account: `sheep-2` upgraded from this release and looked
-through, and the account ring green; ⚑ steps, every one, and the only
-thing in this project that waits on the shepherd.
+the account ring walks the same on its station. Journey 3 was walked
+on the account the night of 9 Sep: `sheep-2` said `eyes: no`, was
+upgraded from release b321940 by the shepherd's hand, said `eyes: yes`,
+and a real model looked there; the account ring held with the look on
+its station. Two debts are Open under eyes phase 2, neither this
+project's to pay: eyes in the machine and dog rings, and a `sheep`
+already on a machine's PATH fooling the rings' first step.
 
 The order is dependency order. Phase 0 is the eyes: the class, the
 binding, the interception over the rows, the session, and the workerd
@@ -171,11 +173,12 @@ minutes both spend, ten a session at most.
 
 **Findings.**
 
-- **2026-09-09 — The cold first look in a fresh `HOME` took 7 to 21 s across four package rings, the 283 MB download the whole difference.** 7.7 s on the release candidate; the second look, on the kept session, 0.9 to 1.1 s every time. The platform's launch is the account walk's to measure.
-- **2026-09-09 — miniflare's Chrome cache follows `XDG_CACHE_HOME` before `HOME`.** The package ring strips it from the walk's environment, so a fresh `HOME` is a fresh cache; without that a machine's own Chrome makes the cold look warm and the ring proves nothing about the fetch.
+- **2026-09-09 — The cold first look in a fresh `HOME` took 7 to 21 s across four package rings, the 283 MB download the whole difference.** 7.7 s on the release candidate; the second look, on the kept session, 0.9 to 1.1 s every time.
+- **2026-09-09 — miniflare's Chrome cache follows `XDG_CACHE_HOME` before `HOME`.** The package ring strips it, so a fresh `HOME` is a fresh cache and the cold look is the fetch.
 - **2026-09-09 — The machine and dog rings do not walk the look.** Their image has none of Chrome's shared libraries, and Chrome for Testing has no linux/arm64 build, which a container on this Mac is; the inner package ring runs with `--no-eyes` there and says so as unchecked.
-- **2026-09-09 — `shippedConfig` carried both bindings into release 5b1f887 untouched.** Lines 48 and 116 of its `home/wrangler.jsonc`; `assertEyes` only says so before the file is written, so a config that loses one fails the release rather than deploying a blind home.
-- **2026-09-09 — Open: journey 3 on the account.** `sheep home` on `sheep-2` saying `eyes: no` and a look refused by name; `sheep home deploy`; `eyes: yes`; journey 1 there with a real model, launch and connect timed; `pnpm hermetic --ring account --yes <ref>` green. Waits on the shepherd's yes: the upgrade of `sheep-2`, the ring's station, and about eleven browser minutes each.
+- **2026-09-09 — A station from before the eyes answers `look` with its container's line.** On `sheep-2` at build 768051a a sheep got `bash: line 1: look: command not found` and `sheep home` said `eyes: no`; the annotated sentence is this release's, and journey 3 step 1 now says so.
+- **2026-09-09 — On the platform the first look paid 9.9 s, the kept session then 5.6 and 3.6 s.** Journey 1 on `sheep-2` after the upgrade, a real model; the ring's station saw 4.8 s then 3.2 s with the faux provider.
 - **2026-09-09 — Open: eyes in the machine and dog rings.** Waits on a Chrome for linux/arm64, or an amd64 machine and the image's libraries.
+- **2026-09-09 — Open: a `sheep` already on PATH fools the rings' first step.** The account ring failed at step 1 with a global `sheep` installed: setup found it on-path and installed none into the ring's prefix. The rings strip only the checkout from PATH.
 
-**Status: PART-DONE.** 2026-09-09. Every proof that runs here ran: the candidate's package ring walked the look in a fresh `HOME`, its config binds `BROWSER` in both environments, `sheep home` reports eyes in both branches, the docs and the guide say what a sheep can see; the account walk waits on the shepherd.
+**Status: CLOSED.** 2026-09-09. The release guards the binding, `sheep home` reports eyes, the package ring walks the look in a fresh `HOME`, `sheep-2` was upgraded and looked through with a real model, and the account ring held with the look on its station, journey 3 walked whole.
