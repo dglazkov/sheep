@@ -173,14 +173,14 @@ minutes both spend, ten a session at most.
 
 **Findings.**
 
-- **2026-09-09 — The cold first look in a fresh `HOME` took 7 to 21 s across four package rings, the 283 MB download the whole difference.** 7.7 s on the candidate; the second look 0.9 to 1.1 s on the kept session.
+- **2026-09-09 — The cold first look in a fresh `HOME` took 7 to 21 s across four package rings, the 283 MB download the difference; the second look 1 s.**
 - **2026-09-09 — miniflare's Chrome cache follows `XDG_CACHE_HOME` before `HOME`.** The package ring strips it, so a fresh `HOME` is a fresh cache.
-- **2026-09-09 — The model sees the picture.** On `sheep-2` a sheep was given a PNG it could not read as text, a data URI of a blue triangle and a red circle, looked, read `look.png`, and named both shapes, colours, and sides; the tree said only `image`.
-- **2026-09-09 — Open: the cell's shell is not binary-safe.** `base64 -d > pic.png` in just-bash wrote 1061 bytes for 1055, six high bytes mangled, and Chrome drew nothing. A sheep that needs a binary file writes it another way; the shell's owner is the pen.
-- **2026-09-09 — The machine and dog rings do not walk the look.** Their image has none of Chrome's shared libraries, and Chrome for Testing has no linux/arm64 build, which a container on this Mac is; the inner package ring runs with `--no-eyes` there and says so as unchecked.
-- **2026-09-09 — A station from before the eyes answers `look` with its container's line.** On `sheep-2` at build 768051a a sheep got `bash: line 1: look: command not found` and `sheep home` said `eyes: no`; the annotated sentence is this release's, and journey 3 step 1 now says so.
+- **2026-09-09 — The model sees the picture.** A sheep on `sheep-2` was given a PNG it could not read as text, a data URI of a blue triangle and a red circle, looked, and named both shapes, colours, and sides; the tree said only `image`.
+- **2026-09-09 — Open: the cell's shell is not binary-safe.** `base64 -d > pic.png` in just-bash wrote 1061 bytes for 1055, six high bytes mangled, and Chrome drew nothing. The pen's to pay.
+- **2026-09-09 — The machine and dog rings do not walk the look.** Chrome for Testing has no linux/arm64 build, which a container on this Mac is; the inner package ring runs with `--no-eyes` there and says so as unchecked.
+- **2026-09-09 — A station from before the eyes answers `look` with its container's line.** On `sheep-2` at build 768051a: `bash: line 1: look: command not found`, and `eyes: no`; the annotated sentence is this release's.
 - **2026-09-09 — On the platform the first look paid 9.9 s, the kept session then 5.6 and 3.6 s.** Journey 1 on `sheep-2` after the upgrade, a real model; the ring's station saw 4.8 s then 3.2 s with the faux provider.
 - **2026-09-09 — Open: eyes in the machine and dog rings.** Waits on a Chrome for linux/arm64, or an amd64 machine and the image's libraries.
-- **2026-09-09 — Open: a `sheep` already on PATH fools the rings' first step.** The account ring failed at step 1 with a global `sheep` installed: setup found it on-path and installed none into the ring's prefix. The rings strip only the checkout from PATH.
+- **2026-09-09 — Open: a `sheep` already on PATH fools the rings' first step.** With a global `sheep` installed, setup found it on-path and installed none into the ring's prefix; the rings strip only the checkout from PATH.
 
 **Status: CLOSED.** 2026-09-09. The release guards the binding, `sheep home` reports eyes, the package ring walks the look in a fresh `HOME`, `sheep-2` was upgraded and looked through with a real model, and the account ring held with the look on its station, journey 3 walked whole.
