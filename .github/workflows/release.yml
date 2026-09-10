@@ -70,7 +70,14 @@ jobs:
 
       # A release nobody tested is a release that installs a broken command. If these fail,
       # main keeps its last good release until the next green commit. The cell's suite runs in workerd.
-      - run: pnpm test
+      #
+      # `--ci` is the checkout and command rings, which is every ring but `home` (scripts/rings.mjs
+      # holds the list and the reason). The home ring starts a real `wrangler dev` for each of its
+      # files: the slowest and least steady thing in the repository, and a walk that flakes on a
+      # shared runner teaches a reader to ignore red. It is walked in a checkout instead, by whoever
+      # is closing the phase, where `pnpm test` runs it by default. So green here means the two
+      # rings held and says nothing about the walk.
+      - run: pnpm test --ci
       - run: pnpm -r typecheck
 
       # The pen image, for linux/amd64 (the platform Cloudflare runs), tagged with the same seven characters

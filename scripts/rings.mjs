@@ -45,6 +45,29 @@ export const RING_NEEDS = {
 };
 
 /**
+ * Which rings CI runs. The home ring does not: it starts a real `wrangler
+ * dev` per file, which on a shared runner is the slowest and least steady
+ * thing in the repository, and a walk that flakes on a runner teaches a
+ * reader to ignore red. It is a walk, and walks are conducted here, on a
+ * machine with a person or an agent watching — the same rule the conduct
+ * skill already applies to a phase's walk, which is not CI's to sign off.
+ *
+ * So a green CI means the checkout and command rings held, and nothing
+ * about the home ring. `pnpm test` runs all three, so an agent working in
+ * a checkout walks it by doing the ordinary thing; CI asks for the two by
+ * name. A ring added later must say which it is, and the guard makes sure
+ * it does rather than letting silence mean "not on CI".
+ */
+export const RING_ON_CI = {
+  checkout: true,
+  command: true,
+  home: false,
+};
+
+/** The rings CI runs, in order, for `pnpm test --ci` and the workflow. */
+export const CI_RINGS = RING_NAMES.filter((ring) => RING_ON_CI[ring]);
+
+/**
  * Every test file in the repository, by ring. Paths are relative to the
  * repository root. A new test file belongs in one of these lists, and the
  * guard says so on the first run if it is not.
@@ -147,8 +170,10 @@ export function includeFor(ring, packageDir) {
  * names a ring, so `pnpm test` and a bare `vitest` still run everything.
  */
 export function ringConfig(packageDir, env = process.env) {
-  const ring = env.SHEEP_RING;
-  if (!ring) return {};
-  if (!RING_NAMES.includes(ring)) throw new Error(`SHEEP_RING=${ring} is not a ring: ${RING_NAMES.join(", ")}`);
-  return { include: includeFor(ring, packageDir), passWithNoTests: true };
+  const named = env.SHEEP_RING;
+  if (!named) return {};
+  // One ring or several: `SHEEP_RING=checkout,command` is what CI sets.
+  const rings = named.split(",").map((ring) => ring.trim()).filter(Boolean);
+  for (const ring of rings) if (!RING_NAMES.includes(ring)) throw new Error(`SHEEP_RING names ${ring}, which is not a ring: ${RING_NAMES.join(", ")}`);
+  return { include: rings.flatMap((ring) => includeFor(ring, packageDir)), passWithNoTests: true };
 }

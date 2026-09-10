@@ -18,7 +18,7 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { audit, RING_NAMES, RINGS, ringOf } from "../../../scripts/rings.mjs";
+import { audit, CI_RINGS, RING_NAMES, RING_ON_CI, RINGS, ringOf } from "../../../scripts/rings.mjs";
 
 const root = new URL("../../../", import.meta.url).pathname;
 
@@ -67,6 +67,20 @@ describe("the inner rings", () => {
       .filter((row) => row.declared !== row.evidenced)
       .map((row) => `${row.file}: listed under ${row.declared}, but its source needs ${row.evidenced}`);
     expect(wrong, `move these in scripts/rings.mjs:\n  ${wrong.join("\n  ")}`).toEqual([]);
+  });
+
+  it("makes every ring say whether CI runs it, so silence never means no", () => {
+    // A ring added later without an entry here would be left out of CI's run
+    // by omission rather than by decision. This is the line that stops that.
+    for (const ring of RING_NAMES) expect(RING_ON_CI[ring], `add ${ring} to RING_ON_CI in scripts/rings.mjs`).toBeTypeOf("boolean");
+    expect(Object.keys(RING_ON_CI).sort()).toEqual([...RING_NAMES].sort());
+  });
+
+  it("keeps the home ring out of CI, and everything else in it", () => {
+    // The workflow runs `pnpm test --ci`, which is exactly CI_RINGS. If that
+    // changes, it changes here first, with a reason in the commit.
+    expect(CI_RINGS).toEqual(["checkout", "command"]);
+    expect(RING_ON_CI.home).toBe(false);
   });
 
   it("keeps the home ring small, since each of its files starts a wrangler dev", () => {

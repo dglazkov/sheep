@@ -32,6 +32,14 @@ by the conductor, recorded, committed whole.
   them. Membership is written down in `scripts/rings.mjs` and a guard
   (`packages/cli/test/rings.test.ts`) fails when a file's ring and what
   the file actually does disagree. A new test file goes in a ring.
+- **CI does not run the home ring; you do.** The workflow runs `pnpm test
+  --ci`, the checkout and command rings. The home ring starts a real
+  `wrangler dev` per file, which on a shared runner is the least steady
+  thing here, and a walk that flakes teaches a reader to ignore red. So a
+  green CI says nothing about it. Run `pnpm test` in your checkout, which
+  includes it, before you call a phase proved; a run that leaves a ring
+  out names what it skipped at the end, and that line is part of the
+  result you report.
 - **Pi is a dependency, never a copy.** `vendor/pi` is a submodule tracking
   the `sheep` branch of `github.com/dglazkov/pi`, which is upstream pi plus
   a few small commits; `git log upstream/main..sheep` in it is the whole

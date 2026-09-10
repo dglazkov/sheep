@@ -150,7 +150,11 @@ The checklist, every phase:
   no `.dev.vars` in the diff, nothing under `docs/projects/`.
 - The whole suite and typecheck, not just the new tests: `pnpm test`,
   and each package's `pnpm typecheck`. The project's rules say where a
-  test must run (lamb: workerd, never Node).
+  test must run (lamb: workerd, never Node). `pnpm test` here means all
+  three inner rings, the `home` one included; CI runs `pnpm test --ci`
+  and leaves that ring out, so a green workflow is not the proof and
+  never was. If you ran a subset, the run named the ring it skipped:
+  that line goes in the report, or you run it.
 - The named proof, command by command.
 - The walk, when the phase has one: against a real deployment, a real
   model, a real repository. Walks find what fixtures cannot; lamb's git
