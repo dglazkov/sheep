@@ -24,12 +24,13 @@ that starts one, the failures included.
 
 **Where we are: planned, 9 Sep 2026. Nothing built.** Planned from a
 conversation with the shepherd the day eyes closed; the shepherd's calls
-are in the journey's front matter. The order is dependency order. Phase
-0 is the forward: the frames, the agent, the fake, the cell's reader,
-and the eyes taking an origin. Phase 1 is the served look: the flags,
-the rental, the report, the prompt, and the walk on the local home.
-Phase 2 is the station and the skill: the release, the rings, the
-pasture skill walked, and the walk on the account.
+are in the journey's front matter. The order is dependency order, and the
+next thing to do is serve phase 0, the forward: the frames, the agent,
+the fake, the cell's reader, and the eyes taking an origin. Then serve
+phase 1, the served look: the flags, the rental, the report, the prompt,
+and the walk on the local home. Then serve phase 2, the station and the
+skill: the release, the rings, the pasture skill walked, and the walk on
+the account. Nothing waits on a person before phase 2's walk.
 
 **Deliberately open.** Postponed on purpose: a server kept for a turn
 on a lane of its own; the websocket forwarded; the platform's port
@@ -75,7 +76,7 @@ throws on both sides, and a test says so. **⚑** none.
 
 **Findings.**
 
-**Status: OPEN.**
+**Status: NOT STARTED.**
 
 ## Phase 1: The served look
 
@@ -111,7 +112,7 @@ shepherd's, as every walk's.
 
 **Findings.**
 
-**Status: OPEN.**
+**Status: NOT STARTED.**
 
 ## Phase 2: The station and the skill
 
@@ -140,4 +141,4 @@ shepherd's account, and the container and browser minutes both spend.
 
 **Findings.**
 
-**Status: OPEN.**
+**Status: NOT STARTED.**
