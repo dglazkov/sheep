@@ -173,8 +173,10 @@ minutes both spend, ten a session at most.
 
 **Findings.**
 
-- **2026-09-09 — The cold first look in a fresh `HOME` took 7 to 21 s across four package rings, the 283 MB download the whole difference.** 7.7 s on the release candidate; the second look, on the kept session, 0.9 to 1.1 s every time.
-- **2026-09-09 — miniflare's Chrome cache follows `XDG_CACHE_HOME` before `HOME`.** The package ring strips it, so a fresh `HOME` is a fresh cache and the cold look is the fetch.
+- **2026-09-09 — The cold first look in a fresh `HOME` took 7 to 21 s across four package rings, the 283 MB download the whole difference.** 7.7 s on the candidate; the second look 0.9 to 1.1 s on the kept session.
+- **2026-09-09 — miniflare's Chrome cache follows `XDG_CACHE_HOME` before `HOME`.** The package ring strips it, so a fresh `HOME` is a fresh cache.
+- **2026-09-09 — The model sees the picture.** On `sheep-2` a sheep was given a PNG it could not read as text, a data URI of a blue triangle and a red circle, looked, read `look.png`, and named both shapes, colours, and sides; the tree said only `image`.
+- **2026-09-09 — Open: the cell's shell is not binary-safe.** `base64 -d > pic.png` in just-bash wrote 1061 bytes for 1055, six high bytes mangled, and Chrome drew nothing. A sheep that needs a binary file writes it another way; the shell's owner is the pen.
 - **2026-09-09 — The machine and dog rings do not walk the look.** Their image has none of Chrome's shared libraries, and Chrome for Testing has no linux/arm64 build, which a container on this Mac is; the inner package ring runs with `--no-eyes` there and says so as unchecked.
 - **2026-09-09 — A station from before the eyes answers `look` with its container's line.** On `sheep-2` at build 768051a a sheep got `bash: line 1: look: command not found` and `sheep home` said `eyes: no`; the annotated sentence is this release's, and journey 3 step 1 now says so.
 - **2026-09-09 — On the platform the first look paid 9.9 s, the kept session then 5.6 and 3.6 s.** Journey 1 on `sheep-2` after the upgrade, a real model; the ring's station saw 4.8 s then 3.2 s with the faux provider.
