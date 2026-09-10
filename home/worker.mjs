@@ -2951,7 +2951,7 @@ var init_utils = __esm({
 function is_non_nullish_primitive(v10) {
   return typeof v10 === "string" || typeof v10 === "number" || typeof v10 === "boolean" || typeof v10 === "symbol" || typeof v10 === "bigint";
 }
-function inner_stringify(object, prefix, generateArrayPrefix, commaRoundTrip, allowEmptyArrays, strictNullHandling, skipNulls, encodeDotInKeys, encoder6, filter3, sort, allowDots, serializeDate, format, formatter, encodeValuesOnly, charset, sideChannel) {
+function inner_stringify(object, prefix, generateArrayPrefix, commaRoundTrip, allowEmptyArrays, strictNullHandling, skipNulls, encodeDotInKeys, encoder7, filter3, sort, allowDots, serializeDate, format, formatter, encodeValuesOnly, charset, sideChannel) {
   let obj = object;
   let tmp_sc = sideChannel;
   let step = 0;
@@ -2984,19 +2984,19 @@ function inner_stringify(object, prefix, generateArrayPrefix, commaRoundTrip, al
   }
   if (obj === null) {
     if (strictNullHandling) {
-      return encoder6 && !encodeValuesOnly ? (
+      return encoder7 && !encodeValuesOnly ? (
         // @ts-expect-error
-        encoder6(prefix, defaults.encoder, charset, "key", format)
+        encoder7(prefix, defaults.encoder, charset, "key", format)
       ) : prefix;
     }
     obj = "";
   }
   if (is_non_nullish_primitive(obj) || is_buffer(obj)) {
-    if (encoder6) {
-      const key_value = encodeValuesOnly ? prefix : encoder6(prefix, defaults.encoder, charset, "key", format);
+    if (encoder7) {
+      const key_value = encodeValuesOnly ? prefix : encoder7(prefix, defaults.encoder, charset, "key", format);
       return [
         formatter?.(key_value) + "=" + // @ts-expect-error
-        formatter?.(encoder6(obj, defaults.encoder, charset, "value", format))
+        formatter?.(encoder7(obj, defaults.encoder, charset, "value", format))
       ];
     }
     return [formatter?.(prefix) + "=" + formatter?.(String(obj))];
@@ -3007,8 +3007,8 @@ function inner_stringify(object, prefix, generateArrayPrefix, commaRoundTrip, al
   }
   let obj_keys;
   if (generateArrayPrefix === "comma" && isArray2(obj)) {
-    if (encodeValuesOnly && encoder6) {
-      obj = maybe_map(obj, encoder6);
+    if (encodeValuesOnly && encoder7) {
+      obj = maybe_map(obj, encoder7);
     }
     obj_keys = [{ value: obj.length > 0 ? obj.join(",") || null : void 0 }];
   } else if (isArray2(filter3)) {
@@ -3046,7 +3046,7 @@ function inner_stringify(object, prefix, generateArrayPrefix, commaRoundTrip, al
       skipNulls,
       encodeDotInKeys,
       // @ts-ignore
-      generateArrayPrefix === "comma" && encodeValuesOnly && isArray2(obj) ? null : encoder6,
+      generateArrayPrefix === "comma" && encodeValuesOnly && isArray2(obj) ? null : encoder7,
       filter3,
       sort,
       allowDots,
@@ -3601,8 +3601,8 @@ function concatBytes(buffers) {
   return output;
 }
 function encodeUTF8(str) {
-  let encoder6;
-  return (encodeUTF8_ ?? (encoder6 = new globalThis.TextEncoder(), encodeUTF8_ = encoder6.encode.bind(encoder6)))(str);
+  let encoder7;
+  return (encodeUTF8_ ?? (encoder7 = new globalThis.TextEncoder(), encodeUTF8_ = encoder7.encode.bind(encoder7)))(str);
 }
 function decodeUTF8(bytes) {
   let decoder6;
@@ -6915,13 +6915,13 @@ var require_dist2 = __commonJS({
         const computedSignature = this.sign(msgId, timestamp2, payload);
         const expectedSignature = computedSignature.split(",")[1];
         const passedSignatures = msgSignature.split(" ");
-        const encoder6 = new globalThis.TextEncoder();
+        const encoder7 = new globalThis.TextEncoder();
         for (const versionedSignature of passedSignatures) {
           const [version, signature] = versionedSignature.split(",");
           if (version !== "v1") {
             continue;
           }
-          if ((0, timing_safe_equal_1.timingSafeEqual)(encoder6.encode(signature), encoder6.encode(expectedSignature))) {
+          if ((0, timing_safe_equal_1.timingSafeEqual)(encoder7.encode(signature), encoder7.encode(expectedSignature))) {
             const payloadString = payload.toString();
             if (payloadString === "") {
               return void 0;
@@ -6942,9 +6942,9 @@ var require_dist2 = __commonJS({
         } else {
           throw new Error("Expected payload to be of type string or Buffer.");
         }
-        const encoder6 = new TextEncoder();
+        const encoder7 = new TextEncoder();
         const timestampNumber = Math.floor(timestamp2.getTime() / 1e3);
-        const toSign = encoder6.encode(`${msgId}.${timestampNumber}.${payload}`);
+        const toSign = encoder7.encode(`${msgId}.${timestampNumber}.${payload}`);
         const expectedSignature = base64.encode(sha256.hmac(this.key, toSign));
         return `v1,${expectedSignature}`;
       }
@@ -16667,7 +16667,7 @@ var init_client = __esm({
 });
 
 // ../../vendor/pi/node_modules/@anthropic-ai/sdk/lib/middleware.mjs
-var encoder3;
+var encoder4;
 var init_middleware2 = __esm({
   "../../vendor/pi/node_modules/@anthropic-ai/sdk/lib/middleware.mjs"() {
     init_error();
@@ -16677,7 +16677,7 @@ var init_middleware2 = __esm({
     init_stainless_helper_header();
     init_values();
     init_request_options();
-    encoder3 = new TextEncoder();
+    encoder4 = new TextEncoder();
   }
 });
 
@@ -18546,7 +18546,7 @@ var require_ignore = __commonJS({
     }
     __name(makeArray, "makeArray");
     var UNDEFINED = void 0;
-    var EMPTY3 = "";
+    var EMPTY4 = "";
     var SPACE = " ";
     var ESCAPE = "\\";
     var REGEX_TEST_BLANK_LINE = /^\s+$/;
@@ -18570,7 +18570,7 @@ var require_ignore = __commonJS({
     var RETURN_FALSE = /* @__PURE__ */ __name(() => false, "RETURN_FALSE");
     var sanitizeRange = /* @__PURE__ */ __name((range2) => range2.replace(
       REGEX_REGEXP_RANGE,
-      (match2, from2, to2) => from2.charCodeAt(0) <= to2.charCodeAt(0) ? match2 : EMPTY3
+      (match2, from2, to2) => from2.charCodeAt(0) <= to2.charCodeAt(0) ? match2 : EMPTY4
     ), "sanitizeRange");
     var cleanRangeBackSlash = /* @__PURE__ */ __name((slashes) => {
       const { length } = slashes;
@@ -18582,7 +18582,7 @@ var require_ignore = __commonJS({
         // TODO:
         // Other similar zero-width characters?
         /^\uFEFF/,
-        () => EMPTY3
+        () => EMPTY4
       ],
       // > Trailing spaces are ignored unless they are quoted with backslash ("\")
       [
@@ -18591,7 +18591,7 @@ var require_ignore = __commonJS({
         // (a ) -> (a)
         // (a \ ) -> (a  )
         /((?:\\\\)*?)(\\?\s+)$/,
-        (_10, m12, m22) => m12 + (m22.indexOf("\\") === 0 ? SPACE : EMPTY3)
+        (_10, m12, m22) => m12 + (m22.indexOf("\\") === 0 ? SPACE : EMPTY4)
       ],
       // Replace (\ ) with ' '
       // (\ ) -> ' '
@@ -31458,8 +31458,110 @@ function toLaneState(value3) {
 }
 __name(toLaneState, "toLaneState");
 
-// src/eyes/eyes.ts
+// src/eyes/origin.ts
 import { posix as posix3 } from "node:path";
+var LookError = class extends Error {
+  static {
+    __name(this, "LookError");
+  }
+  constructor(message) {
+    super(message);
+    this.name = "LookError";
+  }
+};
+var RowsOrigin = class {
+  constructor(files, root2) {
+    this.files = files;
+    this.root = root2;
+  }
+  files;
+  root;
+  static {
+    __name(this, "RowsOrigin");
+  }
+  start(path4) {
+    const target = normalizePath(path4);
+    if (target !== this.root && !target.startsWith(`${this.root}/`)) throw new LookError(`${target} is not under the root ${this.root}`);
+    const file = this.indexed(target);
+    if (file === void 0) throw new LookError(`no such path in the workspace: ${target}`);
+    return encodeURI(file.slice(this.root.length)) || "/";
+  }
+  answer(request) {
+    const file = this.file(pathnameOf(request.url));
+    if (file === void 0) return void 0;
+    return { status: 200, headers: { "content-type": contentTypeOf(file.path) }, body: file.bytes };
+  }
+  /** One path, read from the rows under the root, or `undefined` for a 404. */
+  file(pathname) {
+    let decoded;
+    try {
+      decoded = decodeURIComponent(pathname);
+    } catch {
+      return void 0;
+    }
+    let target;
+    try {
+      target = normalizePath(posix3.join(this.root, decoded));
+    } catch {
+      return void 0;
+    }
+    if (target !== this.root && !target.startsWith(`${this.root}/`)) return void 0;
+    const file = this.indexed(target);
+    if (file === void 0) return void 0;
+    try {
+      return { path: file, bytes: this.files.readFile(file) };
+    } catch {
+      return void 0;
+    }
+  }
+  /** The file a path means: itself, or the `index.html` in it when it is a directory. `undefined` when there is none. */
+  indexed(path4) {
+    let kind;
+    try {
+      kind = this.files.stat(path4).kind;
+    } catch {
+      return void 0;
+    }
+    if (kind !== "directory") return path4;
+    const index3 = posix3.join(path4, "index.html");
+    return this.files.exists(index3) ? index3 : void 0;
+  }
+};
+function pathnameOf(url) {
+  const query = url.indexOf("?");
+  return query < 0 ? url : url.slice(0, query);
+}
+__name(pathnameOf, "pathnameOf");
+var CONTENT_TYPES = {
+  html: "text/html; charset=utf-8",
+  htm: "text/html; charset=utf-8",
+  css: "text/css; charset=utf-8",
+  js: "text/javascript; charset=utf-8",
+  mjs: "text/javascript; charset=utf-8",
+  json: "application/json; charset=utf-8",
+  map: "application/json; charset=utf-8",
+  txt: "text/plain; charset=utf-8",
+  svg: "image/svg+xml",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  avif: "image/avif",
+  ico: "image/x-icon",
+  woff: "font/woff",
+  woff2: "font/woff2",
+  ttf: "font/ttf",
+  otf: "font/otf",
+  wasm: "application/wasm",
+  webmanifest: "application/manifest+json",
+  xml: "application/xml"
+};
+function contentTypeOf(path4) {
+  const extension = posix3.extname(path4).slice(1).toLowerCase();
+  return CONTENT_TYPES[extension] ?? "application/octet-stream";
+}
+__name(contentTypeOf, "contentTypeOf");
 
 // src/eyes/report.ts
 var PRUNED_ROLES = /* @__PURE__ */ new Set(["none", "generic", "InlineTextBox"]);
@@ -34024,8 +34126,8 @@ async function getReadableFromProtocolStream(client, handle) {
             return m.codePointAt(0);
           });
         }
-        const encoder6 = new TextEncoder();
-        return encoder6.encode(data2);
+        const encoder7 = new TextEncoder();
+        return encoder7.encode(data2);
       }
       __name(getUnit8Array, "getUnit8Array");
       const { data, base64Encoded, eof } = await client.send("IO.read", {
@@ -50850,15 +50952,7 @@ var ORIGIN = "http://sheep.invalid";
 var DEFAULT_VIEWPORT3 = { width: 1024, height: 768 };
 var DEFAULT_OUT = "look.png";
 var GOTO_TIMEOUT_MS = 15e3;
-var LookError = class extends Error {
-  static {
-    __name(this, "LookError");
-  }
-  constructor(message) {
-    super(message);
-    this.name = "LookError";
-  }
-};
+var encoder3 = new TextEncoder();
 function eyesFor(env, files, sql2) {
   return env.BROWSER === void 0 ? void 0 : new Eyes(env.BROWSER, files, sql2);
 }
@@ -50878,20 +50972,26 @@ var Eyes = class {
   }
   /** The cell's browser, kept warm between looks. Public so a later phase can report the session a look used. */
   session;
-  /** One look: a page in the cell's session, rendered from the rows, and what it said. */
-  async look(request) {
+  /**
+   * One look: a page in the cell's session, rendered from an origin, and
+   * what it said. With no origin, the rows under the request's root, which
+   * is what the eyes have always done and what the `look` program asks
+   * for; a served look hands in the forward's instead. The origin is asked
+   * where the look starts before a browser is opened, so a path that is
+   * not there costs no session.
+   */
+  async look(request, origin = new RowsOrigin(this.files, normalizePath(request.root ?? WORKSPACE_ROOT))) {
     const started = Date.now();
-    const root2 = normalizePath(request.root ?? WORKSPACE_ROOT);
-    const url = this.pageUrl(root2, request.path);
+    const url = `${ORIGIN}${origin.start(request.path)}`;
     const out = request.out ?? DEFAULT_OUT;
     const browser = await this.session.open();
     try {
-      return await this.lookIn(browser, root2, url, request, out, started);
+      return await this.lookIn(browser, origin, url, request, out, started);
     } finally {
       await this.session.release(browser);
     }
   }
-  async lookIn(browser, root2, url, request, out, started) {
+  async lookIn(browser, origin, url, request, out, started) {
     const errors = [];
     const messages = [];
     const requests = [];
@@ -50928,21 +51028,7 @@ var Eyes = class {
         if (response.status() >= 400) blame(asked, `${response.status()} ${short(response.url())}`);
       });
       await page.setRequestInterception(true);
-      page.on("request", (intercepted) => {
-        const asked = new URL(intercepted.url());
-        note(intercepted, {});
-        if (asked.origin !== ORIGIN) {
-          return void intercepted.continue();
-        }
-        const file = this.serve(root2, asked.pathname);
-        if (file === void 0) {
-          note(intercepted, { status: 404 });
-          blame(intercepted, `404 ${asked.pathname}`);
-          return void intercepted.respond({ status: 404, contentType: "text/plain", headers: {}, body: `not in the workspace: ${asked.pathname}` });
-        }
-        note(intercepted, { status: 200 });
-        return void intercepted.respond({ status: 200, contentType: contentTypeOf(file.path), headers: {}, body: file.bytes });
-      });
+      page.on("request", (intercepted) => this.answer(intercepted, origin, note, blame));
       await page.goto(url, { waitUntil: "networkidle0", timeout: GOTO_TIMEOUT_MS });
       await act(page, request.actions ?? []);
       const png = new Uint8Array(await page.screenshot({ type: "png", fullPage: request.full === true }));
@@ -50954,52 +51040,46 @@ var Eyes = class {
     }
   }
   /**
-   * Where the page is loaded: the origin, then the path relative to the
-   * root, so a relative asset beside it resolves to the row beside it. A
-   * path that is not in the workspace, or is outside the root, is a
-   * `LookError` and no browser is even asked for.
+   * One intercepted request. Every other origin goes to the network, as it
+   * would in any browser; the look's own is the origin's to answer, and
+   * `undefined` from it is the 404 the eyes write and blame. A 404 is said
+   * twice by the browser — once as the status, again as `net::ERR_ABORTED`
+   * on the request it then abandoned — and `blame` is what keeps it to one
+   * line.
+   *
+   * The rows answer inside this event, as they always did, and the browser
+   * sees no gap; only an origin that has to leave the cell waits, and then
+   * the answer lands a turn later, which is what lets a page's fifty
+   * requests be fifty fetches rather than a queue. An origin that throws is
+   * a request the browser will never be answered, so it is aborted and
+   * reported as one.
    */
-  pageUrl(root2, path4) {
-    const target = normalizePath(path4);
-    if (target !== root2 && !target.startsWith(`${root2}/`)) throw new LookError(`${target} is not under the root ${root2}`);
-    const file = this.indexed(target);
-    if (file === void 0) throw new LookError(`no such path in the workspace: ${target}`);
-    return `${ORIGIN}${encodeURI(file.slice(root2.length)) || "/"}`;
-  }
-  /** One intercepted request, answered from the rows under the root, or `undefined` for a 404. */
-  serve(root2, pathname) {
-    let decoded;
+  answer(intercepted, origin, note, blame) {
+    const asked = new URL(intercepted.url());
+    note(intercepted, {});
+    if (asked.origin !== ORIGIN) return void intercepted.continue();
+    const give = /* @__PURE__ */ __name((answer) => {
+      if (answer === void 0) {
+        note(intercepted, { status: 404 });
+        blame(intercepted, `404 ${asked.pathname}`);
+        return void intercepted.respond({ status: 404, contentType: "text/plain", headers: {}, body: `not in the workspace: ${asked.pathname}` });
+      }
+      note(intercepted, { status: answer.status });
+      return void intercepted.respond({ status: answer.status, headers: answer.headers, body: answer.body });
+    }, "give");
+    const failed3 = /* @__PURE__ */ __name((error) => {
+      blame(intercepted, `${error instanceof Error ? error.message : String(error)} ${asked.pathname}`);
+      void intercepted.abort().catch(() => {
+      });
+    }, "failed");
+    let answered;
     try {
-      decoded = decodeURIComponent(pathname);
-    } catch {
-      return void 0;
+      answered = origin.answer({ method: intercepted.method(), url: `${asked.pathname}${asked.search}`, headers: intercepted.headers(), ...bodyOf(intercepted) });
+    } catch (error) {
+      return failed3(error);
     }
-    let target;
-    try {
-      target = normalizePath(posix3.join(root2, decoded));
-    } catch {
-      return void 0;
-    }
-    if (target !== root2 && !target.startsWith(`${root2}/`)) return void 0;
-    const file = this.indexed(target);
-    if (file === void 0) return void 0;
-    try {
-      return { path: file, bytes: this.files.readFile(file) };
-    } catch {
-      return void 0;
-    }
-  }
-  /** The file a path means: itself, or the `index.html` in it when it is a directory. `undefined` when there is none. */
-  indexed(path4) {
-    let kind;
-    try {
-      kind = this.files.stat(path4).kind;
-    } catch {
-      return void 0;
-    }
-    if (kind !== "directory") return path4;
-    const index3 = posix3.join(path4, "index.html");
-    return this.files.exists(index3) ? index3 : void 0;
+    if (answered instanceof Promise) return void answered.then(give, failed3);
+    return give(answered);
   }
 };
 async function act(page, actions) {
@@ -51013,6 +51093,11 @@ async function act(page, actions) {
   }
 }
 __name(act, "act");
+function bodyOf(intercepted) {
+  const data = intercepted.postData();
+  return data === void 0 || data === "" ? {} : { body: encoder3.encode(data) };
+}
+__name(bodyOf, "bodyOf");
 function short(url) {
   try {
     const parsed = new URL(url);
@@ -51022,36 +51107,6 @@ function short(url) {
   }
 }
 __name(short, "short");
-var CONTENT_TYPES = {
-  html: "text/html; charset=utf-8",
-  htm: "text/html; charset=utf-8",
-  css: "text/css; charset=utf-8",
-  js: "text/javascript; charset=utf-8",
-  mjs: "text/javascript; charset=utf-8",
-  json: "application/json; charset=utf-8",
-  map: "application/json; charset=utf-8",
-  txt: "text/plain; charset=utf-8",
-  svg: "image/svg+xml",
-  png: "image/png",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  gif: "image/gif",
-  webp: "image/webp",
-  avif: "image/avif",
-  ico: "image/x-icon",
-  woff: "font/woff",
-  woff2: "font/woff2",
-  ttf: "font/ttf",
-  otf: "font/otf",
-  wasm: "application/wasm",
-  webmanifest: "application/manifest+json",
-  xml: "application/xml"
-};
-function contentTypeOf(path4) {
-  const extension = posix3.extname(path4).slice(1).toLowerCase();
-  return CONTENT_TYPES[extension] ?? "application/octet-stream";
-}
-__name(contentTypeOf, "contentTypeOf");
 
 // ../../vendor/pi/packages/ai/dist/api/anthropic-messages.lazy.js
 init_lazy();
@@ -69498,7 +69553,7 @@ function resolve(root2, path4) {
 }
 __name(resolve, "resolve");
 var pathKey = /* @__PURE__ */ __name((path4) => JSON.stringify(path4), "pathKey");
-function encoder4() {
+function encoder5() {
   const seen = /* @__PURE__ */ new Set();
   const ids = /* @__PURE__ */ new Map();
   let nextId = 0;
@@ -69573,7 +69628,7 @@ function encoder4() {
     }
   };
 }
-__name(encoder4, "encoder");
+__name(encoder5, "encoder");
 
 // ../../vendor/pi/packages/chord/src/services/state-internals.ts
 var sources = /* @__PURE__ */ new WeakMap();
@@ -71735,7 +71790,7 @@ var StateCodecRegistry = class {
   }
 };
 function createServiceStateEncoder() {
-  const codecs = new StateCodecRegistry(encoder4);
+  const codecs = new StateCodecRegistry(encoder5);
   return {
     encodeSnapshot(snapshot) {
       codecs.reset();
@@ -116941,7 +116996,47 @@ __name(messageBytes, "messageBytes");
 
 // src/pen/checkout.ts
 import { posix as posix4 } from "node:path";
-var encoder5 = new TextEncoder();
+
+// src/pen/forward.ts
+var ForwardProtocolError = class extends Error {
+  static {
+    __name(this, "ForwardProtocolError");
+  }
+  constructor(message) {
+    super(message);
+    this.name = "ForwardProtocolError";
+  }
+};
+var BinaryGuard = class {
+  static {
+    __name(this, "BinaryGuard");
+  }
+  announcer = null;
+  /** Registers that `who`'s bytes are next. Throws when someone else is already waiting for a binary message. */
+  announce(who) {
+    if (this.announcer !== null) {
+      throw new ForwardProtocolError(`${who} announced a binary message while ${this.announcer} is still waiting for one`);
+    }
+    this.announcer = who;
+  }
+  /** The bytes arrived, or the reader gave up on them. Quiet when nothing was announced. */
+  release() {
+    this.announcer = null;
+  }
+};
+var guards = /* @__PURE__ */ new WeakMap();
+function binaryGuard(socket) {
+  const found = guards.get(socket);
+  if (found !== void 0) return found;
+  const fresh = new BinaryGuard();
+  guards.set(socket, fresh);
+  return fresh;
+}
+__name(binaryGuard, "binaryGuard");
+var EMPTY3 = new Uint8Array(0);
+
+// src/pen/checkout.ts
+var encoder6 = new TextEncoder();
 var decoder4 = new TextDecoder();
 async function pastureManifest(source2) {
   const { tree } = await source2.snapshot();
@@ -116983,6 +117078,8 @@ var Checkout = class {
   files;
   pasture;
   nextId;
+  /** The one guard for this socket, shared with the `Forward` that reads it too. */
+  guard;
   pending = null;
   /** A `blob` frame whose bytes are next. */
   expecting = null;
@@ -116994,6 +117091,7 @@ var Checkout = class {
     this.socket = socket;
     this.files = files;
     this.pasture = options.pasture;
+    this.guard = binaryGuard(socket);
     let counter = 0;
     this.nextId = options.nextId ?? (() => `sync-${++counter}`);
     socket.addEventListener("message", (event) => {
@@ -117033,7 +117131,7 @@ var Checkout = class {
               const entry = byHash.get(hash);
               let bytes;
               if (entry !== void 0) {
-                bytes = entry.kind === "symlink" ? encoder5.encode(this.files.readlink(`${WORKSPACE_ROOT}/${entry.path}`)) : this.files.readFile(`${WORKSPACE_ROOT}/${entry.path}`);
+                bytes = entry.kind === "symlink" ? encoder6.encode(this.files.readlink(`${WORKSPACE_ROOT}/${entry.path}`)) : this.files.readFile(`${WORKSPACE_ROOT}/${entry.path}`);
               } else if (source2 !== void 0 && pastureHashes.has(hash)) {
                 bytes = await source2.readByHash(hash);
                 if (bytes === void 0) throw new CheckoutProtocolError(`the pasture no longer has ${hash}; it changed during the sync-in`);
@@ -117093,6 +117191,7 @@ var Checkout = class {
           }
           if (frame.type === "blob") {
             if (!awaited.has(frame.hash)) throw new CheckoutProtocolError(`the container sent blob ${frame.hash}, which was not asked for`);
+            this.guard.announce(`blob ${frame.hash}`);
             this.expecting = { hash: frame.hash, size: frame.size };
             return;
           }
@@ -117101,6 +117200,7 @@ var Checkout = class {
         bytes: /* @__PURE__ */ __name((bytes) => {
           const expecting = this.expecting;
           this.expecting = null;
+          this.guard.release();
           if (expecting === null) throw new CheckoutProtocolError("bytes with no blob frame before them");
           if (bytes.byteLength !== expecting.size) {
             throw new CheckoutProtocolError(`blob ${expecting.hash} announced ${expecting.size} bytes and carried ${bytes.byteLength}`);
@@ -117210,6 +117310,7 @@ var Checkout = class {
   fail(error) {
     const pending = this.pending;
     this.pending = null;
+    if (this.expecting !== null) this.guard.release();
     this.expecting = null;
     pending?.reject(error);
   }
@@ -117217,6 +117318,7 @@ var Checkout = class {
     try {
       if (typeof data === "string") {
         const frame = decodeFrame(data);
+        if (frame.type === "response") return;
         if (this.expecting !== null) throw new CheckoutProtocolError(`expected the bytes of blob ${this.expecting.hash}, got a ${frame.type} frame`);
         if (frame.type === "error") throw new CheckoutProtocolError(`the container reported ${frame.code} on ${frame.of}: ${frame.message}`);
         if (this.pending === null) {
@@ -117977,7 +118079,7 @@ function lookCommand(eyes, files) {
     if (parsed === void 0) return failed(USAGE, 2);
     let result;
     try {
-      result = await eyes.look(parsed.request);
+      result = await eyes.look(parsed.request, new RowsOrigin(files, normalizePath(parsed.request.root ?? WORKSPACE_ROOT)));
     } catch (error) {
       return failed(`look: ${messageOf(error).split("\n")[0]}`);
     }
@@ -123895,13 +123997,13 @@ __name(admitted, "admitted");
 var CHECKOUT_BUILD = { commit: "0.0.0-checkout", builtAt: null };
 function homeImage() {
   if (false) return null;
-  return true ? "docker.io/dglazkov2/sheep-pen@sha256:4d01c9567af5f23a55e954066264022473e33dc3eafb3c064c5ad8e33ea09284" : null;
+  return true ? "docker.io/dglazkov2/sheep-pen@sha256:485ef4b4ac0ab3d85c4e5d7fe3fcfb840f6f2f1e37637e9a8a265725b2b234c9" : null;
 }
 __name(homeImage, "homeImage");
 function homeBuild() {
   if (false) return CHECKOUT_BUILD;
   try {
-    const parsed = JSON.parse('{"commit":"8298af4","builtAt":"2026-09-10T03:29:20Z"}');
+    const parsed = JSON.parse('{"commit":"3345f89","builtAt":"2026-09-10T09:53:50Z"}');
     if (typeof parsed.commit === "string" && parsed.commit !== "") return { commit: parsed.commit, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
   } catch {
   }
