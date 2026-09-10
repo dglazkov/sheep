@@ -38,6 +38,16 @@ The kennel is found by walking up from where you stand, the way git finds
 `.git`, and is `~/.sheep` when there is none, so a dog in each of several
 directories herds its own sheep and shares nothing but the command.
 
+## What a sheep can see
+
+On a home with eyes, a sheep can `look <path>` at a page in its workspace:
+a real Chromium renders it, and the sheep reads the picture and a report
+(errors, console, the accessibility tree). You read that report in `sheep
+log <id>`; there is no `sheep look`. The local home always has eyes, and
+its first look fetches a Chrome, which `sheep home local` says. A station
+deployed before this release has none until `sheep home deploy` upgrades
+it; `sheep home` prints `eyes: yes` or `no`.
+
 ## What needs a person
 
 - **A model key**: ask them to `export ANTHROPIC_API_KEY` in the shell

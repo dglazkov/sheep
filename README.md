@@ -51,6 +51,14 @@ Nothing is on npm. The first five minutes, as the dog walks them:
    report says so in one sentence, and the sheep read, write, and edit.
    `--no-container` asks for none. `sheep home` says which the home has.
 
+   The home has **eyes**: a sheep can `look <path>` at a page it wrote, in a
+   real Chromium, and read the picture; the report (errors, console, the
+   accessibility tree) comes back in its transcript, and you read it in
+   `sheep log`. The first look on a machine fetches a Chrome into the
+   wrangler cache, which `sheep home local` says. A station deployed before
+   this release has none until `sheep home deploy` upgrades it; `sheep home`
+   prints `eyes: yes` or `no`.
+
    The **kennel** is `.sheep/` at or above the working directory, found the
    way git finds `.git`, and `~/.sheep` when there is none: this directory's
    config, its token, and its own local home. Open a dog in each of several
@@ -80,7 +88,9 @@ Nothing is on npm. The first five minutes, as the dog walks them:
 
 Every release is proved before it is pushed by installing it the way you
 do, into a fresh prefix, cache, and `HOME`, and walking the steps above
-with the scripted model: `pnpm hermetic --ring package`. With `--docker`,
+with the scripted model: `pnpm hermetic --ring package`. The walk includes
+a look: a sheep writes a page with a bug, looks at it, reads the picture,
+and clicks, the Chrome fetched into that fresh `HOME`. With `--docker`,
 on a machine with Docker, the walk's home has a container: a sheep names
 its tools from the registry's image, and the container is gone after the
 idle period.
@@ -111,6 +121,12 @@ What you get today:
   cell with the usual text tools. On a home with no container there are no
   interpreters, package managers, or `git`; the shell says so plainly when
   asked. Programs arrive with a container, below.
+- On a home with eyes, `look <path>` in the shell renders a workspace page
+  through the platform's Chromium and prints what the page said: errors,
+  console, the accessibility tree, and the PNG it wrote, which the sheep
+  reads with `read`. The local home always has them; a station deployed
+  before they existed says `eyes: no` in `sheep home` until `sheep home
+  deploy` upgrades it.
 - A turn survives the cell being evicted. Pi's recovery settles the
   interrupted step honestly and continues.
 - `sheep export <id>` writes a pi SQLite session file that pi's own Node
