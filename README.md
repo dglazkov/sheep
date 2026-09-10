@@ -139,7 +139,8 @@ git submodule update --init
 (cd vendor/pi && npm ci --ignore-scripts && for p in chord tui telemetry ai agent session-backends/sqlite-node protocol client server coding-agent; do (cd packages/$p && npm run build); done)
 
 pnpm install
-pnpm test        # the cell's tests run inside workerd, the Workers runtime
+pnpm test        # the inner rings; the cell's run inside workerd, the Workers runtime
+pnpm test --list # what each ring needs, and which files are in it
 ```
 
 #### Secrets
