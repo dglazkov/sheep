@@ -13,6 +13,13 @@
  * rewritten, the encoding pinned so nothing is compressed, the redirect
  * left for the browser, a body carried each way, and a port with nothing
  * on it answered with status `0` rather than an error frame.
+ *
+ * Serve phase 1 adds the second half of that: which loopback the server is
+ * on is not the agent's to assume. Real servers are stood up on `::1` and
+ * on `127.0.0.1`, at the same port and at different ones, and the case
+ * reads off them which address was dialled, in which order, what `host`
+ * the server saw, and that the agent's memory of a port dies with the
+ * server it remembered.
  */
 import { type ChildProcess, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -312,6 +319,87 @@ describe("pen-agent, the process", () => {
     expect(stderr.join("")).toBe("");
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await new Promise<void>((resolve) => origin.close(() => resolve()));
+    await rm(workspace, { recursive: true, force: true });
+  });
+
+  it("reaches a server on either loopback, tries 127.0.0.1 first, and never lets a remembered address outlive its server", async () => {
+    /** A server that says which address it was bound to and what `host` it was asked with: the two facts this case is about. */
+    const speaking = (who: string): Server =>
+      createServer((request, response) => {
+        response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+        response.end(JSON.stringify({ who, host: request.headers.host }));
+      });
+    const listen = (server: Server, address: string, port = 0): Promise<number> =>
+      new Promise((resolve) => server.listen(port, address, () => resolve((server.address() as { port: number }).port)));
+    /** Closed with its connections: the agent's fetch keeps them alive, and a port must be free the moment this returns. */
+    const close = async (server: Server): Promise<void> => {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    };
+
+    // A server told to listen on `localhost` inside the image binds this and refuses 127.0.0.1 — which is Vite's default.
+    const six = speaking("::1");
+    const sixPort = await listen(six, "::1");
+
+    const server = new WebSocketServer({ port: 0 });
+    const connection = new Promise<WebSocket>((resolve) => server.once("connection", (socket) => resolve(socket)));
+    const port = (server.address() as { port: number }).port;
+    const workspace = await mkdtemp(join(tmpdir(), "pen-"));
+    const stderr: string[] = [];
+    const child = spawn(process.execPath, [entry], {
+      env: { ...process.env, [CELL_URL_ENV]: `ws://127.0.0.1:${port}/pen`, [TOKEN_ENV]: "minted", PEN_WORKSPACE: workspace },
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    child.stderr!.on("data", (chunk: Buffer) => stderr.push(chunk.toString()));
+    const socket = await connection;
+    const next = inbox(socket);
+
+    let asked = 0;
+    /** One `GET /` at a port, answered: the status, and what the server said about itself when there was a server. */
+    const get = async (at: number): Promise<{ status: number; who?: string; host?: string }> => {
+      const id = `l-${++asked}`;
+      socket.send(encodeFrame({ type: "fetch", id, port: at, method: "GET", url: "/", headers: { host: "sheep.invalid" }, size: 0 } as unknown as Frame));
+      const answered = (await next()) as { type: string; id: string; status: number; size: number };
+      expect(answered.type).toBe("response");
+      expect(answered.id).toBe(id);
+      const bytes = answered.size === 0 ? new Uint8Array(0) : ((await next()) as Uint8Array);
+      if (answered.status !== 200) return { status: answered.status };
+      return { status: answered.status, ...(JSON.parse(new TextDecoder().decode(bytes)) as { who: string; host: string }) };
+    };
+
+    // The one the walk found: a port listening only on `::1` is reached, and the `host` it sees is the address that was dialled,
+    // since that is what makes Vite's host check pass.
+    expect(await get(sixPort)).toEqual({ status: 200, who: "::1", host: `[::1]:${sixPort}` });
+
+    // A server on 127.0.0.1 is reached, and is first: with one on each stack at the same port, it is the one that answers.
+    const four = speaking("127.0.0.1");
+    const fourPort = await listen(four, "127.0.0.1");
+    const shadow = speaking("shadow");
+    await listen(shadow, "::1", fourPort);
+    expect(await get(fourPort)).toEqual({ status: 200, who: "127.0.0.1", host: `127.0.0.1:${fourPort}` });
+
+    // The memory is per port and is consulted first: a 127.0.0.1 server stood up at the port already answered on `::1` is not
+    // reached, because the address that answered there is the address tried first. A page's fifty requests pay no refused connect.
+    const late = speaking("late");
+    await listen(late, "127.0.0.1", sixPort);
+    expect(await get(sixPort)).toEqual({ status: 200, who: "::1", host: `[::1]:${sixPort}` });
+
+    // And the memory is a hint and never a verdict: the server that was remembered goes away, and the next fetch finds the other stack.
+    await close(six);
+    expect(await get(sixPort)).toEqual({ status: 200, who: "late", host: `127.0.0.1:${sixPort}` });
+
+    // A port with nothing on either stack is still status 0 — the cell's "not listening" — and not an error frame.
+    const vacant = createServer();
+    await new Promise<void>((resolve) => vacant.listen(0, "::", resolve));
+    const deadPort = (vacant.address() as { port: number }).port;
+    await close(vacant);
+    expect((await get(deadPort)).status).toBe(FETCH_FAILED_STATUS);
+
+    socket.close(1000, "cell done");
+    expect(await exited(child)).toBe(0);
+    expect(stderr.join("")).toBe("");
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    for (const one of [four, shadow, late]) await close(one);
     await rm(workspace, { recursive: true, force: true });
   });
 

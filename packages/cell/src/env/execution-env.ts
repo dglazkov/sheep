@@ -32,6 +32,11 @@
  * command (`env/look-command.ts`) over this env's files table, and the
  * router counts the name as tier 0; `home.eyes` says so. Without, just-bash
  * is made as before and `look` is its not-found line with the eyes' sentence.
+ * Serve phase 1: on a home with a container as well, that `look` is handed
+ * this env as its rental, and `rentServer` is what it calls — a sibling of
+ * `runInContainer` whose run is not awaited to its end but looked at while
+ * it runs and killed after, which is the whole of what a served look is on
+ * this side.
  */
 import type { Context } from "@earendil-works/pi-agent-core";
 import {
@@ -50,14 +55,17 @@ import {
 import type { ManifestEntry, Refused } from "@sheep/pen/protocol";
 import { Bash, type Command } from "just-bash/browser";
 import { posix } from "node:path";
-import type { Eyes } from "../eyes/eyes.ts";
+import type { Eyes, Origin } from "../eyes/eyes.ts";
+import { ForwardOrigin } from "../eyes/origin.ts";
+import { SERVER_LINES } from "../eyes/report.ts";
 import { Checkout, CheckoutInterrupted } from "../pen/checkout.ts";
+import { Forward, type ForwardResponse } from "../pen/forward.ts";
 import { type Isolate, IsolateEnded } from "../pen/isolate.ts";
 import { ContainerRun, KillUnanswered, type RunEnd, RunInterrupted } from "../pen/run.ts";
 import { CellFs } from "../workspace/cell-fs.ts";
 import { type FileRow, FilesTable, FsError, isReadable, MAX_FILE_BYTES, normalizePath, TEMP_ROOT, WORKSPACE_ROOT } from "../workspace/files.ts";
 import { annotateReadOnly, isPasturePath, PASTURE_ROOT, PastureCall, type PastureRow, type PastureSource, readOnly } from "../workspace/mount.ts";
-import { LOOK_PROGRAMS, lookCommand } from "./look-command.ts";
+import { LOOK_PROGRAMS, lookCommand, type Served } from "./look-command.ts";
 import { PASTURE_PROGRAMS, type PastureProgram, pastureCommand } from "./pasture-command.ts";
 import {
   annotateCommandNotFound,
@@ -123,6 +131,31 @@ export function setupFailedLine(exit: number): string {
 /** The line before setup's output in a birth's entry when it failed after the clone. */
 export function setupFailedAfterLine(exit: number): string {
   return `setup.sh failed (exit ${exit}) after the clone:`;
+}
+
+// ---------------------------------------------------------------------------
+// Serve phase 1: the rental. A server lives for one look and no longer.
+
+/** How long a served look waits for the port before it gives the server up. Thirty seconds: a cold Vite on a slow container, and no more. */
+export const SERVE_READY_MS = 30_000;
+
+/** How often the poll asks the port whether it is there yet. A quarter second: cheap over the socket, and invisible beside a browser. */
+export const SERVE_POLL_MS = 250;
+
+/** The reason the kill carries when the look is done. The container's log and the agent's `killed` both say it. */
+export const SERVE_KILL_REASON = "the look is over";
+
+/** The reason the kill carries when the port never answered: the run is ended the same way, and the record says which of the two it was. */
+export const SERVE_UNREADY_KILL_REASON = "the server never answered";
+
+/** The line for a server that ended before its port answered; the tail of what it printed follows it. */
+export function serverEndedFirst(end: RunEnd, port: number): string {
+  return `the server ${"exit" in end ? `exited ${end.exit}` : `was killed (${end.killed})`} before answering on ${port}`;
+}
+
+/** The line for a server that ran on and never answered. */
+export function serverNeverAnswered(port: number, readyMs: number): string {
+  return `the server did not answer on ${port} within ${Math.round(readyMs / 1000)} s`;
 }
 
 /** just-bash's bounds for one command. Generous for real work, fatal for `while true`. */
@@ -200,6 +233,8 @@ export interface CellExecutionEnvOptions {
   container?: ContainerLease;
   /** Milliseconds a container has to answer `kill` before it is given up; absent, the cell waits. */
   killTimeoutMs?: number;
+  /** Milliseconds a served look waits for its port before giving the server up; absent, `SERVE_READY_MS`. A test shortens it; nothing else does. */
+  serveReadyMs?: number;
   /** Whether a container is up right now, socket open; absent, never. Tier 1 is chosen only when none is. */
   containerUp?: () => boolean;
   /** Tier 1. Absent, this home has no Worker Loader: `node` is the container's or nobody's, and the table says so. */
@@ -229,10 +264,22 @@ interface Ran {
 /** How a setup run went: nothing to run, or how it ended, with the `Ran` a tool call returns in the command's place when it did not exit 0. */
 type Warmed = { skipped: true } | { skipped: false; end: SetupEnd; failed?: Ran };
 
-/** The record for one container socket: its checkout, and whether setup has run on it. Per container, never in the rows. */
+/**
+ * The record for one container socket: its checkout, its forward, and
+ * whether setup has run on it. Per container, never in the rows.
+ *
+ * The forward is here for the same reason the checkout is, and serve
+ * phase 1 learned it the hard way: both readers announce the binary
+ * message they expect on one register shared per socket, so two `Forward`s
+ * over the same socket are two announcers for every `response`, and the
+ * second one to ask is refused. One per socket, made once, is the rule —
+ * the reader is stateless between looks, so there is nothing to make
+ * twice.
+ */
 interface Lease {
   socket: WebSocket;
   checkout: Checkout;
+  forward: Forward;
   warmed: boolean;
 }
 
@@ -254,6 +301,7 @@ export class CellExecutionEnv implements ExecutionEnv {
   private readonly containerUp: (() => boolean) | undefined;
   private readonly isolate: Isolate | undefined;
   private readonly killTimeoutMs: number | undefined;
+  private readonly serveReadyMs: number;
   /** The record for the container socket most recently rented; one per socket, so per container. */
   private lease: Lease | undefined;
   private runs = 0;
@@ -272,6 +320,7 @@ export class CellExecutionEnv implements ExecutionEnv {
     this.containerUp = options.containerUp;
     this.isolate = options.isolate;
     this.killTimeoutMs = options.killTimeoutMs;
+    this.serveReadyMs = options.serveReadyMs ?? SERVE_READY_MS;
     this.shellEnv = {
       HOME: WORKSPACE_ROOT,
       PATH: "/usr/local/bin:/usr/bin:/bin",
@@ -606,7 +655,8 @@ export class CellExecutionEnv implements ExecutionEnv {
     const program = this.pastureProgram;
     const customCommands: Command[] = [];
     if (program !== undefined && fs.pasture !== undefined) customCommands.push(pastureCommand(program, fs.pasture));
-    if (this.eyes !== undefined) customCommands.push(lookCommand(this.eyes, this.files));
+    // With a container, `look` is handed this env as its rental, and `--serve` has somewhere to run; without one it is the eyes' program alone.
+    if (this.eyes !== undefined) customCommands.push(lookCommand(this.eyes, this.files, this.container === undefined ? undefined : this));
     const bash = new Bash({
       fs,
       cwd,
@@ -703,10 +753,22 @@ export class CellExecutionEnv implements ExecutionEnv {
     return { full: output, outcome: { exitCode: result.exitCode } };
   }
 
-  /** The record for this socket, made once per socket: its checkout, with the pasture's tree as the manifest's second root (pasture phase 3), and whether setup ran on it (pasture phase 4). */
+  /**
+   * The record for this socket, made once per socket: its checkout, with
+   * the pasture's tree as the manifest's second root (pasture phase 3),
+   * its forward (serve phase 1), and whether setup ran on it (pasture
+   * phase 4). The forward is made here even on a home whose sheep never
+   * takes a served look: it is one listener on a socket that already has
+   * two, and it answers nothing that is not its own.
+   */
   private leaseFor(socket: WebSocket): Lease {
     if (this.lease?.socket !== socket) {
-      this.lease = { socket, checkout: new Checkout(socket, this.files, this.pasture === undefined ? {} : { pasture: this.pasture }), warmed: false };
+      this.lease = {
+        socket,
+        checkout: new Checkout(socket, this.files, this.pasture === undefined ? {} : { pasture: this.pasture }),
+        forward: new Forward(socket),
+        warmed: false,
+      };
     }
     return this.lease;
   }
@@ -856,6 +918,166 @@ export class CellExecutionEnv implements ExecutionEnv {
   }
 
   /**
+   * Serve phase 1's rental: the cell's side of a served look. Rent, sync
+   * in, setup, start the command on the container's lane with `PORT` in
+   * its environment, wait for the port to answer through the forward,
+   * hand `during` an origin over that forward, and stop the server.
+   *
+   * It is `runInContainer`'s sibling, and differs in the one way that
+   * decides the rest: the run is not awaited to its end before the work
+   * happens. The look happens *while* the command runs, so the run is
+   * started and held, the poll and the look race against its ending, and
+   * the kill is in a `finally`. That is this project's one rule — a
+   * server lives for one look and no longer — and a kill written at each
+   * return is a kill that will be forgotten at the next one. Every path
+   * out of here goes through that `finally`: the happy one, a run that
+   * exits first, a port that never answers, an abort, a `LookError` from
+   * the eyes, a browser that could not be had, a throw from anywhere in
+   * `during`.
+   *
+   * The two endings the design names come back rather than thrown, since
+   * each carries the tail of what the command printed and the program
+   * prints the pair. Everything else — no container, a spent budget, a
+   * sync-in that failed — is thrown, and the program makes it one line.
+   */
+  async rentServer<T>(command: string, port: number, cwd: string, during: (origin: Origin) => Promise<T>, signal?: AbortSignal): Promise<Served<T>> {
+    const container = this.container;
+    if (container === undefined) throw new Error(NO_CONTAINER_NOTICE);
+    const home = await this.homeNow();
+    if (!hasContainer(home)) throw new Error(BUDGET_SPENT_NOTICE);
+    let socket: WebSocket;
+    try {
+      socket = await container.rent();
+    } catch (error) {
+      throw new Error(`no container could be rented: ${messageOf(error)}`);
+    }
+    const lease = this.leaseFor(socket);
+    const { checkout, forward } = lease;
+    const tail = new ServerTail();
+    try {
+      // The server sees what the sheep wrote up to this line, which is what a reload would show.
+      let tree: ManifestEntry[] | undefined;
+      try {
+        tree = await checkout.syncIn();
+      } catch (error) {
+        throw new Error(error instanceof CheckoutInterrupted ? error.message : `the sync-in failed: ${messageOf(error)}`);
+      }
+
+      // Setup, before the server, as a tool's tier-2 line has it: a failure is this look's error line, and the script's output is its tail.
+      const setup = new OutputCapture({ limits: { maxBytes: 16 * 1024, maxLines: SERVER_LINES, retain: "tail" } }, BACKGROUND_CONTEXT, { onError: () => {} });
+      try {
+        const warmed = await this.warm(lease, tree, signal, setup, setupFailedLine);
+        if (!warmed.skipped && warmed.failed !== undefined) {
+          setup.finish();
+          const error = "exit" in warmed.end ? setupFailedLine(warmed.end.exit) : warmed.end.error;
+          const lines = splitLines(setup.snapshot().text);
+          if (lines[0] === error) lines.shift();
+          return { output: lines.slice(-SERVER_LINES), error };
+        }
+      } finally {
+        setup.dispose();
+      }
+
+      // The container's own PATH and HOME win over the cell shell's stand-ins, as they do for any run; `PORT` is laid over the rest.
+      const { PATH: _path, HOME: _home, ...runEnv } = this.shellEnv;
+      const id = `run-${++this.runs}`;
+      const stream = (data: string) => tail.push(data);
+      const run = new ContainerRun(
+        socket,
+        { id, command, cwd, env: { ...runEnv, PWD: cwd, PORT: String(port) } },
+        { stdout: stream, stderr: stream },
+        this.killTimeoutMs === undefined ? {} : { killTimeoutMs: this.killTimeoutMs },
+      );
+      const onAbort = () => run.kill("aborted");
+      signal?.addEventListener("abort", onAbort, { once: true });
+
+      // Started and held, not awaited: what the run came to is read off these while the look happens.
+      let end: RunEnd | undefined;
+      let broke: Error | undefined;
+      const started = Date.now();
+      const running = run.start().then(
+        (settled) => {
+          end = settled;
+          console.info(`[serve] run ${id} ${"exit" in settled ? `exit ${settled.exit}` : `killed (${settled.killed})`} after ${Date.now() - started} ms`);
+        },
+        (error: unknown) => {
+          broke = error instanceof Error ? error : new Error(String(error));
+        },
+      );
+
+      /** The kill and the sync-out every run ends with, once, whichever path arrived here. */
+      let stopped = false;
+      const stop = async (reason: string): Promise<void> => {
+        if (stopped) return;
+        stopped = true;
+        signal?.removeEventListener("abort", onAbort);
+        run.kill(reason);
+        await running;
+        // The container went away: there is nothing left to sync out of it, and the run's own ending says so. One that
+        // ignored the kill past its deadline is given up, as a tier-2 line gives one up — a container that will not stop
+        // a server is exactly the container this project must not keep.
+        if (broke !== undefined) {
+          if (broke instanceof KillUnanswered) container.discard?.(broke.reason);
+          return;
+        }
+        try {
+          for (const entry of await checkout.syncOut(id)) tail.push(`pen: ${entry.path} (${entry.size} bytes) is over the per-file limit and was not synced\n`);
+        } catch (error) {
+          tail.push(`pen: the sync-out after the server failed: ${messageOf(error)}\n`);
+        }
+      };
+
+      try {
+        const readyMs = await this.awaitPort(forward, port, started, () => end !== undefined || broke !== undefined, signal);
+        if (readyMs === undefined) {
+          const why = end !== undefined ? serverEndedFirst(end, port) : (broke?.message ?? serverNeverAnswered(port, this.serveReadyMs));
+          await stop(SERVE_UNREADY_KILL_REASON);
+          return { output: tail.take(), error: why };
+        }
+        const value = await during(new ForwardOrigin(forward, port));
+        await stop(SERVE_KILL_REASON);
+        // One clock for both numbers the closing line says: `started` is the run's, and the wait for the port is a part of what it measures,
+        // not a second measurement beside it. The eyes' own `ms` begins after the port answered, so a served look reported with it would
+        // claim to have taken less time than the wait inside it — which is what the walk read on two lines and could not tell apart.
+        return { value, output: tail.take(), readyMs, totalMs: Date.now() - started };
+      } finally {
+        // The one rule, in the one place it cannot be skipped.
+        await stop(SERVE_KILL_REASON);
+      }
+    } finally {
+      container.idle();
+    }
+  }
+
+  /**
+   * The readiness poll: `HEAD /` through the forward every quarter second
+   * until the port answers with any status at all, the run ends, the look
+   * is aborted, or the wait runs out. Status `0` is the agent saying it
+   * could not connect, which here means "not yet"; it is read off the
+   * forward directly rather than through `served()`, whose business is
+   * giving a browser a status it will take and which turns `0` into
+   * `502`. `undefined` means the port never answered, and the caller
+   * reads the run's own ending to say which of the two happened.
+   */
+  private async awaitPort(forward: Forward, port: number, started: number, over: () => boolean, signal: AbortSignal | undefined): Promise<number | undefined> {
+    const done = () => over() || signal?.aborted === true;
+    while (Date.now() - started < this.serveReadyMs) {
+      if (done()) return undefined;
+      let answer: ForwardResponse;
+      try {
+        answer = await forward.fetch({ port, method: "HEAD", url: "/", headers: {} });
+      } catch {
+        // The socket went away; the run settles as interrupted, and that is what the caller reports.
+        return undefined;
+      }
+      if (answer.status !== 0) return Date.now() - started;
+      if (done()) return undefined;
+      await new Promise((resolve) => setTimeout(resolve, SERVE_POLL_MS));
+    }
+    return undefined;
+  }
+
+  /**
    * One `run` frame on the socket: sent, its output handed on as it
    * arrives, settled on `exit` or `killed`. A timeout or an abort kills
    * it; the container ignoring the kill past its deadline, or going away,
@@ -991,6 +1213,44 @@ export class CellExecutionEnv implements ExecutionEnv {
 /** The mounted branch of a writing method: unreachable, since `refuseWrite` threw first. */
 function never(resolved: string): Promise<never> {
   return Promise.reject(readOnly("open", resolved));
+}
+
+/** How much of a line the tail holds before it forgets the front of it, so a server printing a megabyte without a newline is still bounded. */
+const TAIL_LINE_BYTES = 8 * 1024;
+
+/**
+ * The last lines a server printed, kept as it prints them. A dev server
+ * lives for the length of a look and can say a great deal in that time,
+ * so nothing is accumulated to be cut later: the tail holds the last
+ * `SERVER_LINES` whole lines and the partial one after them, and drops
+ * what is older as it arrives. Both streams go in, in the order they
+ * arrived, since that is the order a person at the terminal would have
+ * read them.
+ */
+class ServerTail {
+  private lines: string[] = [];
+  private partial = "";
+
+  push(data: string): void {
+    const parts = (this.partial + data).split("\n");
+    this.partial = parts.pop() ?? "";
+    if (this.partial.length > TAIL_LINE_BYTES) this.partial = this.partial.slice(-TAIL_LINE_BYTES);
+    for (const line of parts) this.lines.push(line);
+    if (this.lines.length > SERVER_LINES) this.lines.splice(0, this.lines.length - SERVER_LINES);
+  }
+
+  /** The tail as the report's section takes it: the whole lines, and the partial one when the server was cut off mid-line. */
+  take(): string[] {
+    const all = this.partial === "" ? this.lines : [...this.lines, this.partial];
+    return all.slice(-SERVER_LINES);
+  }
+}
+
+/** A block of output as lines, without the empty one a trailing newline leaves. */
+function splitLines(text: string): string[] {
+  const lines = text.split("\n");
+  if (lines.at(-1) === "") lines.pop();
+  return lines;
 }
 
 export { MAX_FILE_BYTES };

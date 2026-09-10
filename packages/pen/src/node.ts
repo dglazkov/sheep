@@ -175,44 +175,83 @@ const HOP_BY_HOP = new Set(["host", "connection", "keep-alive", "proxy-connectio
 
 /** What the agent puts in front of a `fetch` frame's `url`: the server is the container's own, on the loopback. */
 export const LOOPBACK = "127.0.0.1";
+/** The other loopback, in the form a URL and a `host` header take it. A server told to listen on `localhost` in this image binds here. */
+export const LOOPBACK6 = "[::1]";
+/**
+ * The two loopbacks, in the order they are tried. Which one the server is
+ * on is not the cell's to assume and not the agent's either: a server told
+ * to listen on `localhost` inside the image binds `::1` and refuses
+ * `127.0.0.1` — which is Vite's default, and so the first line a sheep is
+ * asked to type. `127.0.0.1` is first because it is the commoner bind and
+ * the one a served port answers on when the sheep passed `--host`.
+ */
+export const LOOPBACKS: readonly string[] = [LOOPBACK, LOOPBACK6];
 
 /**
- * The fetcher the image uses: Node's own `fetch` at the loopback address,
- * with three things changed about the browser's request.
+ * The fetcher the image uses: Node's own `fetch` at the container's own
+ * loopback, with three things changed about the browser's request.
  *
- * `host` becomes the loopback address and port, so a server that checks
- * its host — as Vite has since 6.0.9 — answers instead of refusing the
- * browser's `sheep.invalid`. Redirects are not followed, so the browser
- * sees the `302` and follows it itself, which is what keeps the page's
- * own URL and its relative links right. And `accept-encoding` is pinned
- * to `identity` rather than merely dropped: Node's fetch puts `gzip,
- * deflate` back when nothing says otherwise, and then decompresses the
- * body while leaving `content-encoding: gzip` on it, so a body forwarded
- * as it came would say gzip and not be. Asking for `identity` is how the
- * design's "bodies arrive as bytes the browser can take as they are"
- * holds in this runtime.
+ * `host` becomes the address actually dialled and the port, so a server
+ * that checks its host — as Vite has since 6.0.9 — answers instead of
+ * refusing the browser's `sheep.invalid`. Redirects are not followed, so
+ * the browser sees the `302` and follows it itself, which is what keeps
+ * the page's own URL and its relative links right. And `accept-encoding`
+ * is pinned to `identity` rather than merely dropped: Node's fetch puts
+ * `gzip, deflate` back when nothing says otherwise, and then decompresses
+ * the body while leaving `content-encoding: gzip` on it, so a body
+ * forwarded as it came would say gzip and not be. Asking for `identity`
+ * is how the design's "bodies arrive as bytes the browser can take as
+ * they are" holds in this runtime.
+ *
+ * The address is tried rather than assumed: `127.0.0.1` first, `[::1]`
+ * second, and only a port that answers on neither is a port that is not
+ * listening — which is the rejection the agent turns into status `0` and
+ * the cell reads as "not yet". Whichever answered is remembered for that
+ * port, so a page's fifty requests do not each pay a refused connect on
+ * the wrong stack. The memory is a hint and never a verdict: a remembered
+ * address that refuses puts the other one back in the order, and a port
+ * that answers on neither forgets what it knew — a server can restart
+ * between looks on the same container, and a stale memory that hardened
+ * into a permanent failure would be worse than the bug it was fixing.
  */
 export function nodeFetcher(): Fetcher {
+  /** Per port, the loopback that last answered on it. */
+  const answered = new Map<number, string>();
   return {
     async fetch(request) {
-      const address = `${LOOPBACK}:${request.port}`;
-      const headers = new Headers();
-      for (const [name, value] of Object.entries(request.headers)) {
-        if (!HOP_BY_HOP.has(name.toLowerCase())) headers.set(name, value);
+      const remembered = answered.get(request.port);
+      const order = remembered === undefined ? LOOPBACKS : [remembered, ...LOOPBACKS.filter((one) => one !== remembered)];
+      let refused: unknown;
+      for (const loopback of order) {
+        const address = `${loopback}:${request.port}`;
+        const headers = new Headers();
+        for (const [name, value] of Object.entries(request.headers)) {
+          if (!HOP_BY_HOP.has(name.toLowerCase())) headers.set(name, value);
+        }
+        headers.set("host", address);
+        headers.set("accept-encoding", "identity");
+        let answer: Response;
+        try {
+          answer = await globalThis.fetch(`http://${address}${request.url}`, {
+            method: request.method,
+            headers,
+            ...(request.body === undefined ? {} : { body: request.body as Uint8Array<ArrayBuffer> }),
+            redirect: "manual",
+          });
+        } catch (error) {
+          refused = error;
+          continue;
+        }
+        answered.set(request.port, loopback);
+        const said: Record<string, string> = {};
+        answer.headers.forEach((value, name) => {
+          said[name] = value;
+        });
+        return { status: answer.status, headers: said, body: new Uint8Array(await answer.arrayBuffer()) };
       }
-      headers.set("host", address);
-      headers.set("accept-encoding", "identity");
-      const answer = await globalThis.fetch(`http://${address}${request.url}`, {
-        method: request.method,
-        headers,
-        ...(request.body === undefined ? {} : { body: request.body as Uint8Array<ArrayBuffer> }),
-        redirect: "manual",
-      });
-      const said: Record<string, string> = {};
-      answer.headers.forEach((value, name) => {
-        said[name] = value;
-      });
-      return { status: answer.status, headers: said, body: new Uint8Array(await answer.arrayBuffer()) };
+      // Neither stack answered: the port is not listening, and what it knew about the port was wrong.
+      answered.delete(request.port);
+      throw refused;
     },
   };
 }

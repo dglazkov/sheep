@@ -22,17 +22,17 @@ that starts one, the failures included.
 
 ---
 
-**Where we are: serve phase 0 closed, 10 Sep 2026. Next is serve phase 1.**
-The forward is built and proved in workerd: the two frames, the agent's
-fetcher, the fake's stood ports, the cell's third reader, and the eyes
-taking an origin. The rows are one maker of that origin now and render
-exactly what they did, which `test/eyes.test.ts` says by passing
-unedited. Serve phase 1 is the served look: the flags, the rental, the
-report, the prompt, and the walk on the local home. Then serve phase 2,
-the station and the skill: the release, the rings, the pasture skill
-walked, and the walk on the account. Nothing waits on a person before
-phase 2's ⚑ steps; phase 1's walk needs Docker on this laptop and the
-shepherd's model key, as every walk's.
+**Where we are: serve phases 0 and 1 closed, 10 Sep 2026. Next is serve
+phase 2.** A sheep on a home with a container can look at its dev server:
+`look --serve '<command>' [--port <n>] [<path>]` runs the command, renders
+the page its port serves, and stops it. Journey 1 was walked on the local
+home with a real model and a real container, and it changed the design
+twice — the forward now reaches either loopback, and the closing line has
+one clock. Serve phase 2 is the station and the skill: the release, the
+rings, the pasture skill walked, and the walk on the account. It is the
+first thing here that needs a person: its ⚑ steps upgrade `sheep-2` and
+stand the ring's station on the shepherd's account, and the container and
+browser minutes both spend.
 
 **Deliberately open.** Postponed on purpose: a server kept for a turn
 on a lane of its own; the websocket forwarded; the platform's port
@@ -122,7 +122,15 @@ shepherd's, as every walk's.
 
 **Findings.**
 
-**Status: NOT STARTED.**
+- **2026-09-10 — A server told to listen on `localhost` in the pen image binds `::1` and refuses `127.0.0.1`.** That is Vite's default, so journey 1's own first line could not be reached: the forward that assumed one loopback could not reach the server this project exists for.
+- **2026-09-10 — The fetcher's memory of which loopback answered is a hint, never a verdict.** A server can restart onto the other stack between looks, so the other address stays in the order behind the remembered one and a port answering on neither forgets what it knew.
+- **2026-09-10 — Two durations on one closing line get read against each other.** The eyes' clock starts after the port answered, so a served look reported with it claimed 1.1 s while the wait inside it was 1.3 s. The rental holds the clock now.
+- **2026-09-10 — The prompt's sentences were enough.** The re-walked sheep typed `look --serve 'npm run dev' --port 5173 /` unprompted, read the PNG, and called the websocket line "expected per the tooling notes, not a bug" — journey 1's last criterion, unspent.
+- **2026-09-10 — Three served looks on the local home: 2.8 s, 2.5 s, 2.5 s whole, each 1.3 to 1.4 s of it waiting for Vite.** `npx tsc` ran between them, so the lane was free. Vite's own start was 477 ms.
+- **2026-09-10 — Open: the second served look takes 2.5 s, not the under two seconds journey 1 asks.** The parts are irreducible separately (Vite 0.5 s, the eyes 1.1 to 1.4 s); the way to pay it is to open the browser while the port is still being polled, which nothing does yet.
+- **2026-09-10 — Open: a walk's local home turns `pnpm test` red.** `packages/cli/test/setup.test.ts` asserts this checkout has no home, so a `.sheep/` left by a walk fails a test unrelated to it. Stop the home and remove the kennel, or the next agent inherits a red suite.
+
+**Status: CLOSED.** 2026-09-10. Journey 4 step 2 holds in workerd through pi's bash tool against the fake — the `server` section between `errors` and `console`, the closing line, `--root` with `--serve` refused, a container-less home refused by the design's sentence, and the kill recorded on the container's own ledger in all six paths out of a rental. Journey 1 was walked twice on the local home with a real model: the first walk failed on its own documented line and forced two design changes, the second walked steps 1 to 5 with that line unmodified. One criterion missed and is an Open finding above: the second look takes 2.5 s against its under-two-seconds. Verified by the conductor and falsified by three mutations.
 
 ## Phase 2: The station and the skill
 

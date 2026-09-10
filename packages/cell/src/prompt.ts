@@ -44,9 +44,20 @@ export function systemPrompt(home: Home): string {
     "Working directory: /workspace",
     "Use the read, write, edit, and bash tools to inspect and change files.",
     shellSystemPromptLine(home),
-    ...(home.eyes === true ? [EYES_PARAGRAPH] : []),
+    ...(home.eyes === true ? [eyesParagraph(home)] : []),
     "Keep answers short and technical.",
   ].join("\n");
+}
+
+/**
+ * The eyes' paragraph as this home has it (serve phase 1): eyes' own
+ * sentences, and the served look's after them when the home has a
+ * container too, since `--serve` needs somewhere to run the command. One
+ * paragraph either way — a home with eyes and no container gets the
+ * literal eyes wrote, byte for byte.
+ */
+export function eyesParagraph(home: Home): string {
+  return home.container ? `${EYES_PARAGRAPH} ${SERVE_SENTENCES}` : EYES_PARAGRAPH;
 }
 
 /**
@@ -63,6 +74,25 @@ export const EYES_PARAGRAPH =
   "Read the PNG with the read tool to see the picture. " +
   "dist, build, node_modules, and anything in .gitignore stay in the container and never sync back to the workspace, so a build you want to look at goes to a directory that syncs: `vite build --outDir site`, then `look --root site index.html`. " +
   "There is no --script; the flags are all there is.";
+
+/**
+ * What a sheep whose home has a container as well as eyes is told beside
+ * the eyes' paragraph (serve phase 1): that it can look at its dev server
+ * rather than at a build. The design names what has to be in it — what
+ * `--serve` does, that `PORT` is set and `--port` names it, the Vite
+ * line, that `<path>` is on the server and `/` unless said, that the
+ * server is stopped after the look, that the websocket line is expected,
+ * and that `--root` does not combine with it — and each of those is one
+ * sentence here, because the sheep reads this once and acts on it without
+ * a turn to spare.
+ */
+export const SERVE_SENTENCES =
+  "This home also has a container, so `look --serve '<command>' [--port <n>] [<path>]` runs that command in the container, renders the page its port serves, and stops it again: `look --serve 'npx vite --port $PORT --strictPort' /` from the app's directory. " +
+  "PORT is set in the command's environment to the port the look expects, 5173 unless --port says another, and the $PORT in your line reaches the container unexpanded, so the container's own bash expands it; a framework that reads PORT by itself needs no flag at all. " +
+  "With --serve the path is a path on the server, / unless you say another, not a workspace file, so --root does not combine with it and a look at a built site is still `look --root site index.html`. " +
+  "The report gains a server section between errors and console, the last forty lines the command printed, and the closing line says what served, on which port, and how long the port took to answer. " +
+  "The server is started for the one look and killed when the report is printed: nothing is left running, the next line in the container finds the lane free, and a server you put in the background yourself does not survive its line. " +
+  "A page served by Vite logs `[vite] failed to connect to websocket` once; the hot-reload socket is not forwarded, so that line is expected on a served page and is not a bug to go fixing.";
 
 /** The pasture a cell was born into, as the prompt builder needs it. */
 export interface CellPasture {

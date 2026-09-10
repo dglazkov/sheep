@@ -17,6 +17,15 @@
  * the page threw nothing is the answer a sheep came for, and a report
  * whose shape does not move is one a sheep can skim. Nothing is truncated
  * but the tree, at two hundred lines with a line saying so.
+ *
+ * Serve phase 1 adds a fifth thing, and only for a served look: `server`,
+ * between `errors` and `console`, the tail of what the command printed to
+ * either stream. It is there because a dev server says why it is unhappy
+ * on its own stdout — a Vite compile error lands there and in the page's
+ * overlay, and the overlay is a picture — and the closing line then says
+ * what served, on which port, and how long the port took to answer. A
+ * look at the rows has no `server` section and its closing line is the
+ * one eyes wrote, byte for byte.
  */
 
 /** One console message as the page emitted it; `level` is puppeteer's `type()`, `log`, `warn`, `error`. */
@@ -43,6 +52,21 @@ export interface AxNode {
   children?: AxNode[];
 }
 
+/**
+ * What served a look, when one did: the command as the sheep typed it,
+ * the port it listened on, how long the port took to answer, and the tail
+ * of what it printed to either stream. The rental gathers it; the eyes
+ * never see a server, and a look at the rows leaves it out entirely.
+ */
+export interface ServedBy {
+  command: string;
+  port: number;
+  /** Milliseconds from the run's start to the first answer on the port. */
+  readyMs: number;
+  /** The last lines the command wrote, oldest first; empty when it was silent, which the section says as `none`. */
+  output: readonly string[];
+}
+
 /** Everything one look gathered. The report is a function of this and nothing else. */
 export interface Seen {
   /** Uncaught exceptions and failed requests, in the order they happened. */
@@ -53,10 +77,17 @@ export interface Seen {
   /** The PNG's own width and height, read from its header, so `--full` reports what was written. */
   width: number;
   height: number;
-  /** Wall time of the whole look, in milliseconds. */
+  /**
+   * Wall time of the whole look, in milliseconds — and for a served look
+   * the whole of that one too, which is the rental's clock and not the
+   * eyes': the run's start to the report, with `server.readyMs` a part of
+   * it rather than a second measurement beside it.
+   */
   ms: number;
   /** The name the program writes the PNG under. The eyes only name it; the program writes the file. */
   out: string;
+  /** Serve phase 1: what served this look, for the `server` section and the closing line. Absent for a look at the rows. */
+  server?: ServedBy;
 }
 
 /**
@@ -119,9 +150,14 @@ export const TREE_LINES = 200;
 /** What an empty section says. */
 export const NONE = "none";
 
+/** How many of the server's last lines the `server` section carries. Forty, because a stack trace from a dev server is about that long. */
+export const SERVER_LINES = 40;
+
 export function report(seen: Seen): string {
   const sections = [
     section("errors", seen.errors),
+    // Between `errors` and `console`, and only for a served look: what the server itself said while the page rendered.
+    ...(seen.server === undefined ? [] : [section("server", seen.server.output.slice(-SERVER_LINES))]),
     section(
       "console",
       seen.console.map((line) => `${line.level}: ${line.text}`),
@@ -131,9 +167,19 @@ export function report(seen: Seen): string {
   return `${sections.join("\n")}\n${closing(seen)}\n`;
 }
 
-/** The closing line: `wrote look.png 1024x768 in 2.3s`. */
+/**
+ * The closing line: `wrote look.png 1024x768 in 2.3s`, and for a served
+ * look what served it, on which port, and how long the port took to
+ * answer — the two numbers a sheep needs to tell a slow server from a
+ * slow page. Both are from one clock, the rental's: `in …` is the whole
+ * served look, the wait for the port included, and `ready in …` is the
+ * part of it that was waiting, so `in …` is never the smaller of the two.
+ */
 export function closing(seen: Seen): string {
-  return `wrote ${seen.out} ${seen.width}x${seen.height} in ${(seen.ms / 1000).toFixed(1)}s`;
+  const wrote = `wrote ${seen.out} ${seen.width}x${seen.height} in ${(seen.ms / 1000).toFixed(1)}s`;
+  const server = seen.server;
+  if (server === undefined) return wrote;
+  return `${wrote}, served by \`${server.command}\` on ${server.port}, ready in ${(server.readyMs / 1000).toFixed(1)}s`;
 }
 
 function section(name: string, lines: readonly string[]): string {
