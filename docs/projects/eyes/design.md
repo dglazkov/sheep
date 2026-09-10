@@ -139,10 +139,13 @@ home has eyes: what `look` does, its flags, that the PNG is read with
 the read tool, and that `dist` and `build` stay in the container by
 pen's rule, so a build the sheep wants to see goes to a directory that
 syncs, `vite build --outDir site` and then `look --root site
-index.html`. A home without the binding, a station deployed before this
-project, has no paragraph, and `look` there is just-bash's not-found
-line annotated with one sentence, `this home has no eyes; a station
-upgraded from this release has them`. `/home` reports `eyes: true` or
+index.html`. A home without the binding, one whose config lost it, has
+no paragraph, and `look` there is just-bash's not-found line annotated
+with one sentence, `this home has no eyes; a station upgraded from this
+release has them`; a station deployed before this project runs an older
+cell, which answers `look` with its own not-found line and says nothing
+of eyes until `sheep home deploy` upgrades it (eyes phase 2's walk).
+`/home` reports `eyes: true` or
 `false`, `sheep home` prints it beside the container, and the
 `Home` the prompt is built from carries it.
 

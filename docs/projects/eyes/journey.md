@@ -97,9 +97,12 @@ Acceptance criteria:
 The shepherd's station, `sheep-2`, was deployed before this project.
 
 1. Before the upgrade, a sheep there runs `look index.html`. The shell
-   answers with the not-found line and the sentence: this home has no
-   eyes, and a station upgraded from this release has them. `sheep
-   home` prints `eyes: no`.
+   answers with its not-found line: that station's cell is older than
+   the eyes and knows no sentence for them, so the line is its
+   container's `look: command not found`, and `sheep home` prints
+   `eyes: no`. The annotated sentence, this home has no eyes and a
+   station upgraded from this release has them, is what a home running
+   this release without the binding says, journey 4 step 3.
 2. `sheep home deploy` from the kennel, the release carrying the
    binding. `sheep home` prints `eyes: yes`.
 3. Journey 1 walked on the station with a real model. The first look
