@@ -141,6 +141,7 @@ git submodule update --init
 pnpm install
 pnpm test        # the inner rings; the cell's run inside workerd, the Workers runtime
 pnpm test --list # what each ring needs, and which files are in it
+pnpm test --ci   # what CI runs: every ring but `home`, which is walked here
 ```
 
 #### Secrets
