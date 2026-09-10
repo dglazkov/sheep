@@ -6,7 +6,9 @@
  * with a runner that spawns `bash -c` under the same root. Listens on a
  * Unix socket for the git credential helper (`bin/git-credential-pen.mjs`),
  * a process git spawns inside a run, and carries each request through
- * `askCredential`: one JSON line in, one out, nothing kept. Exits when the
+ * `askCredential`: one JSON line in, one out, nothing kept. Serve phase 0
+ * adds the fetcher: the browser's requests during a look, arriving as
+ * `fetch` frames, asked of a server on the container's own loopback. Exits when the
  * WebSocket closes, so a container that loses its cell is a container that
  * is gone.
  */
@@ -18,7 +20,7 @@ import { createServer } from "node:http";
 import { createServer as createSocketServer } from "node:net";
 import { constants as osConstants } from "node:os";
 import { dirname, join, posix, relative } from "node:path";
-import { type AgentSocket, type Disk, type DiskEntry, type RunHandle, type RunOutcome, type Runner, type RunRequest, serveAgent, type ServedAgent } from "./agent.ts";
+import { type AgentSocket, type Disk, type DiskEntry, type Fetcher, type RunHandle, type RunOutcome, type Runner, type RunRequest, serveAgent, type ServedAgent } from "./agent.ts";
 import { CELL_URL_ENV, DEFAULT_HELPER_SOCKET, HELPER_SOCKET_ENV, type HelperAnswer, type HelperRequest, TOKEN_ENV, TOKEN_PARAM } from "./protocol.ts";
 
 export const WORKSPACE_ENV = "PEN_WORKSPACE";
@@ -168,6 +170,53 @@ export function nodeRunner(root: string, extra: Record<string, string> = {}): Ru
   };
 }
 
+/** Headers the browser's request carries that belong to the browser's own hop, and never to the agent's. */
+const HOP_BY_HOP = new Set(["host", "connection", "keep-alive", "proxy-connection", "transfer-encoding", "upgrade", "content-length"]);
+
+/** What the agent puts in front of a `fetch` frame's `url`: the server is the container's own, on the loopback. */
+export const LOOPBACK = "127.0.0.1";
+
+/**
+ * The fetcher the image uses: Node's own `fetch` at the loopback address,
+ * with three things changed about the browser's request.
+ *
+ * `host` becomes the loopback address and port, so a server that checks
+ * its host — as Vite has since 6.0.9 — answers instead of refusing the
+ * browser's `sheep.invalid`. Redirects are not followed, so the browser
+ * sees the `302` and follows it itself, which is what keeps the page's
+ * own URL and its relative links right. And `accept-encoding` is pinned
+ * to `identity` rather than merely dropped: Node's fetch puts `gzip,
+ * deflate` back when nothing says otherwise, and then decompresses the
+ * body while leaving `content-encoding: gzip` on it, so a body forwarded
+ * as it came would say gzip and not be. Asking for `identity` is how the
+ * design's "bodies arrive as bytes the browser can take as they are"
+ * holds in this runtime.
+ */
+export function nodeFetcher(): Fetcher {
+  return {
+    async fetch(request) {
+      const address = `${LOOPBACK}:${request.port}`;
+      const headers = new Headers();
+      for (const [name, value] of Object.entries(request.headers)) {
+        if (!HOP_BY_HOP.has(name.toLowerCase())) headers.set(name, value);
+      }
+      headers.set("host", address);
+      headers.set("accept-encoding", "identity");
+      const answer = await globalThis.fetch(`http://${address}${request.url}`, {
+        method: request.method,
+        headers,
+        ...(request.body === undefined ? {} : { body: request.body as Uint8Array<ArrayBuffer> }),
+        redirect: "manual",
+      });
+      const said: Record<string, string> = {};
+      answer.headers.forEach((value, name) => {
+        said[name] = value;
+      });
+      return { status: answer.status, headers: said, body: new Uint8Array(await answer.arrayBuffer()) };
+    },
+  };
+}
+
 /**
  * The helper's door: a Unix socket the agent listens on. Each connection is
  * one request, a JSON line, answered with one JSON line and closed. The
@@ -259,7 +308,7 @@ export async function main(env: NodeJS.ProcessEnv = process.env): Promise<number
   const pastureRoot = env[PASTURE_ENV] || DEFAULT_PASTURE;
   const helperSocket = env[HELPER_SOCKET_ENV] || DEFAULT_HELPER_SOCKET;
   // The second root (pasture phase 3): a disk of its own beside the checkout, so the sync-out's walk cannot reach it.
-  const served = serveAgent(socket, nodeDisk(root), nodeRunner(root, { [HELPER_SOCKET_ENV]: helperSocket }), { pasture: nodeDisk(pastureRoot) });
+  const served = serveAgent(socket, nodeDisk(root), nodeRunner(root, { [HELPER_SOCKET_ENV]: helperSocket }), nodeFetcher(), { pasture: nodeDisk(pastureRoot) });
   let closeHelper: (() => Promise<void>) | undefined;
   try {
     closeHelper = await serveHelper(helperSocket, served);

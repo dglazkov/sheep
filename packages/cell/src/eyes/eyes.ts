@@ -1,14 +1,17 @@
 /**
- * The eyes: one class over the browser binding and the cell's files
- * table. A sheep writes HTML, CSS, and modules into rows in a Durable
- * Object; nothing listens on a port and nothing ever will. So the eyes
- * mount the workspace at a made-up origin, `http://sheep.invalid`, and
- * answer every request the browser makes to it out of the rows. A page
- * loaded at `http://sheep.invalid/<path under the root>` resolves its
- * relative stylesheet, its module script, its images, and a `fetch` of
- * its own JSON against the rows beside it, and an absolute
- * `/assets/x.js` against the root. Nothing serves the origin;
- * interception does.
+ * The eyes: one class over the browser binding and an origin. A sheep
+ * writes HTML, CSS, and modules into rows in a Durable Object; nothing
+ * listens on a port and nothing ever will. So the eyes mount a made-up
+ * origin, `http://sheep.invalid`, and answer every request the browser
+ * makes to it by asking the look's `Origin` — the rows under a root, as
+ * eyes built it, or a forward to a server the container is running.
+ * Nothing serves the origin; interception does.
+ *
+ * Serve phase 0 made that an interface. The eyes compute nothing about
+ * rows any more: where the look starts and what each request is answered
+ * with are both the origin's to say, and a look with no origin given
+ * builds the rows' one over its own files, which is what every look was
+ * until now.
  *
  * Every other origin is let through to the network, so a font from a CDN
  * renders and a page that leans on one looks as the shepherd would see
@@ -22,10 +25,12 @@
  * printing the other is the `look` program's, in eyes phase 1.
  */
 import type { Browser, HTTPRequest, Page } from "@cloudflare/puppeteer";
-import { posix } from "node:path";
 import { type FilesTable, normalizePath, WORKSPACE_ROOT } from "../workspace/files.ts";
+import { LookError, type Origin, type OriginAnswer, RowsOrigin } from "./origin.ts";
 import { type AxNode, type ConsoleLine, pngSize, pruneTree, report, type RequestLine, type Seen } from "./report.ts";
 import { EyesSession } from "./session.ts";
+
+export { contentTypeOf, ForwardOrigin, LookError, type Origin, type OriginAnswer, type OriginRequest, RowsOrigin } from "./origin.ts";
 
 /** The address the workspace is mounted at inside the browser. Nothing serves it. */
 export const ORIGIN = "http://sheep.invalid";
@@ -39,6 +44,8 @@ export const DEFAULT_OUT = "look.png";
 /** How long `goto` waits for the page to go idle before it gives up. */
 export const GOTO_TIMEOUT_MS = 15_000;
 
+const encoder = new TextEncoder();
+
 /** `--click <selector>` and `--fill <selector> <text>`, which act in the order the program was given them. */
 export type LookAction = { kind: "click"; selector: string } | { kind: "fill"; selector: string; text: string };
 
@@ -48,7 +55,7 @@ export type LookAction = { kind: "click"; selector: string } | { kind: "fill"; s
  * the closing line can name the file; the eyes never write it.
  */
 export interface LookRequest {
-  /** The page: an absolute workspace path. A directory means its `index.html`. */
+  /** The page, as the origin reads it: an absolute workspace path for the rows, where a directory means its `index.html`; a path on the server for a served look. */
   path: string;
   /** `--root`: the directory mounted at `/`. The workspace root unless the program says otherwise. */
   root?: string;
@@ -67,19 +74,6 @@ export interface LookResult {
   png: Uint8Array;
   report: string;
   seen: Seen;
-}
-
-/**
- * A look that could not be taken: a path that is not in the workspace, a
- * selector that matched nothing. One line, which is what the program
- * prints before it exits 1. A page that rendered badly is not this: that
- * is a report with errors in it.
- */
-export class LookError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "LookError";
-  }
 }
 
 /**
@@ -110,21 +104,27 @@ export class Eyes {
     this.session = new EyesSession(binding, sql);
   }
 
-  /** One look: a page in the cell's session, rendered from the rows, and what it said. */
-  async look(request: LookRequest): Promise<LookResult> {
+  /**
+   * One look: a page in the cell's session, rendered from an origin, and
+   * what it said. With no origin, the rows under the request's root, which
+   * is what the eyes have always done and what the `look` program asks
+   * for; a served look hands in the forward's instead. The origin is asked
+   * where the look starts before a browser is opened, so a path that is
+   * not there costs no session.
+   */
+  async look(request: LookRequest, origin: Origin = new RowsOrigin(this.files, normalizePath(request.root ?? WORKSPACE_ROOT))): Promise<LookResult> {
     const started = Date.now();
-    const root = normalizePath(request.root ?? WORKSPACE_ROOT);
-    const url = this.pageUrl(root, request.path);
+    const url = `${ORIGIN}${origin.start(request.path)}`;
     const out = request.out ?? DEFAULT_OUT;
     const browser = await this.session.open();
     try {
-      return await this.lookIn(browser, root, url, request, out, started);
+      return await this.lookIn(browser, origin, url, request, out, started);
     } finally {
       await this.session.release(browser);
     }
   }
 
-  private async lookIn(browser: Browser, root: string, url: string, request: LookRequest, out: string, started: number): Promise<LookResult> {
+  private async lookIn(browser: Browser, origin: Origin, url: string, request: LookRequest, out: string, started: number): Promise<LookResult> {
     const errors: string[] = [];
     const messages: ConsoleLine[] = [];
     const requests: RequestLine[] = [];
@@ -168,22 +168,7 @@ export class Eyes {
         if (response.status() >= 400) blame(asked, `${response.status()} ${short(response.url())}`);
       });
       await page.setRequestInterception(true);
-      page.on("request", (intercepted) => {
-        const asked = new URL(intercepted.url());
-        note(intercepted, {});
-        if (asked.origin !== ORIGIN) {
-          // Every other origin goes to the network, as it would in any browser.
-          return void intercepted.continue();
-        }
-        const file = this.serve(root, asked.pathname);
-        if (file === undefined) {
-          note(intercepted, { status: 404 });
-          blame(intercepted, `404 ${asked.pathname}`);
-          return void intercepted.respond({ status: 404, contentType: "text/plain", headers: {}, body: `not in the workspace: ${asked.pathname}` });
-        }
-        note(intercepted, { status: 200 });
-        return void intercepted.respond({ status: 200, contentType: contentTypeOf(file.path), headers: {}, body: file.bytes });
-      });
+      page.on("request", (intercepted) => this.answer(intercepted, origin, note, blame));
       await page.goto(url, { waitUntil: "networkidle0", timeout: GOTO_TIMEOUT_MS });
       await act(page, request.actions ?? []);
       const png = new Uint8Array(await page.screenshot({ type: "png", fullPage: request.full === true }));
@@ -197,55 +182,50 @@ export class Eyes {
   }
 
   /**
-   * Where the page is loaded: the origin, then the path relative to the
-   * root, so a relative asset beside it resolves to the row beside it. A
-   * path that is not in the workspace, or is outside the root, is a
-   * `LookError` and no browser is even asked for.
+   * One intercepted request. Every other origin goes to the network, as it
+   * would in any browser; the look's own is the origin's to answer, and
+   * `undefined` from it is the 404 the eyes write and blame. A 404 is said
+   * twice by the browser — once as the status, again as `net::ERR_ABORTED`
+   * on the request it then abandoned — and `blame` is what keeps it to one
+   * line.
+   *
+   * The rows answer inside this event, as they always did, and the browser
+   * sees no gap; only an origin that has to leave the cell waits, and then
+   * the answer lands a turn later, which is what lets a page's fifty
+   * requests be fifty fetches rather than a queue. An origin that throws is
+   * a request the browser will never be answered, so it is aborted and
+   * reported as one.
    */
-  private pageUrl(root: string, path: string): string {
-    const target = normalizePath(path);
-    if (target !== root && !target.startsWith(`${root}/`)) throw new LookError(`${target} is not under the root ${root}`);
-    const file = this.indexed(target);
-    if (file === undefined) throw new LookError(`no such path in the workspace: ${target}`);
-    return `${ORIGIN}${encodeURI(file.slice(root.length)) || "/"}`;
-  }
-
-  /** One intercepted request, answered from the rows under the root, or `undefined` for a 404. */
-  private serve(root: string, pathname: string): { path: string; bytes: Uint8Array } | undefined {
-    let decoded: string;
+  private answer(
+    intercepted: HTTPRequest,
+    origin: Origin,
+    note: (asked: HTTPRequest, patch: Partial<RequestLine>) => void,
+    blame: (asked: HTTPRequest, line: string) => void,
+  ): void {
+    const asked = new URL(intercepted.url());
+    note(intercepted, {});
+    if (asked.origin !== ORIGIN) return void intercepted.continue();
+    const give = (answer: OriginAnswer | undefined): void => {
+      if (answer === undefined) {
+        note(intercepted, { status: 404 });
+        blame(intercepted, `404 ${asked.pathname}`);
+        return void intercepted.respond({ status: 404, contentType: "text/plain", headers: {}, body: `not in the workspace: ${asked.pathname}` });
+      }
+      note(intercepted, { status: answer.status });
+      return void intercepted.respond({ status: answer.status, headers: answer.headers, body: answer.body });
+    };
+    const failed = (error: unknown): void => {
+      blame(intercepted, `${error instanceof Error ? error.message : String(error)} ${asked.pathname}`);
+      void intercepted.abort().catch(() => {});
+    };
+    let answered: OriginAnswer | undefined | Promise<OriginAnswer | undefined>;
     try {
-      decoded = decodeURIComponent(pathname);
-    } catch {
-      return undefined;
+      answered = origin.answer({ method: intercepted.method(), url: `${asked.pathname}${asked.search}`, headers: intercepted.headers(), ...bodyOf(intercepted) });
+    } catch (error) {
+      return failed(error);
     }
-    let target: string;
-    try {
-      target = normalizePath(posix.join(root, decoded));
-    } catch {
-      return undefined;
-    }
-    // A `..` that climbs out of the root reads nothing: the root is the mount, and there is no above it.
-    if (target !== root && !target.startsWith(`${root}/`)) return undefined;
-    const file = this.indexed(target);
-    if (file === undefined) return undefined;
-    try {
-      return { path: file, bytes: this.files.readFile(file) };
-    } catch {
-      return undefined;
-    }
-  }
-
-  /** The file a path means: itself, or the `index.html` in it when it is a directory. `undefined` when there is none. */
-  private indexed(path: string): string | undefined {
-    let kind;
-    try {
-      kind = this.files.stat(path).kind;
-    } catch {
-      return undefined;
-    }
-    if (kind !== "directory") return path;
-    const index = posix.join(path, "index.html");
-    return this.files.exists(index) ? index : undefined;
+    if (answered instanceof Promise) return void answered.then(give, failed);
+    return give(answered);
   }
 }
 
@@ -261,6 +241,12 @@ async function act(page: Page, actions: readonly LookAction[]): Promise<void> {
   }
 }
 
+/** The request's body, when it has one: puppeteer hands it over as text, so text is what the origin gets bytes of. */
+function bodyOf(intercepted: HTTPRequest): { body?: Uint8Array } {
+  const data = intercepted.postData();
+  return data === undefined || data === "" ? {} : { body: encoder.encode(data) };
+}
+
 /** A URL as an error line names it: the path alone for the origin, the whole thing for anywhere else. */
 function short(url: string): string {
   try {
@@ -269,41 +255,4 @@ function short(url: string): string {
   } catch {
     return url;
   }
-}
-
-/**
- * The content type of a row, by its extension. A browser is strict about
- * these — a module served as `text/plain` does not run, a stylesheet does
- * not apply — so the list covers what a sheep writes and everything else
- * is bytes.
- */
-const CONTENT_TYPES: Record<string, string> = {
-  html: "text/html; charset=utf-8",
-  htm: "text/html; charset=utf-8",
-  css: "text/css; charset=utf-8",
-  js: "text/javascript; charset=utf-8",
-  mjs: "text/javascript; charset=utf-8",
-  json: "application/json; charset=utf-8",
-  map: "application/json; charset=utf-8",
-  txt: "text/plain; charset=utf-8",
-  svg: "image/svg+xml",
-  png: "image/png",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  gif: "image/gif",
-  webp: "image/webp",
-  avif: "image/avif",
-  ico: "image/x-icon",
-  woff: "font/woff",
-  woff2: "font/woff2",
-  ttf: "font/ttf",
-  otf: "font/otf",
-  wasm: "application/wasm",
-  webmanifest: "application/manifest+json",
-  xml: "application/xml",
-};
-
-export function contentTypeOf(path: string): string {
-  const extension = posix.extname(path).slice(1).toLowerCase();
-  return CONTENT_TYPES[extension] ?? "application/octet-stream";
 }

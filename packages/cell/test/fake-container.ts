@@ -15,8 +15,17 @@
  * chunks over ticks, edits to the disk, an exit code. The protocol around
  * the run is the agent's own. A command with no script is answered as the
  * container's bash would answer a program the image lacks.
+ *
+ * Serve phase 0 gives it a second such place, and for the same reason:
+ * workerd has no ports, so `serve(port, origin)` stands a table of
+ * responses behind one and the fake's fetcher reads the table instead of
+ * connecting. A port nothing was stood behind refuses, which is what the
+ * agent turns into status `0`. An origin with a `starts` is not listening
+ * until a `run` names it and stops when that run ends, and both are
+ * recorded, so a served look's every step — the server started, the page
+ * rendered, the server killed — runs in workerd against the protocol.
  */
-import { type Disk, type DiskEntry, type Runner, type RunOutcome, type RunRequest, serveAgent } from "@sheep/pen/agent";
+import { type Disk, type DiskEntry, type Fetcher, type FetchRequest, type FetchResponse, type Runner, type RunOutcome, type RunRequest, serveAgent } from "@sheep/pen/agent";
 import {
   type CellFrame,
   type ContainerFrame,
@@ -191,6 +200,38 @@ export function scriptRunner(disk: MemoryDisk, scriptFor: ScriptFor, options: { 
   };
 }
 
+/** What a served port answers with. A missing status is `200`, and a string body is UTF-8. */
+export interface FakeResponse {
+  status?: number;
+  headers?: Record<string, string>;
+  body?: string | Uint8Array;
+}
+
+/**
+ * A table of responses standing behind a port. `respond` may wait, so a
+ * test can hold requests open and see how many the forward has in flight
+ * at once; `undefined` is the server's own 404, not a port that refused.
+ */
+export interface FakeOrigin {
+  /**
+   * The command that starts it: a `run` whose command contains this text
+   * makes the port listen, and the end of that run — a kill included —
+   * makes it stop. Without it the port listens from the moment `serve` is
+   * called, which is what a test about the forward rather than the rental
+   * wants.
+   */
+  starts?: string;
+  respond(request: FetchRequest): FakeResponse | undefined | Promise<FakeResponse | undefined>;
+}
+
+/** One thing that happened to a served port: the fake's record of a server's life. */
+export interface ServerEvent {
+  port: number;
+  event: "started" | "stopped";
+  /** The command that started it, or how the run that held it ended. */
+  by: string;
+}
+
 /** One line of the transcript: a frame, or the bytes of a blob by their hash. */
 export type TranscriptEntry =
   | { from: "cell" | "container"; frame: Frame }
@@ -206,6 +247,10 @@ export interface FakeContainer {
   transcript: TranscriptEntry[];
   /** Pasture phase 4: every `run` the runner was handed, in order, with the environment each carried; a test counts setup's and reads the secrets off it. */
   runs: RunRequest[];
+  /** Stands a table of responses behind a port, in place of a server the container would be running. */
+  serve(port: number, origin: FakeOrigin): void;
+  /** Every start and stop of a served port the runner drove, in order. */
+  servers: ServerEvent[];
   /** The agent's sync-out, in place of the `run` a later phase ends with one. */
   syncOut(id: string): Promise<Refused[]>;
   /** The helper's path, called as the helper's socket would call it: workerd has no processes, so the request comes from the test. */
@@ -249,6 +294,65 @@ export function serveFakeOn(agentEnd: WebSocket, options: FakeContainerOptions =
   const pasture = options.pasture ?? memoryDisk();
   const transcript: TranscriptEntry[] = [];
   const runs: RunRequest[] = [];
+  /** What has been stood behind each port, and whether it is listening now. */
+  const stood = new Map<number, { origin: FakeOrigin; listening: boolean }>();
+  const servers: ServerEvent[] = [];
+
+  /**
+   * The fake's fetcher: the table behind the port, or a refusal. Nothing
+   * connects to anything — workerd has no ports — but everything on either
+   * side of this call is the real thing, which is what the proof needs.
+   */
+  const fetcher: Fetcher = {
+    async fetch(request: FetchRequest): Promise<FetchResponse> {
+      const server = stood.get(request.port);
+      if (server === undefined || !server.listening) throw new Error(`connect ECONNREFUSED 127.0.0.1:${request.port}`);
+      const answered = await server.origin.respond(request);
+      if (answered === undefined) {
+        return { status: 404, headers: { "content-type": "text/plain; charset=utf-8" }, body: encoder.encode(`no such path: ${request.url}`) };
+      }
+      const body = answered.body === undefined ? new Uint8Array(0) : typeof answered.body === "string" ? encoder.encode(answered.body) : answered.body;
+      return { status: answered.status ?? 200, headers: { ...answered.headers }, body };
+    },
+  };
+
+  /**
+   * The scripted runner, with the served ports hung off it: a command that
+   * names an origin makes its port listen for as long as the run lasts,
+   * and the end of the run — an exit, a kill, a timeout — stops it. That
+   * is the one rule this project has, proved from the outside.
+   */
+  const scripted = scriptRunner(disk, options.script ?? (() => undefined), { deaf: options.deaf ?? false, runs });
+  const runner: Runner = {
+    run(request, output) {
+      const held = [...stood].filter(([, server]) => server.origin.starts !== undefined && request.command.includes(server.origin.starts));
+      for (const [port, server] of held) {
+        server.listening = true;
+        servers.push({ port, event: "started", by: request.command });
+      }
+      const handle = scripted.run(request, output);
+      const stopHeld = (by: string) => {
+        for (const [port, server] of held) {
+          if (!server.listening) continue;
+          server.listening = false;
+          servers.push({ port, event: "stopped", by });
+        }
+      };
+      return {
+        outcome: handle.outcome.then(
+          (outcome) => {
+            stopHeld("exit" in outcome ? `exit ${outcome.exit}` : outcome.killed);
+            return outcome;
+          },
+          (error: unknown) => {
+            stopHeld(error instanceof Error ? error.message : String(error));
+            throw error;
+          },
+        ),
+        kill: (reason) => handle.kill(reason),
+      };
+    },
+  };
 
   let stopped = false;
   const closeListeners: Array<(event: unknown) => void> = [];
@@ -293,12 +397,16 @@ export function serveFakeOn(agentEnd: WebSocket, options: FakeContainerOptions =
     },
   };
   agentEnd.addEventListener("close", (event) => stop(event.reason));
-  const served = serveAgent(wrapped, disk, scriptRunner(disk, options.script ?? (() => undefined), { deaf: options.deaf ?? false, runs }), { pasture });
+  const served = serveAgent(wrapped, disk, runner, fetcher, { pasture });
   return {
     disk,
     pasture,
     transcript,
     runs,
+    servers,
+    serve(port, origin) {
+      stood.set(port, { origin, listening: origin.starts === undefined });
+    },
     syncOut: (id) => served.syncOut(id),
     askCredential: (request, options) => served.askCredential(request, options),
     stop(reason = "container stopped") {

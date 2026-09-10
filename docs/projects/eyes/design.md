@@ -153,8 +153,11 @@ of eyes until `sheep home deploy` upgrades it (eyes phase 2's walk).
 
 - **The container's dev server.** `vite dev` in the pen is a port the
   eyes cannot see; interception could forward to it through the
-  container binding. A later project, when a walk shows a build per
-  look is too slow.
+  container binding. That later project is
+  [serve](../serve/design.md), which took the door and not the
+  container binding: the forward is two frames on the socket the
+  container already opened, so the container stays a client of the cell
+  and the proof runs in workerd. Serve phase 0 built it.
 - **A shared browser per home.** One session, a context per sheep, one
   concurrent browser for the herd. Open until the browser line on the
   bill says so.

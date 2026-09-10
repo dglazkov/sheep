@@ -5,9 +5,15 @@
  * query parameter (the same shape as the cell's own socket address), and
  * from then on everything is frames on that socket.
  *
- * A frame is one JSON object per text message with a `type` field. Blob
- * bytes travel as one binary message immediately after the `blob` text
- * frame that names their hash and size; nothing is base64. Manifest
+ * A frame is one JSON object per text message with a `type` field. A
+ * binary message belongs to the text frame that announced it, and three
+ * frames announce one: `blob` names a blob's hash and size, `fetch` the
+ * size of a request's body, `response` the size of a response's. The
+ * bytes are the next message on the socket, and follow their frame with
+ * nothing awaited between the two; nothing is base64. Only one
+ * announcement can stand at a time in each direction — a sync and a look
+ * never overlap — and a guard on each side throws when a second announcer
+ * appears before the first one's bytes. Manifest
  * paths are relative to the checkout root (`src/a.txt`, never
  * `/workspace/src/a.txt` and never a leading slash), so the cell's
  * `/workspace` and the container's `/workspace` are the same tree by
@@ -36,6 +42,12 @@
  * that scope. The value crosses once, is handed to the program that
  * asked, and is kept by no one: not the agent, not the cell, not a row,
  * and never a `stdout` or `stderr` frame.
+ *
+ * Serve phase 0: the forward is `fetch` from the cell and `response`
+ * from the container, one pair per request a page made during a look to
+ * a server the container is running. The cell never connects into the
+ * container; the container stays the client, and the browser's request
+ * rides the one socket it already has.
  *
  * Pasture phase 3: a `manifest` may carry a second root, `pasture`, the
  * pasture's tree with paths relative to `/pasture`. It is read-only on the
@@ -114,6 +126,46 @@ export interface Refused {
   size: number;
 }
 
+/**
+ * One request the browser made during a look, for a server listening on
+ * `port` inside the container. `url` is the path and query alone — the
+ * agent puts the loopback address in front of it — and `size` is the
+ * request's body, which follows as one binary message when it is not
+ * zero. The agent handles it off its frame chain, the way `run` is
+ * handled, so a page's fifty module requests are fifty fetches in flight
+ * rather than a queue behind each other and behind the server's output.
+ */
+export interface FetchFrame {
+  type: "fetch";
+  id: string;
+  /** The loopback port the server listens on inside the container. */
+  port: number;
+  method: string;
+  /** The path and query, as the browser asked for it: `/assets/app.js?v=2`. */
+  url: string;
+  headers: Record<string, string>;
+  /** Bytes of the request's body; 0 when it has none, and then no binary message follows. */
+  size: number;
+}
+
+/**
+ * The server's answer to the `fetch` under this id: `size` bytes follow
+ * as one binary message when it is not zero. Status `0` is the one the
+ * server never gave — a fetch the agent could not make, the port not
+ * listening — and then the body is the error's text.
+ */
+export interface ResponseFrame {
+  type: "response";
+  id: string;
+  /** The server's status, or `0` for a fetch that never reached one. */
+  status: number;
+  headers: Record<string, string>;
+  size: number;
+}
+
+/** The status a `response` carries when the agent could not make the fetch at all. */
+export const FETCH_FAILED_STATUS = 0;
+
 /** Announces one binary message, the bytes, which follows it immediately. */
 export interface BlobFrame {
   type: "blob";
@@ -144,6 +196,7 @@ export type CellFrame =
   | { type: "manifest"; id: string; entries: ManifestEntry[]; pasture?: ManifestEntry[] }
   | BlobFrame
   | NeedFrame
+  | FetchFrame
   /** Runs `command` through the container's own bash under `cwd`; `stdout` and `stderr` frames follow as they happen, then `exit` or `killed`, then `changed`. */
   | { type: "run"; id: string; command: string; cwd: string; env: Record<string, string>; /** seconds; absent for no limit */ timeout?: number }
   /** Ends the run under this id early; `killed` answers it. A kill for a run that has already ended is ignored. */
@@ -173,6 +226,7 @@ export type ContainerFrame =
   /** What changed since the last sync: new and changed entries, and paths no longer there. */
   | { type: "changed"; id: string; entries: ChangedEntry[]; deleted: string[] }
   | BlobFrame
+  | ResponseFrame
   /** A program in the container asked the helper for a credential; the cell answers `credential` or `error` under this id. */
   | ({ type: "credential"; id: string } & CredentialRequest)
   /**

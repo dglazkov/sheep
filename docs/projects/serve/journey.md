@@ -1,8 +1,8 @@
 ---
-status: planned
+status: partial
 since: 2026-09-09
 see: serve
-note: "written 9 Sep 2026, from a conversation with the shepherd: a sheep building a frontend app needs its dev server, and a standing server would occupy the container, so the server is rented for the length of a look. The shepherd's calls: `look --serve` in the shell, one flag on the program the sheep has; the server an ordinary run, killed when the look is done, a server kept across a turn the named debt; the forward as two frames on the container's one socket, so the container stays a client of the cell and the proof runs in workerd through the fake, the platform's port binding left; the recipe for a frontend app a pasture skill, shipped in the project; no script in the image. Nothing built."
+note: "written 9 Sep 2026, from a conversation with the shepherd: a sheep building a frontend app needs its dev server, and a standing server would occupy the container, so the server is rented for the length of a look. The shepherd's calls: `look --serve` in the shell, one flag on the program the sheep has; the server an ordinary run, killed when the look is done, a server kept across a turn the named debt; the forward as two frames on the container's one socket, so the container stays a client of the cell and the proof runs in workerd through the fake, the platform's port binding left; the recipe for a frontend app a pasture skill, shipped in the project; no script in the image. Phase 0 closed 10 Sep 2026: the forward is built and proved in workerd — `fetch` and `response` on the container's one socket, the agent's fetcher, the fake's stood ports, the cell's third reader, and the eyes rendering from an `Origin` the rows are now one maker of. Journey 4 steps 1 and 3 and its second criterion hold. Journeys 1, 2 and 3 wait on the flags, the rental and the walks."
 ---
 
 # Serve — the journeys

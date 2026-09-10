@@ -27,8 +27,8 @@
  */
 import { type Command, defineCommand } from "just-bash/browser";
 import { posix } from "node:path";
-import { DEFAULT_OUT, type Eyes, type LookAction, type LookRequest, type LookResult } from "../eyes/eyes.ts";
-import type { FilesTable } from "../workspace/files.ts";
+import { DEFAULT_OUT, type Eyes, type LookAction, type LookRequest, type LookResult, RowsOrigin } from "../eyes/eyes.ts";
+import { type FilesTable, normalizePath, WORKSPACE_ROOT } from "../workspace/files.ts";
 
 /** The program's name: the one name a sighted cell's shell has that just-bash's registry does not. */
 export const LOOK_PROGRAM = "look";
@@ -158,7 +158,8 @@ export function lookCommand(eyes: Eyes, files: FilesTable): Command {
     if (parsed === undefined) return failed(USAGE, 2);
     let result: LookResult;
     try {
-      result = await eyes.look(parsed.request);
+      // The rows are this program's origin, and the only one it builds: a served look builds the forward's instead, in serve phase 1.
+      result = await eyes.look(parsed.request, new RowsOrigin(files, normalizePath(parsed.request.root ?? WORKSPACE_ROOT)));
     } catch (error) {
       return failed(`look: ${messageOf(error).split("\n")[0]}`);
     }

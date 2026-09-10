@@ -83,6 +83,7 @@ export const RINGS = {
     "packages/cell/test/execution-env.test.ts",
     "packages/cell/test/eyes.test.ts",
     "packages/cell/test/flock.test.ts",
+    "packages/cell/test/forward.test.ts",
     "packages/cell/test/isolate.test.ts",
     "packages/cell/test/lease.test.ts",
     "packages/cell/test/look-command.test.ts",

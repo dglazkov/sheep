@@ -17,6 +17,15 @@
  * workspace has comes from the rows, any other from the object by hash.
  * The sync-out is the workspace's alone; the container never reports
  * `/pasture`, and nothing here would write it if it did.
+ *
+ * Serve phase 0 puts a second announcer of binary messages on the socket,
+ * the forward's `response`. Its frames pass by here like any that are not
+ * the checkout's, but its bytes cannot: bytes belong to the frame that
+ * announced them, so the `blob` this waits on is registered with the
+ * socket's one `BinaryGuard`. A sync and a look never overlap — the look
+ * is a run, and a sync happens before and after one — and the guard is
+ * what says so out loud rather than letting a look's body be written to
+ * a row, whichever of the two announced first.
  */
 import {
   type CellFrame,
@@ -33,6 +42,7 @@ import {
 import { posix } from "node:path";
 import { FilesTable, hashBytes, MAX_FILE_BYTES, WORKSPACE_ROOT } from "../workspace/files.ts";
 import type { PastureSource } from "../workspace/mount.ts";
+import { type BinaryGuard, binaryGuard } from "./forward.ts";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -91,6 +101,8 @@ export class Checkout {
   private readonly files: FilesTable;
   private readonly pasture: PastureCheckoutSource | undefined;
   private readonly nextId: () => string;
+  /** The one guard for this socket, shared with the `Forward` that reads it too. */
+  private readonly guard: BinaryGuard;
   private pending: Pending | null = null;
   /** A `blob` frame whose bytes are next. */
   private expecting: { hash: string; size: number } | null = null;
@@ -103,6 +115,7 @@ export class Checkout {
     this.socket = socket;
     this.files = files;
     this.pasture = options.pasture;
+    this.guard = binaryGuard(socket);
     let counter = 0;
     this.nextId = options.nextId ?? (() => `sync-${++counter}`);
     socket.addEventListener("message", (event) => {
@@ -207,6 +220,7 @@ export class Checkout {
           }
           if (frame.type === "blob") {
             if (!awaited.has(frame.hash)) throw new CheckoutProtocolError(`the container sent blob ${frame.hash}, which was not asked for`);
+            this.guard.announce(`blob ${frame.hash}`);
             this.expecting = { hash: frame.hash, size: frame.size };
             return;
           }
@@ -215,6 +229,7 @@ export class Checkout {
         bytes: (bytes) => {
           const expecting = this.expecting;
           this.expecting = null;
+          this.guard.release();
           if (expecting === null) throw new CheckoutProtocolError("bytes with no blob frame before them");
           if (bytes.byteLength !== expecting.size) {
             throw new CheckoutProtocolError(`blob ${expecting.hash} announced ${expecting.size} bytes and carried ${bytes.byteLength}`);
@@ -332,6 +347,7 @@ export class Checkout {
   private fail(error: Error): void {
     const pending = this.pending;
     this.pending = null;
+    if (this.expecting !== null) this.guard.release();
     this.expecting = null;
     pending?.reject(error);
   }
@@ -340,6 +356,8 @@ export class Checkout {
     try {
       if (typeof data === "string") {
         const frame = decodeFrame(data) as ContainerFrame;
+        // The forward's frames are not the checkout's, in a sync or out of one; what the two share is the socket's one guard.
+        if (frame.type === "response") return;
         if (this.expecting !== null) throw new CheckoutProtocolError(`expected the bytes of blob ${this.expecting.hash}, got a ${frame.type} frame`);
         if (frame.type === "error") throw new CheckoutProtocolError(`the container reported ${frame.code} on ${frame.of}: ${frame.message}`);
         if (this.pending === null) {

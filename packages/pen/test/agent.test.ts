@@ -5,15 +5,24 @@
  * test acts as the cell: a manifest in, blobs down, an edit to the
  * directory, a sync out; then one real `run` through a real process,
  * its frames in order, and a `kill` of a `sleep 30` answered by `killed`.
+ *
+ * Serve phase 0 adds the forward, and for the same reason: the fetcher
+ * runs in Node inside the container, so Node against a real port is where
+ * it is proved. A `fetch` frame reaches a `node:http` server on the
+ * loopback and comes back as `response` and its bytes, with the host
+ * rewritten, the encoding pinned so nothing is compressed, the redirect
+ * left for the browser, a body carried each way, and a port with nothing
+ * on it answered with status `0` rather than an error frame.
  */
 import { type ChildProcess, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
+import { createServer, type Server } from "node:http";
 import { chmod, lstat, mkdir, mkdtemp, readFile, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type WebSocket, WebSocketServer } from "ws";
-import { CELL_URL_ENV, decodeFrame, encodeFrame, type Frame, type ManifestEntry, TOKEN_ENV, TOKEN_PARAM } from "../src/protocol.ts";
+import { CELL_URL_ENV, decodeFrame, encodeFrame, FETCH_FAILED_STATUS, type Frame, type ManifestEntry, TOKEN_ENV, TOKEN_PARAM } from "../src/protocol.ts";
 
 const entry = new URL("../bin/pen-agent.mjs", import.meta.url).pathname;
 const encoder = new TextEncoder();
@@ -198,6 +207,111 @@ describe("pen-agent, the process", () => {
     expect(await exited(child)).toBe(0);
     expect(stderr.join("")).toBe("");
     await new Promise<void>((resolve) => server.close(() => resolve()));
+    await rm(workspace, { recursive: true, force: true });
+  });
+
+  it("forwards a fetch to a real port, and answers one with nothing on it with status 0", async () => {
+    // A server of the kind a sheep would have started: it says back what it was asked, so the test can read the agent's three changes off it.
+    const origin: Server = createServer((request, response) => {
+      if (request.url === "/redirect") {
+        response.writeHead(302, { location: "/moved" });
+        response.end();
+        return;
+      }
+      if (request.url === "/bytes") {
+        response.writeHead(200, { "content-type": "image/png" });
+        response.end(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0x7f, 0x80]));
+        return;
+      }
+      const chunks: Buffer[] = [];
+      request.on("data", (chunk: Buffer) => chunks.push(chunk));
+      request.on("end", () => {
+        response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+        response.end(JSON.stringify({ url: request.url, method: request.method, headers: request.headers, body: Buffer.concat(chunks).toString("utf8") }));
+      });
+    });
+    await new Promise<void>((resolve) => origin.listen(0, "127.0.0.1", resolve));
+    const originPort = (origin.address() as { port: number }).port;
+
+    const server = new WebSocketServer({ port: 0 });
+    const connection = new Promise<WebSocket>((resolve) => server.once("connection", (socket) => resolve(socket)));
+    const port = (server.address() as { port: number }).port;
+    const workspace = await mkdtemp(join(tmpdir(), "pen-"));
+    const stderr: string[] = [];
+    const child = spawn(process.execPath, [entry], {
+      env: { ...process.env, [CELL_URL_ENV]: `ws://127.0.0.1:${port}/pen`, [TOKEN_ENV]: "minted", PEN_WORKSPACE: workspace },
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    child.stderr!.on("data", (chunk: Buffer) => stderr.push(chunk.toString()));
+    const socket = await connection;
+    const next = inbox(socket);
+
+    /** One request out and its answer back: the frame, and the bytes when the frame says there are any. */
+    const ask = async (frame: Record<string, unknown>, body?: Uint8Array): Promise<{ frame: { status: number; headers: Record<string, string>; size: number }; body: Uint8Array }> => {
+      socket.send(encodeFrame({ ...frame, type: "fetch", size: body === undefined ? 0 : body.byteLength } as unknown as Frame));
+      if (body !== undefined) socket.send(body);
+      const answered = (await next()) as { type: string; id: string; status: number; headers: Record<string, string>; size: number };
+      expect(answered.type).toBe("response");
+      expect(answered.id).toBe(frame.id);
+      const bytes = answered.size === 0 ? new Uint8Array(0) : ((await next()) as Uint8Array);
+      expect(bytes.byteLength).toBe(answered.size);
+      return { frame: answered, body: bytes };
+    };
+    const said = (bytes: Uint8Array) => JSON.parse(new TextDecoder().decode(bytes)) as { url: string; method: string; headers: Record<string, string>; body: string };
+
+    // The browser's own request, as the eyes would forward it: its host is `sheep.invalid`, and it asks for three compressions.
+    const asked = await ask({
+      id: "f-1",
+      port: originPort,
+      method: "GET",
+      url: "/page?x=1",
+      headers: { host: "sheep.invalid", "accept-encoding": "gzip, deflate, br, zstd", "user-agent": "the shepherd's chrome", accept: "text/html" },
+    });
+    expect(asked.frame.status).toBe(200);
+    expect(asked.frame.headers["content-type"]).toBe("application/json; charset=utf-8");
+    const echo = said(asked.body);
+    expect(echo.url).toBe("/page?x=1");
+    // The host is the loopback and the port, so a server that checks it — as Vite has since 6.0.9 — answers.
+    expect(echo.headers.host).toBe(`127.0.0.1:${originPort}`);
+    // Nothing the browser asked to have compressed is compressed: the bytes are the bytes.
+    expect(echo.headers["accept-encoding"]).toBe("identity");
+    // Everything else is the browser's own.
+    expect(echo.headers["user-agent"]).toBe("the shepherd's chrome");
+    expect(echo.headers.accept).toBe("text/html");
+
+    // A body each way, and no byte of it through the shell.
+    const posted = await ask({ id: "f-2", port: originPort, method: "POST", url: "/form", headers: { "content-type": "text/plain" } }, encoder.encode("wool and grass"));
+    expect(said(posted.body)).toMatchObject({ method: "POST", body: "wool and grass" });
+
+    // The redirect is the browser's to follow: the agent hands back the 302 itself, with no body and so no binary message.
+    const moved = await ask({ id: "f-3", port: originPort, method: "GET", url: "/redirect", headers: {} });
+    expect(moved.frame.status).toBe(302);
+    expect(moved.frame.headers.location).toBe("/moved");
+    expect(moved.frame.size).toBe(0);
+
+    // Bytes that are not text survive whole.
+    const png = await ask({ id: "f-4", port: originPort, method: "GET", url: "/bytes", headers: {} });
+    expect([...png.body]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0x7f, 0x80]);
+
+    // A port with nothing on it — one the kernel handed out and took back — is a response, not an error frame:
+    // the socket stays usable and the cell reads the status.
+    const vacated = createServer();
+    await new Promise<void>((resolve) => vacated.listen(0, "127.0.0.1", resolve));
+    const deadPort = (vacated.address() as { port: number }).port;
+    await new Promise<void>((resolve) => vacated.close(() => resolve()));
+    const dead = await ask({ id: "f-5", port: deadPort, method: "GET", url: "/", headers: {} });
+    expect(dead.frame.status).toBe(FETCH_FAILED_STATUS);
+    expect(new TextDecoder().decode(dead.body).length).toBeGreaterThan(0);
+
+    // And the socket is still the socket.
+    socket.send(encodeFrame({ type: "ping", id: "after-fetches" }));
+    expect(await next()).toEqual({ type: "pong", id: "after-fetches" });
+
+    socket.close(1000, "cell done");
+    expect(await exited(child)).toBe(0);
+    expect(stderr.join("")).toBe("");
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await new Promise<void>((resolve) => origin.close(() => resolve()));
     await rm(workspace, { recursive: true, force: true });
   });
 

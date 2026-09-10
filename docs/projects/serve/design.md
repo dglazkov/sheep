@@ -130,9 +130,10 @@ container is worth more than one line of code.
 So the forward is two frames on the one socket, beside `run` and the
 syncs:
 
-- `fetch {id, method, url, headers, size}` from the cell, `url` the path
-  and query, and one binary message of `size` bytes after it when the
-  request has a body. The agent handles it off its frame chain, the way
+- `fetch {id, port, method, url, headers, size}` from the cell, `url` the
+  path and query, `port` the loopback port to ask (only the cell knows
+  which server the look is of), and one binary message of `size` bytes
+  after it when the request has a body. The agent handles it off its frame chain, the way
   `run` is handled, so a page's fifty module requests are fifty fetches
   in flight, not a queue.
 - `response {id, status, headers, size}` from the container, and one
@@ -143,12 +144,19 @@ syncs:
 The agent asks `http://127.0.0.1:<port><url>` with the browser's method,
 headers, and body, three headers changed: `host` is the loopback
 address and port, so a server that checks its host, as Vite does since
-6.0.9, answers; `accept-encoding` is dropped, so bodies arrive as bytes
-the browser can take as they are; and redirects are not followed, so
-the browser sees the `302` and follows it itself. A fetch the agent
-could not make, the port not listening, is `response` with status `0`
-and the error's text as the body, and the cell reads that as not ready
-during the poll and as a failed request during the look.
+6.0.9, answers; `accept-encoding` is pinned to `identity`, so bodies
+arrive as bytes the browser can take as they are; and redirects are not
+followed, so the browser sees the `302` and follows it itself. Pinning
+is serve phase 0's correction of dropping: Node's own `fetch` puts
+`gzip, deflate` back when nothing says otherwise, and then decompresses
+the body while leaving `content-encoding: gzip` on it, so a body
+forwarded as it came would say gzip and not be. A fetch the agent could
+not make, the port not listening, is `response` with status `0` and the
+error's text as the body, and the cell reads that as not ready during
+the poll and as a failed request during the look. Status `0` is no
+status a browser can be given, so the eyes' side turns it into `502`
+with the agent's words as the body: the eyes are the gateway, and the
+server was not there.
 
 On the socket, a binary message belongs to the text frame that
 announced it. Today the `Checkout` announces them during a sync; the
@@ -167,10 +175,19 @@ against the protocol, which is pen's rule for every phase.
 
 ## The eyes' origin
 
-`Eyes.look` takes an `Origin`, one interface with one method: the
-request the browser made, the response to give it or `undefined` for a
-404. `RowsOrigin(files, root)` is what `serve()` does today, moved; the
-`look` program builds it for a look at the rows. `ForwardOrigin(forward,
+`Eyes.look` takes an `Origin`, one interface with two members, because
+a look asks two questions. `answer` is the one this design was written
+around: the request the browser made, the response to give it or
+`undefined` for a 404. `start` is the other, found in serve phase 0:
+where the look begins. The rows know that as a workspace path that must
+exist, must be under the root, and may mean the `index.html` in a
+directory — three rules and two error messages that are about rows and
+nothing else; a server knows it as a path. Only the origin can say
+which, so it says both, and the eyes compute nothing about rows.
+`RowsOrigin(files, root)` is what `serve()` did before, moved; the
+`look` program builds it for a look at the rows, and a `look` given no
+origin at all builds one over the eyes' own rows, so every look that
+existed before this project is the look it was. `ForwardOrigin(forward,
 port)` is the served look's, built by the rental and handed to the eyes
 for the length of one `look`. The interception handler, the listeners,
 the report, and the session do not change: the eyes still render a page

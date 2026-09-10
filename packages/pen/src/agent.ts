@@ -20,6 +20,15 @@
  * back to the caller and is held nowhere else: not logged, not kept, and
  * never part of a `stdout` or `stderr` frame.
  *
+ * Serve phase 0 gives it a third thing to be handed, a `Fetcher`, and the
+ * forward: a `fetch` frame is answered by asking the fetcher for a server
+ * in the container and sending `response` and its bytes back to back. It
+ * is handled off the frame chain for the same reason a run is — a page
+ * makes its requests all at once, and one waiting on another is a page
+ * that renders in series — and a fetch the fetcher could not make is a
+ * `response` with status `0` and the error's text, which the cell reads
+ * as the server not being there.
+ *
  * Pasture phase 3 gives the agent a second disk, the pasture's, rooted at
  * `/pasture` beside the checkout. A `manifest` that carries `pasture` is
  * applied to it after the workspace: files `0444`, directories `0555`,
@@ -39,6 +48,8 @@ import {
   decodeFrame,
   encodeFrame,
   type EntryKind,
+  FETCH_FAILED_STATUS,
+  type FetchFrame,
   type ManifestEntry,
   messageBytes,
   PASTURE_DIR_MODE,
@@ -108,6 +119,38 @@ export interface RunHandle {
  */
 export interface Runner {
   run(request: RunRequest, output: RunOutput): RunHandle;
+}
+
+/** One request the cell forwarded from the browser, for a server the container is running. */
+export interface FetchRequest {
+  /** The loopback port the server listens on. */
+  port: number;
+  method: string;
+  /** The path and query alone; the fetcher puts the loopback address in front of it. */
+  url: string;
+  headers: Record<string, string>;
+  /** The request's body, when it has one. */
+  body?: Uint8Array;
+}
+
+/** What the server answered: its status, its headers, and its bytes, which may be empty. */
+export interface FetchResponse {
+  status: number;
+  headers: Record<string, string>;
+  body: Uint8Array;
+}
+
+/**
+ * What the agent needs to reach a server inside the container. `node.ts`
+ * builds one over Node's `fetch` at the loopback address; the cell's tests
+ * hand over a table of responses, since workerd has no ports and the fake
+ * container cannot answer one. A fetcher that rejects is a server that is
+ * not there, and the agent says so with status `0` rather than an error
+ * frame: the cell reads it as not ready during a poll and as a failed
+ * request during a look.
+ */
+export interface Fetcher {
+  fetch(request: FetchRequest): Promise<FetchResponse>;
 }
 
 /**
@@ -205,9 +248,9 @@ export interface ServeAgentOptions {
   pasture?: Disk;
 }
 
-/** Wires the agent to a socket. Frames are handled in the order they arrive, one at a time; a run's work is not on that chain. */
-export function serveAgent(socket: AgentSocket, disk: Disk, runner: Runner, options: ServeAgentOptions = {}): ServedAgent {
-  const agent = new Agent(socket, disk, runner, options.pasture);
+/** Wires the agent to a socket. Frames are handled in the order they arrive, one at a time; a run's work, and a fetch's, are not on that chain. */
+export function serveAgent(socket: AgentSocket, disk: Disk, runner: Runner, fetcher: Fetcher, options: ServeAgentOptions = {}): ServedAgent {
+  const agent = new Agent(socket, disk, runner, fetcher, options.pasture);
   return { closed: agent.closed, syncOut: (id) => agent.syncOut(id), askCredential: (request, options) => agent.askCredential(request, options) };
 }
 
@@ -222,6 +265,7 @@ class Agent {
   private readonly disk: Disk;
   private readonly pasture: Disk | undefined;
   private readonly runner: Runner;
+  private readonly fetcher: Fetcher;
   readonly closed: Promise<void>;
   private isClosed = false;
   private tail = Promise.resolve();
@@ -238,19 +282,26 @@ class Agent {
     blobs: Map<string, Uint8Array>;
     pasture: PastureCheckout | null;
   } | null = null;
-  /** The `blob` frame whose binary message is next. */
-  private expecting: { hash: string; size: number } | null = null;
+  /**
+   * The frame whose binary message is next, and whose it is: a `blob`'s
+   * bytes during a sync-in, a `fetch`'s body during a look. There is at
+   * most one, which is the guard: a second announcer arriving before the
+   * first one's bytes is a socket whose two lanes have collided, and
+   * `handle` throws on any frame at all while this is set.
+   */
+  private expecting: { of: "blob"; hash: string; size: number } | { of: "fetch"; frame: FetchFrame } | null = null;
   /** A sync-out in progress. */
   private out: { id: string; entries: ChangedEntry[]; deleted: string[]; resolve: (refused: Refused[]) => void; reject: (error: Error) => void } | null = null;
   /** Credential requests waiting on the cell, by id. */
   private credentials = new Map<string, { settle: (answer: CredentialAnswer | undefined) => void }>();
   private credentialCount = 0;
 
-  constructor(socket: AgentSocket, disk: Disk, runner: Runner, pasture: Disk | undefined) {
+  constructor(socket: AgentSocket, disk: Disk, runner: Runner, fetcher: Fetcher, pasture: Disk | undefined) {
     this.socket = socket;
     this.disk = disk;
     this.pasture = pasture;
     this.runner = runner;
+    this.fetcher = fetcher;
     socket.addEventListener("message", (event) => {
       this.tail = this.tail.then(() => this.receive(event.data));
     });
@@ -307,7 +358,9 @@ class Agent {
 
   private async handle(frame: CellFrame): Promise<void> {
     if (this.expecting !== null) {
-      throw new ProtocolError("malformed", frame.type, `expected the bytes of blob ${this.expecting.hash}, got a ${frame.type} frame`);
+      // Two announcers, one binary message: whichever frame this is, the bytes on the way now belong to nobody.
+      const announced = this.expecting.of === "blob" ? `blob ${this.expecting.hash}` : `fetch ${this.expecting.frame.id}`;
+      throw new ProtocolError("malformed", frame.type, `expected the bytes of ${announced}, got a ${frame.type} frame`);
     }
     switch (frame.type) {
       case "ping":
@@ -320,7 +373,12 @@ class Agent {
         if (this.checkout === null || !this.checkout.needed.has(frame.hash)) {
           throw new ProtocolError("malformed", "blob", `no sync-in is waiting for blob ${frame.hash}`);
         }
-        this.expecting = { hash: frame.hash, size: frame.size };
+        this.expecting = { of: "blob", hash: frame.hash, size: frame.size };
+        return;
+      case "fetch":
+        // A body's bytes are the next message; without one there is nothing to wait for and the fetch goes at once.
+        if (frame.size > 0) this.expecting = { of: "fetch", frame };
+        else this.forward(frame, undefined);
         return;
       case "need":
         await this.answerNeed(frame.id, frame.hashes);
@@ -399,6 +457,32 @@ class Agent {
       });
   }
 
+  /**
+   * One request the browser made, asked of the server the container is
+   * running and answered back to back: the `response` frame and then its
+   * bytes, with nothing awaited between the two, so the bytes are the
+   * next message after their frame and the cell never has to guess whose
+   * they are. Nothing here is on the frame chain, so the fifty requests a
+   * page makes at once are fifty fetches at once. A fetcher that rejects
+   * is a server that is not there: status `0` and the error's text, which
+   * is an answer, not a protocol error, and leaves the socket usable.
+   */
+  private forward(frame: FetchFrame, body: Uint8Array | undefined): void {
+    const { id, port, method, url, headers } = frame;
+    void this.fetcher
+      .fetch({ port, method, url, headers, ...(body === undefined ? {} : { body }) })
+      .catch((error: unknown) => ({
+        status: FETCH_FAILED_STATUS,
+        headers: {},
+        body: encoder.encode(error instanceof Error ? error.message : String(error)),
+      }))
+      .then((answer) => {
+        if (this.isClosed) return;
+        this.send({ type: "response", id, status: answer.status, headers: answer.headers, size: answer.body.byteLength });
+        if (answer.body.byteLength > 0) this.sendBytes(answer.body);
+      });
+  }
+
   askCredential(request: CredentialRequest, options: { timeoutMs?: number } = {}): Promise<CredentialAnswer | undefined> {
     if (this.isClosed) return Promise.resolve(undefined);
     const id = `cred-${++this.credentialCount}`;
@@ -423,8 +507,17 @@ class Agent {
 
   private async handleBytes(bytes: Uint8Array): Promise<void> {
     const expecting = this.expecting;
-    if (expecting === null || this.checkout === null) throw new ProtocolError("malformed", "binary", "bytes with no blob frame before them");
+    if (expecting === null) throw new ProtocolError("malformed", "binary", "bytes with no frame to announce them");
     this.expecting = null;
+    if (expecting.of === "fetch") {
+      const { frame } = expecting;
+      if (bytes.byteLength !== frame.size) {
+        throw new ProtocolError("mismatch", "fetch", `fetch ${frame.id} announced ${frame.size} bytes of body and carried ${bytes.byteLength}`);
+      }
+      this.forward(frame, bytes);
+      return;
+    }
+    if (this.checkout === null) throw new ProtocolError("malformed", "binary", "bytes with no sync-in to take them");
     if (bytes.byteLength !== expecting.size) {
       throw new ProtocolError("mismatch", "blob", `blob ${expecting.hash} announced ${expecting.size} bytes and carried ${bytes.byteLength}`);
     }
