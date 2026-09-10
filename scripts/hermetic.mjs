@@ -11,6 +11,7 @@
  *   pnpm hermetic --ring dog [ref|spec]    the machine ring's container with Claude Code in it, given the skill and journey 1's sentence (collar phase 4)
  *   pnpm hermetic --ring account [ref|spec] the package ring's install, then a station on the shepherd's Cloudflare account: deployed, walked, deleted (station phase 1)
  *   --docker                               package ring: the blog home with a container (station phase 4); exit 2 on a machine without Docker
+ *   --no-eyes                              package ring: e1 (the look) skipped with one line and named at the end; what the machine ring passes to its container's walk (eyes phase 2)
  *   --repo <path>                          the repository the ref is read from and installed from (default: this checkout; a bare repository works)
  *   --spec <spec>                          install this spec instead of a ref: `github:dglazkov/sheep#release` needs no repository at all
  *   --commit <sha>                         with --spec: the installed build must be stamped with this commit
@@ -231,6 +232,36 @@
  * with `--docker` alone the ring's environment carries
  * `DOCKER_CONFIG=<the real HOME>/.docker`: Docker is the machine's, like
  * `docker` on PATH; nothing else of the real HOME reaches the walk.
+ *
+ * Eyes phase 2 gives both rings the look: journey 1 steps 1 to 4 of the
+ * eyes project with the faux provider, one sheep, two turns. The first
+ * turn's program writes the eyes suite's four files (a counter page, its
+ * stylesheet, a module that throws a `ReferenceError`, and `items.json`),
+ * runs `look index.html`, and reads `look.png`; the second runs `look
+ * index.html --click "#inc" --click "#inc"` and says one sentence. `sheep
+ * log <id>` must then show both reports (`errors:` with the
+ * `ReferenceError`, `console:`, `tree:` with the heading, the button, and
+ * the items, `"2"` after the clicks, `wrote look.png 1024x768` twice) and
+ * the read tool's `Read image file [image/png]`, and `sheep home --json`
+ * must say `eyes: true`. Each look's closing line carries the look's own
+ * clock, which starts before the browser is opened, so the first look's
+ * time is the launch and the second's the connect; both go in the step's
+ * summary. In the package ring the step is `e1`, after step 6, on blog's
+ * local home: the ring's `HOME` is fresh and `XDG_CACHE_HOME` is stripped
+ * from its environment, so the first look fetches the Chrome miniflare
+ * pins into `<HOME>/Library/Caches/.wrangler/chrome` (macOS) or
+ * `<HOME>/.cache/.wrangler/chrome` (Linux), and the step asserts the
+ * directory was absent before and holds a build after. In the account
+ * ring the step is `e2`, after a3, on the station, where the first look
+ * pays the platform's launch and the browser stays warm ten minutes: two
+ * looks and the keep-alive, about eleven browser minutes a run. The
+ * machine ring does not walk the look: the image its Dockerfile builds
+ * has none of Chrome's shared libraries, and Chrome for Testing has no
+ * linux/arm64 build at all, which is what a container on an arm64 Mac
+ * is, so no package added to the image would fix it there. It passes
+ * `--no-eyes` to the package ring inside the container, which prints one
+ * `skip` line for e1 and names it among what was not checked. The dog
+ * ring's container half runs no package walk, so it has no e1 to skip.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -258,12 +289,73 @@ const SENTENCE = "Install sheep from github.com/dglazkov/sheep and try it out.";
 const DOG_TOOLS = "Bash,Read,Edit,Write,Glob,Grep";
 /** How the skill reaches the dog before the prompt: the `skills` CLI, reading `main` of the public repository, this skill alone, into Claude Code's directory, with no prompts. */
 const SKILLS_ADD = ["npx", "-y", "skills", "add", "dglazkov/sheep", "--skill", "sheep", "--agent", DOG_AGENT, "-y"];
+
+/**
+ * Journey 1 of the eyes (eyes phase 2): the eyes suite's fixture
+ * (`packages/cell/test/eyes.test.ts`), copied since the ring imports
+ * nothing of the checkout: a counter page, its stylesheet, a module that
+ * fetches its JSON, logs, warns, and then calls a function that is not
+ * there, and the JSON. What a sheep might have written, bug and all.
+ */
+const COUNTER_FILES = {
+  "index.html": `<!doctype html><html><head><meta charset="utf-8"><title>counter</title>
+<link rel="stylesheet" href="style.css"><script type="module" src="app.js"></script></head>
+<body><main><h1>Counter</h1><button id="inc">+1</button><output id="n">0</output>
+<ul id="items"></ul></main></body></html>`,
+  "style.css": `body{font-family:system-ui,sans-serif;background:#0b1020;color:#e8ecff;margin:0}
+main{max-width:480px;margin:40px auto;padding:24px;border:1px solid #334;border-radius:12px}
+button{font-size:20px;padding:8px 16px;border-radius:8px;border:0;background:#5b7cff;color:#fff}
+output{margin-left:16px;font-size:28px;font-variant-numeric:tabular-nums}
+li{padding:4px 0;border-bottom:1px dashed #334}`,
+  "app.js": `const n = document.getElementById("n"); let count = 0;
+document.getElementById("inc").addEventListener("click", () => { n.textContent = String(++count); });
+const items = await (await fetch("./items.json")).json();
+for (const item of items) { const li = document.createElement("li"); li.textContent = item; document.getElementById("items").append(li); }
+console.log("app ready, items:", items.length);
+console.warn("a warning the sheep should see");
+undefinedFunction(); // a bug the sheep should see`,
+  "items.json": JSON.stringify(["wool", "grass", "fence"]),
+};
+
+/** Journey 1 step 1's sentence, and the dog's second ask; the faux sheep's two one-sentence answers. */
+const LOOK_SENTENCE = "Write a counter page: index.html, style.css, and app.js as a module. A button increments a number. Load the list in items.json into a <ul>. Then look at it and fix anything wrong.";
+const LOOK_AGAIN_SENTENCE = "Click the button twice and tell me what the page looks like.";
+const LOOK_REPLY = "I wrote the four files and looked: the page renders, and errors lists a ReferenceError from app.js that I should fix.";
+const LOOK_AGAIN_REPLY = "The page shows the Counter heading, the +1 button, and the three items, and after two clicks the number reads 2; the button works.";
+
+/**
+ * The first turn's program: the four files written to the workspace, the
+ * first look, and the PNG read back with the read tool; the second turn's:
+ * the look with two clicks. The last step of each is the sentence.
+ */
+const LOOK_PROGRAM = {
+  steps: [
+    ...Object.entries(COUNTER_FILES).map(([name, content]) => ({ tool: { name: "write", args: { path: `/workspace/${name}`, content } } })),
+    { tool: { name: "bash", args: { command: "look index.html" } } },
+    { tool: { name: "read", args: { path: "/workspace/look.png" } } },
+    { text: LOOK_REPLY },
+  ],
+};
+const LOOK_AGAIN_PROGRAM = { steps: [{ tool: { name: "bash", args: { command: 'look index.html --click "#inc" --click "#inc"' } } }, { text: LOOK_AGAIN_REPLY }] };
+
+/**
+ * Where miniflare puts the Chrome the local home's eyes need, under a
+ * HOME: `<wrangler cache>/chrome`, the cache being `~/Library/Caches/
+ * .wrangler` on macOS, `~/AppData/Local/xdg.cache/.wrangler` on Windows,
+ * and `~/.cache/.wrangler` elsewhere. Miniflare honours `XDG_CACHE_HOME`
+ * over all three, which is why the ring strips it (`env()`), so that a
+ * fresh HOME is a fresh cache and the first look is the cold one.
+ */
+function chromeCacheOf(home) {
+  const cache = process.platform === "darwin" ? join(home, "Library", "Caches") : process.platform === "win32" ? join(home, "AppData", "Local", "xdg.cache") : join(home, ".cache");
+  return join(cache, ".wrangler", "chrome");
+}
 /** The URLs npm's git installer may try for `github:dglazkov/sheep`; in repo mode the container's git is told each one is `/src.git`. */
 const GITHUB_URLS = ["https://github.com/dglazkov/sheep.git", "git+https://github.com/dglazkov/sheep.git", "ssh://git@github.com/dglazkov/sheep.git", "git+ssh://git@github.com/dglazkov/sheep.git"];
 
 function usage(message) {
   console.error(
-    `hermetic: ${message}\nusage: pnpm hermetic --ring package|machine [ref] [--repo <path>] [--spec <spec> [--commit <sha>]] [--image <name>] [--docker] [--keep]\n       pnpm hermetic --ring dog [ref|${INSTALL_SPEC}] [--repo <path>] [--commit <sha>] [--image <name>] [--yes] [--dry-run] [--budget <usd>] [--timeout <minutes>] [--agent claude-code] [--keep]\n       pnpm hermetic --ring account [ref|${INSTALL_SPEC}] [--repo <path>] [--commit <sha>] [--older <ref>] [--yes] [--dry-run] [--name <worker>] [--keep]`,
+    `hermetic: ${message}\nusage: pnpm hermetic --ring package|machine [ref] [--repo <path>] [--spec <spec> [--commit <sha>]] [--image <name>] [--docker] [--no-eyes] [--keep]\n       pnpm hermetic --ring dog [ref|${INSTALL_SPEC}] [--repo <path>] [--commit <sha>] [--image <name>] [--yes] [--dry-run] [--budget <usd>] [--timeout <minutes>] [--agent claude-code] [--keep]\n       pnpm hermetic --ring account [ref|${INSTALL_SPEC}] [--repo <path>] [--commit <sha>] [--older <ref>] [--yes] [--dry-run] [--name <worker>] [--keep]`,
   );
   process.exit(2);
 }
@@ -280,6 +372,8 @@ function parseArgs(argv) {
     keep: false,
     // The package ring's blog home with a container (station phase 4).
     docker: false,
+    // The package ring without e1 (eyes phase 2): what the machine ring passes to the run inside its container.
+    noEyes: false,
     yes: false,
     dryRun: false,
     budget: 5,
@@ -315,6 +409,7 @@ function parseArgs(argv) {
     else if (flag === "--image") parsed.images.push(value(flag));
     else if (flag === "--keep") parsed.keep = true;
     else if (flag === "--docker") parsed.docker = true;
+    else if (flag === "--no-eyes") parsed.noEyes = true;
     else if (flag === "--yes") parsed.yes = true;
     else if (flag === "--dry-run") parsed.dryRun = true;
     else if (flag === "--budget") parsed.budget = Number(value(flag));
@@ -346,6 +441,7 @@ function parseArgs(argv) {
   if (parsed.ring === "machine" && parsed.spec !== undefined) usage("the machine ring takes a ref; it exports the ref into the container as a bare repository");
   if (parsed.images.length > 0 && parsed.ring === "package") usage("--image is the machine and dog rings'");
   if (parsed.docker && parsed.ring !== "package") usage("--docker is the package ring's: the machine and dog rings' containers have no Docker, and the account ring's local home is a4's, without one");
+  if (parsed.noEyes && parsed.ring !== "package") usage("--no-eyes is the package ring's: the machine ring passes it to the walk inside its container, whose image cannot run Chrome; the account ring's station has eyes");
   for (const [flag, on] of [["--inside", parsed.inside], ["--redirect", parsed.redirect], ["--expect", parsed.expect !== undefined]]) {
     if (on && parsed.ring !== "dog") usage(`${flag} is the dog ring's`);
   }
@@ -437,7 +533,7 @@ class Ring {
    * spec alone (`github:dglazkov/sheep#release`: no repository, and the
    * build stamp is read from the install; `--commit` says what it must be).
    */
-  constructor({ ref, repo, spec, commit, keep, dir, docker }) {
+  constructor({ ref, repo, spec, commit, keep, dir, docker, noEyes }) {
     if (spec === undefined) {
       this.git = gitIn(repo);
       // The ref first: a ref that does not resolve leaves no directory behind.
@@ -457,6 +553,8 @@ class Ring {
     this.commit = commit;
     this.keep = keep;
     this.docker = docker === true;
+    // e1 skipped (eyes phase 2): the walk inside the machine ring's container, whose image cannot run Chrome.
+    this.noEyes = noEyes === true;
     // The world: a temp directory, or the one the caller made (the second machine's, under the container's HOME).
     this.dir = dir ?? mkdtempSync(join(tmpdir(), "sheep-ring-"));
     this.prefix = join(this.dir, "prefix");
@@ -531,6 +629,9 @@ class Ring {
       if (key.startsWith("CLOUDFLARE_") || key.startsWith("SHEEP_TEST_")) continue;
       // The scratch repository's token reaches `sheep pasture secret set`'s stdin and the branch delete's helper, and no command's environment.
       if (key === "LAMB_PLAYGROUND_TOKEN") continue;
+      // No cache of this machine's (eyes phase 2): miniflare fetches the eyes' Chrome under XDG_CACHE_HOME when it is set, and the
+      // ring's fresh HOME is meant to be the whole override, so the first look in the ring is the cold one.
+      if (key === "XDG_CACHE_HOME") continue;
       inherited[key] = value;
     }
     const stripped = this.stripped();
@@ -1093,6 +1194,16 @@ class Ring {
     if (this.docker) await this.dockerWalk(url, report.idle);
     else this.unchecked.push("station journey 6: the local home with a container; the ring's homes ran with --no-container (`pnpm hermetic --ring package --docker` on a machine with Docker walks it)");
 
+    // Eyes phase 2, e1: journey 1 of the eyes on blog's home, the Chrome fetched into the ring's fresh HOME by the first look; or,
+    // with --no-eyes (the machine ring's container, whose image cannot run Chrome), one skip line, the way journey 6 prints without --docker.
+    if (this.noEyes) {
+      const why = "not walked inside the machine ring's container; its image has none of Chrome's shared libraries, and Chrome for Testing has no linux/arm64 build";
+      const line = `skip  ${"e1".padEnd(8)} ${why}`;
+      this.lines.push(line);
+      console.log(line);
+      this.unchecked.push(`eyes journey 1 steps 1 to 4 (e1): ${why}`);
+    } else await this.eyesWalk(url);
+
     // Step 7, first half: the export is a SQLite file with the tables the command reports.
     const file = join(this.dir, `${id}.sqlite`);
     const exported = await this.sheep(["export", id, file], { cwd: this.blog });
@@ -1123,6 +1234,101 @@ class Ring {
       this.fail("walk", `ls -a ${join(this.home, ".sheep")}`, { stdout: homeAfter.join("\n"), stderr: "expected tools alone under the ring's HOME/.sheep", code: 1 });
     }
     this.ok("walk", `ls ~/.sheep`, `tools alone (wrangler ${stamp.wrangler}, fetched once for both kennels); the configs and both homes are in <blog>/.sheep and <pi>/.sheep`);
+  }
+
+  /**
+   * Eyes phase 2, e1: the look on blog's local home. The ring's HOME is
+   * fresh and its environment carries no `XDG_CACHE_HOME`, so miniflare's
+   * Chrome cache under it is absent before the walk and holds one build
+   * after: the first look fetched it, and its time says what that costs.
+   */
+  async eyesWalk(url) {
+    const chrome = chromeCacheOf(this.home);
+    if (existsSync(chrome)) this.fail("e1", `ls ${chrome}`, { stdout: readdirSync(chrome).join("\n"), stderr: "a Chrome is in the ring's HOME before any look; the first look must be the one that fetches it", code: 1 });
+    const walked = await this.lookWalk({ step: "e1", home: url, token: this.token, where: "blog's local home" });
+    const fetched = existsSync(chrome) ? readdirSync(chrome).filter((name) => !name.startsWith(".")) : [];
+    if (fetched.length === 0) this.fail("e1", `ls ${chrome}`, { stdout: "", stderr: `no Chrome under the ring's HOME after two looks; expected miniflare to have fetched one into ${chrome}`, code: 1 });
+    this.ok("e1", `ls ${chrome.replace(this.home, "~")}`, `absent before the walk; after it ${fetched.join(", ")}: the first look fetched the Chrome into the ring's HOME, in ${walked.first}s launch included, and the second connected in ${walked.second}s`);
+    await this.eyesReported("e1", "blog's local home");
+  }
+
+  /**
+   * `sheep home --json` says `eyes: true`: asked last in both rings' steps,
+   * after the look and the transcript are judged, so a release whose look
+   * holds but whose report is silent fails on this line and not before.
+   */
+  async eyesReported(step, where) {
+    const homed = await this.sheep(["home", "--json"], { cwd: this.blog });
+    let report;
+    try {
+      report = JSON.parse(homed.stdout);
+    } catch {
+      this.fail(step, "sheep home --json (in blog)", homed);
+    }
+    if (homed.code !== 0 || report.eyes !== true) this.fail(step, "sheep home --json (in blog)", { ...homed, stderr: `${homed.stderr}\nexpected eyes true after the look; got ${JSON.stringify(report.eyes)}` });
+    this.ok(step, "sheep home --json (in blog)", `eyes true, ${where}`);
+  }
+
+  /**
+   * Journey 1 of the eyes with the faux provider (eyes phase 2), on a
+   * home at `home` with `token`: two programs, two turns on one sheep,
+   * and the transcript read back whole. Returns the sheep's id and the
+   * two looks' own times, from their closing lines; `eyesReported` is the
+   * caller's, last.
+   */
+  async lookWalk({ step, home, token, where }) {
+    const post = async (program) => {
+      const posted = await fetch(`${home}/faux`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(program), signal: AbortSignal.timeout(30_000) });
+      if (posted.status !== 200) this.fail(step, `POST ${home}/faux`, { stdout: await posted.text(), stderr: `status ${posted.status}; expected 200 from the faux provider's route`, code: 1 });
+    };
+    // Turn 1: the four files, the first look, the PNG read back; the sheep's sentence is the reply.
+    await post(LOOK_PROGRAM);
+    const firstStarted = Date.now();
+    const created = await this.sheep(["new", "--", LOOK_SENTENCE], { cwd: this.blog });
+    const turnOne = ((Date.now() - firstStarted) / 1000).toFixed(1);
+    const id = /^session ([0-9a-f-]{36})\n/.exec(created.stderr)?.[1];
+    if (created.code !== 0 || created.stdout !== `${LOOK_REPLY}\n` || !id) this.fail(step, `sheep new -- "${LOOK_SENTENCE}" (in blog)`, { ...created, stderr: `${created.stderr}\nexpected the sheep's sentence ${JSON.stringify(LOOK_REPLY)} on stdout and the session id on stderr` });
+    // Turn 2: the look with two clicks, within the session's ten minutes, so it connects rather than launches.
+    await post(LOOK_AGAIN_PROGRAM);
+    const secondStarted = Date.now();
+    const again = await this.sheep(["attach", id, "--", LOOK_AGAIN_SENTENCE], { cwd: this.blog });
+    const turnTwo = ((Date.now() - secondStarted) / 1000).toFixed(1);
+    if (again.code !== 0 || again.stdout !== `${LOOK_AGAIN_REPLY}\n`) this.fail(step, `sheep attach ${id} -- "${LOOK_AGAIN_SENTENCE}" (in blog)`, { ...again, stderr: `${again.stderr}\nexpected the sheep's sentence ${JSON.stringify(LOOK_AGAIN_REPLY)} on stdout` });
+    // The program every cell answers from goes back to none before anything is judged, so a failure below leaves the home as it was.
+    await post(null);
+
+    // The transcript: both reports, line for line what the eyes suite holds, and the read tool's image.
+    const logged = await this.sheep(["log", id], { cwd: this.blog });
+    if (logged.code !== 0) this.fail(step, `sheep log ${id}`, logged);
+    const log = logged.stdout;
+    const reports = log.split(/^errors:$/m);
+    const missing = [];
+    const must = (what, held) => {
+      if (!held) missing.push(what);
+    };
+    must("two reports, each starting with `errors:`", reports.length === 3);
+    const [, first = "", second = ""] = reports;
+    must("[tool bash] look index.html", log.includes("look index.html"));
+    // The log prints a tool call's arguments as JSON, so the selector's quotes arrive escaped: `--click \"#inc\"`.
+    must('[tool bash] look index.html --click "#inc" --click "#inc"', /look index\.html --click \\?"#inc\\?" --click \\?"#inc\\?"/.test(log));
+    must("the first report's ReferenceError", /ReferenceError/.test(first));
+    must("the first report naming undefinedFunction", first.includes("undefinedFunction"));
+    must("console: with `log: app ready, items: 3`", first.includes("console:") && first.includes("log: app ready, items: 3"));
+    must("console: with the warning", first.includes("warn: a warning the sheep should see"));
+    must("tree:", first.includes("tree:") && second.includes("tree:"));
+    must('tree: heading "Counter"', first.includes('heading "Counter"') && second.includes('heading "Counter"'));
+    must('tree: button "+1"', first.includes('button "+1"'));
+    must("tree: the list items (wool, grass, fence)", ["wool", "grass", "fence"].every((item) => first.includes(item)));
+    must('the second report\'s tree with "2" after two clicks', /"2"/.test(second.split(/^wrote look\.png/m)[0] ?? ""));
+    must("Read image file [image/png], the read tool's result for look.png", log.includes("Read image file [image/png]"));
+    const closings = [...log.matchAll(/^wrote look\.png (\d+)x(\d+) in (\d+\.\d)s$/gm)];
+    must("two closing lines `wrote look.png 1024x768 in N.Ns`", closings.length === 2 && closings.every((line) => line[1] === "1024" && line[2] === "768"));
+    must("the sheep's two sentences in the transcript", log.includes(LOOK_REPLY) && log.includes(LOOK_AGAIN_REPLY));
+    if (missing.length > 0) this.fail(step, `sheep log ${id} (in blog)`, { ...logged, stderr: `${logged.stderr}\nthe transcript lacks: ${missing.join("; ")}` });
+    const first0 = closings[0][3];
+    const second0 = closings[1][3];
+    this.ok(step, `POST /faux; sheep new -- "…"; POST /faux; sheep attach ${id} -- "…"; sheep log ${id} (in blog, on ${where})`, `turn 1 ${turnOne}s with the first look ${first0}s (launch included), turn 2 ${turnTwo}s with the second look ${second0}s (the session kept); errors: ReferenceError undefinedFunction; console: log and warn; tree: heading "Counter", button "+1", wool, grass, fence; "2" after two clicks; wrote look.png 1024x768 twice; Read image file [image/png]`);
+    return { id, first: first0, second: second0 };
   }
 
   /** What Docker runs now, by name; nothing when docker does not answer. */
@@ -1418,7 +1624,9 @@ async function machineRing({ ref, repo, images, keep }) {
         break;
       }
       for (const line of probed.stdout.trim().split("\n")) console.log(`    ${line}`);
-      const ringArgs = ["run", "--rm", "--init", tag, "node", "/ring/hermetic.mjs", "--ring", "package", "--repo", "/src.git", sha];
+      // --no-eyes (eyes phase 2): the image has none of Chrome's shared libraries, and Chrome for Testing has no linux/arm64 build, which
+      // is what a container on an arm64 Mac is; the walk inside prints e1 as one skip line and names it at the end.
+      const ringArgs = ["run", "--rm", "--init", tag, "node", "/ring/hermetic.mjs", "--ring", "package", "--repo", "/src.git", sha, "--no-eyes"];
       console.log(`    docker ${ringArgs.join(" ")}`);
       const ringStarted = Date.now();
       const code = await runIndented("docker", ringArgs, {});
@@ -2343,6 +2551,12 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     ring.ok("a3", `POST /faux; sheep new -- "${sentence}"; sheep log ${id}`, `${newSeconds}s; "git, node, pnpm"; the shell in the container: git version ${versions.git ?? "?"}, node ${versions.node ?? "?"}, pnpm ${versions.pnpm ?? "?"}`);
     console.log(`image: ${station.image}${station.image.includes("@sha256:") ? " (by digest)" : ` (by tag; ${station.digest} on the registry)`}`);
 
+    // Eyes phase 2, e2: journey 1 of the eyes on the station, the first look paying the platform's launch and the second
+    // connecting to the browser it left warm; one more sheep for a6's count. The program is a3's no longer, and a7 sets its own per cell.
+    const looked = await ring.lookWalk({ step: "e2", home, token: config.token, where: `the station ${name}` });
+    station.minted.push(looked.id);
+    await ring.eyesReported("e2", `the station ${name}`);
+
     // Step 4: pi becomes a kennel first (the package ring's k2.2; without it `sheep home local` falls back to ~/.sheep), then
     // the local home in pi, reached from blog with --home for one command; blog's config keeps naming the station.
     const piSetup = await ring.sheep(["setup", "--json"], { cwd: ring.pi });
@@ -2851,7 +3065,7 @@ async function main() {
   }
   let ring;
   try {
-    ring = new Ring({ ref, repo, spec, commit, keep, docker: parsed.docker });
+    ring = new Ring({ ref, repo, spec, commit, keep, docker: parsed.docker, noEyes: parsed.noEyes });
   } catch (error) {
     usage(`${ref}: ${error.message}`);
   }

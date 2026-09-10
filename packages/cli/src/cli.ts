@@ -4,7 +4,7 @@ import { writeSessionFile } from "./export.js";
 import { runAbort, runLog, runPrompt, runStatus, runWait } from "./herd.js";
 import { Home } from "./home.js";
 import { join } from "./join.js";
-import { type BuildSide, cliBuild, describeBuild, describeImage, isRefused, localStatus, readStamp, skewLine, startLocalHome, stopLocalHome, whoAnswers } from "./local.js";
+import { type BuildSide, cliBuild, describeBuild, describeImage, eyesSentence, isRefused, localStatus, readStamp, skewLine, startLocalHome, stopLocalHome, whoAnswers } from "./local.js";
 import { PASTURE_NAME, runPasture } from "./pasture.js";
 import { runPiClient } from "./pi.js";
 import { formatSetup, INSTALL_SPEC, kennelTracked, readGuide, setup, trackedWarning } from "./setup.js";
@@ -51,7 +51,9 @@ usage:
                                             key is held (from ANTHROPIC_API_KEY), or that the faux provider answers instead.
                                             With Docker on this machine the home rents a container beside every cell (git,
                                             node, pnpm, python: sheep can clone, build, test, and push), the image pulled by
-                                            Docker; without Docker, or with --no-container, its sheep read, write, and edit
+                                            Docker; without Docker, or with --no-container, its sheep read, write, and edit.
+                                            The home has eyes: a sheep's \`look <path>\` renders a workspace page in a real
+                                            Chromium, and the first look on this machine fetches that Chrome
   sheep home stop                           stop this kennel's local home
   sheep home deploy [--name <worker>] [--subdomain <name>] [--json]
                                             the station: this package's home on the shepherd's Cloudflare account, a
@@ -72,7 +74,9 @@ usage:
                                             and the image
   sheep home                                which kennel, which home the config names, its station's name once minted,
                                             whether it answers, and its build stamp beside this command's, with one line
-                                            on stderr when they differ; the pen image its config named, when it says
+                                            on stderr when they differ; the pen image its config named, when it says;
+                                            whether it has eyes (a station deployed before they existed says no until
+                                            \`sheep home deploy\` upgrades it)
 
   sheep pasture new <name> [--repo <url> | --repo .] [--branch <branch>]
                                             make a pasture: a shared tree, a repository or none, and the sheep born into it;
@@ -307,6 +311,11 @@ async function dispatch(command: string, parsed: Parsed, config: SheepConfig, ou
  * `sheep home` for a local home reports the record's `container`, and a
  * home that answers `GET /home` must agree, else the record is stale and
  * the home is reported as not running.
+ * Eyes phase 2: `sheep home` prints `eyes: yes|no` beside the container,
+ * from what `GET /home` says (`--json`: `eyes: true | false | null`, null
+ * for a home that does not say, a station from before eyes phase 1, which
+ * the prose calls `no`); and `sheep home local` says the home has eyes
+ * and where the first look fetches its Chrome.
  */
 async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Promise<number> {
   const sub = parsed.rest[1];
@@ -340,7 +349,8 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
       // Which config the daemon runs (station phase 4): the derived one, with its one-line Dockerfile, when the container is on and the
       // package's config names a registry image; a line only then, since otherwise it is the package's own.
       const daemonLine = report.daemonConfig.derived ? `daemon config: ${report.daemonConfig.path} (derived from the package's; the container is FROM ${report.daemonConfig.from})\n` : "";
-      output.out(`local home: ${report.url} (${report.state}, pid ${report.pid})\nkennel: ${kennel}\nfiles: ${report.dir}\nconfig: ${configLine}\nkey: ${key}\n${containerLine}\n${daemonLine}`);
+      // The eyes line (eyes phase 2): unconditional, since the local home always has them; it says where the first look's Chrome goes.
+      output.out(`local home: ${report.url} (${report.state}, pid ${report.pid})\nkennel: ${kennel}\nfiles: ${report.dir}\nconfig: ${configLine}\nkey: ${key}\n${containerLine}\n${eyesSentence(report.chrome)}\n${daemonLine}`);
       return 0;
     }
     if (sub === "stop") {
@@ -439,9 +449,11 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
     // home, and this command's from the manifest beside the bundle. A home that does not answer leaves its side null, and
     // the prose is what it was; both there, the prose prints both and stderr gets the one-line skew warning, if any.
     // Station phase 2: the same answer carries the image the home's config named, an `image:` line when it does.
-    const buildReport = async (home: string | null, answers: boolean, local: boolean): Promise<{ build: { home: BuildSide | null; cli: BuildSide }; image: string | null; container: boolean | null; lines: string }> => {
+    // Eyes phase 2: and whether the home has eyes, `eyes: yes|no` as the first of the lines, beside the container's line in the
+    // local case; a home that does not say (a station deployed before eyes phase 1) is `no` in prose and null in JSON.
+    const buildReport = async (home: string | null, answers: boolean, local: boolean): Promise<{ build: { home: BuildSide | null; cli: BuildSide }; image: string | null; container: boolean | null; eyes: boolean | null; lines: string }> => {
       const cli = cliBuild();
-      let stamp: { build: BuildSide; image: string | null; container: boolean | null } | null = null;
+      let stamp: { build: BuildSide; image: string | null; container: boolean | null; eyes: boolean | null } | null = null;
       if (home !== null && answers) {
         try {
           stamp = await new Home({ home, token: config.token }).stamp();
@@ -449,18 +461,18 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
           stamp = null;
         }
       }
-      if (stamp === null) return { build: { home: null, cli }, image: null, container: null, lines: "" };
+      if (stamp === null) return { build: { home: null, cli }, image: null, container: null, eyes: null, lines: "" };
       const skew = skewLine(stamp.build, cli, local);
       if (skew !== undefined) output.err(skew);
       const imageLine = stamp.image === null ? "" : `image: ${describeImage(stamp.image)}\n`;
-      return { build: { home: stamp.build, cli }, image: stamp.image, container: stamp.container, lines: `home build: ${describeBuild(stamp.build)}\ncli build: ${describeBuild(cli)}\n${imageLine}` };
+      return { build: { home: stamp.build, cli }, image: stamp.image, container: stamp.container, eyes: stamp.eyes, lines: `eyes: ${stamp.eyes === true ? "yes" : "no"}\nhome build: ${describeBuild(stamp.build)}\ncli build: ${describeBuild(cli)}\n${imageLine}` };
     };
     if (config.local === true) {
       const status = await localStatus();
       const home = status.record?.url ?? config.home ?? null;
       let { running } = status;
       const answered = await buildReport(home, running, true);
-      let { build, image, lines } = answered;
+      let { build, image, eyes, lines } = answered;
       const reported = answered.container;
       // The record's container choice (station phase 4), which a home that answers must agree with: a home reporting otherwise is
       // not the one the record describes, so the record is stale and the home is reported as not running.
@@ -470,10 +482,11 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
         running = false;
         build = { home: null, cli: build.cli };
         image = null;
+        eyes = null;
         lines = "";
       }
       if (parsed.json) {
-        output.out(`${JSON.stringify({ home, kennel, name, local: true, running, pid: running ? status.record!.pid : null, port: status.record?.port ?? null, stamp: status.record?.stamp ?? null, startedAt: running ? status.record!.startedAt : null, container, build, image })}\n`);
+        output.out(`${JSON.stringify({ home, kennel, name, local: true, running, pid: running ? status.record!.pid : null, port: status.record?.port ?? null, stamp: status.record?.stamp ?? null, startedAt: running ? status.record!.startedAt : null, container, eyes, build, image })}\n`);
         return 0;
       }
       output.out(home === null ? "home: (none); run `sheep home local`\n" : `home: ${home} (local, ${running ? `running, pid ${status.record!.pid}` : "stopped"})\n`);
@@ -482,9 +495,9 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
     }
     const home = config.home ?? null;
     const answers = home === null ? "nobody" : await whoAnswers(home);
-    const { build, image, lines } = await buildReport(home, answers === "sheep", false);
+    const { build, image, eyes, lines } = await buildReport(home, answers === "sheep", false);
     if (parsed.json) {
-      output.out(`${JSON.stringify({ home, kennel, name, local: false, answers: answers === "sheep", build, image })}\n`);
+      output.out(`${JSON.stringify({ home, kennel, name, local: false, answers: answers === "sheep", eyes, build, image })}\n`);
       return 0;
     }
     output.out(home === null ? "home: (none); run `sheep home local`, or pass --home <url>\n" : `home: ${home} (${answers === "sheep" ? "answers" : answers === "other" ? "answers, but not as a sheep home" : "does not answer"})\n`);

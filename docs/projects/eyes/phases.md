@@ -20,22 +20,24 @@ renders from the files table alone.
 
 ---
 
-**Where we are: eyes phases 0 and 1 closed, 8 and 9 Sep 2026. Next:
-eyes phase 2.** Planned the afternoon of the spike, from a conversation
-with the shepherd; the shepherd's calls are in the journey's front
-matter. The spike is [docs/spikes/eyes](../../spikes/eyes/README.md):
-the numbers, the findings, and the Worker the eyes are lifted from; its
-README is left as the record of what was tried, so it still names the
-puppeteer cache this project's phase 0 found to be the wrong one. The
-eyes are built and proved in workerd, and a sheep on the local home asks
-them for a look: `look` is in its shell, the prompt says so, and
-journeys 1 and 2 were walked on this laptop with a real model, a Vite
-app built in the container and looked at from the rows. Eyes phase 2 is
-the station: the release carrying the binding, `eyes` in the home's
-report, the rings, and journey 3 on the account. Its local parts wait
-on no one; ⚑ steps: the upgrade of `sheep-2` and the ring's station on
-the shepherd's account, and the browser minutes both spend. That is the
-one thing in this project that waits on the shepherd.
+**Where we are: eyes phases 0 and 1 closed, 8 and 9 Sep 2026; eyes
+phase 2 PART-DONE 9 Sep 2026. Next: eyes phase 2's account walk, which
+waits on the shepherd.** Planned the afternoon of the spike, from a
+conversation with the shepherd; the shepherd's calls are in the
+journey's front matter. The spike is
+[docs/spikes/eyes](../../spikes/eyes/README.md): the numbers, the
+findings, and the Worker the eyes are lifted from; its README is left
+as the record of what was tried, so it still names the puppeteer cache
+this project's phase 0 found to be the wrong one. The eyes are built
+and proved in workerd; a sheep on the local home asks them for a look,
+and journeys 1 and 2 were walked here with a real model. The release
+guards the binding, `sheep home` says `eyes: yes|no`, the local home's
+start says where the first look's Chrome goes, the package ring walks
+journey 1 steps 1 to 4 with the faux provider in a fresh `HOME`, and
+the account ring carries the same walk, unrun. What is left is journey
+3 on the account: `sheep-2` upgraded from this release and looked
+through, and the account ring green; ⚑ steps, every one, and the only
+thing in this project that waits on the shepherd.
 
 The order is dependency order. Phase 0 is the eyes: the class, the
 binding, the interception over the rows, the session, and the workerd
@@ -167,4 +169,13 @@ account --yes <ref>` green. **⚑ provision:** the upgrade of `sheep-2`
 and the ring's station on the shepherd's account, and the browser
 minutes both spend, ten a session at most.
 
-**Status: NOT STARTED.**
+**Findings.**
+
+- **2026-09-09 — The cold first look in a fresh `HOME` took 7 to 21 s across four package rings, the 283 MB download the whole difference.** 7.7 s on the release candidate; the second look, on the kept session, 0.9 to 1.1 s every time. The platform's launch is the account walk's to measure.
+- **2026-09-09 — miniflare's Chrome cache follows `XDG_CACHE_HOME` before `HOME`.** The package ring strips it from the walk's environment, so a fresh `HOME` is a fresh cache; without that a machine's own Chrome makes the cold look warm and the ring proves nothing about the fetch.
+- **2026-09-09 — The machine and dog rings do not walk the look.** Their image has none of Chrome's shared libraries, and Chrome for Testing has no linux/arm64 build, which a container on this Mac is; the inner package ring runs with `--no-eyes` there and says so as unchecked.
+- **2026-09-09 — `shippedConfig` carried both bindings into release 5b1f887 untouched.** Lines 48 and 116 of its `home/wrangler.jsonc`; `assertEyes` only says so before the file is written, so a config that loses one fails the release rather than deploying a blind home.
+- **2026-09-09 — Open: journey 3 on the account.** `sheep home` on `sheep-2` saying `eyes: no` and a look refused by name; `sheep home deploy`; `eyes: yes`; journey 1 there with a real model, launch and connect timed; `pnpm hermetic --ring account --yes <ref>` green. Waits on the shepherd's yes: the upgrade of `sheep-2`, the ring's station, and about eleven browser minutes each.
+- **2026-09-09 — Open: eyes in the machine and dog rings.** Waits on a Chrome for linux/arm64, or an amd64 machine and the image's libraries.
+
+**Status: PART-DONE.** 2026-09-09. Every proof that runs here ran: the candidate's package ring walked the look in a fresh `HOME`, its config binds `BROWSER` in both environments, `sheep home` reports eyes in both branches, the docs and the guide say what a sheep can see; the account walk waits on the shepherd.

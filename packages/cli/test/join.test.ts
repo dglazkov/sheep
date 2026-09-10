@@ -216,9 +216,10 @@ describe("sheep home join: the config, and the report", () => {
     // `sheep home` afterwards: a non-local home that answers, with the two stamps and the image; no name.
     const after = await w.sheep(["home", "--json"]);
     expect(after.code, after.stderr).toBe(0);
-    expect(JSON.parse(after.stdout)).toEqual({ home: home.url, kennel: w.kennel, name: null, local: false, answers: true, build: { home: STAMP, cli: { commit: "0.0.0-checkout", builtAt: null } }, image: IMAGE });
+    // The fake station says nothing of eyes, so `sheep home` carries null (eyes phase 2).
+    expect(JSON.parse(after.stdout)).toEqual({ home: home.url, kennel: w.kennel, name: null, local: false, answers: true, eyes: null, build: { home: STAMP, cli: { commit: "0.0.0-checkout", builtAt: null } }, image: IMAGE });
     const prose = await w.sheep(["home"]);
-    expect(prose.stdout).toBe(`home: ${home.url} (answers)\nkennel: ${w.kennel}\nhome build: 2b71e46 (2026-09-07T23:30:00Z)\ncli build: 0.0.0-checkout (unstamped)\nimage: ${IMAGE} (by digest)\n`);
+    expect(prose.stdout).toBe(`home: ${home.url} (answers)\nkennel: ${w.kennel}\neyes: no\nhome build: 2b71e46 (2026-09-07T23:30:00Z)\ncli build: 0.0.0-checkout (unstamped)\nimage: ${IMAGE} (by digest)\n`);
   });
 
   it("--json carries the same; a home naming the tag says by tag in prose, and one reporting no image says so", async () => {

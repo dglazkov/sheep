@@ -6,12 +6,16 @@
  * is a red line here and not `ERR_MODULE_NOT_FOUND` on a user's laptop.
  * Collar phase 0.
  */
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 // The script is plain ESM at the repository root; vitest loads it as is.
 // @ts-expect-error no declarations for the release script
 import { BIN_SHEEP_JS, expectedReleaseFiles, IMAGE_REPOSITORY, PREPARATION_KEYS, releaseManifest, SKILL_FILE } from "../../../scripts/release.mjs";
 // @ts-expect-error no declarations for the bundle script
-import { IMAGE_DIGEST, imageBy, imageReference, shippedConfig } from "../../../scripts/bundle.mjs";
+import { assertEyes, EYES_BINDING, IMAGE_DIGEST, imageBy, imageReference, shippedConfig } from "../../../scripts/bundle.mjs";
+import { parseJsonc } from "../src/deploy.js";
+
+const cellConfigPath = new URL("../../cell/wrangler.jsonc", import.meta.url).pathname;
 
 const DIGEST = "sha256:48101e13000000000000000000000000000000000000000000000000abcdef01";
 const STAMP = { commit: "194656e", builtAt: "2026-09-07T17:00:00Z", wrangler: "4.129.0", image: `docker.io/dglazkov2/sheep-pen@${DIGEST}` };
@@ -110,6 +114,25 @@ describe("the release manifest", () => {
     const byDigest = shippedConfig(cell, { commit: STAMP.commit, builtAt: STAMP.builtAt, imageDigest: DIGEST }) as { env: { pen: { containers: { image: string }[] } } };
     expect(byDigest.env.pen.containers).toEqual([{ image: `docker.io/dglazkov2/sheep-pen@${DIGEST}`, class_name: "PenContainer", instance_type: "basic", max_instances: 3 }]);
     expect(() => shippedConfig(cell, { commit: STAMP.commit, builtAt: STAMP.builtAt, imageDigest: "sha256:short" })).toThrow(/sha256:<64 hex>/);
+  });
+
+  it("refuses a shipped config without the browser binding in both environments, and passes the cell's own (eyes phase 2)", () => {
+    expect(EYES_BINDING).toBe("BROWSER");
+    const browser = { binding: "BROWSER" };
+    const both = { name: "sheep", browser, env: { pen: { name: "sheep-pen", browser } } };
+    expect(assertEyes(both)).toBe(both);
+    // A binding is not inherited into a named environment: each place is checked on its own, and the message names the missing one.
+    expect(() => assertEyes({ ...both, browser: undefined })).toThrow(/no browser binding named BROWSER at the top level;/);
+    expect(() => assertEyes({ ...both, env: { pen: { name: "sheep-pen" } } })).toThrow(/at env\.pen;/);
+    expect(() => assertEyes({ ...both, env: { pen: { name: "sheep-pen", browser: { binding: "EYES" } } } })).toThrow(/at env\.pen;/);
+    expect(() => assertEyes({ name: "sheep" })).toThrow(/at the top level or env\.pen;/);
+    expect(() => assertEyes({ name: "sheep", browser, env: {} })).toThrow(/at env\.pen;/);
+    // The cell's config, shipped with a stamp as a release ships it, carries the binding through both environments untouched.
+    const cell = parseJsonc(readFileSync(cellConfigPath, "utf8"));
+    const shipped = assertEyes(shippedConfig(cell, { commit: STAMP.commit, builtAt: STAMP.builtAt, imageDigest: DIGEST })) as { browser: unknown; env: { pen: { browser: unknown } } };
+    expect(shipped.browser).toEqual(browser);
+    expect(shipped.env.pen.browser).toEqual(browser);
+    expect(assertEyes(shippedConfig(cell, undefined))).toMatchObject({ browser, env: { pen: { browser } } });
   });
 
   it("refuses a stamp with a piece missing", () => {

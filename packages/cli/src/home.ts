@@ -63,6 +63,12 @@ export interface HomeStamp {
   image: string | null;
   /** Station phase 4: whether the home has a container beside every cell, as `GET /home` reports it; null when it does not say. */
   container: boolean | null;
+  /**
+   * Eyes phase 2: whether the home has eyes, `look` in every sheep's shell,
+   * as `GET /home` reports it; null when it does not say, which is a
+   * station deployed before eyes phase 1. `sheep home` prints `no` for both.
+   */
+  eyes: boolean | null;
 }
 
 /** The home's HTTP face: the door, the directory, and one cell's routes. */
@@ -118,13 +124,19 @@ export class Home {
    * The stamp and the image from one `GET /home` (station phase 2): the
    * image is what `scripts/bundle.mjs` defined into the Worker beside the
    * stamp, the reference the shipped config names; a checkout, or a home
-   * from before the field, answers none, and that is null.
+   * from before the field, answers none, and that is null. `container` and
+   * `eyes` the same way: a boolean when the home says, null when it does not.
    */
   async stamp(): Promise<HomeStamp> {
-    const answer = (await (await this.request("/home")).json()) as { build?: Partial<HomeBuild>; image?: unknown; container?: unknown };
+    const answer = (await (await this.request("/home")).json()) as { build?: Partial<HomeBuild>; image?: unknown; container?: unknown; eyes?: unknown };
     const { build } = answer;
     const known = build && typeof build.commit === "string" && build.commit !== "" ? { commit: build.commit, builtAt: typeof build.builtAt === "string" ? build.builtAt : null } : { commit: "0.0.0-checkout", builtAt: null };
-    return { build: known, image: typeof answer.image === "string" && answer.image !== "" ? answer.image : null, container: typeof answer.container === "boolean" ? answer.container : null };
+    return {
+      build: known,
+      image: typeof answer.image === "string" && answer.image !== "" ? answer.image : null,
+      container: typeof answer.container === "boolean" ? answer.container : null,
+      eyes: typeof answer.eyes === "boolean" ? answer.eyes : null,
+    };
   }
 
   /** Every session, newest first; with a pasture, its herd: the sessions born into it. */

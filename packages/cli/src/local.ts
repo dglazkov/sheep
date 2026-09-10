@@ -88,6 +88,27 @@ export const LOCAL_IDLE = "2m";
 /** The sentence a home without Docker prints: what a container would add and how to get one (journey 6 step 2). */
 export const NO_DOCKER_SENTENCE = "with Docker Desktop (or the docker engine) on this machine, sheep home local rents a container beside every cell, so sheep can clone, build, test, and push; https://docs.docker.com/get-docker/";
 
+/**
+ * Where the local home's Chrome lives (eyes phase 2): wrangler's local
+ * browser binding is a Chrome that miniflare fetches the first time a look
+ * is asked for, into `<wrangler cache>/chrome`, at a version it pins. The
+ * cache is miniflare's own rule, read the way it reads it: `XDG_CACHE_HOME`
+ * when set, else `~/Library/Caches` on macOS, `~/AppData/Local/xdg.cache`
+ * on Windows, and `~/.cache` elsewhere, then `.wrangler`. The home under
+ * `~` is `os.homedir()`, which is `HOME` on POSIX, so a ring's fresh HOME
+ * gets its own.
+ */
+export function chromeCacheDir(env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform, home: string = homedir()): string {
+  const xdg = env.XDG_CACHE_HOME;
+  const cache = xdg !== undefined && xdg !== "" ? xdg : platform === "darwin" ? join(home, "Library", "Caches") : platform === "win32" ? join(home, "AppData", "Local", "xdg.cache") : join(home, ".cache");
+  return join(cache, ".wrangler", "chrome");
+}
+
+/** The sentence `sheep home local` prints about the eyes: unconditional, since the config binds `BROWSER` in both environments and wrangler dev serves it. */
+export function eyesSentence(chrome: string): string {
+  return `eyes: yes; a sheep's \`look <path>\` renders a workspace page in a real Chromium, and the first look on this machine fetches that Chrome into ${chrome} (about 280 MB, a few seconds), which later looks reuse`;
+}
+
 /** The package root: above `dist/`, which is `packages/cli/` in a checkout and the installed package otherwise. */
 const packageDir = fileURLToPath(new URL("..", import.meta.url));
 
@@ -578,6 +599,10 @@ export interface StartReport {
   origin: string | null;
   /** How long a container stays up after its last command, when there is one. */
   idle: string | null;
+  /** Eyes phase 2: the local home always has eyes; the config binds `BROWSER` in both environments and wrangler dev serves it. */
+  eyes: true;
+  /** Where the first look fetches the Chrome the eyes need, and later looks find it: `chromeCacheDir()`. */
+  chrome: string;
 }
 
 /**
@@ -674,6 +699,8 @@ export async function startLocalHome(options: StartOptions = {}): Promise<StartR
     docker: answered?.engine ?? null,
     origin: record.container ? cellOrigin(record.port) : null,
     idle: record.container ? LOCAL_IDLE : null,
+    eyes: true,
+    chrome: chromeCacheDir(),
   };
 }
 

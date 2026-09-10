@@ -27,7 +27,7 @@ import { createServer as createTcpServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { deriveLocalConfig, LOCAL_IDLE, NO_DOCKER_SENTENCE, skewLine } from "../src/local.js";
+import { chromeCacheDir, deriveLocalConfig, eyesSentence, LOCAL_IDLE, NO_DOCKER_SENTENCE, skewLine } from "../src/local.js";
 import { bin, type Result } from "./local-home.js";
 
 /** This command's side of `sheep home`'s build report, in a checkout: the value, with no time. */
@@ -242,7 +242,7 @@ describe("the local home's record", () => {
     worlds.push(w);
     const none = await w.sheep("home", "--json");
     expect(none.code).toBe(0);
-    expect(JSON.parse(none.stdout)).toEqual({ home: null, kennel: w.kennel, name: null, local: false, answers: false, build: { home: null, cli: CHECKOUT }, image: null });
+    expect(JSON.parse(none.stdout)).toEqual({ home: null, kennel: w.kennel, name: null, local: false, answers: false, eyes: null, build: { home: null, cli: CHECKOUT }, image: null });
     expect((await w.sheep("home")).stdout).toBe(`home: (none); run \`sheep home local\`, or pass --home <url>\nkennel: ${w.kennel}\n`);
 
     const sheepish = await listen("sheep\n");
@@ -250,23 +250,28 @@ describe("the local home's record", () => {
       const url = `http://127.0.0.1:${sheepish.port}`;
       await writeFile(w.config, JSON.stringify({ home: url, token: "t" }));
       // A home that answers `sheep` but not `GET /home` (this fake) has no build side: null, and the prose is the plain one.
-      expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toEqual({ home: url, kennel: w.kennel, name: null, local: false, answers: true, build: { home: null, cli: CHECKOUT }, image: null });
+      expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toEqual({ home: url, kennel: w.kennel, name: null, local: false, answers: true, eyes: null, build: { home: null, cli: CHECKOUT }, image: null });
       expect((await w.sheep("home")).stdout).toBe(`home: ${url} (answers)\nkennel: ${w.kennel}\n`);
       // The station's name, once a deploy has recorded it (kennel phase 1): read like home, in JSON always and in prose as its own line.
       await writeFile(w.config, JSON.stringify({ home: url, token: "t", name: "blog" }));
-      expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toEqual({ home: url, kennel: w.kennel, name: "blog", local: false, answers: true, build: { home: null, cli: CHECKOUT }, image: null });
+      expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toEqual({ home: url, kennel: w.kennel, name: "blog", local: false, answers: true, eyes: null, build: { home: null, cli: CHECKOUT }, image: null });
       expect((await w.sheep("home")).stdout).toBe(`home: ${url} (answers)\nkennel: ${w.kennel}\nname: blog\n`);
       // A --home overrides a local config, and is never the local home.
       await writeFile(w.config, JSON.stringify({ home: "http://127.0.0.1:1", token: "t", local: true }));
-      expect(JSON.parse((await w.sheep("--home", url, "home", "--json")).stdout)).toEqual({ home: url, kennel: w.kennel, name: null, local: false, answers: true, build: { home: null, cli: CHECKOUT }, image: null });
+      expect(JSON.parse((await w.sheep("--home", url, "home", "--json")).stdout)).toEqual({ home: url, kennel: w.kennel, name: null, local: false, answers: true, eyes: null, build: { home: null, cli: CHECKOUT }, image: null });
     } finally {
       sheepish.server.close();
     }
   });
 });
 
-/** A home that answers `sheep` at the door and the given build from `GET /home`, with the token checked there. */
-function listenHome(build: unknown, token = "t"): Promise<{ server: Server; port: number; asked: string[] }> {
+/**
+ * A home that answers `sheep` at the door and the given build from `GET
+ * /home`, with the token checked there. `eyes` undefined is a home that
+ * does not say (a station from before eyes phase 1); a boolean is what a
+ * home from eyes phase 1 on answers.
+ */
+function listenHome(build: unknown, token = "t", eyes?: boolean): Promise<{ server: Server; port: number; asked: string[] }> {
   const asked: string[] = [];
   return new Promise((resolve) => {
     const server = createServer((request, response) => {
@@ -277,7 +282,7 @@ function listenHome(build: unknown, token = "t"): Promise<{ server: Server; port
           return response.end("bad or missing token");
         }
         response.setHeader("content-type", "application/json");
-        return response.end(JSON.stringify({ serverId: "fake", container: false, build }));
+        return response.end(JSON.stringify({ serverId: "fake", container: false, build, ...(eyes === undefined ? {} : { eyes }) }));
       }
       response.end("sheep\n");
     });
@@ -296,9 +301,9 @@ describe("the two stamps (station phase 0)", () => {
       await writeFile(w.config, JSON.stringify({ home: url, token: "t" }));
       const json = await w.sheep("home", "--json");
       expect(json.code).toBe(0);
-      expect(JSON.parse(json.stdout)).toEqual({ home: url, kennel: w.kennel, name: null, local: false, answers: true, build: { home: { commit: "1fc8d03", builtAt: "2026-09-07T20:00:00Z" }, cli: CHECKOUT }, image: null });
+      expect(JSON.parse(json.stdout)).toEqual({ home: url, kennel: w.kennel, name: null, local: false, answers: true, eyes: null, build: { home: { commit: "1fc8d03", builtAt: "2026-09-07T20:00:00Z" }, cli: CHECKOUT }, image: null });
       const prose = await w.sheep("home");
-      expect(prose.stdout).toBe(`home: ${url} (answers)\nkennel: ${w.kennel}\nhome build: 1fc8d03 (2026-09-07T20:00:00Z)\ncli build: 0.0.0-checkout (unstamped)\n`);
+      expect(prose.stdout).toBe(`home: ${url} (answers)\nkennel: ${w.kennel}\neyes: no\nhome build: 1fc8d03 (2026-09-07T20:00:00Z)\ncli build: 0.0.0-checkout (unstamped)\n`);
       // A checkout on one side is reported, never warned about.
       expect(prose.stderr).toBe("");
       expect(stamped.asked).toContain("GET /home Bearer t");
@@ -307,7 +312,7 @@ describe("the two stamps (station phase 0)", () => {
       await record(w, { pid: process.pid, port: stamped.port });
       const local = await w.sheep("home", "--json");
       expect(JSON.parse(local.stdout)).toMatchObject({ home: url, local: true, running: true, build: { home: { commit: "1fc8d03", builtAt: "2026-09-07T20:00:00Z" }, cli: CHECKOUT } });
-      expect((await w.sheep("home")).stdout).toBe(`home: ${url} (local, running, pid ${process.pid})\nkennel: ${w.kennel}\ncontainer: no\nhome build: 1fc8d03 (2026-09-07T20:00:00Z)\ncli build: 0.0.0-checkout (unstamped)\n`);
+      expect((await w.sheep("home")).stdout).toBe(`home: ${url} (local, running, pid ${process.pid})\nkennel: ${w.kennel}\ncontainer: no\neyes: no\nhome build: 1fc8d03 (2026-09-07T20:00:00Z)\ncli build: 0.0.0-checkout (unstamped)\n`);
     } finally {
       stamped.server.close();
     }
@@ -318,7 +323,7 @@ describe("the two stamps (station phase 0)", () => {
       const url = `http://127.0.0.1:${unstamped.port}`;
       await writeFile(w.config, JSON.stringify({ home: url, token: "t" }));
       expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toMatchObject({ build: { home: CHECKOUT, cli: CHECKOUT } });
-      expect((await w.sheep("home")).stdout).toBe(`home: ${url} (answers)\nkennel: ${w.kennel}\nhome build: 0.0.0-checkout (unstamped)\ncli build: 0.0.0-checkout (unstamped)\n`);
+      expect((await w.sheep("home")).stdout).toBe(`home: ${url} (answers)\nkennel: ${w.kennel}\neyes: no\nhome build: 0.0.0-checkout (unstamped)\ncli build: 0.0.0-checkout (unstamped)\n`);
     } finally {
       unstamped.server.close();
     }
@@ -333,6 +338,42 @@ describe("the two stamps (station phase 0)", () => {
     } finally {
       refused.server.close();
     }
+  });
+
+  it("prints eyes: yes|no beside the container from what GET /home says, in both branches, and null in JSON for a home that does not say (eyes phase 2)", { timeout: 60_000 }, async () => {
+    const w = await world();
+    worlds.push(w);
+    const build = { commit: "1fc8d03", builtAt: "2026-09-07T20:00:00Z" };
+    // A station upgraded from this release: eyes true, `yes` in prose, true in JSON; and the same home read as the local one.
+    const sighted = await listenHome(build, "t", true);
+    try {
+      const url = `http://127.0.0.1:${sighted.port}`;
+      await writeFile(w.config, JSON.stringify({ home: url, token: "t", name: "blog" }));
+      expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toEqual({ home: url, kennel: w.kennel, name: "blog", local: false, answers: true, eyes: true, build: { home: build, cli: CHECKOUT }, image: null });
+      expect((await w.sheep("home")).stdout).toBe(`home: ${url} (answers)\nkennel: ${w.kennel}\nname: blog\neyes: yes\nhome build: 1fc8d03 (2026-09-07T20:00:00Z)\ncli build: 0.0.0-checkout (unstamped)\n`);
+      await record(w, { pid: process.pid, port: sighted.port });
+      expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toMatchObject({ local: true, running: true, container: false, eyes: true });
+      expect((await w.sheep("home")).stdout).toBe(`home: ${url} (local, running, pid ${process.pid})\nkennel: ${w.kennel}\ncontainer: no\neyes: yes\nhome build: 1fc8d03 (2026-09-07T20:00:00Z)\ncli build: 0.0.0-checkout (unstamped)\n`);
+    } finally {
+      sighted.server.close();
+    }
+    // A home that says it has none: `no`, and false in JSON, which is not the null of a home that does not say.
+    const blind = await listenHome(build, "t", false);
+    try {
+      const url = `http://127.0.0.1:${blind.port}`;
+      await writeFile(w.config, JSON.stringify({ home: url, token: "t" }));
+      expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toMatchObject({ local: false, answers: true, eyes: false });
+      expect((await w.sheep("home")).stdout).toBe(`home: ${url} (answers)\nkennel: ${w.kennel}\neyes: no\nhome build: 1fc8d03 (2026-09-07T20:00:00Z)\ncli build: 0.0.0-checkout (unstamped)\n`);
+      await record(w, { pid: process.pid, port: blind.port });
+      expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toMatchObject({ local: true, running: true, eyes: false });
+      expect((await w.sheep("home")).stdout).toContain("container: no\neyes: no\nhome build:");
+    } finally {
+      blind.server.close();
+    }
+    // A stopped local home says nothing of eyes: no line, and null.
+    await record(w, { pid: await deadPid(), port: await freePort() });
+    expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toMatchObject({ running: false, eyes: null });
+    expect((await w.sheep("home")).stdout).not.toContain("eyes:");
   });
 
   it("warns in one line when both sides are stamped and differ, naming the older one and its fix; says nothing otherwise", () => {
@@ -369,6 +410,10 @@ describe.skipIf(!existsSync(cellWrangler))("sheep home local, in a checkout", ()
     expect(started.stdout).toContain(`config: ${w.config} names https://elsewhere.example; --home ${url} selects the local home for one command`);
     expect(started.stdout).toContain('key: the faux provider answers every prompt with "ok"; no key is used');
     expect(started.stdout).toMatch(/^container: none; --no-container$/m);
+    // The eyes line (eyes phase 2): unconditional, naming the Chrome cache under this world's HOME, where the first look fetches it.
+    const chrome = chromeCacheDir(process.env, process.platform, w.dir);
+    expect(chrome.endsWith(join(".wrangler", "chrome"))).toBe(true);
+    expect(started.stdout).toContain(`\n${eyesSentence(chrome)}\n`);
     expect(await readFile(w.config, "utf8")).toBe(foreign);
 
     // The secrets file: mode 600, a generated token and the provider, no key; and the record beside it.
@@ -390,7 +435,7 @@ describe.skipIf(!existsSync(cellWrangler))("sheep home local, in a checkout", ()
 
     // A second call reports the running home; --json carries the same address and the wrangler it ran.
     const again = JSON.parse((await w.sheep("home", "local", "--faux", "--no-container", "--json")).stdout) as { home: string; state: string; pid: number; wrangler: { version: string } };
-    expect(again).toMatchObject({ home: url, state: "running", pid: home.pid, wrangler: { version: "checkout" }, container: "none" });
+    expect(again).toMatchObject({ home: url, state: "running", pid: home.pid, wrangler: { version: "checkout" }, container: "none", eyes: true, chrome });
 
     // Stop: the port refuses, the record keeps the port with its pid cleared, and `sheep home` says so.
     const stopped = await w.sheep("home", "stop");
@@ -418,9 +463,10 @@ describe.skipIf(!existsSync(cellWrangler))("sheep home local, in a checkout", ()
     expect(JSON.parse(await readFile(w.config, "utf8"))).toEqual({ home: namedUrl, token, local: true, name: "blog" });
     const namedStatus = JSON.parse((await w.sheep("home", "--json")).stdout) as { name: string | null; pid: number };
     expect(namedStatus.name).toBe("blog");
-    // A running home answers GET /home: both stamps are printed, the checkout's on both sides (station phase 0).
-    expect((await w.sheep("home")).stdout).toBe(`home: ${namedUrl} (local, running, pid ${namedStatus.pid})\nkennel: ${w.kennel}\nname: blog\ncontainer: no\nhome build: 0.0.0-checkout (unstamped)\ncli build: 0.0.0-checkout (unstamped)\n`);
-    expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toMatchObject({ build: { home: { commit: "0.0.0-checkout", builtAt: null }, cli: { commit: "0.0.0-checkout", builtAt: null } } });
+    // A running home answers GET /home: both stamps are printed, the checkout's on both sides (station phase 0), and the
+    // checkout's config binds BROWSER, so the real home says it has eyes (eyes phase 2).
+    expect((await w.sheep("home")).stdout).toBe(`home: ${namedUrl} (local, running, pid ${namedStatus.pid})\nkennel: ${w.kennel}\nname: blog\ncontainer: no\neyes: yes\nhome build: 0.0.0-checkout (unstamped)\ncli build: 0.0.0-checkout (unstamped)\n`);
+    expect(JSON.parse((await w.sheep("home", "--json")).stdout)).toMatchObject({ eyes: true, build: { home: { commit: "0.0.0-checkout", builtAt: null }, cli: { commit: "0.0.0-checkout", builtAt: null } } });
     expect((await w.sheep("home", "stop")).stdout).toBe(`stopped the local home at ${namedUrl}\n`);
     await writeFile(w.config, JSON.stringify({ home: namedUrl, token, local: true }));
 
@@ -509,7 +555,7 @@ describe("the container (station phase 4)", () => {
     // `sheep home` reads the record's choice, and the home (the fake, given --env pen) agrees.
     const status = JSON.parse((await w.sheep("home", "--json")).stdout) as { running: boolean; container: boolean; pid: number };
     expect(status).toMatchObject({ running: true, container: true, pid: rentedReport.pid });
-    expect((await w.sheep("home")).stdout).toBe(`home: ${noneReport.home} (local, running, pid ${rentedReport.pid})\nkennel: ${w.kennel}\ncontainer: yes\nhome build: 0.0.0-checkout (unstamped)\ncli build: 0.0.0-checkout (unstamped)\n`);
+    expect((await w.sheep("home")).stdout).toBe(`home: ${noneReport.home} (local, running, pid ${rentedReport.pid})\nkennel: ${w.kennel}\ncontainer: yes\neyes: yes\nhome build: 0.0.0-checkout (unstamped)\ncli build: 0.0.0-checkout (unstamped)\n`);
     // The same choice again: running, nothing restarted.
     const same = parseReport(await w.sheepWith(withDocker, "home", "local", "--faux", "--json"));
     expect(same).toMatchObject({ state: "running", pid: rentedReport.pid, container: "running" });
@@ -594,7 +640,7 @@ describe("the container (station phase 4)", () => {
       const url = await record(w, { pid: process.pid, port: home.port, container: true });
       const status = await w.sheep("home", "--json");
       expect(status.code).toBe(0);
-      expect(JSON.parse(status.stdout)).toMatchObject({ home: url, local: true, running: false, pid: null, container: true, build: { home: null, cli: CHECKOUT }, image: null });
+      expect(JSON.parse(status.stdout)).toMatchObject({ home: url, local: true, running: false, pid: null, container: true, eyes: null, build: { home: null, cli: CHECKOUT }, image: null });
       expect(status.stderr).toBe(`sheep: the record says the local home has container and the home at ${url} reports otherwise; a stale record, so the home is reported as not running\n`);
       expect((await w.sheep("home")).stdout).toBe(`home: ${url} (local, stopped)\nkennel: ${w.kennel}\n`);
       // The record agreeing with the home: running, with the build lines.

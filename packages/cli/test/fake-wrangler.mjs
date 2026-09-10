@@ -14,7 +14,8 @@
  * `test/local.test.ts`: it listens on `--port` until SIGTERM, answering
  * `sheep` at the door, `[]` at `/sessions`, and at `/home` a `container`
  * that is true exactly when `--env pen` was among its arguments, which is
- * how the test reads which environment the CLI chose.
+ * how the test reads which environment the CLI chose, and `eyes: true`
+ * either way (eyes phase 2), as the real local home answers.
  */
 import { appendFileSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -49,7 +50,8 @@ if (args[0] === "dev") {
   const server = createServer((request, response) => {
     if (request.url === "/home") {
       response.setHeader("content-type", "application/json");
-      return response.end(JSON.stringify({ serverId: "fake-dev", container, build: undefined, image: null }));
+      // Eyes phase 2: the local home always has eyes, whichever environment the daemon runs; the fake says so as the real one does.
+      return response.end(JSON.stringify({ serverId: "fake-dev", container, eyes: true, build: undefined, image: null }));
     }
     if (request.url === "/sessions") {
       response.setHeader("content-type", "application/json");

@@ -68,6 +68,17 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # The eyes' Chrome (eyes phase 2): the cell's suite renders through wrangler's local browser, a Chrome miniflare
+      # fetches into its cache the first time a look is asked for (283 MB, about six seconds). The cache holds it across
+      # runs, keyed on the runner and the lockfile, since the version is miniflare's pin and miniflare moves with the
+      # lockfile. A miss is the download the suite already pays, so this is a saving, never a fix. The package ring
+      # below walks in a fresh HOME of its own and fetches one regardless: that is the point of the ring.
+      - name: Cache the Chrome the eyes need
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/.wrangler/chrome
+          key: wrangler-chrome-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
       # A release nobody tested is a release that installs a broken command. If these fail,
       # main keeps its last good release until the next green commit. The cell's suite runs in workerd.
       #
