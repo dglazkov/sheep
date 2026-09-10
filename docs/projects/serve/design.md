@@ -115,7 +115,10 @@ page's overlay, and the overlay is a picture. A look at the rows has no
 `server` section; a served look always has one, `none` when the
 command was silent. The closing line says what served: `wrote look.png
 1024x768 in 4.1s, served by \`npx vite --port $PORT --strictPort\` on
-5173, ready in 0.8s`.
+5173, ready in 0.8s`. The two numbers are from one clock, the rental's:
+`in 4.1s` is the whole served look, the wait for the port included, and
+`ready in 0.8s` is the part of it that was waiting. A look at the rows
+keeps eyes' own number, which is the whole of that look too.
 
 ## The forward
 
@@ -141,8 +144,14 @@ syncs:
   sends the pair back to back with no await between, so the bytes
   follow their frame.
 
-The agent asks `http://127.0.0.1:<port><url>` with the browser's method,
-headers, and body, three headers changed: `host` is the loopback
+The agent asks the container's loopback at `<port>` with the browser's
+method, headers, and body. **Which loopback is not the cell's to assume.**
+A server told to listen on `localhost` inside the image binds `::1`, and
+`127.0.0.1` is refused — which is Vite's default and so the first line
+journey 1 asks a sheep to type. So the agent tries `127.0.0.1` and
+`[::1]`, keeps whichever answered for that port, and only a port where
+neither answers is a port that is not listening. Three headers are
+changed: `host` is the loopback
 address and port, so a server that checks its host, as Vite does since
 6.0.9, answers; `accept-encoding` is pinned to `identity`, so bodies
 arrive as bytes the browser can take as they are; and redirects are not
