@@ -14,9 +14,9 @@ is the verb-by-verb reference.
 `npx github:dglazkov/sheep#release setup` installs it, puts the skill in
 the current directory, and prints the next sentence; `sheep setup` again
 is harmless. Upgrading is
-`npm install -g github:dglazkov/sheep#release` again; a deployed home is
-then `sheep home deploy` again from the newer package, which `sheep home`
-says on stderr while the home is older, with every session kept.
+`npm install -g github:dglazkov/sheep#release` again, then `sheep home
+deploy` for a deployed home, which `sheep home` asks for on stderr while
+the home is older; every session is kept.
 
 Every verb talks to a home; the first is on this machine:
 
@@ -34,12 +34,11 @@ config: <dir>/.sheep/config written
 key: not held; export ANTHROPIC_API_KEY and run `sheep home local` again
 ```
 
-The `key:` line is the one thing you cannot do alone. Ask the shepherd to export `ANTHROPIC_API_KEY` in
-your shell, then run `sheep home local` again; it answers `key:
-held, in <dir>/.sheep/local/.dev.vars`. Never in the chat, never as an
-argument: the home reads that file and nothing else. `sheep home local
---faux` runs a scripted model that answers
-"ok" to everything: the plumbing, without a key.
+The `key:` line is the one thing you cannot do alone: ask the shepherd to
+export `ANTHROPIC_API_KEY` in your shell and run `sheep home local` again;
+it answers `key: held, in <dir>/.sheep/local/.dev.vars`. `sheep home
+local --faux` runs a scripted model that answers "ok" to everything: the
+plumbing, without a key.
 
 A `container:` line follows: with Docker on the machine the home rents
 one beside every cell and its sheep can clone, build, test, and push;
@@ -52,8 +51,8 @@ kennel it found, which home the config names, and whether it answers.
 `--home <url>` or `SHEEP_HOME` selects another home for one command.
 `sheep home deploy` puts this package's home on the shepherd's Cloudflare
 account, a container beside every cell: with `CLOUDFLARE_API_TOKEN` and
-`ANTHROPIC_API_KEY` in your shell it deploys, prints the address, and
-writes the kennel's config; without them it prints what it needs and
+`ANTHROPIC_API_KEY` in your shell it deploys and writes the kennel's
+config; without them it prints what it needs and
 costs, and makes nothing. `sheep home delete` ends that station after its
 name is typed at a terminal. `sheep home join <address>` is a second
 machine's way in: the station's token is one line of stdin, piped by the
@@ -63,11 +62,11 @@ shepherd, never an argument.
 
 The **kennel** is `.sheep/` at or above the working directory, found the
 way git finds `.git`, and `~/.sheep` when there is none. It
-holds this directory's config and local home, so a dog in each of several
-directories has its own sheep, token, and home; nothing is shared but the
-command. `sheep setup` makes one here, and in a git work tree appends
+holds this directory's config and local home, so each of several
+directories has its own sheep, token, and home, and nothing is shared but
+the command. `sheep setup` makes one here, and in a git work tree appends
 `.sheep/` to the `.gitignore` beside it, since the config holds a token.
-No variable moves it: `cd` is how you switch. If the command says
+`cd` is how you switch. If the command says
 `.sheep` is tracked, tell the shepherd a token is in their repository; do
 not fix it yourself.
 
@@ -79,11 +78,17 @@ stderr as `sheep: …` with exit 2.
 
 - `sheep new [--name <name>] [--pasture <name>] -- "<prompt>"` mints a
   sheep, prints `session <id>` on stderr, streams the reply on stdout, and
-  exits when the turn ends. With no prompt it opens pi's interactive
-  terminal, for a person; do not run it without one.
+  exits when the turn ends. With neither a prompt nor `--detach` it opens
+  pi's interactive terminal, for a person; do not run it so.
 - `sheep new --detach -- "<prompt>"` mints, sends, and returns before the
   first token, the id as the first line of stdout. The sheep works whether
   or not anyone is attached; this is how you start several at once.
+- `sheep new --detach` with no prompt mints and prints the id alone: a
+  sheep to address before its first prompt exists. It is idle and costs
+  nothing until asked; a pastured one is cloned and set up at its first
+  prompt, or the first verb that reads it (`status`, `log`, `wait`), not
+  at the mint. On `attach` or `-c`, `--detach` with no prompt is refused:
+  nothing to send.
 - `sheep -c -- "<prompt>"` is `attach` on the newest sheep.
 - `sheep attach <id> -- "<prompt>"` sends a prompt to a sheep and streams
   the reply. To a busy sheep the prompt is queued behind the running turn;
@@ -97,7 +102,7 @@ stderr as `sheep: …` with exit 2.
 - `sheep wait [--timeout <seconds>] <id>...` blocks until every named
   sheep is idle and prints each one's last assistant message, one line
   per sheep, `<id>\t<message>`. Exit 124 on timeout, with what finished.
-  Read several results in one call this way; do not poll.
+  Read several results in one call; do not poll.
 - `sheep abort <id>` stops the open turn and prints `<id>\taborted <op>`,
   or `<id>\tidle` with none.
 - `sheep rm <id>` ends a sheep and prints `<id>\tended`: its turn
@@ -111,27 +116,25 @@ stderr as `sheep: …` with exit 2.
 
 A sheep has pi's tools: `read`, `write`, and `edit` on a workspace in its
 cell, and `bash`, a shell with the usual text tools. With a container the
-shell has `git`, `node`, `pnpm`, and `python` too; without one it says so
-when asked.
+shell has `git`, `node`, `pnpm`, and `python` too.
 
 On a home with eyes a sheep sees what it wrote: `look <path>` in its
 shell renders a workspace page in a real Chromium and prints errors,
 console, and the accessibility tree beside a `look.png` it reads with
-`read`; the report is in `sheep log`. The local home has eyes, its first
-look fetching a Chrome; a station deployed before them says `eyes: no` in
-`sheep home` until `sheep home deploy` upgrades it.
+`read`; the report is in `sheep log`. The local home has eyes; an older
+station says `eyes: no` in `sheep home` until `sheep home deploy`
+upgrades it.
 
 With a container too, `look --serve 'npx vite --port $PORT --strictPort'
 /` runs that command with `PORT` set, renders the page its port serves,
-and stops it: a server lives for one look and no longer. The recipe for a
-frontend app is a skill in the repository,
+and stops it. The recipe for a frontend app is a skill in the repository,
 `docs/projects/serve/skills/frontend/SKILL.md`, for a pasture.
 
 ## Pastures: a herd on one tree
 
 A pasture is a shared tree a herd works on, with a repository behind it
-or none. A sheep born into a pasture sees the tree and what every sheep
-on that repository should know.
+or none; a sheep born into it sees the tree and what every sheep on that
+repository should know.
 
 - `sheep pasture new <name> [--repo <url> | --repo .] [--branch <branch>]`
   makes one and prints `<name>\t<repo>\t<branch>`. `--repo .` reads this
@@ -155,20 +158,18 @@ then `sheep wait` on all of them and read what came back. Name sheep
 (`--name docs`) so `sheep ls` reads. A sheep that goes wrong is aborted,
 not abandoned. Read `sheep log <id>` before deciding a sheep failed. A
 sheep you are finished with is ended with `sheep rm <id>` (`sheep export
-<id>` first if the transcript matters); a herd that only grows cannot be
-read. Keep the ids: every later verb names the sheep by them.
+<id>` first if the transcript matters). Keep the ids: every later verb
+names the sheep by them.
 
 ## What needs a person
-
-Three things:
 
 1. **A model key.** Ask the shepherd to `export ANTHROPIC_API_KEY`, then
    run `sheep home local` again. Never in the chat, never in a file.
 2. **An account for a deployed home.** The local home needs none; `sheep
    home deploy` says what it needs when the shepherd wants one.
 3. **A hand at a terminal.** `sheep new` or `sheep attach <id>` with no
-   prompt opens pi's interactive terminal on the sheep, from any machine
-   with the config; tell the shepherd the command and the id.
+   prompt opens pi's interactive terminal on the sheep; tell the shepherd
+   the command and the id.
 
 Ask for each in one sentence, saying what it unlocks, and go on with what
 does not need it.

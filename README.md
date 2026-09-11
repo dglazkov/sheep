@@ -78,7 +78,11 @@ Nothing is on npm. The first five minutes, as the dog walks them:
 
 3. `sheep new -- "What can you see in the workspace?"` mints a sheep and
    streams its reply. `sheep ls` lists it; `sheep status <id>` and
-   `sheep log <id>` say what it is doing and what it did.
+   `sheep log <id>` say what it is doing and what it did. `sheep new
+   --detach` with no prompt mints a sheep and prints its id alone, for a
+   task the dog has not composed yet: the sheep is idle and costs nothing
+   until something is asked of it, and one born into a pasture with a
+   repository is cloned and set up at its first prompt, not at the mint.
 
 4. `sheep attach <id> -- "And now?"` continues it. At your own terminal,
    `sheep attach <id>` opens pi's interactive terminal on the same sheep,
@@ -124,8 +128,10 @@ plus a few small commits, never a copy.
 What you get today:
 
 - `sheep new` mints a session at a **home** (a deployment) and opens pi's
-  terminal on it. `sheep attach <id>` from any other machine opens the same
-  session; two terminals can share one.
+  terminal on it; `sheep new --detach` mints one and prints its id, and
+  nothing else happens until something is asked of it. `sheep attach <id>`
+  from any other machine opens the same session; two terminals can share
+  one.
 - The agent has pi's four tools. `read`, `write`, and `edit` work on a
   workspace stored in the cell. `bash` runs a shell interpreter inside the
   cell with the usual text tools. On a home with no container there are no
@@ -244,6 +250,7 @@ sheep home join https://<worker>.<subdomain>.workers.dev < token.txt   # then sh
 
 ```sh
 sheep new [--name <name>] [-- <prompt>]   # a new session, pi's terminal attached
+sheep new [--name <name>] --detach        # mint a session and print its id alone; idle until something is asked of it
 sheep -c [-- <prompt>]                    # attach to the newest session
 sheep attach <id> [-- <prompt>]           # attach to a session; works from any machine with the config
 sheep ls                                  # sessions at the home
