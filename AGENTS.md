@@ -24,7 +24,10 @@ of minting: `sheep rm <id>` ends a sheep and releases everything it
 held, the pasture excepted. [Project mint](docs/projects/mint/design.md)
 makes minting and prompting two acts: `sheep new --detach` with no
 prompt mints a sheep and prints its id, and nothing else happens until
-something is asked of it. Setup and usage are in [README.md](README.md).
+something is asked of it. [Project earmark](docs/projects/earmark/design.md)
+gives one sheep a secret of its own: `sheep new --secret <NAME>`, the
+value on stdin, laid over its pasture's by name and ended with it.
+Setup and usage are in [README.md](README.md).
 Read a project's `phases.md` for where its work stands and what the next
 phase is; [docs/projects/README.md](docs/projects/README.md) lists them.
 `/conduct <project>` is how a phase is run: briefed to a subagent, proved

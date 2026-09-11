@@ -1,0 +1,135 @@
+# Earmark: implementation phases
+
+[`design.md`](design.md) is the argument; [`journey.md`](journey.md) is
+the acceptance suite. Each phase names the journey steps it closes, and
+a phase that claims a walk closes only when the walk was walked for
+real. The rules are lamb's ([../lamb/phases.md](../lamb/phases.md)),
+pen's ([../pen/phases.md](../pen/phases.md)), and collar's
+([../collar/phases.md](../collar/phases.md)): the cell's proofs run in
+workerd, never in Node; the fake container is what a cell test talks
+to; pi is a dependency; findings are one dated line of about forty
+words; `main` stays sources only and a phase's proof runs in a ring;
+steps marked **⚑ provision** create, change, or delete a cloud
+resource, spend money, or need a login, and are asked out loud first.
+`/conduct earmark` is the procedure. Phase citations name their project:
+`earmark phase 1`, never a bare "phase 1".
+
+**One rule for this project.** A sheep's value goes to that sheep's
+setup and that sheep's broker and nowhere else: a proof that finds it in
+a sibling's frame, a route's answer, a transcript, a log line, or a
+command's environment has found the bug, not a detail.
+
+---
+
+**Where we are: planned, 11 Sep 2026. Both phases NOT STARTED.** Next
+is earmark phase 0, a sheep's secret as rows in the Directory and the
+lay-over, proved in workerd. Nothing waits on a person until earmark
+phase 1's account ring, one ⚑ step.
+
+The order is dependency order. Phase 0 is the mechanism, which the
+verb's promise needs. Phase 1 is the verb, the names in `ls`, the docs,
+and the walk.
+
+**Deliberately open.** Postponed on purpose: setting or rotating a
+secret after the mint; a multi-line value; `sheep status` naming the
+secrets; per-sheep files in the pasture's tree. Never: a secret in the
+model's environment.
+
+---
+
+## Phase 0: The secret is a row
+
+**Closes:** journey 1 steps 1 to 6 and journey 2 steps 1 to 4, in the
+cell's terms, against the fake container; journey 3 step 4 as the
+home's refusal; nothing on the command line yet.
+
+**Work:** `packages/cell/src/directory.ts`: `session_secrets
+(session_id, name, value, PRIMARY KEY (session_id, name))`, created in
+the constructor; `create(name, pasture, secrets)` inserts the row and
+the secrets in one method with no await between; `SessionSummary`
+gains `secrets: string[]`, sorted names, on every summary `list`,
+`herd`, and `get` return; `secrets(id)` returns name to value, for the
+cell, with no route; `remove` deletes the secrets with the row.
+`packages/cell/src/index.ts`: `POST /sessions` takes `secrets` and
+refuses before the row, 400 and a sentence: a bad name, a value that is
+not a non-empty one-line string, a name but `GIT_TOKEN` with no pasture.
+`packages/cell/src/pen/broker.ts`: the sheep as the first source, in
+front of the pasture and the home (the pasture's minter gains it; a
+pastureless sheep's minter is the sheep's, then the home's), the log's
+`from this sheep`, the refusal naming every place looked.
+`packages/cell/src/cell.ts`: the boot hands the env a `SetupSecrets`
+that reads the pasture's object and the Directory at the run and lays
+the sheep's over the pasture's by name, `GIT_TOKEN` out of both; the
+lease's broker gets the Directory as the sheep's source. The env is
+unchanged. Tests: `packages/cell/test/earmark.test.ts` in the checkout
+ring, listed in `scripts/rings.mjs`, in `setup.test.ts`'s and
+`birth.test.ts`'s shape: two sheep in one pasture with a `setup.sh`,
+the pasture's `PROBE` and `NPM_TOKEN`, one sheep's own `PROBE`; the
+earmarked value in that sheep's setup `run` frames alone, the sibling's
+setup with the pasture's, `NPM_TOKEN` in both, no secret in any other
+frame; after the mint the cell's `sqlite_master` has no table; after
+`DELETE /s/<id>` the Directory has no secret for the id and the pasture's
+secrets are unchanged; two names carried; `GET /sessions` has the names
+and no value anywhere in its body. The broker in `broker.test.ts`: the
+three sources in order for a pastured sheep, two for a pastureless one,
+the log line, the refusal; the birth's clone handed the sheep's token
+through the fake's credential frame. The route's refusals, journey 3
+step 4's among them, each leaving `GET /sessions` unchanged.
+
+**Not this phase:** No CLI change, no doc outside the project, no walk
+on a home.
+
+**Proof:** `pnpm test` exits 0 with the new file in the checkout ring
+and the rings guard green; `pnpm --filter @sheep/cell typecheck` exits
+0. Falsified by two mutations, each failing the new test and put back:
+the pasture's value laid over the sheep's, and `remove` leaving the
+secrets. **⚑** none.
+
+**Status: NOT STARTED.**
+
+**Findings:**
+
+## Phase 1: The verb and the walk
+
+**Closes:** journeys 1, 3, and 4 in full; journey 2 steps 1 and 2 as
+walked on the station.
+
+**Work:** `packages/cli/src/cli.ts`: `--secret <NAME>`, repeatable, on
+`new`; the values from stdin, one line per name in order, read before
+the mint; the refusals of journey 3 steps 1 to 6 in the design's
+sentences, exit 2, nothing asked of the home; `ls`'s sixth column; the
+usage's `new`, `ls`, and `--json` lines. `packages/cli/src/home.ts`:
+`create` sends `secrets`. `packages/cli/agent-guide.md`, `README.md`:
+`--secret` beside `sheep pasture secret set`, what lies over what, the
+end ending it, the names in `ls`; the guide stays within the word cap
+its test counts, cut from elsewhere if it must. `packages/cli/test/
+journey5.test.ts`: journey 1 steps 1, 2, 5, and 6 on a pasture with no
+repository (the home ring has no container), and journey 3 steps 2 to
+6, each refusal leaving `sheep ls --json` unchanged. A unit case for
+journey 3 step 1, stdin a terminal. `scripts/hermetic.mjs`: the account
+ring's new step, `s1`, beside a8 and skipped as a8 is without
+`LAMB_PLAYGROUND_TOKEN`: a pasture on the scratch repository with no
+`GIT_TOKEN`; one sheep minted with `--secret GIT_TOKEN`, the token on
+stdin, and one without; each scripted by the faux provider to commit
+and push a branch; the earmarked sheep's branch seen on GitHub
+anonymously, the sibling's push refused in the broker's sentence; the
+token absent from every transcript, export, and `ps` sample the step
+takes; both sheep added to those n1 ends, the branch deleted after.
+
+**Not this phase:** Nothing open above.
+
+**Proof:** `pnpm test` exits 0 across all three inner rings, the home
+ring's journey 5 carrying the steps; `pnpm --filter @sheep/cli
+typecheck` exits 0. Then the walk, journey 4 step 1: the local home
+with Docker (`sheep home local`) and a real model, from a scratch
+kennel, a pasture on a public repository with a `setup.sh` that writes
+a short hash of `$PROBE` beside the checkout, the pasture's `PROBE` and
+one sheep's own; both sheep asked to print the file and `env | grep -c
+PROBE`; the hashes recorded. **⚑** journey 4 step 2: `pnpm hermetic
+--ring account --yes <sha>` with `LAMB_PLAYGROUND_TOKEN` in the
+shepherd's environment, a station deployed and deleted on the
+shepherd's account, a few container minutes and one deploy.
+
+**Status: NOT STARTED.**
+
+**Findings:**
