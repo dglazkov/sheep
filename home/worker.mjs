@@ -31527,6 +31527,44 @@ var RowsOrigin = class {
     return this.files.exists(index3) ? index3 : void 0;
   }
 };
+var HOP_HEADERS = /* @__PURE__ */ new Set(["connection", "keep-alive", "transfer-encoding", "content-length", "content-encoding", "upgrade", "proxy-connection"]);
+var NOT_REACHED_STATUS = 502;
+var ForwardOrigin = class {
+  constructor(forward, port) {
+    this.forward = forward;
+    this.port = port;
+  }
+  forward;
+  port;
+  static {
+    __name(this, "ForwardOrigin");
+  }
+  start(path4) {
+    if (path4 === "" || path4 === "/") return "/";
+    return path4.startsWith("/") ? path4 : `/${path4}`;
+  }
+  async answer(request) {
+    const response = await this.forward.fetch({
+      port: this.port,
+      method: request.method,
+      url: request.url,
+      headers: request.headers,
+      ...request.body === void 0 ? {} : { body: request.body }
+    });
+    return served(response);
+  }
+};
+function served(response) {
+  if (response.status === 0) {
+    return { status: NOT_REACHED_STATUS, headers: { "content-type": "text/plain; charset=utf-8" }, body: response.body };
+  }
+  const headers = {};
+  for (const [name, value3] of Object.entries(response.headers)) {
+    if (!HOP_HEADERS.has(name.toLowerCase())) headers[name] = value3;
+  }
+  return { status: response.status, headers, body: response.body };
+}
+__name(served, "served");
 function pathnameOf(url) {
   const query = url.indexOf("?");
   return query < 0 ? url : url.slice(0, query);
@@ -31596,9 +31634,12 @@ function prunedChildren(children, ancestor) {
 __name(prunedChildren, "prunedChildren");
 var TREE_LINES = 200;
 var NONE = "none";
+var SERVER_LINES = 40;
 function report(seen) {
   const sections = [
     section("errors", seen.errors),
+    // Between `errors` and `console`, and only for a served look: what the server itself said while the page rendered.
+    ...seen.server === void 0 ? [] : [section("server", seen.server.output.slice(-SERVER_LINES))],
     section(
       "console",
       seen.console.map((line) => `${line.level}: ${line.text}`)
@@ -31611,7 +31652,10 @@ ${closing(seen)}
 }
 __name(report, "report");
 function closing(seen) {
-  return `wrote ${seen.out} ${seen.width}x${seen.height} in ${(seen.ms / 1e3).toFixed(1)}s`;
+  const wrote = `wrote ${seen.out} ${seen.width}x${seen.height} in ${(seen.ms / 1e3).toFixed(1)}s`;
+  const server = seen.server;
+  if (server === void 0) return wrote;
+  return `${wrote}, served by \`${server.command}\` on ${server.port}, ready in ${(server.readyMs / 1e3).toFixed(1)}s`;
 }
 __name(closing, "closing");
 function section(name, lines) {
@@ -116998,6 +117042,19 @@ __name(messageBytes, "messageBytes");
 import { posix as posix4 } from "node:path";
 
 // src/pen/forward.ts
+var ForwardInterrupted = class extends Error {
+  static {
+    __name(this, "ForwardInterrupted");
+  }
+  code;
+  reason;
+  constructor(code, reason) {
+    super(`the container went away during a look (${code}${reason ? `: ${reason}` : ""})`);
+    this.name = "ForwardInterrupted";
+    this.code = code;
+    this.reason = reason;
+  }
+};
 var ForwardProtocolError = class extends Error {
   static {
     __name(this, "ForwardProtocolError");
@@ -117033,6 +117090,155 @@ function binaryGuard(socket) {
   return fresh;
 }
 __name(binaryGuard, "binaryGuard");
+var Forward = class {
+  static {
+    __name(this, "Forward");
+  }
+  socket;
+  guard;
+  nextId;
+  pending = /* @__PURE__ */ new Map();
+  /** The `response` whose bytes are next, by id; `null` for bytes nobody is waiting for, which are read and dropped. */
+  expecting = null;
+  interrupted = null;
+  tail = Promise.resolve();
+  constructor(socket, options = {}) {
+    this.socket = socket;
+    this.guard = binaryGuard(socket);
+    let counter = 0;
+    this.nextId = options.nextId ?? (() => `fetch-${++counter}`);
+    socket.addEventListener("message", (event) => {
+      this.tail = this.tail.then(() => this.receive(event.data)).catch(() => {
+      });
+    });
+    const close = /* @__PURE__ */ __name((code, reason) => {
+      if (this.interrupted !== null) return;
+      this.interrupted = new ForwardInterrupted(code, reason);
+      this.failAll(this.interrupted);
+    }, "close");
+    socket.addEventListener("close", (event) => close(event.code, event.reason));
+    socket.addEventListener("error", (event) => close(1006, String(event.message ?? "socket error")));
+  }
+  /**
+   * One request forwarded. The frame and the body's bytes go back to back
+   * with nothing awaited between them, so the bytes are the next message
+   * after their frame; the answer comes back the same way, and resolves
+   * this. A container that goes away rejects it; a server that is not
+   * there answers it with status `0`, which is a response, not a failure,
+   * and the caller decides what to make of it.
+   */
+  fetch(request) {
+    return new Promise((resolve2, reject) => {
+      if (this.interrupted !== null) {
+        reject(this.interrupted);
+        return;
+      }
+      const id2 = this.nextId();
+      this.pending.set(id2, { resolve: resolve2, reject, frame: null });
+      const body = request.body;
+      try {
+        this.send({
+          type: "fetch",
+          id: id2,
+          port: request.port,
+          method: request.method,
+          url: request.url,
+          headers: request.headers,
+          size: body === void 0 ? 0 : body.byteLength
+        });
+        if (body !== void 0 && body.byteLength > 0) this.sendRaw(body);
+      } catch (error) {
+        this.pending.delete(id2);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+  }
+  send(frame) {
+    this.sendRaw(encodeFrame2(frame));
+  }
+  /** A send that fails is a socket that is gone: every request out is over, whatever the runtime's wording. */
+  sendRaw(data) {
+    if (this.interrupted !== null) throw this.interrupted;
+    try {
+      this.socket.send(data);
+    } catch (error) {
+      this.interrupted = new ForwardInterrupted(1006, error instanceof Error ? error.message : String(error));
+      this.failAll(this.interrupted);
+      throw this.interrupted;
+    }
+  }
+  async receive(data) {
+    if (typeof data === "string") {
+      let frame;
+      try {
+        frame = decodeFrame(data);
+      } catch {
+        return;
+      }
+      if (frame.type !== "response") return;
+      this.answer(frame);
+      return;
+    }
+    const announced = this.expecting;
+    if (announced === null) return;
+    this.expecting = null;
+    this.guard.release();
+    const bytes = await messageBytes(data);
+    const id2 = announced.id;
+    if (id2 === null) return;
+    const pending = this.pending.get(id2);
+    if (pending === void 0 || pending.frame === null) return;
+    this.pending.delete(id2);
+    if (bytes === void 0) {
+      pending.reject(new ForwardProtocolError("a binary message the cell cannot read"));
+      return;
+    }
+    if (bytes.byteLength !== announced.size) {
+      pending.reject(new ForwardProtocolError(`response ${announced.id} announced ${announced.size} bytes and carried ${bytes.byteLength}`));
+      return;
+    }
+    pending.resolve({ status: pending.frame.status, headers: pending.frame.headers, body: bytes });
+  }
+  /**
+   * A `response` frame. With no bytes it settles the request now; with
+   * bytes it books the binary message that follows, and the guard is
+   * where a sync's blob and a look's body meeting on one socket is caught.
+   */
+  answer(frame) {
+    const pending = this.pending.get(frame.id);
+    if (frame.size === 0) {
+      if (pending === void 0) return;
+      this.pending.delete(frame.id);
+      pending.resolve({ status: frame.status, headers: frame.headers, body: EMPTY3 });
+      return;
+    }
+    try {
+      this.guard.announce(`response ${frame.id}`);
+    } catch (error) {
+      const failure = error instanceof Error ? error : new Error(String(error));
+      if (pending !== void 0) {
+        this.pending.delete(frame.id);
+        pending.reject(failure);
+      }
+      return;
+    }
+    if (pending === void 0) {
+      this.expecting = { id: null, size: frame.size };
+      return;
+    }
+    pending.frame = frame;
+    this.expecting = { id: frame.id, size: frame.size };
+  }
+  failAll(error) {
+    const pending = [...this.pending.values()];
+    this.pending.clear();
+    if (this.expecting !== null) {
+      this.expecting = null;
+      this.guard.release();
+    }
+    for (const one of pending) one.reject(error);
+  }
+};
 var EMPTY3 = new Uint8Array(0);
 
 // src/pen/checkout.ts
@@ -117983,7 +118189,10 @@ var CellFs = class {
 import { posix as posix7 } from "node:path";
 var LOOK_PROGRAM = "look";
 var LOOK_PROGRAMS = /* @__PURE__ */ new Set([LOOK_PROGRAM]);
-var USAGE = "usage: look <path> [--root <dir>] [--click <selector>]... [--fill <selector> <text>]... [--viewport <w>x<h>] [--full] [--out <file>]";
+var DEFAULT_PORT = 5173;
+var TRAILING = "[--click <selector>]... [--fill <selector> <text>]... [--viewport <w>x<h>] [--full] [--out <file>]";
+var USAGE = [`usage: look <path> [--root <dir>] ${TRAILING}`, `       look --serve '<command>' [--port <n>] [<path>] ${TRAILING}`].join("\n");
+var SERVE_NEEDS_CONTAINER = "--serve needs a container; this home has none";
 function fromCwd(path4, cwd) {
   return posix7.isAbsolute(path4) ? path4 : posix7.join(cwd, path4);
 }
@@ -117994,6 +118203,11 @@ function resolvePagePath(path4, cwd, root2) {
   return resolved === root2 || resolved.startsWith(`${root2}/`) ? resolved : posix7.join(root2, path4);
 }
 __name(resolvePagePath, "resolvePagePath");
+function serverPath(path4) {
+  if (path4 === void 0 || path4 === "") return "/";
+  return path4.startsWith("/") ? path4 : `/${path4}`;
+}
+__name(serverPath, "serverPath");
 function parseViewport(text) {
   const match2 = /^(\d+)x(\d+)$/.exec(text);
   if (match2 === null) return void 0;
@@ -118002,9 +118216,17 @@ function parseViewport(text) {
   return width > 0 && height > 0 ? { width, height } : void 0;
 }
 __name(parseViewport, "parseViewport");
+function parsePort(text) {
+  if (!/^\d+$/.test(text)) return void 0;
+  const port = Number(text);
+  return port > 0 && port < 65536 ? port : void 0;
+}
+__name(parsePort, "parsePort");
 function parseLookArgs(args, cwd) {
   let path4;
   let root2;
+  let serve;
+  let port;
   let viewport;
   let full = false;
   let out;
@@ -118012,6 +118234,19 @@ function parseLookArgs(args, cwd) {
   for (let index3 = 0; index3 < args.length; index3++) {
     const arg = args[index3];
     switch (arg) {
+      case "--serve": {
+        const command = args[++index3];
+        if (command === void 0) return void 0;
+        serve = command;
+        break;
+      }
+      case "--port": {
+        const number = args[++index3];
+        if (number === void 0) return void 0;
+        port = parsePort(number);
+        if (port === void 0) return void 0;
+        break;
+      }
       case "--root": {
         const dir = args[++index3];
         if (dir === void 0) return void 0;
@@ -118052,17 +118287,18 @@ function parseLookArgs(args, cwd) {
         path4 = arg;
     }
   }
-  if (path4 === void 0) return void 0;
+  if (serve !== void 0 && root2 !== void 0) return void 0;
+  if (serve === void 0 && (port !== void 0 || path4 === void 0)) return void 0;
+  const rest = {
+    ...actions.length === 0 ? {} : { actions },
+    ...viewport === void 0 ? {} : { viewport },
+    ...full ? { full } : {},
+    out: out ?? DEFAULT_OUT
+  };
   return {
-    request: {
-      path: resolvePagePath(path4, cwd, root2),
-      ...root2 === void 0 ? {} : { root: root2 },
-      ...actions.length === 0 ? {} : { actions },
-      ...viewport === void 0 ? {} : { viewport },
-      ...full ? { full } : {},
-      out: out ?? DEFAULT_OUT
-    },
-    outPath: fromCwd(out ?? DEFAULT_OUT, cwd)
+    request: serve === void 0 ? { path: resolvePagePath(path4, cwd, root2), ...root2 === void 0 ? {} : { root: root2 }, ...rest } : { path: serverPath(path4), ...rest },
+    outPath: fromCwd(out ?? DEFAULT_OUT, cwd),
+    ...serve === void 0 ? {} : { serve: { command: serve, port: port ?? DEFAULT_PORT } }
   };
 }
 __name(parseLookArgs, "parseLookArgs");
@@ -118073,13 +118309,27 @@ __name(messageOf, "messageOf");
 var done = /* @__PURE__ */ __name((stdout) => ({ stdout, stderr: "", exitCode: 0 }), "done");
 var failed = /* @__PURE__ */ __name((stderr, exitCode = 1) => ({ stdout: "", stderr: `${stderr}
 `, exitCode }), "failed");
-function lookCommand(eyes, files) {
+function lookCommand(eyes, files, rental) {
   return Vv(LOOK_PROGRAM, async (args, ctx) => {
     const parsed = parseLookArgs(args, ctx.cwd);
     if (parsed === void 0) return failed(USAGE, 2);
+    const { serve } = parsed;
     let result;
+    let server;
+    let servedMs;
     try {
-      result = await eyes.look(parsed.request, new RowsOrigin(files, normalizePath(parsed.request.root ?? WORKSPACE_ROOT)));
+      if (serve === void 0) {
+        result = await eyes.look(parsed.request, new RowsOrigin(files, normalizePath(parsed.request.root ?? WORKSPACE_ROOT)));
+      } else {
+        if (rental === void 0) return failed(`look: ${SERVE_NEEDS_CONTAINER}`);
+        const served2 = await rental.rentServer(serve.command, serve.port, ctx.cwd, (origin) => eyes.look(parsed.request, origin), ctx.signal);
+        if (served2.value === void 0 || served2.readyMs === void 0 || served2.totalMs === void 0) {
+          return failed([`look: ${served2.error ?? "the server did not answer"}`, ...served2.output].join("\n"));
+        }
+        result = served2.value;
+        server = { command: serve.command, port: serve.port, readyMs: served2.readyMs, output: served2.output };
+        servedMs = served2.totalMs;
+      }
     } catch (error) {
       return failed(`look: ${messageOf(error).split("\n")[0]}`);
     }
@@ -118088,7 +118338,7 @@ function lookCommand(eyes, files) {
     } catch (error) {
       return failed(`look: ${parsed.outPath}: ${messageOf(error).split("\n")[0]}`);
     }
-    return done(result.report);
+    return done(server === void 0 || servedMs === void 0 ? result.report : report({ ...result.seen, ms: servedMs, server }));
   });
 }
 __name(lookCommand, "lookCommand");
@@ -118495,6 +118745,18 @@ function setupFailedAfterLine(exit) {
   return `setup.sh failed (exit ${exit}) after the clone:`;
 }
 __name(setupFailedAfterLine, "setupFailedAfterLine");
+var SERVE_READY_MS = 3e4;
+var SERVE_POLL_MS = 250;
+var SERVE_KILL_REASON = "the look is over";
+var SERVE_UNREADY_KILL_REASON = "the server never answered";
+function serverEndedFirst(end, port) {
+  return `the server ${"exit" in end ? `exited ${end.exit}` : `was killed (${end.killed})`} before answering on ${port}`;
+}
+__name(serverEndedFirst, "serverEndedFirst");
+function serverNeverAnswered(port, readyMs) {
+  return `the server did not answer on ${port} within ${Math.round(readyMs / 1e3)} s`;
+}
+__name(serverNeverAnswered, "serverNeverAnswered");
 var EXECUTION_LIMITS = {
   maxCommandCount: 2e5,
   maxLoopIterations: 1e5,
@@ -118560,6 +118822,7 @@ var CellExecutionEnv = class _CellExecutionEnv {
   containerUp;
   isolate;
   killTimeoutMs;
+  serveReadyMs;
   /** The record for the container socket most recently rented; one per socket, so per container. */
   lease;
   runs = 0;
@@ -118577,6 +118840,7 @@ var CellExecutionEnv = class _CellExecutionEnv {
     this.containerUp = options.containerUp;
     this.isolate = options.isolate;
     this.killTimeoutMs = options.killTimeoutMs;
+    this.serveReadyMs = options.serveReadyMs ?? SERVE_READY_MS;
     this.shellEnv = {
       HOME: WORKSPACE_ROOT,
       PATH: "/usr/local/bin:/usr/bin:/bin",
@@ -118860,7 +119124,7 @@ Cannot execute bash commands.`));
     const program = this.pastureProgram;
     const customCommands = [];
     if (program !== void 0 && fs4.pasture !== void 0) customCommands.push(pastureCommand(program, fs4.pasture));
-    if (this.eyes !== void 0) customCommands.push(lookCommand(this.eyes, this.files));
+    if (this.eyes !== void 0) customCommands.push(lookCommand(this.eyes, this.files, this.container === void 0 ? void 0 : this));
     const bash = new Hp({
       fs: fs4,
       cwd,
@@ -118942,10 +119206,22 @@ Cannot execute bash commands.`));
     if (signal?.aborted) return { full: output, outcome: { error: new ExecutionError("aborted", "aborted") } };
     return { full: output, outcome: { exitCode: result.exitCode } };
   }
-  /** The record for this socket, made once per socket: its checkout, with the pasture's tree as the manifest's second root (pasture phase 3), and whether setup ran on it (pasture phase 4). */
+  /**
+   * The record for this socket, made once per socket: its checkout, with
+   * the pasture's tree as the manifest's second root (pasture phase 3),
+   * its forward (serve phase 1), and whether setup ran on it (pasture
+   * phase 4). The forward is made here even on a home whose sheep never
+   * takes a served look: it is one listener on a socket that already has
+   * two, and it answers nothing that is not its own.
+   */
   leaseFor(socket) {
     if (this.lease?.socket !== socket) {
-      this.lease = { socket, checkout: new Checkout(socket, this.files, this.pasture === void 0 ? {} : { pasture: this.pasture }), warmed: false };
+      this.lease = {
+        socket,
+        checkout: new Checkout(socket, this.files, this.pasture === void 0 ? {} : { pasture: this.pasture }),
+        forward: new Forward(socket),
+        warmed: false
+      };
     }
     return this.lease;
   }
@@ -119075,6 +119351,149 @@ Cannot execute bash commands.`));
     }
   }
   /**
+   * Serve phase 1's rental: the cell's side of a served look. Rent, sync
+   * in, setup, start the command on the container's lane with `PORT` in
+   * its environment, wait for the port to answer through the forward,
+   * hand `during` an origin over that forward, and stop the server.
+   *
+   * It is `runInContainer`'s sibling, and differs in the one way that
+   * decides the rest: the run is not awaited to its end before the work
+   * happens. The look happens *while* the command runs, so the run is
+   * started and held, the poll and the look race against its ending, and
+   * the kill is in a `finally`. That is this project's one rule — a
+   * server lives for one look and no longer — and a kill written at each
+   * return is a kill that will be forgotten at the next one. Every path
+   * out of here goes through that `finally`: the happy one, a run that
+   * exits first, a port that never answers, an abort, a `LookError` from
+   * the eyes, a browser that could not be had, a throw from anywhere in
+   * `during`.
+   *
+   * The two endings the design names come back rather than thrown, since
+   * each carries the tail of what the command printed and the program
+   * prints the pair. Everything else — no container, a spent budget, a
+   * sync-in that failed — is thrown, and the program makes it one line.
+   */
+  async rentServer(command, port, cwd, during, signal) {
+    const container = this.container;
+    if (container === void 0) throw new Error(NO_CONTAINER_NOTICE);
+    const home = await this.homeNow();
+    if (!hasContainer(home)) throw new Error(BUDGET_SPENT_NOTICE);
+    let socket;
+    try {
+      socket = await container.rent();
+    } catch (error) {
+      throw new Error(`no container could be rented: ${messageOf3(error)}`);
+    }
+    const lease = this.leaseFor(socket);
+    const { checkout, forward } = lease;
+    const tail = new ServerTail();
+    try {
+      let tree;
+      try {
+        tree = await checkout.syncIn();
+      } catch (error) {
+        throw new Error(error instanceof CheckoutInterrupted ? error.message : `the sync-in failed: ${messageOf3(error)}`);
+      }
+      const setup = new OutputCapture({ limits: { maxBytes: 16 * 1024, maxLines: SERVER_LINES, retain: "tail" } }, BACKGROUND_CONTEXT, { onError: /* @__PURE__ */ __name(() => {
+      }, "onError") });
+      try {
+        const warmed = await this.warm(lease, tree, signal, setup, setupFailedLine);
+        if (!warmed.skipped && warmed.failed !== void 0) {
+          setup.finish();
+          const error = "exit" in warmed.end ? setupFailedLine(warmed.end.exit) : warmed.end.error;
+          const lines = splitLines4(setup.snapshot().text);
+          if (lines[0] === error) lines.shift();
+          return { output: lines.slice(-SERVER_LINES), error };
+        }
+      } finally {
+        setup.dispose();
+      }
+      const { PATH: _path, HOME: _home, ...runEnv } = this.shellEnv;
+      const id2 = `run-${++this.runs}`;
+      const stream3 = /* @__PURE__ */ __name((data) => tail.push(data), "stream");
+      const run = new ContainerRun(
+        socket,
+        { id: id2, command, cwd, env: { ...runEnv, PWD: cwd, PORT: String(port) } },
+        { stdout: stream3, stderr: stream3 },
+        this.killTimeoutMs === void 0 ? {} : { killTimeoutMs: this.killTimeoutMs }
+      );
+      const onAbort = /* @__PURE__ */ __name(() => run.kill("aborted"), "onAbort");
+      signal?.addEventListener("abort", onAbort, { once: true });
+      let end;
+      let broke;
+      const started = Date.now();
+      const running = run.start().then(
+        (settled) => {
+          end = settled;
+          console.info(`[serve] run ${id2} ${"exit" in settled ? `exit ${settled.exit}` : `killed (${settled.killed})`} after ${Date.now() - started} ms`);
+        },
+        (error) => {
+          broke = error instanceof Error ? error : new Error(String(error));
+        }
+      );
+      let stopped = false;
+      const stop = /* @__PURE__ */ __name(async (reason) => {
+        if (stopped) return;
+        stopped = true;
+        signal?.removeEventListener("abort", onAbort);
+        run.kill(reason);
+        await running;
+        if (broke !== void 0) {
+          if (broke instanceof KillUnanswered) container.discard?.(broke.reason);
+          return;
+        }
+        try {
+          for (const entry of await checkout.syncOut(id2)) tail.push(`pen: ${entry.path} (${entry.size} bytes) is over the per-file limit and was not synced
+`);
+        } catch (error) {
+          tail.push(`pen: the sync-out after the server failed: ${messageOf3(error)}
+`);
+        }
+      }, "stop");
+      try {
+        const readyMs = await this.awaitPort(forward, port, started, () => end !== void 0 || broke !== void 0, signal);
+        if (readyMs === void 0) {
+          const why = end !== void 0 ? serverEndedFirst(end, port) : broke?.message ?? serverNeverAnswered(port, this.serveReadyMs);
+          await stop(SERVE_UNREADY_KILL_REASON);
+          return { output: tail.take(), error: why };
+        }
+        const value3 = await during(new ForwardOrigin(forward, port));
+        await stop(SERVE_KILL_REASON);
+        return { value: value3, output: tail.take(), readyMs, totalMs: Date.now() - started };
+      } finally {
+        await stop(SERVE_KILL_REASON);
+      }
+    } finally {
+      container.idle();
+    }
+  }
+  /**
+   * The readiness poll: `HEAD /` through the forward every quarter second
+   * until the port answers with any status at all, the run ends, the look
+   * is aborted, or the wait runs out. Status `0` is the agent saying it
+   * could not connect, which here means "not yet"; it is read off the
+   * forward directly rather than through `served()`, whose business is
+   * giving a browser a status it will take and which turns `0` into
+   * `502`. `undefined` means the port never answered, and the caller
+   * reads the run's own ending to say which of the two happened.
+   */
+  async awaitPort(forward, port, started, over, signal) {
+    const done3 = /* @__PURE__ */ __name(() => over() || signal?.aborted === true, "done");
+    while (Date.now() - started < this.serveReadyMs) {
+      if (done3()) return void 0;
+      let answer;
+      try {
+        answer = await forward.fetch({ port, method: "HEAD", url: "/", headers: {} });
+      } catch {
+        return void 0;
+      }
+      if (answer.status !== 0) return Date.now() - started;
+      if (done3()) return void 0;
+      await new Promise((resolve2) => setTimeout(resolve2, SERVE_POLL_MS));
+    }
+    return void 0;
+  }
+  /**
    * One `run` frame on the socket: sent, its output handed on as it
    * arrives, settled on `exit` or `killed`. A timeout or an abort kills
    * it; the container ignoring the kill past its deadline, or going away,
@@ -119196,6 +119615,32 @@ function never(resolved) {
   return Promise.reject(readOnly("open", resolved));
 }
 __name(never, "never");
+var TAIL_LINE_BYTES = 8 * 1024;
+var ServerTail = class {
+  static {
+    __name(this, "ServerTail");
+  }
+  lines = [];
+  partial = "";
+  push(data) {
+    const parts = (this.partial + data).split("\n");
+    this.partial = parts.pop() ?? "";
+    if (this.partial.length > TAIL_LINE_BYTES) this.partial = this.partial.slice(-TAIL_LINE_BYTES);
+    for (const line of parts) this.lines.push(line);
+    if (this.lines.length > SERVER_LINES) this.lines.splice(0, this.lines.length - SERVER_LINES);
+  }
+  /** The tail as the report's section takes it: the whole lines, and the partial one when the server was cut off mid-line. */
+  take() {
+    const all = this.partial === "" ? this.lines : [...this.lines, this.partial];
+    return all.slice(-SERVER_LINES);
+  }
+};
+function splitLines4(text) {
+  const lines = text.split("\n");
+  if (lines.at(-1) === "") lines.pop();
+  return lines;
+}
+__name(splitLines4, "splitLines");
 
 // src/birth.ts
 var BIRTH_ENTRY = "birth";
@@ -121104,12 +121549,17 @@ function systemPrompt(home) {
     "Working directory: /workspace",
     "Use the read, write, edit, and bash tools to inspect and change files.",
     shellSystemPromptLine(home),
-    ...home.eyes === true ? [EYES_PARAGRAPH] : [],
+    ...home.eyes === true ? [eyesParagraph(home)] : [],
     "Keep answers short and technical."
   ].join("\n");
 }
 __name(systemPrompt, "systemPrompt");
+function eyesParagraph(home) {
+  return home.container ? `${EYES_PARAGRAPH} ${SERVE_SENTENCES}` : EYES_PARAGRAPH;
+}
+__name(eyesParagraph, "eyesParagraph");
 var EYES_PARAGRAPH = "This home has eyes: `look <path>` in the bash tool renders a workspace page in a real browser and prints what the page said while it rendered: errors (uncaught exceptions and any request that failed), console, and the accessibility tree, then a closing line naming the PNG it wrote. The path is a workspace file, relative to the working directory, and a directory means its index.html; the page loads at http://sheep.invalid/<path relative to the root>, so relative stylesheets, module scripts, images, and a fetch of the page's own JSON resolve to the files beside it, and an absolute /assets/x.js resolves from the root. The flags: `--root <dir>` mounts a directory at / (a relative path is then taken under it), `--click <selector>` and `--fill <selector> <text>` act in the order given once the page is idle, `--viewport <w>x<h>` (1024x768 unless said), `--full` captures the whole scroll height, and `--out <file>` names the PNG (look.png in the working directory unless said, overwritten). Read the PNG with the read tool to see the picture. dist, build, node_modules, and anything in .gitignore stay in the container and never sync back to the workspace, so a build you want to look at goes to a directory that syncs: `vite build --outDir site`, then `look --root site index.html`. There is no --script; the flags are all there is.";
+var SERVE_SENTENCES = "This home also has a container, so `look --serve '<command>' [--port <n>] [<path>]` runs that command in the container, renders the page its port serves, and stops it again: `look --serve 'npx vite --port $PORT --strictPort' /` from the app's directory. PORT is set in the command's environment to the port the look expects, 5173 unless --port says another, and the $PORT in your line reaches the container unexpanded, so the container's own bash expands it; a framework that reads PORT by itself needs no flag at all. With --serve the path is a path on the server, / unless you say another, not a workspace file, so --root does not combine with it and a look at a built site is still `look --root site index.html`. The report gains a server section between errors and console, the last forty lines the command printed, and the closing line says what served, on which port, and how long the port took to answer. The server is started for the one look and killed when the report is printed: nothing is left running, the next line in the container finds the lane free, and a server you put in the background yourself does not survive its line. A page served by Vite logs `[vite] failed to connect to websocket` once; the hot-reload socket is not forwarded, so that line is expected on a served page and is not a bug to go fixing.";
 async function cellSystemPrompt(home, pasture) {
   const own = systemPrompt(home);
   if (pasture === void 0) return own;
@@ -123997,13 +124447,13 @@ __name(admitted, "admitted");
 var CHECKOUT_BUILD = { commit: "0.0.0-checkout", builtAt: null };
 function homeImage() {
   if (false) return null;
-  return true ? "docker.io/dglazkov2/sheep-pen@sha256:485ef4b4ac0ab3d85c4e5d7fe3fcfb840f6f2f1e37637e9a8a265725b2b234c9" : null;
+  return true ? "docker.io/dglazkov2/sheep-pen@sha256:dc7ab9f9a4f26482c50ccf8eaaf24b35f30639767b85a1710c07c4ee1bcbf810" : null;
 }
 __name(homeImage, "homeImage");
 function homeBuild() {
   if (false) return CHECKOUT_BUILD;
   try {
-    const parsed = JSON.parse('{"commit":"3345f89","builtAt":"2026-09-10T09:53:50Z"}');
+    const parsed = JSON.parse('{"commit":"601b4df","builtAt":"2026-09-11T01:03:40Z"}');
     if (typeof parsed.commit === "string" && parsed.commit !== "") return { commit: parsed.commit, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
   } catch {
   }
