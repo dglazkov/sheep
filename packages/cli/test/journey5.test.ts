@@ -10,8 +10,18 @@
  * mid-turn, `types` ended with `--json`, then an id the home lacks. This
  * home has no container (no Docker in the pool's `wrangler dev`), so the
  * mid-turn end's assertion is `aborted: true`, not a container.
+ *
+ * Earmark phase 1: a fourth case walks earmark's journey 1 steps 1, 2, 5,
+ * and 6 on a pasture with no repository (`sheep new --secret`, the names
+ * in `sheep ls`, the end), and its journey 3 steps 2 to 6, each refusal
+ * leaving `sheep ls --json` as it was; no value in any output, the
+ * transcript, or the export. Step 1, stdin a terminal, is
+ * `earmark.test.ts`'s, where `script` lends a terminal.
  */
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import { SECRET_AT_MINT, SECRET_NEEDS_STDIN } from "../src/earmark.js";
 import { type Result, runSheep, scriptFaux, startHome, stopHome } from "./local-home.js";
 
 const TOKEN = "journey-5-token";
@@ -268,8 +278,8 @@ describe.skipIf(typeof home === "string")("journey 5: a dog and its flock, throu
     // Step 2: listed idle with no task and no name; --json has task: null.
     const ls = await sheep("ls");
     expect(ls.code).toBe(0);
-    expect(ls.stdout).toMatch(new RegExp(`^${id}\\t\\t\\d{4}-[^\\t]+\\tidle\\t$`, "m"));
-    expect(ls.stdout).toMatch(new RegExp(`^${spare}\\tspare\\t\\d{4}-[^\\t]+\\tidle\\t$`, "m"));
+    expect(ls.stdout).toMatch(new RegExp(`^${id}\\t\\t\\d{4}-[^\\t]+\\tidle\\t\\t$`, "m"));
+    expect(ls.stdout).toMatch(new RegExp(`^${spare}\\tspare\\t\\d{4}-[^\\t]+\\tidle\\t\\t$`, "m"));
     const rows = JSON.parse((await sheep("ls", "--json")).stdout) as Array<{ id: string; state: string; task: string | null; pasture: string | null }>;
     expect(rows.find((row) => row.id === id)).toMatchObject({ state: "idle", task: null, pasture: null });
     expect(rows.find((row) => row.id === spare)).toMatchObject({ state: "idle", task: null });
@@ -313,5 +323,110 @@ describe.skipIf(typeof home === "string")("journey 5: a dog and its flock, throu
     const detached = await sheep("attach", id, "--detach", "--", "and again");
     expect(detached).toEqual({ code: 0, stdout: `${id}\n`, stderr: "" });
     expect((await sheep("wait", "--timeout", "30", id)).stdout).toBe(`${id}\t${MINT.steps[0]!.text}\n`);
+  });
+
+  it("earmark phase 1, journey 1 steps 1, 2, 5, and 6, and journey 3 steps 2 to 6: a secret for one sheep, on a pasture with no repository", { timeout: 120_000 }, async () => {
+    if (typeof home === "string") throw new Error(home);
+    // The values: the pasture's PROBE, one sheep's own, and journey 1 step 6's two. Every output of this case is kept, and none of
+    // them may hold a value: not the id lines, not ls, not the log, not a refusal. This home has no container, so setup never runs
+    // here (the cell's proof, in workerd, and the walk's, on a home with Docker); what is walked is the verb, the names, and the end.
+    const pastureValue = "pasture-probe-7f3a91c2e5";
+    const sheepValue = "sheep-probe-2b8e04d6a1";
+    const aValue = "earmark-a-5c1d0e93";
+    const bValue = "earmark-b-9e7f4a28";
+    const values = [pastureValue, sheepValue, aValue, bValue];
+    const said: string[] = [];
+    const run = async (args: string[], stdin?: string): Promise<Result> => {
+      const result = await runSheep(home, args, stdin === undefined ? {} : { stdin });
+      said.push(result.stdout, result.stderr);
+      return result;
+    };
+    const rowsOf = (stdout: string): string[][] => stdout.replace(/\n$/, "").split("\n").map((line) => line.split("\t"));
+    type Row = { id: string; pasture: string | null; secrets: string[] };
+    const listed = async (): Promise<Row[]> => JSON.parse((await run(["ls", "--json"])).stdout) as Row[];
+
+    // The pasture: no repository, the pasture's PROBE on stdin.
+    expect(await run(["pasture", "new", "meadow"])).toEqual({ code: 0, stdout: "meadow\t\tmain\n", stderr: "" });
+    expect(await run(["pasture", "secret", "set", "meadow", "PROBE"], `${pastureValue}\n`)).toEqual({ code: 0, stdout: "meadow\tPROBE\n", stderr: "" });
+
+    // Step 1: the value on stdin, the id alone on stdout, exit 0, nothing on stderr. A sibling in the same pasture with no --secret.
+    const minted = await run(["new", "--pasture", "meadow", "--secret", "PROBE", "--detach"], `${sheepValue}\n`);
+    expect(minted.code).toBe(0);
+    expect(minted.stderr).toBe("");
+    expect(minted.stdout).toMatch(/^[0-9a-f-]{36}\n$/);
+    const earmarked = minted.stdout.trim();
+    const siblingMinted = await run(["new", "--pasture", "meadow", "--name", "sibling", "--detach"]);
+    expect(siblingMinted.code).toBe(0);
+    const sibling = siblingMinted.stdout.trim();
+
+    // Step 2: the names last in `sheep ls`, empty for the sibling; `--json` has them sorted, `[]` for none; the herd's JSON too,
+    // and the herd's text is unchanged (five columns, no names).
+    const ls = rowsOf((await run(["ls"])).stdout);
+    const earmarkedRow = ls.find((row) => row[0] === earmarked);
+    expect(earmarkedRow).toEqual([earmarked, "", earmarkedRow![2], "idle", "meadow", "PROBE"]);
+    const siblingRow = ls.find((row) => row[0] === sibling);
+    expect(siblingRow).toEqual([sibling, "sibling", siblingRow![2], "idle", "meadow", ""]);
+    for (const row of ls) expect(row).toHaveLength(6);
+    const rows = await listed();
+    expect(rows.find((row) => row.id === earmarked)).toMatchObject({ pasture: "meadow", secrets: ["PROBE"] });
+    expect(rows.find((row) => row.id === sibling)).toMatchObject({ pasture: "meadow", secrets: [] });
+    const herd = JSON.parse((await run(["pasture", "meadow", "--json"])).stdout) as { herd: Row[] };
+    expect(herd.herd.find((row) => row.id === earmarked)).toMatchObject({ secrets: ["PROBE"] });
+    const herdText = await run(["pasture", "meadow"]);
+    for (const line of herdText.stdout.replace(/\n$/, "").split("\n").slice(4)) expect(line.split("\t")).toHaveLength(5);
+
+    // The earmarked sheep's first prompt births it into the pasture; its transcript and its export hold no value.
+    await script(`/s/${earmarked}/faux`, { steps: [{ text: "grazing" }] });
+    expect(await run(["attach", earmarked, "--", "graze"])).toEqual({ code: 0, stdout: "grazing\n", stderr: "" });
+    expect((await run(["log", earmarked])).stdout).toContain("graze");
+    const exported = join(home.persist, `${earmarked}.sqlite`);
+    expect((await run(["export", earmarked, exported])).code).toBe(0);
+    const bytes = await readFile(exported);
+    for (const value of values) expect(bytes.includes(value), `the export holds ${value}`).toBe(false);
+
+    // Journey 3 steps 2 to 6 against the real home: each one sentence on stderr, exit 2, nothing on stdout, and `sheep ls --json`
+    // unchanged after each.
+    const before = await run(["ls", "--json"]);
+    const refusals: Array<{ args: string[]; stdin?: string; sentence: string }> = [
+      { args: ["new", "--pasture", "meadow", "--secret", "A", "--secret", "B", "--detach"], stdin: `${aValue}\n`, sentence: "one line of stdin per --secret name, in order: 2 names, 1 line" },
+      { args: ["new", "--pasture", "meadow", "--secret", "A", "--detach"], stdin: `${aValue}\n${bValue}\n`, sentence: "one line of stdin per --secret name, in order: 1 name, 2 lines" },
+      { args: ["new", "--pasture", "meadow", "--secret", "A", "--secret", "B", "--detach"], stdin: `${aValue}\n\n`, sentence: "one line of stdin per --secret name, in order: the line for B is empty" },
+      { args: ["new", "--pasture", "meadow", "--secret", "1BAD", "--detach"], stdin: `${aValue}\n`, sentence: `a secret's name is an environment variable's, not "1BAD"` },
+      { args: ["new", "--pasture", "meadow", "--secret", "PROBE", "--secret", "PROBE", "--detach"], stdin: `${aValue}\n${bValue}\n`, sentence: "a secret's name is an environment variable's, once: PROBE is given twice" },
+      { args: ["new", "--secret", "NPM_TOKEN", "--detach"], stdin: `${aValue}\n`, sentence: "a sheep born into no pasture has no setup, so GIT_TOKEN is the only secret it can carry, not NPM_TOKEN" },
+      { args: ["new", "--secret", "PROBE", "--pasture", "meadow"], stdin: `${aValue}\n`, sentence: SECRET_NEEDS_STDIN },
+      { args: ["attach", sibling, "--secret", "PROBE", "--", "hello"], stdin: `${aValue}\n`, sentence: SECRET_AT_MINT },
+      { args: ["-c", "--secret", "PROBE", "--", "hello"], stdin: `${aValue}\n`, sentence: SECRET_AT_MINT },
+    ];
+    for (const { args, stdin, sentence } of refusals) {
+      expect(await run(args, stdin), `sheep ${args.join(" ")}`).toEqual({ code: 2, stdout: "", stderr: `sheep: ${sentence}\n` });
+      expect(await run(["ls", "--json"]), `sheep ls --json after sheep ${args.join(" ")}`).toEqual(before);
+    }
+    // Step 4 is the home's refusal too, in the same words, for a client that is not this CLI; still no row.
+    const direct = await fetch(`${home.url}/sessions`, { method: "POST", headers: { authorization: `Bearer ${home.token}`, "content-type": "application/json" }, body: JSON.stringify({ secrets: { NPM_TOKEN: aValue } }) });
+    expect(direct.status).toBe(400);
+    expect(await direct.text()).toBe("a sheep born into no pasture has no setup, so GIT_TOKEN is the only secret it can carry, not NPM_TOKEN");
+    expect(await run(["ls", "--json"])).toEqual(before);
+
+    // Step 5: the earmarked sheep ended with the one line; it is gone from `ls`, and the pasture's PROBE is untouched.
+    expect(await run(["rm", earmarked])).toEqual({ code: 0, stdout: `${earmarked}\tended\n`, stderr: "" });
+    expect((await listed()).map((row) => row.id)).not.toContain(earmarked);
+    expect(await run(["pasture", "secret", "ls", "meadow"])).toEqual({ code: 0, stdout: "PROBE\n", stderr: "" });
+    expect((await listed()).find((row) => row.id === sibling)).toMatchObject({ secrets: [] });
+
+    // Step 6: two names, two lines, in the order named; `ls` lists them sorted, `A,B`, and so it does named the other way round.
+    const two = await run(["new", "--pasture", "meadow", "--secret", "A", "--secret", "B", "--detach"], `${aValue}\n${bValue}\n`);
+    expect(two.code).toBe(0);
+    const twoId = two.stdout.trim();
+    const reversed = await run(["new", "--pasture", "meadow", "--secret", "B", "--secret", "A", "--detach"], `${bValue}\n${aValue}\n`);
+    expect(reversed.code).toBe(0);
+    const reversedId = reversed.stdout.trim();
+    const afterTwo = rowsOf((await run(["ls"])).stdout);
+    expect(afterTwo.find((row) => row[0] === twoId)![5]).toBe("A,B");
+    expect(afterTwo.find((row) => row[0] === reversedId)![5]).toBe("A,B");
+    expect((await listed()).find((row) => row.id === twoId)).toMatchObject({ secrets: ["A", "B"] });
+
+    // No value in anything any command of this case printed.
+    for (const value of values) for (const text of said) expect(text.includes(value), `an output holds ${value}`).toBe(false);
   });
 });

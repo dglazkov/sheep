@@ -136,7 +136,7 @@ describe.skipIf(typeof home === "string")("pasture phase 0: the object, and the 
     const lambId = lamb.stdout.trim();
     const lsBefore = await sheep(["ls"]);
     const lambRow = rowsOf(lsBefore.stdout).find((row) => row[0] === lambId);
-    expect(lambRow).toEqual([lambId, "lamb", lambRow![2], "idle", ""]);
+    expect(lambRow).toEqual([lambId, "lamb", lambRow![2], "idle", "", ""]);
     expect(Number.isNaN(Date.parse(lambRow![2]!))).toBe(false);
     const lambJson = (JSON.parse((await sheep(["ls", "--json"])).stdout) as Array<Record<string, unknown>>).find((row) => row.id === lambId);
     expect(lambJson).toMatchObject({ id: lambId, name: "lamb", state: "idle", pasture: null, task: null });
@@ -148,9 +148,10 @@ describe.skipIf(typeof home === "string")("pasture phase 0: the object, and the 
     const grazer = born.stdout.trim();
     const ls = await sheep(["ls"]);
     const rows = rowsOf(ls.stdout);
-    expect(rows.find((row) => row[0] === grazer)).toEqual([grazer, "grazer", rows.find((row) => row[0] === grazer)![2], "idle", "meadow"]);
+    expect(rows.find((row) => row[0] === grazer)).toEqual([grazer, "grazer", rows.find((row) => row[0] === grazer)![2], "idle", "meadow", ""]);
     expect(rows.find((row) => row[0] === lambId)![4]).toBe("");
-    for (const row of rows) expect(row).toHaveLength(5);
+    // Six columns since earmark phase 1: the secret names are last, empty for none.
+    for (const row of rows) expect(row).toHaveLength(6);
     const json = JSON.parse((await sheep(["ls", "--json"])).stdout) as Array<{ id: string; pasture: string | null; task: string | null }>;
     expect(json.find((row) => row.id === grazer)).toMatchObject({ pasture: "meadow", task: null });
     expect(json.find((row) => row.id === lambId)).toMatchObject({ pasture: null, task: null });

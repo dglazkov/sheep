@@ -13,6 +13,8 @@ export interface SessionSummary {
   pasture: string | null;
   /** What it was asked: the first line of its first prompt, as the cell reported it; `null` until it does. */
   task: string | null;
+  /** The names of the secrets this sheep was minted with, sorted; `[]` for none; never a value (earmark phase 0). */
+  secrets: string[];
 }
 
 export interface PastureSummary {
@@ -181,10 +183,13 @@ export class Home {
     return (await (await this.request(path)).json()) as SessionSummary[];
   }
 
-  /** A session, born into a pasture or into none. The directory's refusal is thrown as its sentence. */
-  async create(name: string | undefined, pasture?: string): Promise<SessionSummary> {
+  /**
+   * A session, born into a pasture or into none. The directory's refusal is thrown as its sentence. With `secrets` (earmark
+   * phase 1), the sheep's own, name to value, in the same one request; the answer carries their names, never a value.
+   */
+  async create(name: string | undefined, pasture?: string, secrets?: Record<string, string>): Promise<SessionSummary> {
     return (await (
-      await this.ask("/sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, pasture }) })
+      await this.ask("/sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, pasture, secrets }) })
     ).json()) as SessionSummary;
   }
 

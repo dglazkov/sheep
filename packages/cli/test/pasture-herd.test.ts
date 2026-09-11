@@ -106,7 +106,7 @@ describe.skipIf(typeof home === "string")("pasture phase 2: the program, and the
     const ls = await sheep(["ls", "--pasture", "docs"]);
     expect(ls.stdout.replace(/\n$/, "").split("\n").map((row) => row.split("\t")[0])).toEqual([links, typo]);
     const all = await sheep(["ls"]);
-    for (const id of [typo, links]) expect(all.stdout).toMatch(new RegExp(`^${id}\t.*\tdocs$`, "m"));
+    for (const id of [typo, links]) expect(all.stdout).toMatch(new RegExp(`^${id}\t.*\tdocs\t$`, "m"));
     const json = JSON.parse((await sheep(["ls", "--json"])).stdout) as Array<{ id: string; task: string | null; pasture: string | null }>;
     expect(json.find((row) => row.id === typo)).toMatchObject({ pasture: "docs", task: typoTask });
 

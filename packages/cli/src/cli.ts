@@ -1,5 +1,6 @@
 import { kennelDir, loadConfig, sheepDir, type SheepConfig } from "./config.js";
 import { deleteStation, deploy, Refusal } from "./deploy.js";
+import { earmarks } from "./earmark.js";
 import { writeSessionFile } from "./export.js";
 import { runAbort, runEnd, runLog, runPrompt, runStatus, runWait } from "./herd.js";
 import { Home } from "./home.js";
@@ -24,13 +25,15 @@ export function version(): string {
 const USAGE = `sheep — pi, running in a cell
 
 usage:
-  sheep new [--name <name>] [--pasture <name>] [--detach] [--wait] [-- <prompt>]
+  sheep new [--name <name>] [--pasture <name>] [--secret <NAME>]... [--detach] [--wait] [-- <prompt>]
                                             mint a session at the home, born into a pasture or into none; attach pi's
-                                            terminal, or send the prompt; with --detach alone, print the id and exit
+                                            terminal, or send the prompt; with --detach alone, print the id and exit;
+                                            each --secret's value is a line of stdin, for this sheep alone
   sheep -c | --continue [--detach] [--wait] [-- <prompt>]       the same, on the newest session
   sheep attach <id> [--detach] [--wait] [-- <prompt>]           the same, on a named session; a second terminal on the same cell
-  sheep ls [--pasture <name>]               the home's sessions: id, name, created, lane state, pasture; one per line, tab
-                                            separated, the last column empty for a pastureless sheep; with --pasture, that herd
+  sheep ls [--pasture <name>]               the home's sessions: id, name, created, lane state, pasture, secret names; one
+                                            per line, tab separated, the pasture empty for a pastureless sheep and the
+                                            names (comma separated, never a value) empty for none; with --pasture, that herd
   sheep status <id>                         the lane now: open operation, last tool call, tokens so far
   sheep wait [--timeout <seconds>] <id>...  block until every named session is idle; print each one's last assistant message
   sheep abort <id>                          stop the open operation
@@ -97,9 +100,14 @@ options:
   --home <url>    which home; also SHEEP_HOME or the kennel's config ({"home": "...", "token": "..."})
   --json          machine output, pi's shapes: entries are pi entries, status is pi's lane snapshot,
                   a queued prompt is pi's queue response, a detached prompt is pi's operation response;
-                  ls rows carry "pasture": null | "<name>" and "task": null | "<first line of the first prompt>";
+                  ls rows carry "pasture": null | "<name>", "task": null | "<first line of the first prompt>", and
+                  "secrets": [<the sheep's secret names, sorted>];
                   rm is {"id": …, "ended": true, "aborted": <whether a turn was stopped>}
   --pasture <name>  with new: the pasture to be born into; with ls: only that herd
+  --secret <NAME> with new, repeatable: a secret for this sheep alone, its value one line of stdin per name in the
+                  order given, never an argument; laid over its pasture's secret of the same name in setup, and as
+                  GIT_TOKEN over the pasture's and the home's when git asks; ended with the sheep. Refused at a terminal,
+                  without --detach or a prompt, and on attach and -c
   --detach        with a prompt: send it and exit before the first token; the id is the first line of stdout.
                   With new and no prompt: mint the session, print its id, and exit; the sheep is idle, costs
                   nothing, and is born into its pasture at the first thing that asks it (a prompt, status, log)
@@ -138,12 +146,16 @@ interface Parsed {
   since?: string;
   last?: string;
   timeout?: string;
+  /** Every `--secret <NAME>`, in the order given; `undefined` for one with nothing after it. */
+  secretNames: (string | undefined)[];
+  /** The secrets read from stdin before the mint (earmark phase 1), name to value; set by `main`, sent by `new`. */
+  secrets?: Record<string, string>;
   rest: string[];
 }
 
 function parse(argv: readonly string[]): Parsed {
   const args = [...argv];
-  const parsed: Parsed = { rest: [], json: false, detach: false, wait: false, faux: false, noInstall: false, noContainer: false };
+  const parsed: Parsed = { rest: [], secretNames: [], json: false, detach: false, wait: false, faux: false, noInstall: false, noContainer: false };
   const valued: Record<string, (value: string | undefined) => void> = {
     "--home": (value) => (parsed.home = value),
     "--name": (value) => (parsed.name = value),
@@ -154,6 +166,7 @@ function parse(argv: readonly string[]): Parsed {
     "--since": (value) => (parsed.since = value),
     "--last": (value) => (parsed.last = value),
     "--timeout": (value) => (parsed.timeout = value),
+    "--secret": (value) => void parsed.secretNames.push(value),
   };
   while (args.length > 0) {
     const arg = args.shift()!;
@@ -205,6 +218,11 @@ export async function main(argv: readonly string[]): Promise<number> {
     process.stdout.write(parsed.json ? `${JSON.stringify(report)}\n` : formatSetup(report, process.cwd()));
     return 0;
   }
+  // A sheep's own secrets (earmark phase 1): refused, or read from stdin, before anything is asked of the home, and here rather
+  // than in `dispatch`, which runs a second time when the local home had to be started, by when stdin is spent.
+  const earmarked = await earmarks(command, { names: parsed.secretNames, pasture: parsed.pasture, detach: parsed.detach, prompt: parsed.prompt });
+  if ("refused" in earmarked) return fail(earmarked.refused);
+  parsed.secrets = earmarked.secrets;
   try {
     return await dispatch(command, parsed, config, output);
   } catch (error) {
@@ -232,14 +250,15 @@ async function dispatch(command: string, parsed: Parsed, config: SheepConfig, ou
       if (parsed.json) process.stdout.write(`${JSON.stringify(sessions)}\n`);
       else {
         for (const session of sessions) {
-          process.stdout.write(`${session.id}\t${session.name ?? ""}\t${new Date(session.createdAt).toISOString()}\t${session.state}\t${session.pasture ?? ""}\n`);
+          // The names last (earmark phase 1), so a reader of the first five by index is unchanged; never a value.
+          process.stdout.write(`${session.id}\t${session.name ?? ""}\t${new Date(session.createdAt).toISOString()}\t${session.state}\t${session.pasture ?? ""}\t${session.secrets.join(",")}\n`);
         }
       }
       return 0;
     }
     case "new": {
       if (parsed.pasture !== undefined && !PASTURE_NAME.test(parsed.pasture)) return fail(`a pasture's name is [a-z0-9-]+, not ${JSON.stringify(parsed.pasture)}`);
-      const session = await home.create(parsed.name, parsed.pasture);
+      const session = await home.create(parsed.name, parsed.pasture, parsed.secrets);
       if (parsed.detach) return await detach(home, session.id, parsed);
       process.stderr.write(`session ${session.id}\n`);
       return await attach(home, session.id, parsed, output);

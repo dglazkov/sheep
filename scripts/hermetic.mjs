@@ -291,6 +291,23 @@
  * to `/faux` before the mint, so the turn rents no container; e2 posts
  * its own after. The sheep is among those n1 ends, one more for a6's
  * count. No step of the walk sends a prompt to get an id.
+ *
+ * Earmark phase 1 gives the account ring `s1`, after a8 (earmark's
+ * journey 2 steps 1 and 2; the package ring's `s1` is serve's, a
+ * different ring): a pasture named `earmark-<sha7>` on the scratch
+ * repository with no secret, on a station with no `PEN_GIT_TOKEN`; one
+ * sheep minted with `sheep new --secret GIT_TOKEN`, the playground token
+ * on its stdin and on no pasture, and a sibling with none, each scripted
+ * to branch, commit, and push. `sheep ls` names `GIT_TOKEN` on the one
+ * and nothing on the other; the earmarked sheep's branch is on GitHub,
+ * seen anonymously, and the sibling's push is refused for want of any
+ * credential (the helper gets nothing from the broker, and git cannot read
+ * a username), its branch absent. The token is in no transcript, export,
+ * row, or output, and in no `ps` sample; both sheep are among those n1
+ * ends, and the branch is deleted after. The broker's own sentence for the
+ * refusal is a line of the station's log, which no verb reads, and is
+ * named among what was not checked. Skipped as a8 is, with one line,
+ * without `LAMB_PLAYGROUND_TOKEN`.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -2963,6 +2980,10 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     // Step 8 (station phase 2): journey 3 against the scratch repository, when its token is here; one skip line otherwise.
     await journeyThree(ring, station, { needles });
 
+    // Earmark phase 1, s1 (earmark's journey 2 steps 1 and 2): beside a8, the same scratch repository and the same token, which is
+    // this time one sheep's own `GIT_TOKEN`, given at its mint on stdin, and on no pasture; a sibling with none is refused the push.
+    await journeyEarmark(ring, station, { needles });
+
     // End phase 1, n1 (end's journey 3 step 3): every sheep the walk minted is ended before the station goes, `sheep rm <id>`
     // printing exactly `<id>\tended` for each, the older release's sheep included; after, `sheep ls` lists none of them, and a verb
     // on an ended id, over HTTP or through a socket, is the one sentence on stderr, exit 2, nothing on stdout. So the delete below
@@ -3414,6 +3435,145 @@ async function journeyThree(ring, station, { needles, step = "a8", prefix = "rin
       const left = lsRemote();
       console.log(`  ${PLAYGROUND}: ${deleted.join("; ")}; ${left.length === 0 ? "no branches of this ring's name remain" : `STILL THERE: ${left.join(", ")}`}`);
       if (left.length > 0) ring.unchecked.push(`journey 3: the scratch repository is not as found: ${left.join(", ")} remain; git push --delete ${PLAYGROUND} ${left.join(" ")}`);
+    }
+    rmSync(askpass, { force: true });
+  }
+}
+
+/**
+ * Earmark's journey 2 steps 1 and 2 on the station (earmark phase 1, s1),
+ * with the faux provider: a pasture on the scratch repository with no
+ * `GIT_TOKEN`, on a station that has no `PEN_GIT_TOKEN` (the ring's deploy
+ * sets none), and two sheep born into it: `own`, minted with `--secret
+ * GIT_TOKEN` and the shepherd's playground token on stdin, and `sibling`,
+ * with none. Each is scripted to branch, commit, and push. The broker hands
+ * `own` its token, so its branch is on GitHub, seen anonymously; it has
+ * nothing for `sibling` (not its own, not the pasture's, not the home's),
+ * so git's helper gets no answer and git says it could not read a username,
+ * and no branch of the sibling's is there. The broker's own sentence for
+ * that refusal, and the `from this sheep` of the hand-over, are lines of
+ * the station's log, which no verb reads: named among what was not
+ * checked. The token is in no transcript, export, row, or output of the
+ * step's, and, by the walk's poll, in no process's arguments. Both sheep
+ * are among those n1 ends; the branch is deleted after through a8's
+ * `GIT_ASKPASS` helper. Runs only with `LAMB_PLAYGROUND_TOKEN`, as a8 does.
+ */
+async function journeyEarmark(ring, station, { needles, step = "s1" }) {
+  const playground = process.env[PLAYGROUND_VAR];
+  if (!playground) {
+    ring.skip(step, `${PLAYGROUND_VAR} is not in the environment, so earmark's journey 2 against ${PLAYGROUND} was not walked: one sheep pushing with its own token, its sibling refused`, "earmark journey 2");
+    return;
+  }
+  if (!needles.includes(playground)) needles.push(playground);
+  const { home, token: stationToken } = station;
+  const pasture = `earmark-${ring.stamp.commit.slice(0, 7)}`;
+  const branch = (name) => `sheep/${pasture}-${name}`;
+  const names = ["own", "sibling"];
+  const tasks = { own: "Make a branch, commit a note, push it with your own token.", sibling: "Make a branch, commit a note, push it." };
+  const gitEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
+  const lsRemote = () => {
+    const done = spawnSync("git", ["ls-remote", PLAYGROUND, `refs/heads/${branch("*")}`], { encoding: "utf8", env: gitEnv, cwd: ring.blog });
+    if (done.status !== 0) throw new Error(`git ls-remote ${PLAYGROUND} failed: ${(done.stderr || "").trim()}`);
+    return (done.stdout || "").trim().split("\n").filter(Boolean).map((line) => line.split("\t")[1].replace(/^refs\/heads\//, ""));
+  };
+  const withheld = (result) => ({ ...result, stdout: result.stdout.split(playground).join("<token>"), stderr: result.stderr.split(playground).join("<token>") });
+  const askpass = join(ring.dir, "askpass-earmark.sh");
+  writeFileSync(askpass, `#!/bin/sh\ncase "$1" in\n  Username*) printf '%s\\n' x-access-token ;;\n  *) printf '%s\\n' "$${PLAYGROUND_VAR}" ;;\nesac\n`, { mode: 0o700 });
+  const started = Date.now();
+  const ids = {};
+  let pushed = false;
+  try {
+    // The pasture: the scratch repository, and no secret at all, so the only token anywhere is the one sheep's.
+    const before = lsRemote();
+    if (before.length > 0) ring.fail(step, `git ls-remote ${PLAYGROUND} refs/heads/${branch("*")}`, { stdout: before.join("\n"), stderr: `branches of this step's name are already on the repository; a ring that left them behind failed: git push --delete ${PLAYGROUND} ${before.join(" ")}`, code: 1 });
+    const made = await ring.sheep(["pasture", "new", pasture, "--repo", PLAYGROUND]);
+    if (made.code !== 0 || !made.stdout.startsWith(`${pasture}\t${PLAYGROUND}\t`)) ring.fail(step, `sheep pasture new ${pasture} --repo ${PLAYGROUND}`, made);
+    station.pastures.push(pasture);
+    const noSecrets = await ring.sheep(["pasture", "secret", "ls", pasture]);
+    if (noSecrets.code !== 0 || noSecrets.stdout !== "") ring.fail(step, `sheep pasture secret ls ${pasture}`, { ...noSecrets, stderr: `${noSecrets.stderr}\nexpected no secrets on the pasture` });
+
+    // Step 1's mint: the token on stdin, never an argument; the id alone on stdout, nothing on stderr. The sibling with no --secret.
+    const own = await ring.sheep(["new", "--pasture", pasture, "--name", "own", "--secret", "GIT_TOKEN", "--detach"], { input: `${playground}\n` });
+    const ownId = /^([0-9a-f-]{36})\n$/.exec(own.stdout)?.[1];
+    if (own.code !== 0 || !ownId || own.stderr !== "") ring.fail(step, `sheep new --pasture ${pasture} --name own --secret GIT_TOKEN --detach (the token on stdin)`, { ...withheld(own), stderr: `${withheld(own).stderr}\nexpected exit 0, the id alone on stdout, nothing on stderr` });
+    ids.own = ownId;
+    station.minted.push(ownId);
+    const sibling = await ring.sheep(["new", "--pasture", pasture, "--name", "sibling", "--detach"]);
+    const siblingId = /^([0-9a-f-]{36})\n$/.exec(sibling.stdout)?.[1];
+    if (sibling.code !== 0 || !siblingId) ring.fail(step, `sheep new --pasture ${pasture} --name sibling --detach`, sibling);
+    ids.sibling = siblingId;
+    station.minted.push(siblingId);
+    // The names: GIT_TOKEN last in own's row and in its JSON, nothing in the sibling's; never the value.
+    const listed = await ring.sheep(["ls"]);
+    const listedJson = await ring.sheep(["ls", "--json"]);
+    if (listed.stdout.includes(playground) || listedJson.stdout.includes(playground)) ring.fail(step, "sheep ls; sheep ls --json", { stdout: "(withheld)", stderr: "the token is in the rows", code: 1 });
+    const rowOf = (id) => listed.stdout.split("\n").find((line) => line.startsWith(`${id}\t`))?.split("\t");
+    if (rowOf(ownId)?.[5] !== "GIT_TOKEN" || rowOf(siblingId)?.[5] !== "") ring.fail(step, "sheep ls", { ...listed, stderr: `${listed.stderr}\nexpected ${ownId}'s last column GIT_TOKEN and ${siblingId}'s empty` });
+    const rows = JSON.parse(listedJson.stdout);
+    if (JSON.stringify(rows.find((row) => row.id === ownId)?.secrets) !== '["GIT_TOKEN"]' || JSON.stringify(rows.find((row) => row.id === siblingId)?.secrets) !== "[]") {
+      ring.fail(step, "sheep ls --json", { ...listedJson, stderr: `${listedJson.stderr}\nexpected ${ownId} with "secrets": ["GIT_TOKEN"] and ${siblingId} with []` });
+    }
+
+    // Each sheep's program, then its task: branch, commit, push. The sibling's push is expected to be refused; its program goes on.
+    for (const name of names) {
+      const id = ids[name];
+      const program = {
+        steps: [
+          { tool: { name: "bash", args: { command: `git checkout -b ${branch(name)}` } } },
+          { tool: { name: "bash", args: { command: `mkdir -p notes && printf 'The %s sheep of the account ring at %s was here, on a token of its own or none.\\n' ${name} ${ring.stamp.commit} > notes/earmark-${name}.md && git add -A && git commit -q -m "earmark ${ring.stamp.commit}: ${name}"` } } },
+          { tool: { name: "bash", args: { command: `git push -u origin ${branch(name)}` } } },
+          { text: `tried ${branch(name)}` },
+        ],
+      };
+      const posted = await fetch(`${home}/s/${encodeURIComponent(id)}/faux`, { method: "POST", headers: { authorization: `Bearer ${stationToken}`, "content-type": "application/json" }, body: JSON.stringify(program), signal: AbortSignal.timeout(30_000) });
+      if (posted.status !== 200) ring.fail(step, `POST /s/${id}/faux`, { stdout: await posted.text(), stderr: `status ${posted.status}`, code: 1 });
+      const asked = await ring.sheep(["attach", id, "--detach", "--", tasks[name]]);
+      if (asked.code !== 0 || asked.stdout !== `${id}\n`) ring.fail(step, `sheep attach ${id} --detach -- "${tasks[name]}"`, asked);
+    }
+    pushed = true;
+    const waited = await ring.sheep(["wait", "--timeout", "300", ids.own, ids.sibling]);
+    for (const name of names) {
+      if (waited.code !== 0 || !waited.stdout.includes(`${ids[name]}\ttried ${branch(name)}`)) ring.fail(step, `sheep wait ${ids.own} ${ids.sibling}`, { ...waited, stderr: `${waited.stderr}\nexpected ${ids[name]} to end with "tried ${branch(name)}"` });
+    }
+    const workSeconds = ((Date.now() - started) / 1000).toFixed(0);
+
+    // Journey 2 step 1: own's branch is on GitHub, seen anonymously from this laptop. Step 2: the sibling's is not.
+    const onGitHub = lsRemote().sort();
+    if (JSON.stringify(onGitHub) !== JSON.stringify([branch("own")])) ring.fail(step, `git ls-remote ${PLAYGROUND} refs/heads/${branch("*")}`, { stdout: onGitHub.join("\n"), stderr: `expected ${branch("own")} alone: the earmarked sheep pushed with its own token, and the sibling, with none anywhere, did not push`, code: 1 });
+
+    // The transcripts: own cloned at birth and pushed; the sibling cloned (the repository is public) and its push found no
+    // credential: the helper had nothing from the broker, and git, with no terminal to ask, could not read a username.
+    const logs = {};
+    for (const name of names) {
+      const logged = await ring.sheep(["log", ids[name]]);
+      if (logged.code !== 0) ring.fail(step, `sheep log ${ids[name]}`, withheld(logged));
+      if (logged.stdout.includes(playground)) ring.fail(step, `sheep log ${ids[name]}`, { stdout: "(withheld)", stderr: "the token is in the transcript", code: 1 });
+      if (!/git clone/.test(logged.stdout)) ring.fail(step, `sheep log ${ids[name]}`, { ...logged, stderr: `${logged.stderr}\nexpected the birth's git clone` });
+      logs[name] = logged.stdout;
+    }
+    if (!logs.own.includes(`git push -u origin ${branch("own")}`) || /could not read Username/.test(logs.own)) ring.fail(step, `sheep log ${ids.own}`, { stdout: logs.own, stderr: `expected own's push of ${branch("own")}, and no refusal for want of a credential`, code: 1 });
+    const refusedLine = /[^\n]*could not read Username[^\n]*/.exec(logs.sibling)?.[0];
+    if (refusedLine === undefined) ring.fail(step, `sheep log ${ids.sibling}`, { stdout: logs.sibling, stderr: "expected the sibling's push refused for want of a credential (git: could not read Username …)", code: 1 });
+    for (const name of names) {
+      const file = join(ring.dir, `${ids[name]}.sqlite`);
+      const exported = await ring.sheep(["export", ids[name], file]);
+      if (exported.code !== 0 || !existsSync(file)) ring.fail(step, `sheep export ${ids[name]} ${file}`, withheld(exported));
+      if (readFileSync(file).includes(playground)) ring.fail(step, `grep <token> ${file}`, { stdout: "(withheld)", stderr: "the token is in the export's bytes", code: 1 });
+    }
+    ring.unchecked.push(`earmark journey 2 ${step}: the broker's own sentence for the sibling ("this sheep has no GIT_TOKEN, pasture ${pasture} has none, and the home has no PEN_GIT_TOKEN, …") and the hand-over's "from this sheep" are the station's log lines, which no verb reads; the refusal seen is git's, after the helper got nothing`);
+    ring.ok(step, `sheep pasture new ${pasture} --repo …lamb-playground.git (no secret); sheep new --pasture ${pasture} --name own --secret GIT_TOKEN --detach (the token on stdin); sheep new … --name sibling --detach; sheep ls`, `own ${ids.own} lists GIT_TOKEN last, the sibling ${ids.sibling} nothing; no value in either form`);
+    ring.ok(step, `POST /s/<id>/faux; sheep attach <id> --detach (twice); sheep wait; git ls-remote ${PLAYGROUND} 'refs/heads/${branch("*")}' (anonymous)`, `${workSeconds}s; ${onGitHub.join(", ")} alone on GitHub: own pushed with its own token; the sibling refused: "${refusedLine.trim().slice(0, 100)}"`);
+    ring.ok(step, `sheep log ${ids.own}; sheep log ${ids.sibling}; sheep export (both)`, "the token in neither transcript, neither export's bytes, no row, no output of the step's, and, by the poll, in no process's arguments");
+  } finally {
+    if (pushed) {
+      const results = [];
+      for (const name of names) {
+        const done = spawnSync("git", ["push", "--delete", PLAYGROUND, branch(name)], { encoding: "utf8", cwd: ring.blog, env: { ...gitEnv, GIT_ASKPASS: askpass, [PLAYGROUND_VAR]: playground } });
+        results.push(`${branch(name)}: ${done.status === 0 ? "deleted" : "not there to delete"}`);
+      }
+      const left = lsRemote();
+      console.log(`  ${PLAYGROUND}: ${results.join("; ")}; ${left.length === 0 ? "no branches of this step's name remain" : `STILL THERE: ${left.join(", ")}`}`);
+      if (left.length > 0) ring.unchecked.push(`earmark journey 2: the scratch repository is not as found: ${left.join(", ")} remain; git push --delete ${PLAYGROUND} ${left.join(" ")}`);
     }
     rmSync(askpass, { force: true });
   }

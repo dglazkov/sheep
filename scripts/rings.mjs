@@ -110,6 +110,7 @@ export const RINGS = {
   command: [
     "packages/cli/test/cli.test.ts",
     "packages/cli/test/deploy.test.ts",
+    "packages/cli/test/earmark.test.ts",
     "packages/cli/test/join.test.ts",
     "packages/cli/test/kennel.test.ts",
     "packages/cli/test/local.test.ts",

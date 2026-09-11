@@ -251,9 +251,10 @@ sheep home join https://<worker>.<subdomain>.workers.dev < token.txt   # then sh
 ```sh
 sheep new [--name <name>] [-- <prompt>]   # a new session, pi's terminal attached
 sheep new [--name <name>] --detach        # mint a session and print its id alone; idle until something is asked of it
+sheep new --pasture <p> --secret <NAME> --detach < value.txt   # a secret for this sheep alone: one line of stdin per --secret
 sheep -c [-- <prompt>]                    # attach to the newest session
 sheep attach <id> [-- <prompt>]           # attach to a session; works from any machine with the config
-sheep ls                                  # sessions at the home
+sheep ls                                  # sessions at the home; the last column names each one's secrets, never a value
 sheep rm <id>                             # end a session: turn aborted, container and browser released, rows gone; the pasture stays
 sheep export <id> [file]                  # a pi SQLite session file
 sheep --home <url> ...                    # a different home for one command
@@ -262,6 +263,19 @@ sheep --home <url> ...                    # a different home for one command
 `sheep` here means `node packages/cli/bin/sheep.js`; put an alias in your
 shell if you like. With a prompt after `--` the reply streams and the
 command exits; without one you get pi's full terminal.
+
+A pasture's secrets (`sheep pasture secret set <name> <KEY>`, the value on
+stdin) are setup's environment for every sheep born into it, and its
+`GIT_TOKEN` is the credential git pushes with. `sheep new --secret <NAME>`
+gives one sheep a secret of its own: the values are stdin, one line per
+`--secret` in the order named, never an argument, read before the mint, so
+the command wants `--detach` or a prompt rather than pi's terminal. A
+sheep's secret lies over its pasture's of the same name in setup, and its
+`GIT_TOKEN` over the pasture's and the home's `PEN_GIT_TOKEN` when git
+asks; neither kind is ever in the model's environment. A sheep born into
+no pasture has no setup, so `GIT_TOKEN` is the one secret it can carry.
+`sheep ls` names each sheep's secrets in its last column (`"secrets"` in
+`--json`), never a value, and `sheep rm` ends them with the sheep.
 
 #### A home with a container: pen
 
