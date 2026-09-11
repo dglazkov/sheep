@@ -21,7 +21,10 @@ one look and stops it, the page reached over two frames on the socket the
 container already opened, so nothing connects into the container.
 [Project end](docs/projects/end/design.md) gives the dog the other half
 of minting: `sheep rm <id>` ends a sheep and releases everything it
-held, the pasture excepted. Setup and usage are in [README.md](README.md).
+held, the pasture excepted. [Project mint](docs/projects/mint/design.md)
+makes minting and prompting two acts: `sheep new --detach` with no
+prompt mints a sheep and prints its id, and nothing else happens until
+something is asked of it. Setup and usage are in [README.md](README.md).
 Read a project's `phases.md` for where its work stands and what the next
 phase is; [docs/projects/README.md](docs/projects/README.md) lists them.
 `/conduct <project>` is how a phase is run: briefed to a subagent, proved
