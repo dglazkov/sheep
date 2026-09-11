@@ -227,6 +227,23 @@ export async function runAbort(home: Home, id: string, output: Output): Promise<
   }
 }
 
+/**
+ * The end (end phase 1): `DELETE /s/<id>` through the home's face, which
+ * aborts the open turn, disconnects the terminals, destroys the container,
+ * closes the browser, empties the storage, and removes the row, in that
+ * order. On stdout exactly `<id>\tended`; `--json` is `{ id, ended,
+ * aborted }`, the cell's report with the id first. A session the home
+ * does not have is its sentence, thrown to `main`: stderr and exit 2.
+ * Nothing about the container is said: the dog asked for the sheep to
+ * end, and it ended.
+ */
+export async function runEnd(home: Home, id: string, output: Output): Promise<number> {
+  const report = await home.end(id);
+  if (output.json) output.out(`${JSON.stringify({ id, ...report })}\n`);
+  else output.out(`${id}\tended\n`);
+  return 0;
+}
+
 /** The transcript as text, oldest first, one block per entry; `--json` is pi's entries, one per line. */
 export async function runLog(home: Home, id: string, options: { since: string | undefined; last: number | undefined }, output: Output): Promise<number> {
   const view = await home.transcript(id);

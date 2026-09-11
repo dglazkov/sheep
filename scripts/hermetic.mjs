@@ -197,12 +197,15 @@
  * redeploying the same Worker from the newer package (`redeployed`, the
  * stamp moved, the image the newer's, a container healthy) with the
  * older's sheep and pasture still listed and the sheep's turn still in
- * `sheep log` (the "up" step). Then a3 to a8 as before, on the newer, and
- * a6 last: the delete's listing (the Worker at its address, its Durable
- * Objects, its container application by id, `sessions: <n>` and
- * `pastures: <n>` counted against what the walk minted, the config),
- * the three lines, `sessions deleted: <n>`, and the account listed with
- * the name absent and the listing equal to the one before the walk.
+ * `sheep log` (the "up" step). Then a3 to a8 as before, on the newer, then
+ * n1 (end phase 1): `sheep rm <id>` on every sheep the walk minted, each
+ * printing `<id>\tended`, none listed after, and a verb on an ended id the
+ * one sentence with exit 2; and a6 last: the delete's listing (the Worker
+ * at its address, its Durable Objects, its container application by id,
+ * `sessions: 0` since n1 ended them all, and `pastures: <n>` counted
+ * against what the walk made, the config), the three lines, `sessions
+ * deleted: 0`, and the account listed with the name absent and the
+ * listing equal to the one before the walk.
  *
  * Station phase 4 gives the package ring `--docker`, journey 6 on a
  * machine with Docker. Without it every ring starts its homes with
@@ -2396,7 +2399,7 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
   const docker = spawnSync("docker", ["version", "--format", "{{.Server.Version}} {{.Server.Os}}/{{.Server.Arch}}"], { encoding: "utf8" });
   const engine = docker.error || docker.status !== 0 ? undefined : docker.stdout.trim();
   let failure;
-  const station = { deployed: false, name: undefined, home: undefined, account: undefined, subdomain: undefined, image: undefined, digest: undefined, tagDigest: undefined, engine, older, minted: [], pastures: [] };
+  const station = { deployed: false, name: undefined, home: undefined, account: undefined, subdomain: undefined, image: undefined, digest: undefined, tagDigest: undefined, engine, older, minted: [], ended: [], pastures: [] };
   try {
     // Preflight: the account, the plan, the subdomain, the listing, and the images both configs name, on the registry.
     if (spec === undefined) console.log(`account ring: ${ref} = ${ring.sha}${repo === root ? "" : ` in ${repo}`}; sheep ${ring.stamp.commit} (${ring.stamp.builtAt}), the newer`);
@@ -2924,28 +2927,51 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     // Step 8 (station phase 2): journey 3 against the scratch repository, when its token is here; one skip line otherwise.
     await journeyThree(ring, station, { needles });
 
-    // Step 6: the delete, the name on stdin: the listing first (station phase 3), counted against what the walk minted; then the account listed, the last lines.
+    // End phase 1, n1 (end's journey 3 step 3): every sheep the walk minted is ended before the station goes, `sheep rm <id>`
+    // printing exactly `<id>\tended` for each, the older release's sheep included; after, `sheep ls` lists none of them, and a verb
+    // on an ended id, over HTTP or through a socket, is the one sentence on stderr, exit 2, nothing on stdout. So the delete below
+    // lists `sessions: 0`, and its `sessions deleted:` is 0 too: the end released each sheep's rows, container, and browser first.
+    const rmStarted = Date.now();
+    for (const endedId of station.minted) {
+      const removed = await ring.sheep(["rm", endedId]);
+      if (removed.code !== 0 || removed.stdout !== `${endedId}\tended\n` || removed.stderr !== "") ring.fail("n1", `sheep rm ${endedId}`, { ...removed, stderr: `${removed.stderr}\nexpected exit 0, exactly "${endedId}\\tended" on stdout, nothing on stderr` });
+      station.ended.push(endedId);
+    }
+    const rmSeconds = ((Date.now() - rmStarted) / 1000).toFixed(0);
+    const afterRm = parse("n1", "sheep ls --json (after rm)", await ring.sheep(["ls", "--json"]));
+    const stillListed = afterRm.filter((row) => station.ended.includes(row.id)).map((row) => row.id);
+    if (stillListed.length > 0) ring.fail("n1", "sheep ls --json (after rm)", { stdout: JSON.stringify(afterRm), stderr: `expected none of the ended sheep listed; still there: ${stillListed.join(", ")}`, code: 1 });
+    const endedSentence = `sheep: no session ${station.sheep} at this home; \`sheep ls\` lists the ones there are\n`;
+    for (const verb of [["status", station.sheep], ["log", station.sheep], ["rm", station.sheep]]) {
+      const refused = await ring.sheep(verb);
+      if (refused.code !== 2 || refused.stdout !== "" || refused.stderr !== endedSentence) ring.fail("n1", `sheep ${verb.join(" ")} (on an ended id)`, { ...refused, stderr: `${refused.stderr}\nexpected exit 2, nothing on stdout, and the one sentence on stderr: ${endedSentence.trim()}` });
+    }
+    ring.ok("n1", `sheep rm <id> (${station.ended.length} times); sheep ls --json; sheep status|log|rm ${station.sheep} (ended)`, `${rmSeconds}s; ${station.ended.join(", ")} each ended with its one line; none listed after; every verb on the ended id is the sentence, exit 2, nothing on stdout`);
+
+    // Step 6: the delete, the name on stdin: the listing first (station phase 3), counted against what the walk minted and did not
+    // end (end phase 1: none); then the account listed, the last lines.
     const { deleted, after, left } = await deleteStation(ring, api, station, token);
+    const remaining = station.minted.length - station.ended.length;
     const lines = deleted.stdout.trim().split("\n");
     const configLine = join(realpathSync(ring.kennel(ring.blog)), "config");
     const expectedListing = [
       `deleting ${name}: the Worker at ${home}, its Durable Objects, and its container application ${name}`,
-      `sessions: ${station.minted.length}`,
+      `sessions: ${remaining}`,
       `pastures: ${station.pastures.length}`,
       `container application: ${station.applicationId}`,
       `config: ${configLine}`,
     ];
     const wrongListing = expectedListing.findIndex((line, index) => lines[index] !== line);
     if (deleted.code !== 0 || wrongListing !== -1) {
-      ring.fail("a6", `sheep home delete --name ${name} (the name on stdin)`, { ...deleted, stderr: `${deleted.stderr}\nexpected the listing before the prompt, line ${wrongListing + 1} being ${JSON.stringify(expectedListing[wrongListing])}: ${station.minted.length} sessions (${station.minted.join(", ")}), ${station.pastures.length} pastures (${station.pastures.join(", ")}), the application ${station.applicationId}` });
+      ring.fail("a6", `sheep home delete --name ${name} (the name on stdin)`, { ...deleted, stderr: `${deleted.stderr}\nexpected the listing before the prompt, line ${wrongListing + 1} being ${JSON.stringify(expectedListing[wrongListing])}: ${remaining} sessions (${station.minted.length} minted: ${station.minted.join(", ")}; ${station.ended.length} ended), ${station.pastures.length} pastures (${station.pastures.join(", ")}), the application ${station.applicationId}` });
     }
     const report6 = lines.slice(expectedListing.length);
-    if (report6[0] !== `deleted the Worker ${name} and its objects` || report6[1] !== `deleted the container application ${name} (${station.applicationId})` || report6[2] !== `config: ${configLine} removed` || report6[3] !== `sessions deleted: ${station.minted.length}` || report6.length !== 4) {
-      ring.fail("a6", `sheep home delete --name ${name} (the name on stdin)`, { ...deleted, stderr: `${deleted.stderr}\nexpected, after the listing, the three lines: the Worker, the application ${station.applicationId}, the config removed; then sessions deleted: ${station.minted.length}` });
+    if (report6[0] !== `deleted the Worker ${name} and its objects` || report6[1] !== `deleted the container application ${name} (${station.applicationId})` || report6[2] !== `config: ${configLine} removed` || report6[3] !== `sessions deleted: ${remaining}` || report6.length !== 4) {
+      ring.fail("a6", `sheep home delete --name ${name} (the name on stdin)`, { ...deleted, stderr: `${deleted.stderr}\nexpected, after the listing, the three lines: the Worker, the application ${station.applicationId}, the config removed; then sessions deleted: ${remaining}` });
     }
     if (existsSync(ring.configOf(ring.blog)) || existsSync(join(ring.kennel(ring.blog), "deploy"))) ring.fail("a6", `ls -a ${ring.kennel(ring.blog)}`, { stdout: readdirSync(ring.kennel(ring.blog)).join("\n"), stderr: "expected the config and deploy/ gone", code: 1 });
     if (left.length > 0) ring.fail("a6", "the account's listing after the delete", { stdout: left.join("\n"), stderr: `expected no Worker and no container application named ${name}`, code: 1 });
-    ring.ok("a6", `sheep home delete --name ${name} (the name on stdin)`, `listed ${station.minted.length} sessions and ${station.pastures.length} pastures (${station.pastures.join(", ")}), the application ${station.applicationId}; then ${report6.join("; ").replace(ring.dir, "<ring>")}; the account holds neither`);
+    ring.ok("a6", `sheep home delete --name ${name} (the name on stdin)`, `listed ${remaining} sessions (${station.minted.length} minted, ${station.ended.length} ended) and ${station.pastures.length} pastures (${station.pastures.join(", ")}), the application ${station.applicationId}; then ${report6.join("; ").replace(ring.dir, "<ring>")}; the account holds neither`);
     console.log(`  Workers: ${after.workers.join(", ") || "(none)"}`);
     console.log(`  container applications: ${after.applications.map((application) => `${application.name} (${application.id})`).join(", ") || "(none)"}`);
     if (JSON.stringify(after) !== JSON.stringify(before)) ring.fail("a6", "the account's listing after the walk", { stdout: JSON.stringify(after), stderr: `expected the listing from before the walk: ${JSON.stringify(before)}`, code: 1 });

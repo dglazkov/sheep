@@ -21,16 +21,20 @@ detail.
 
 ---
 
-**Where we are: end phase 0 CLOSED, end phase 1 NOT STARTED. Next: `end phase 1`.**
+**Where we are: end phase 0 CLOSED, end phase 1 PART-DONE; the project waits on one ⚑ step. Next: the shepherd types `pnpm hermetic --ring account --yes <sha>`, then `end phase 1` closes.**
 Planned 10 Sep 2026, the evening serve closed, from the shepherd's
-issue #1. Phase 0 was built and proved the same evening: the cell's
-end in the design's five steps, the Directory's removal, `DELETE
-/s/<id>` on the Worker, and one refusal sentence on every `/s/<id>`
-route, proved in workerd against the fake container and the pool's
-real Chrome, and falsified by three mutations. Phase 1 is the verb, the
-docs, the home ring's walk, and the walk on the local home with Docker
-and a real model; its one ⚑ step is the account ring with its new
-step. Nothing waits on a person before phase 1's ⚑.
+issue #1, and built the same night. Phase 0: the cell's end in five
+steps, the Directory's removal, `DELETE /s/<id>`, one refusal sentence
+on every `/s/<id>` route, proved in workerd against the fake container
+and the pool's real Chrome. Phase 1: `sheep rm <id>`, every verb on an
+ended id refusing in that sentence, the docs, journey 5's home-ring
+test carrying journey 1 steps 1 to 4, the account ring's `n1` step; and
+the walk on the local home with Docker and a real model: journey 3 step
+1 and journey 1 whole, `tests` ended mid-turn on a 120 s `node` line
+with its container gone from `docker ps`. What waits: journey 3 step 3,
+the account ring with its new step, which deploys a station on the
+shepherd's account and is the one place the platform's own container
+destroy is exercised.
 
 The order is dependency order. Phase 0 is the mechanism, which the
 verb needs. Phase 1 is the verb and the walk.
@@ -114,4 +118,15 @@ container. **⚑** journey 3 step 3: `pnpm hermetic --ring account --yes
 <sha>` with the new step, a station deployed and deleted on the
 shepherd's account, a few container minutes and one deploy.
 
-**Status: NOT STARTED.**
+**Status: PART-DONE.** 2026-09-10. Journeys 1 and 2 walked on the local home with Docker and a real model, journey 3 steps 1 and 2 with them; `pnpm test` exits 0 across all three rings with journey 5 carrying journey 1 steps 1 to 4; the CLI typecheck exits 0. Journey 3 step 3, the account ring, waits on the shepherd.
+
+**Findings:**
+
+- **2026-09-10 — The refusal reaches every verb by three paths.** `ask` throws a `Sentence`; `attachSheep` asks `GET /s/<id>/` after a failed socket and throws the sentence when that is what came back; `attach()` with no prompt asks before pi's terminal is spawned.
+- **2026-09-10 — The builder's first pass left the interactive `attach` with the bridge's line;** sent back against journey 1 step 1, and the home ring's case now runs `sheep attach <ended>` with no prompt.
+- **2026-09-10 — `prompt`, `transcript`, and `exportRows` went through `request`,** so `sheep log <ended>` said `GET …/transcript: 404 <sentence>`; all three go through `ask` now.
+- **2026-09-10 — The guide is at its 1500-word ceiling.** The verb cost about sixty words of redundancy elsewhere; the next verb pays the same way or the budget moves.
+- **2026-09-10 — The walk, with Docker and a real model:** `docs` ended with its container gone from `docker ps` at once; `tests` ended mid-turn on a 120 s `node` line in under a second, its container gone; the minutes read 0.204 before and after a 30 s wait.
+- **2026-09-10 — wrangler's `-proxy` sidecars outlive a destroyed container by seconds,** gone within the walk's 30 s wait. They are wrangler's, not the sheep's.
+- **2026-09-10 — Open: `sheep attach <ended> --detach -- "…"` prints the id on stdout before the refusal,** since `detach` prints first and prompts after. For whoever next touches `detach`.
+- **2026-09-10 — Open: ⚑ journey 3 step 3 waits on the shepherd:** `pnpm hermetic --ring account --yes <sha>` with the ring's `n1` step, a station deployed and deleted on the account, a few container minutes and one deploy. It is where `PenContainer.destroy()` meets the platform.

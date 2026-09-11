@@ -1,7 +1,7 @@
 import { kennelDir, loadConfig, sheepDir, type SheepConfig } from "./config.js";
 import { deleteStation, deploy, Refusal } from "./deploy.js";
 import { writeSessionFile } from "./export.js";
-import { runAbort, runLog, runPrompt, runStatus, runWait } from "./herd.js";
+import { runAbort, runEnd, runLog, runPrompt, runStatus, runWait } from "./herd.js";
 import { Home } from "./home.js";
 import { join } from "./join.js";
 import { type BuildSide, cliBuild, describeBuild, describeImage, eyesSentence, isRefused, localStatus, readStamp, skewLine, startLocalHome, stopLocalHome, whoAnswers } from "./local.js";
@@ -34,6 +34,8 @@ usage:
   sheep status <id>                         the lane now: open operation, last tool call, tokens so far
   sheep wait [--timeout <seconds>] <id>...  block until every named session is idle; print each one's last assistant message
   sheep abort <id>                          stop the open operation
+  sheep rm <id>                             end the session: its open turn aborted, its container and browser released, its
+                                            rows gone, the pasture kept; prints <id>\\tended, with no undo (export first)
   sheep log [--since <entry id | ISO time>] [--last <n>] <id>   the transcript as text, oldest first, one block per entry
   sheep export <id> [file]                  write the session as a pi SQLite file (default <id>.sqlite)
   sheep config                              print the resolved home and this directory's kennel (never the token)
@@ -95,7 +97,8 @@ options:
   --home <url>    which home; also SHEEP_HOME or the kennel's config ({"home": "...", "token": "..."})
   --json          machine output, pi's shapes: entries are pi entries, status is pi's lane snapshot,
                   a queued prompt is pi's queue response, a detached prompt is pi's operation response;
-                  ls rows carry "pasture": null | "<name>" and "task": null | "<first line of the first prompt>"
+                  ls rows carry "pasture": null | "<name>" and "task": null | "<first line of the first prompt>";
+                  rm is {"id": …, "ended": true, "aborted": <whether a turn was stopped>}
   --pasture <name>  with new: the pasture to be born into; with ls: only that herd
   --detach        with a prompt: send it and exit before the first token; the id is the first line of stdout
   --wait          with a prompt to a busy session: stream the queued turn when it starts
@@ -266,6 +269,11 @@ async function dispatch(command: string, parsed: Parsed, config: SheepConfig, ou
       const id = parsed.rest[1];
       if (id === undefined) return fail("abort needs a session id");
       return await runAbort(home, id, output);
+    }
+    case "rm": {
+      const id = parsed.rest[1];
+      if (id === undefined) return fail("rm needs a session id");
+      return await runEnd(home, id, output);
     }
     case "log": {
       const id = parsed.rest[1];
@@ -527,9 +535,19 @@ async function detach(home: Home, sessionId: string, parsed: Parsed): Promise<nu
   return 0;
 }
 
-/** With a prompt, sheep's own client; without one, pi's terminal through the bridge. */
+/**
+ * With a prompt, sheep's own client; without one, pi's terminal through
+ * the bridge. Before the terminal, the session is asked of the home (end
+ * phase 1): the bridge's socket says only that it failed, and pi's client
+ * exits with its own code, so a session the home lacks would never be
+ * named. `home.session` throws the home's sentence to `main`'s `fail`
+ * (stderr, exit 2) before any TUI is spawned. One request ahead of an
+ * interactive session is nothing; the no-request rule is `attachSheep`'s
+ * happy path, not this one.
+ */
 async function attach(home: Home, sessionId: string, parsed: Parsed, output: Output): Promise<number> {
   if (parsed.prompt !== undefined) return runPrompt(home, sessionId, parsed.prompt, { wait: parsed.wait }, output);
+  await home.session(sessionId);
   const serverId = await home.serverId();
   return runPiClient({ socketUrl: home.socketUrl(sessionId, serverId), serverId, sessionId });
 }

@@ -13,7 +13,7 @@ is the verb-by-verb reference.
 `sheep --version` says which build this is. If the command is missing,
 `npx github:dglazkov/sheep#release setup` installs it, puts the skill in
 the current directory, and prints the next sentence; `sheep setup` again
-is harmless and reports what is current. Upgrading is
+is harmless. Upgrading is
 `npm install -g github:dglazkov/sheep#release` again; a deployed home is
 then `sheep home deploy` again from the newer package, which `sheep home`
 says on stderr while the home is older, with every session kept.
@@ -36,9 +36,9 @@ key: not held; export ANTHROPIC_API_KEY and run `sheep home local` again
 
 The `key:` line is the one thing you cannot do alone. Ask the shepherd to export `ANTHROPIC_API_KEY` in
 your shell, then run `sheep home local` again; it answers `key:
-held, in <dir>/.sheep/local/.dev.vars`. Never ask for the key in the chat,
-and never pass it as an argument: the home reads it from that file and
-nothing else. `sheep home local --faux` runs a scripted model that answers
+held, in <dir>/.sheep/local/.dev.vars`. Never in the chat, never as an
+argument: the home reads that file and nothing else. `sheep home local
+--faux` runs a scripted model that answers
 "ok" to everything: the plumbing, without a key.
 
 A `container:` line follows: with Docker on the machine the home rents
@@ -57,7 +57,7 @@ writes the kennel's config; without them it prints what it needs and
 costs, and makes nothing. `sheep home delete` ends that station after its
 name is typed at a terminal. `sheep home join <address>` is a second
 machine's way in: the station's token is one line of stdin, piped by the
-shepherd, never an argument and never pasted.
+shepherd, never an argument.
 
 ## The kennel
 
@@ -65,12 +65,11 @@ The **kennel** is `.sheep/` at or above the working directory, found the
 way git finds `.git`, and `~/.sheep` when there is none. It
 holds this directory's config and local home, so a dog in each of several
 directories has its own sheep, token, and home; nothing is shared but the
-command and the runtime under `~/.sheep/tools`. `sheep setup` makes one
-here, and in a git work tree appends `.sheep/` to the `.gitignore` beside
-it, since the config holds a token and the home the model key. No variable
-moves it: `cd` is how you switch, and a subdirectory finds the kennel
-above it. If the command says `.sheep` is tracked, tell the shepherd a
-token is in their repository; do not fix it yourself.
+command. `sheep setup` makes one here, and in a git work tree appends
+`.sheep/` to the `.gitignore` beside it, since the config holds a token.
+No variable moves it: `cd` is how you switch. If the command says
+`.sheep` is tracked, tell the shepherd a token is in their repository; do
+not fix it yourself.
 
 ## The verbs
 
@@ -81,7 +80,7 @@ stderr as `sheep: …` with exit 2.
 - `sheep new [--name <name>] [--pasture <name>] -- "<prompt>"` mints a
   sheep, prints `session <id>` on stderr, streams the reply on stdout, and
   exits when the turn ends. With no prompt it opens pi's interactive
-  terminal, which is for a person; do not run it without one.
+  terminal, for a person; do not run it without one.
 - `sheep new --detach -- "<prompt>"` mints, sends, and returns before the
   first token, the id as the first line of stdout. The sheep works whether
   or not anyone is attached; this is how you start several at once.
@@ -98,9 +97,12 @@ stderr as `sheep: …` with exit 2.
 - `sheep wait [--timeout <seconds>] <id>...` blocks until every named
   sheep is idle and prints each one's last assistant message, one line
   per sheep, `<id>\t<message>`. Exit 124 on timeout, with what finished.
-  This is how you read several results in one call; do not poll.
+  Read several results in one call this way; do not poll.
 - `sheep abort <id>` stops the open turn and prints `<id>\taborted <op>`,
   or `<id>\tidle` with none.
+- `sheep rm <id>` ends a sheep and prints `<id>\tended`: its turn
+  aborted, its container and browser released, its rows gone, the pasture
+  kept. `--json` adds `"aborted"`. No undo.
 - `sheep log [--since <entry id | ISO time>] [--last <n>] <id>` prints the
   transcript as text, oldest first, one block per entry, tool calls and
   results included.
@@ -121,10 +123,9 @@ look fetching a Chrome; a station deployed before them says `eyes: no` in
 
 With a container too, `look --serve 'npx vite --port $PORT --strictPort'
 /` runs that command with `PORT` set, renders the page its port serves,
-and stops it: a server lives for one look and no longer, so nothing a
-sheep starts outlives its line. The recipe for a frontend app is a skill
-in the repository, `docs/projects/serve/skills/frontend/SKILL.md`, for a
-pasture.
+and stops it: a server lives for one look and no longer. The recipe for a
+frontend app is a skill in the repository,
+`docs/projects/serve/skills/frontend/SKILL.md`, for a pasture.
 
 ## Pastures: a herd on one tree
 
@@ -152,21 +153,22 @@ on that repository should know.
 Split the goal, give each piece to a sheep with `--detach`, keep working,
 then `sheep wait` on all of them and read what came back. Name sheep
 (`--name docs`) so `sheep ls` reads. A sheep that goes wrong is aborted,
-not abandoned. Read `sheep log <id>` before deciding a sheep failed. Keep
-the ids: every later verb names the sheep by them.
+not abandoned. Read `sheep log <id>` before deciding a sheep failed. A
+sheep you are finished with is ended with `sheep rm <id>` (`sheep export
+<id>` first if the transcript matters); a herd that only grows cannot be
+read. Keep the ids: every later verb names the sheep by them.
 
 ## What needs a person
 
-Three things, and only these:
+Three things:
 
 1. **A model key.** Ask the shepherd to `export ANTHROPIC_API_KEY`, then
    run `sheep home local` again. Never in the chat, never in a file.
 2. **An account for a deployed home.** The local home needs none; `sheep
    home deploy` says what it needs when the shepherd wants one.
 3. **A hand at a terminal.** `sheep new` or `sheep attach <id>` with no
-   prompt opens pi's interactive terminal on the sheep, on any machine
-   with the config: the shepherd's window into a sheep; tell them the
-   command and the id.
+   prompt opens pi's interactive terminal on the sheep, from any machine
+   with the config; tell the shepherd the command and the id.
 
 Ask for each in one sentence, saying what it unlocks, and go on with what
 does not need it.

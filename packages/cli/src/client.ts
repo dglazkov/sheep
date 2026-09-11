@@ -15,7 +15,7 @@ import { createServerServiceSource, createSessionServiceSource } from "@earendil
 import { PresentationPlugins } from "@earendil-works/pi-coding-agent/experimental/services/plugins";
 import { SessionManagement } from "@earendil-works/pi-coding-agent/experimental/services/sessions";
 import { Transcript, type TranscriptState } from "@earendil-works/pi-coding-agent/experimental/services/transcript";
-import type { Home } from "./home.js";
+import { type Home, Sentence } from "./home.js";
 
 export { BACKGROUND_CONTEXT };
 
@@ -77,10 +77,32 @@ export interface Sheep {
   close(): Promise<void>;
 }
 
+/**
+ * The home's sentence for this id, or nothing (end phase 1). A socket that
+ * would not open says only that it failed, for a session the home lacks as
+ * for a home that is down; asked over HTTP, the home says which. Only the
+ * home's own refusal counts: any other failure leaves the socket's error
+ * to be what is thrown.
+ */
+async function refusalOf(home: Home, id: string): Promise<Sentence | undefined> {
+  try {
+    await home.session(id);
+    return undefined;
+  } catch (asked) {
+    return asked instanceof Sentence ? asked : undefined;
+  }
+}
+
 /** One attachment to one cell, as pi's non-interactive client makes it. */
 export async function attachSheep(home: Home, id: string): Promise<Sheep> {
   const serverId = await home.serverId();
-  const client = await Client.connect({ serverId, transportFactory: webSocketTransport(home.socketUrl(id, serverId)) });
+  let client: Client;
+  try {
+    client = await Client.connect({ serverId, transportFactory: webSocketTransport(home.socketUrl(id, serverId)) });
+  } catch (error) {
+    // Nothing is asked on the happy path; when the connect fails, the home's sentence, if it has one, is the failure.
+    throw (await refusalOf(home, id)) ?? error;
+  }
   const server = createServerServiceSource(client);
   const session = createSessionServiceSource(client);
   const serverServices = server.open({ services: [SessionManagement, PresentationPlugins], assertAccess() {}, onError() {} });

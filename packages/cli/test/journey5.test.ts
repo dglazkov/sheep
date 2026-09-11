@@ -4,6 +4,12 @@
  * and `bin/sheep.js` driven as a child process through steps 1 to 7. Skips,
  * with a message, when the home cannot be started here. The home and the
  * runner are `local-home.ts`'s, shared with pasture phase 0's test.
+ *
+ * End phase 1: a second case walks end's journey 1, steps 1 to 4, on the
+ * three sheep the first case minted: `docs` ended finished, `tests` ended
+ * mid-turn, `types` ended with `--json`, then an id the home lacks. This
+ * home has no container (no Docker in the pool's `wrangler dev`), so the
+ * mid-turn end's assertion is `aborted: true`, not a container.
  */
 import { afterAll, describe, expect, it } from "vitest";
 import { type Result, runSheep, scriptFaux, startHome, stopHome } from "./local-home.js";
@@ -32,7 +38,13 @@ const TURN = {
   steps: [{ tool: { name: "bash", args: { command: "echo herding > note.txt && cat note.txt" } } }, { text: "done: note.txt written", delayMs: 10_000 }],
 };
 
+/** The refusal for a session the home does not have, as `main` prints it: the home's sentence, one line on stderr. */
+const refusal = (id: string): string => `sheep: no session ${id} at this home; \`sheep ls\` lists the ones there are\n`;
+
 describe.skipIf(typeof home === "string")("journey 5: a dog and its flock, through sheep against a local home", () => {
+  /** The three sheep of step 1, kept for end's journey 1 after step 7. */
+  const flock = { docs: "", tests: "", types: "" };
+
   afterAll(async () => {
     if (typeof home === "string") return;
     await stopHome(home);
@@ -51,6 +63,7 @@ describe.skipIf(typeof home === "string")("journey 5: a dog and its flock, throu
       ids.push(result.stdout.trim());
     }
     const [docs, tests, types] = ids as [string, string, string];
+    Object.assign(flock, { docs, tests, types });
     expect(Date.now() - started).toBeLessThan(TURN.steps[1]!.delayMs!);
 
     // Step 2: one record per line, tab separated, with the lane state; --json is the Directory's array.
@@ -174,5 +187,56 @@ describe.skipIf(typeof home === "string")("journey 5: a dog and its flock, throu
     expect(timedOut.code).toBe(124);
     expect(timedOut.stdout).toBe(`${docs}\tdone: note.txt written\n`);
     expect((await sheep("abort", types)).code).toBe(0);
+  });
+
+  it("end phase 1, journey 1 steps 1 to 4: a finished sheep, one mid-turn, one that never rented, and an id the home lacks", { timeout: 120_000 }, async () => {
+    const { docs, tests, types } = flock;
+    expect(docs).toMatch(ID);
+    // The three are idle after step 7; the program every cell answers from is still TURN, whose answer comes 10 s after its tool call.
+    for (const id of [docs, tests, types]) expect((await sheep("status", id)).stdout).toMatch(/^state: idle$/m);
+
+    // Step 1: `docs` is finished and is ended: exactly `<id>\tended`, exit 0, nothing on stderr. `ls` lists the other two and not it.
+    expect(await sheep("rm", docs)).toEqual({ code: 0, stdout: `${docs}\tended\n`, stderr: "" });
+    const listed = await sheep("ls");
+    expect(listed.code).toBe(0);
+    expect(listed.stdout).not.toContain(docs);
+    expect(listed.stdout).toContain(`${tests}\ttests\t`);
+    expect(listed.stdout).toContain(`${types}\ttypes\t`);
+    // Every verb on the ended id is the one sentence on stderr, exit 2, nothing on stdout: the ones that ask over HTTP (`log`, `export`,
+    // `rm`), the ones that attach first (`attach` with a prompt, `status`, `abort`), whose socket fails and whose failure is the home's
+    // sentence, and `attach` with no prompt, which asks the home before any terminal is spawned (here non-TTY, as `runSheep` spawns it).
+    for (const args of [
+      ["attach", docs],
+      ["attach", docs, "--", "hello again"],
+      ["status", docs],
+      ["log", docs],
+      ["export", docs],
+      ["abort", docs],
+      ["rm", docs],
+    ]) {
+      expect(await sheep(...args), `sheep ${args.join(" ")}`).toEqual({ code: 2, stdout: "", stderr: refusal(docs) });
+    }
+
+    // Step 2: `tests` is ended mid-turn. The turn is aborted and the report says so; the line is the same shape. On this home there
+    // is no container to be killed or destroyed: `aborted: true` is the assertion. After, `status` on it is the sentence.
+    const prompted = await sheep("attach", tests, "--detach", "--", "run the tests forever");
+    expect(prompted.code).toBe(0);
+    expect((await sheep("status", tests)).stdout).toMatch(/^state: running$/m);
+    const endedMidTurn = await sheep("rm", tests, "--json");
+    expect(endedMidTurn).toEqual({ code: 0, stdout: `{"id":"${tests}","ended":true,"aborted":true}\n`, stderr: "" });
+    expect(await sheep("status", tests)).toEqual({ code: 2, stdout: "", stderr: refusal(tests) });
+    expect(await sheep("log", tests)).toEqual({ code: 2, stdout: "", stderr: refusal(tests) });
+
+    // Step 3: `types`, idle, is ended with `--json`: the same shape, `aborted: false`.
+    expect(await sheep("rm", types, "--json")).toEqual({ code: 0, stdout: `{"id":"${types}","ended":true,"aborted":false}\n`, stderr: "" });
+
+    // Step 4: an id the home never had is the sentence, exit 2, and `ls` is unchanged; none of the three is in it.
+    const before = await sheep("ls", "--json");
+    expect(before.code).toBe(0);
+    expect(await sheep("rm", "nonsense")).toEqual({ code: 2, stdout: "", stderr: refusal("nonsense") });
+    expect(await sheep("ls", "--json")).toEqual(before);
+    const remaining = (JSON.parse(before.stdout) as Array<{ id: string }>).map((session) => session.id);
+    for (const id of [docs, tests, types]) expect(remaining).not.toContain(id);
+    expect(remaining.length).toBeGreaterThan(0);
   });
 });

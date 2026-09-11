@@ -51,6 +51,27 @@ export interface TranscriptView {
   entries: Entry[];
 }
 
+/** `DELETE /s/<id>`'s answer (end phase 1), the cell's `EndReport` passed through: `aborted` is whether the end found a turn to stop. */
+export interface EndReport {
+  ended: true;
+  aborted: boolean;
+}
+
+/**
+ * A refusal the home stated in a sentence: a 4xx with a text body, thrown
+ * by `ask` as that sentence alone. Its own class so that a caller with a
+ * failure of its own (a socket that would not open) can tell the home's
+ * sentence from a home that did not answer at all.
+ */
+export class Sentence extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
 /** `GET /home`'s `build`: the commit the Worker was built from and when; `builtAt` null and commit `0.0.0-checkout` from a checkout. */
 export interface HomeBuild {
   commit: string;
@@ -101,8 +122,23 @@ export class Home {
     const response = await fetch(new URL(path, this.url), { ...init, headers });
     if (response.ok) return response;
     const body = await response.text();
-    if (response.status >= 400 && response.status < 500 && body.length > 0 && response.status !== 401) throw new Error(body);
+    if (response.status >= 400 && response.status < 500 && body.length > 0 && response.status !== 401) throw new Sentence(body, response.status);
     throw new Error(`${init.method ?? "GET"} ${path}: ${response.status} ${body}`);
+  }
+
+  /**
+   * One cell's state, `GET /s/<id>/`, through `ask`: for a session the
+   * home does not have, the refusal is its sentence. This is what
+   * `attachSheep` asks when its socket failed (end phase 1), and nothing
+   * on the happy path.
+   */
+  async session(id: string): Promise<unknown> {
+    return (await this.ask(`/s/${encodeURIComponent(id)}/`)).json();
+  }
+
+  /** The end (end phase 1): `DELETE /s/<id>`. The home's refusal, a session it does not have, is thrown as its sentence. */
+  async end(id: string): Promise<EndReport> {
+    return (await (await this.ask(`/s/${encodeURIComponent(id)}`, { method: "DELETE" })).json()) as EndReport;
   }
 
   async serverId(): Promise<string> {
@@ -191,19 +227,24 @@ export class Home {
     return (await (await this.ask(`${pasturePath(name)}/secrets`)).json()) as string[];
   }
 
-  /** Sends a prompt and returns once it is durable: accepted as an operation, or queued behind the running one. */
+  /**
+   * Sends a prompt and returns once it is durable: accepted as an
+   * operation, or queued behind the running one. Through `ask` (end phase
+   * 1), as the cell's other routes are, so a session the home does not have
+   * is refused in its sentence.
+   */
   async prompt(id: string, text: string): Promise<PromptResponse> {
     return (await (
-      await this.request(`/s/${encodeURIComponent(id)}/prompt`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) })
+      await this.ask(`/s/${encodeURIComponent(id)}/prompt`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) })
     ).json()) as PromptResponse;
   }
 
   async transcript(id: string): Promise<TranscriptView> {
-    return (await (await this.request(`/s/${encodeURIComponent(id)}/transcript`)).json()) as TranscriptView;
+    return (await (await this.ask(`/s/${encodeURIComponent(id)}/transcript`)).json()) as TranscriptView;
   }
 
   async exportRows(id: string): Promise<Record<string, Record<string, unknown>[]>> {
-    return (await (await this.request(`/s/${encodeURIComponent(id)}/export`)).json()) as Record<string, Record<string, unknown>[]>;
+    return (await (await this.ask(`/s/${encodeURIComponent(id)}/export`)).json()) as Record<string, Record<string, unknown>[]>;
   }
 
   /** The WebSocket address of one cell, which sheep's client and the bridge dial. */
