@@ -237,7 +237,7 @@ deploy; no token beyond the Cloudflare one.
 **Findings:**
 
 - **2026-09-11 — The image carries the fold:** `HOME=/home/sheep`, `NPM_CONFIG_PREFIX=/cache`, `/cache/bin` first on `PATH`, and `COREPACK_HOME=/opt/corepack` for pnpm.
-- **2026-09-11 — After the design change a warm setup is 1.85 s on the laptop against a 9.8 s cold install,** where it was 10.4 against 10.2: the put-back 1.82 s against 8.94, the record 239 MB in 29 chunks against 406 in 49.
+- **2026-09-11 — After the design change a warm setup is 1.85 s on the laptop against a 9.8 s cold install,** where it was 10.4 against 10.2: the put-back 1.82 s, the record 239 MB in 29 chunks against 406 in 49.
 - **2026-09-11 — The conductor walked it too:** wrangler cold in 10.6 s kept 239 MB, a second sheep put it back in 1824 ms, `~` held across a `docker rm -f`.
 - **2026-09-11 — `ws` is pen's second dependency (8.21.0), offering no `Sec-WebSocket-Extensions`,** and an untouched warm cache is never re-described: a fresh container left the row's `by` and `keptAt` alone.
 - **2026-09-11 — The scratch is made before the dial:** `mkdtemp` between it and `serveAgent` could drop a manifest, and hung the process test once.
