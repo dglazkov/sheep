@@ -55,7 +55,13 @@ export interface BirthData {
   setup?: SetupEnd;
   /** Fold phase 1: the session's `~`, on a home that keeps it (one with a container); absent on one that does not. */
   home?: string;
-  /** Fold phase 1: what the pasture's cache came to around that setup: `found`, the numbers, and `kept` or `refused`; absent when setup did not run. */
+  /**
+   * Fold phase 1: what the pasture's cache came to around that setup:
+   * `found`, the numbers, and `kept` or `refused`; absent when setup did
+   * not run. Fold phase 3 adds `chunks`, `stored` (the deflated bytes that
+   * travelled) and `read` (the part of `ms` the cell spent reading them
+   * from the pasture's object), so a slow put-back names its own cause.
+   */
   cache?: CacheOutcome;
 }
 
@@ -142,6 +148,10 @@ function cacheOf(value: unknown): CacheOutcome | undefined {
     bytes: number("bytes"),
     files: number("files"),
     ms: number("ms"),
+    // Fold phase 3's three, each only when the entry has it: an entry from before them reads as it did.
+    ...(typeof record.chunks === "number" ? { chunks: record.chunks } : {}),
+    ...(typeof record.stored === "number" ? { stored: record.stored } : {}),
+    ...(typeof record.read === "number" ? { read: record.read } : {}),
     ...(record.kept === true ? { kept: true as const } : {}),
     ...(typeof record.refused === "string" ? { refused: record.refused } : {}),
   };

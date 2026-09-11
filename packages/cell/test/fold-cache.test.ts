@@ -14,6 +14,14 @@
  * `setup.sh` sent nothing. The record itself is proved first, over the
  * fake's memory disk.
  *
+ * Fold phase 3: a chunk travels and is kept gzipped, and its hash stays
+ * over its plain bytes, so a chunk packed another way is the same chunk and
+ * the record's identity does not move; a `need` for the cache may name up
+ * to three chunks, answered in the order asked, and never a fourth blob
+ * comes between two `need`s. The birth's entry carries the chunk count, the
+ * deflated bytes that travelled, and the part of the put-back the cell
+ * spent reading the object.
+ *
  * Fold phase 2's second pass: the memory disk never says two entries are
  * one file, so its records have no links, and a disk that does say so gets
  * a record with the later name a `link`; a warm container whose setup left
@@ -22,14 +30,14 @@
  * the record again, the same record, and nothing moves.
  */
 import { BACKGROUND_CONTEXT, createBashTool } from "@earendil-works/pi-agent-core";
-import { Chunker, type Disk, RecordReader, writeRecord } from "@sheep/pen/agent";
-import { CACHE_CHUNK_BYTES, type CacheRef, type CellFrame, type ContainerFrame, type Frame } from "@sheep/pen/protocol";
+import { Chunker, type Disk, gunzipBytes, gzipBytes, RecordReader, writeRecord } from "@sheep/pen/agent";
+import { CACHE_CHUNK_BYTES, CACHE_NEED_CHUNKS, type CacheRef, type CellFrame, type ContainerFrame, type Frame } from "@sheep/pen/protocol";
 import { env, runInDurableObject, SELF } from "cloudflare:test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BIRTH_ENTRY, type BirthData, birthCommand, birthData, birthText, cacheSentence, homeSentence, setupSentence } from "../src/birth.ts";
 import { pastureSourceFor, type SessionCell } from "../src/cell.ts";
 import { type CacheOutcome, CellExecutionEnv, type ContainerLease, SETUP_COMMAND, SETUP_PATH } from "../src/env/execution-env.ts";
-import type { Pasture } from "../src/pasture.ts";
+import type { KeptCache, Pasture } from "../src/pasture.ts";
 import { cacheSize, EMPTY_REFUSAL, OWN_SECRET_REFUSAL, overCapRefusal, setupName } from "../src/pen/cache.ts";
 import type { ContainerStarter } from "../src/pen/lease.ts";
 import { hashBytes, HOME_ROOT, WORKSPACE_ROOT } from "../src/workspace/files.ts";
@@ -69,9 +77,18 @@ function patterned(size: number, seed: number): Uint8Array {
   }
   return bytes;
 }
+/** Bytes that repeat, so gzip takes them to a thousandth: a record of four chunks that costs the object and the scratch almost nothing. */
+function repeating(size: number): Uint8Array {
+  const bytes = new Uint8Array(size);
+  for (let index = 0; index < size; index++) bytes[index] = index % 251;
+  return bytes;
+}
+
 /** A tool binary over a chunk, as wrangler's `workerd` is: the record it lands in is two chunks. */
 const ENGINE = patterned(CACHE_CHUNK_BYTES + 4096, 7);
 const ENGINE_2 = patterned(CACHE_CHUNK_BYTES + 8192, 11);
+/** A binary of four chunks that gzip takes to almost nothing, so a record of four fits a test isolate's memory (fold phase 3). */
+const ENGINE_4 = repeating(3 * CACHE_CHUNK_BYTES + 4096);
 
 function api(path: string, init?: RequestInit): Promise<Response> {
   return SELF.fetch(`https://sheep.test${path}`, { ...init, headers: { ...headers, ...(init?.headers ?? {}) } });
@@ -404,6 +421,24 @@ function chunkHashes(name: string): Promise<string[]> {
 
 // ---------------------------------------------------------------------------
 
+/**
+ * The same gzip stream under another zlib's header (fold phase 3): its
+ * time and operating system set, and the name of a file it came from
+ * added, which an inflater skips. The bytes differ; what they mean does
+ * not, and neither does the chunk's hash, which is over the plain bytes.
+ */
+function repackGzip(gzipped: Uint8Array): Uint8Array {
+  const name = encode("engine.bin\0");
+  const out = new Uint8Array(gzipped.byteLength + name.byteLength);
+  out.set(gzipped.subarray(0, 10), 0);
+  out[3] = (gzipped[3]! | 0x08) & 0xff; // FNAME: a name follows the header
+  out.set([0x21, 0x43, 0x65, 0x87], 4); // MTIME: a time, where the agent's zlib writes none
+  out[9] = 0x03; // OS: unix, where another zlib may say something else
+  out.set(name, 10);
+  out.set(gzipped.subarray(10), 10 + name.byteLength);
+  return out;
+}
+
 /** A disk's entries as a comparison reads them: kind, mode, and the bytes or the target. */
 function entriesOf(disk: MemoryDisk): string[] {
   return [...disk.entries]
@@ -568,7 +603,9 @@ describe("fold phase 1: journey 1 in the cell's terms", () => {
     expect(first.seen[0]!.paths).toEqual([]);
     const kept = (await object.cacheFor(key))!;
     expect(kept).toMatchObject({ key, files: 2, by: first.id, chunks: [expect.any(String)] });
-    expect(born!.cache).toEqual({ found: "cold", bytes: kept.bytes, files: 2, ms: 0, kept: true });
+    expect(born!.cache).toEqual({ found: "cold", bytes: kept.bytes, files: 2, ms: 0, chunks: 1, stored: kept.stored, kept: true });
+    // Fold phase 3: what the object holds is the record deflated, and it is smaller than the record.
+    expect(kept.stored).toBeLessThan(kept.bytes);
     expect(born!.home).toBe(HOME_ROOT);
     expect(birthText(born!)).toContain(`${setupSentence({ exit: 0 })} ${homeSentence(HOME_ROOT)} ${cacheSentence(born!.cache!)}`);
     expect(cacheSentence(born!.cache!)).toBe(`The pasture had no cache for this setup.sh, so setup ran cold, and what it left in /cache was kept, ${cacheSize(kept.bytes)}.`);
@@ -598,7 +635,7 @@ describe("fold phase 1: journey 1 in the cell's terms", () => {
     const second = await mintedInto("second", "tools");
     const [warm] = await births(second.id);
     expect(second.seen.map((one) => one.found)).toEqual(["1.2.3"]);
-    expect(warm!.cache).toEqual({ found: "warm", bytes: kept.bytes, files: 2, ms: expect.any(Number) });
+    expect(warm!.cache).toEqual({ found: "warm", bytes: kept.bytes, files: 2, ms: expect.any(Number), chunks: 1, stored: kept.stored, read: expect.any(Number) });
     expect(cacheSentence(warm!.cache!)).toMatch(new RegExp(`^The pasture's cache for this setup\\.sh was put back into /cache first, ${cacheSize(kept.bytes).replace(".", "\\.")} in \\d+(\\.\\d)? s\\.$`));
     expect(birthText(warm!)).toContain(cacheSentence(warm!.cache!));
     const secondFake = second.stub.fakes[0]!;
@@ -725,7 +762,16 @@ describe("fold phase 1: journey 1 in the cell's terms", () => {
     expect(own.seen.map((one) => one.found)).toEqual(["1.2.3"]);
     expect(own.stub.fakes[0]!.runs[1]!.env).toMatchObject({ PROBE });
     expect(decoder.decode((own.stub.fakes[0]!.cache.entries.get("etc/npmrc") as { bytes: Uint8Array }).bytes)).toContain(PROBE);
-    expect(born!.cache).toEqual({ found: "warm", bytes: kept.bytes, files: 2, ms: expect.any(Number), refused: OWN_SECRET_REFUSAL });
+    expect(born!.cache).toEqual({
+      found: "warm",
+      bytes: kept.bytes,
+      files: 2,
+      ms: expect.any(Number),
+      chunks: kept.chunks.length,
+      stored: kept.stored,
+      read: expect.any(Number),
+      refused: OWN_SECRET_REFUSAL,
+    });
     expect(cacheSentence(born!.cache!)).toContain(`what setup left in /cache was not kept: ${OWN_SECRET_REFUSAL}.`);
     // Never kept: the container was never asked to describe `/cache`, no chunk left it, and the pasture's cache is the sibling's.
     expect(ofType(own.stub.fakes[0]!.transcript, "cache")).toEqual([]);
@@ -759,6 +805,142 @@ describe("fold phase 1: journey 1 in the cell's terms", () => {
   });
 });
 
+describe("fold phase 3: the chunks are deflated", () => {
+  it("a chunk's hash is over its plain bytes, so a chunk packed another way is the same chunk, and the object keeps and sends the deflated form", { timeout: 60_000 }, async () => {
+    const object = await pasture("packed", { repo: REPO });
+    await object.put(SETUP_PATH, encode(SETUP_SCRIPT));
+    const key = hashBytes(encode(SETUP_SCRIPT));
+    const cold = await mintedInto("packed-cold", "packed", { engine: ENGINE });
+    const [born] = await births(cold.id);
+    const kept = (await object.cacheFor(key))!;
+    expect(kept.chunks.length).toBe(2);
+
+    // The chunks are named by the plain record's own hashes: the same tree, cut the same way, hashed with no zlib in between.
+    const plain = await recordOf(cold.stub.fakes[0]!.cache);
+    expect(kept.chunks).toEqual(plain.chunks.map(hashBytes));
+    expect(born!.cache).toMatchObject({ chunks: 2, stored: kept.stored, bytes: plain.bytes });
+    // What the object holds under each of those names is that chunk gzipped: inflating it gives the plain bytes back.
+    for (const [index, hash] of kept.chunks.entries()) {
+      const stored = (await object.cacheChunk(hash))!;
+      expect(hashBytes(stored)).not.toBe(hash);
+      expect(hashBytes(await gunzipBytes(stored))).toBe(hash);
+      expect(stored.byteLength).toBe((await gzipBytes(plain.chunks[index]!)).byteLength);
+    }
+
+    // A chunk packed another way — the same deflate stream under a header another zlib wrote: a time, an operating system,
+    // and the name of the file it came from — is the same chunk. The put-back inflates before it hashes, so the record's
+    // identity has not moved and a second sheep is warm.
+    const first = kept.chunks[0]!;
+    const was = (await object.cacheChunk(first))!;
+    const repacked = repackGzip(was);
+    expect(hashBytes(repacked)).not.toBe(hashBytes(was));
+    expect(hashBytes(await gunzipBytes(repacked))).toBe(first);
+    await runInDurableObject(env.PASTURE.getByName("packed"), (_instance: Pasture, state) => {
+      state.storage.sql.exec("DELETE FROM cache_chunks WHERE hash = ?", first);
+      state.storage.sql.exec("DELETE FROM cache_sizes WHERE hash = ?", first);
+    });
+    await object.cachePut("repacked-by-another-zlib", first, repacked);
+
+    const warm = await mintedInto("packed-warm", "packed", { engine: ENGINE });
+    const [entry] = await births(warm.id);
+    expect(warm.seen.map((one) => one.found)).toEqual(["1.2.3"]);
+    expect(entry!.cache).toMatchObject({ found: "warm", bytes: kept.bytes, chunks: 2 });
+    expect((await object.cacheFor(key))!.hash).toBe(kept.hash);
+    expect(hashBytes((warm.stub.fakes[0]!.cache.entries.get("lib/node_modules/tool/vendor/engine.bin") as { bytes: Uint8Array }).bytes)).toBe(hashBytes(ENGINE));
+    for (const sheep of [cold, warm]) await inCell(sheep.id, async (cell) => (await cell.runtime()).lease!.idle());
+  });
+});
+
+describe("fold phase 3: a chunk the container cannot use", () => {
+  /** The object's chunks as a home that kept them before fold phase 3 has them: the plain bytes, under the plain bytes' name. */
+  async function keepPlain(name: string, chunks: readonly string[], change: (plain: Uint8Array) => Promise<Uint8Array> | Uint8Array = (plain) => plain): Promise<void> {
+    const object = env.PASTURE.getByName(name);
+    for (const hash of chunks) {
+      const plain = await gunzipBytes((await object.cacheChunk(hash))!);
+      await runInDurableObject(env.PASTURE.getByName(name), (_instance: Pasture, state) => {
+        state.storage.sql.exec("DELETE FROM cache_chunks WHERE hash = ?", hash);
+        state.storage.sql.exec("DELETE FROM cache_sizes WHERE hash = ?", hash);
+      });
+      await object.cachePut(`kept-before-the-deflate-${hash.slice(0, 8)}`, hash, await change(plain));
+      // As an object upgraded across this phase has it: a chunk that was never deflated.
+      await runInDurableObject(env.PASTURE.getByName(name), (_instance: Pasture, state) => {
+        state.storage.sql.exec("UPDATE cache_sizes SET deflated = 0 WHERE hash = ?", hash);
+      });
+    }
+  }
+
+  /** A cold birth into a fresh pasture, and the cache it kept. */
+  async function keptFor(name: string, sheep: string): Promise<{ object: DurableObjectStub<Pasture>; kept: KeptCache; key: string }> {
+    const object = await pasture(name, { repo: REPO });
+    await object.put(SETUP_PATH, encode(SETUP_SCRIPT));
+    const key = hashBytes(encode(SETUP_SCRIPT));
+    const cold = await mintedInto(sheep, name);
+    await births(cold.id);
+    await inCell(cold.id, async (cell) => (await cell.runtime()).lease!.idle());
+    return { object, kept: (await object.cacheFor(key))!, key };
+  }
+
+  it("a cache kept before the chunks were deflated puts back cold: /cache is empty for setup, the sheep's command runs, and what is kept after is deflated", { timeout: 60_000 }, async () => {
+    const logs = logLines();
+    const { object, kept, key } = await keptFor("upgraded", "upgraded-cold");
+    expect(kept.stored).toBeLessThan(kept.bytes);
+    await keepPlain("upgraded", kept.chunks);
+
+    // The next fresh container is given that cache: it cannot inflate a chunk of it, so the put-back ends and setup runs cold.
+    const after = await mintedInto("upgraded-after", "upgraded");
+    const [born] = await births(after.id);
+    expect(after.seen.map((one) => one.found)).toEqual(["installed"]);
+    // `/cache` was empty when setup ran: nothing of the half-written record was left for it to find.
+    expect(after.seen[0]!.paths).toEqual([]);
+    expect(born!.cache).toMatchObject({ found: "cold", kept: true });
+    expect(born!.exit).toBe(0);
+    expect(born!.setup).toEqual({ exit: 0 });
+    // The sheep's command runs in that container, and nothing about the sync-in reached it.
+    await inCell(after.id, async (cell) => {
+      const said = await bash(cell, "tool --version");
+      expect(said).toBe("tool 1.2.3\n");
+      expect(said).not.toContain("sync-in");
+      (await cell.runtime()).lease!.idle();
+    });
+    // What is kept now is this phase's: deflated, and each chunk inflates to the name it is under.
+    const now = (await object.cacheFor(key))!;
+    expect(now.keptAt).toBeGreaterThan(kept.keptAt);
+    expect(now.stored).toBeLessThan(now.bytes);
+    for (const hash of now.chunks) expect(hashBytes(await gunzipBytes((await object.cacheChunk(hash))!))).toBe(hash);
+    // The cell's log says why it went cold; the birth's own words say cold and kept, and name no error.
+    const cold = logs().filter((line) => line.startsWith("[pen] cache cold: the container could not use the cache it was given"));
+    expect(cold.length).toBe(1);
+    expect(cold[0]).toContain("is not a gzip stream");
+    expect(cold[0]).toContain("/cache was emptied and setup runs cold");
+    expect(birthText(born!)).toContain("so setup ran cold");
+    expect(birthText(born!)).not.toContain("sync-in");
+  });
+
+  it("a chunk that inflates to other bytes is the same: the put-back ends cold and the sheep's command runs", { timeout: 60_000 }, async () => {
+    const logs = logLines();
+    const { object, kept, key } = await keptFor("swapped", "swapped-cold");
+    // The chunk is a gzip stream, and of something else: what a chunk swapped under its name looks like.
+    await keepPlain("swapped", kept.chunks.slice(0, 1), async (plain) => gzipBytes(new Uint8Array([...plain.subarray(0, plain.byteLength - 1), plain[0]! ^ 0xff])));
+    await runInDurableObject(env.PASTURE.getByName("swapped"), (_instance: Pasture, state) => {
+      state.storage.sql.exec("UPDATE cache_sizes SET deflated = 1");
+    });
+
+    const after = await mintedInto("swapped-after", "swapped");
+    const [born] = await births(after.id);
+    expect(after.seen.map((one) => one.found)).toEqual(["installed"]);
+    expect(after.seen[0]!.paths).toEqual([]);
+    expect(born!.cache).toMatchObject({ found: "cold", kept: true });
+    await inCell(after.id, async (cell) => {
+      expect(await bash(cell, "tool --version")).toBe("tool 1.2.3\n");
+      (await cell.runtime()).lease!.idle();
+    });
+    expect((await object.cacheFor(key))!.keptAt).toBeGreaterThan(kept.keptAt);
+    const cold = logs().filter((line) => line.startsWith("[pen] cache cold: the container could not use the cache it was given"));
+    expect(cold.length).toBe(1);
+    expect(cold[0]).toContain("inflates to bytes that hash to");
+  });
+});
+
 describe("fold phase 2: a warm container's description", () => {
   it("a warm setup that touched one file writes the record again, the same record, and nothing moves; the committed cache is the cold one's", { timeout: 60_000 }, async () => {
     const object = await pasture("touched", { repo: REPO });
@@ -779,43 +961,49 @@ describe("fold phase 2: a warm container's description", () => {
     expect(described).toMatchObject({ hash: kept.hash, chunks: kept.chunks, files: kept.files, bytes: kept.bytes });
     // The cell had it already: no chunk asked for, nothing committed, the entry warm and neither kept nor refused.
     expect(ofType(fake.transcript, "need", "cell").filter((need) => need.id === described.id)).toEqual([]);
-    expect(warm!.cache).toEqual({ found: "warm", bytes: kept.bytes, files: kept.files, ms: expect.any(Number) });
+    expect(warm!.cache).toEqual({ found: "warm", bytes: kept.bytes, files: kept.files, ms: expect.any(Number), chunks: kept.chunks.length, stored: kept.stored, read: expect.any(Number) });
     expect((await object.cacheFor(key))!.keptAt).toBe(kept.keptAt);
   });
 });
 
 describe("fold phase 1: a cache is whole", () => {
-  it("the frame list never has two chunk blobs between two needs, putting back or keeping, for a record of two chunks", { timeout: 60_000 }, async () => {
+  it("a need for the cache names up to three chunks, answered in the order asked, and no fourth blob comes between two needs", { timeout: 60_000 }, async () => {
     const object = await pasture("big", { repo: REPO });
     await object.put(SETUP_PATH, encode(SETUP_SCRIPT));
     const key = hashBytes(encode(SETUP_SCRIPT));
-    const first = await mintedInto("big-first", "big", { engine: ENGINE });
+    const first = await mintedInto("big-first", "big", { engine: ENGINE_4 });
     const [born] = await births(first.id);
     const kept = (await object.cacheFor(key))!;
-    expect(kept.chunks.length).toBe(2);
-    expect(born!.cache).toEqual({ found: "cold", bytes: kept.bytes, files: 3, ms: 0, kept: true });
+    expect(kept.chunks.length).toBe(4);
+    expect(born!.cache).toEqual({ found: "cold", bytes: kept.bytes, files: 3, ms: 0, chunks: 4, stored: kept.stored, kept: true });
+    // What the object holds is the record deflated: these bytes repeat, so it holds a fraction of the tree.
+    expect(kept.stored).toBeLessThan(kept.bytes / 10);
     const chunks = new Set(kept.chunks);
 
-    // Kept: the cell asked for each chunk in a `need` of its own, and the container sent one blob for each.
+    // Kept: the cell asked for the chunks it lacked in one `need` of two, under the window of three, and the container sent
+    // them as blobs in the order asked, no fourth between two `need`s.
     const saving = first.stub.fakes[0]!.transcript;
-    expect(Math.max(...chunksBetweenNeeds(saving, chunks))).toBe(1);
+    expect(Math.max(...chunksBetweenNeeds(saving, chunks))).toBeLessThanOrEqual(CACHE_NEED_CHUNKS);
     const saveNeeds = ofType(saving, "need", "cell").filter((need) => need.hashes.some((hash) => chunks.has(hash)));
-    expect(saveNeeds.map((need) => need.hashes)).toEqual(kept.chunks.map((hash) => [hash]));
+    expect(saveNeeds.map((need) => need.hashes)).toEqual([kept.chunks.slice(0, CACHE_NEED_CHUNKS), kept.chunks.slice(CACHE_NEED_CHUNKS)]);
     expect(ofType(saving, "blob", "container").map((blob) => blob.hash).filter((hash) => chunks.has(hash))).toEqual(kept.chunks);
 
-    // Put back: the agent asked for each chunk alone, and the cell sent one blob for each `need`.
-    const second = await mintedInto("big-second", "big", { engine: ENGINE });
+    // Put back: the agent asked for both in one `need`, and the cell sent them in that order.
+    const second = await mintedInto("big-second", "big", { engine: ENGINE_4 });
     const [warm] = await births(second.id);
-    expect(warm!.cache).toMatchObject({ found: "warm", bytes: kept.bytes, files: 3 });
+    expect(warm!.cache).toMatchObject({ found: "warm", bytes: kept.bytes, files: 3, chunks: 4, stored: kept.stored, read: expect.any(Number) });
     expect(second.seen.map((one) => one.found)).toEqual(["1.2.3"]);
     const restoring = second.stub.fakes[0]!.transcript;
-    expect(Math.max(...chunksBetweenNeeds(restoring, chunks))).toBe(1);
+    expect(Math.max(...chunksBetweenNeeds(restoring, chunks))).toBeLessThanOrEqual(CACHE_NEED_CHUNKS);
     const restoreNeeds = ofType(restoring, "need", "container").filter((need) => need.hashes.some((hash) => chunks.has(hash)));
-    expect(restoreNeeds.map((need) => need.hashes)).toEqual(kept.chunks.map((hash) => [hash]));
+    expect(restoreNeeds.map((need) => need.hashes)).toEqual([kept.chunks.slice(0, CACHE_NEED_CHUNKS), kept.chunks.slice(CACHE_NEED_CHUNKS)]);
     expect(ofType(restoring, "blob", "cell").map((blob) => blob.hash).filter((hash) => chunks.has(hash))).toEqual(kept.chunks);
-    // What landed is the tool, the binary over a chunk whole.
+    // What travelled is the deflated form: each blob's size is the chunk's deflated length, and the cell never held a plain one.
+    const sent = ofType(restoring, "blob", "cell").filter((blob) => chunks.has(blob.hash));
+    expect(sent.reduce((total, blob) => total + blob.size, 0)).toBe(kept.stored);
+    // What landed is the tool, the binary of four chunks whole.
     const engine = second.stub.fakes[0]!.cache.entries.get("lib/node_modules/tool/vendor/engine.bin") as { bytes: Uint8Array; mode: number };
-    expect(hashBytes(engine.bytes)).toBe(hashBytes(ENGINE));
+    expect(hashBytes(engine.bytes)).toBe(hashBytes(ENGINE_4));
     expect(engine.mode).toBe(0o755);
     for (const sheep of [first, second]) await inCell(sheep.id, async (cell) => (await cell.runtime()).lease!.idle());
   });
@@ -862,7 +1050,7 @@ describe("fold phase 1: a cache is whole", () => {
     expect((await routeCache("blank")).cache).toBeNull();
   });
 
-  it("a save cut off between chunks leaves the committed cache; its chunks go at the first commit past the hour", { timeout: 60_000 }, async () => {
+  it("a save cut off between two needs leaves the committed cache; its chunks go at the first commit past the hour", { timeout: 60_000 }, async () => {
     const object = await pasture("cutoff");
     await object.put(SETUP_PATH, encode(SETUP_SCRIPT));
     const before = hashBytes(encode(SETUP_SCRIPT));
@@ -874,10 +1062,12 @@ describe("fold phase 1: a cache is whole", () => {
     const committed = (await object.cacheFor(before))!;
     expect(committed.chunks.length).toBe(2);
 
-    // A changed script installs a new version: a save of two new chunks, cut off after the first reaches the object.
+    // A changed script installs a new version: a save of four new chunks, cut off after the first reaches the object. Four,
+    // because a `need` names three (fold phase 3): the chunks already in flight land, and the `need` for the fourth is never
+    // answered, so the save never commits.
     await object.put(SETUP_PATH, encode(SETUP_CHANGED));
     const after = hashBytes(encode(SETUP_CHANGED));
-    const cut = rig({ engine: ENGINE_2 });
+    const cut = rig({ engine: ENGINE_4 });
     let puts = 0;
     await inEnv(
       "cutoff-2",
@@ -898,14 +1088,16 @@ describe("fold phase 1: a cache is whole", () => {
         }),
       },
     );
-    expect(puts).toBe(1);
+    // The first put cut the container; the two behind it in the same `need` still landed, and the fourth never was asked for again.
+    expect(puts).toBeGreaterThanOrEqual(1);
+    expect(puts).toBeLessThan(4);
     // The committed cache is as it was, for the first script; nothing is kept for the second.
     expect((await routeCache("cutoff")).cache).toMatchObject({ setup: before, keptAt: committed.keptAt, current: false });
     expect(await object.cacheFor(after)).toBeUndefined();
     expect(await object.cacheFor(before)).toEqual(committed);
-    // The cut save's one chunk is in the object, claimed and not named.
+    // The cut save's chunks are in the object, claimed and not named: as many as were put, no more.
     const orphans = (await chunkHashes("cutoff")).filter((hash) => !committed.chunks.includes(hash));
-    expect(orphans.length).toBe(1);
+    expect(orphans.length).toBe(puts);
 
     // The committed one still puts back whole: the first script again, a fresh container, warm, the binary whole.
     await object.put(SETUP_PATH, encode(SETUP_SCRIPT));
@@ -926,13 +1118,13 @@ describe("fold phase 1: a cache is whole", () => {
       return object.cacheCommit(save, { key: `key-${label}`, hash: hashBytes(encode(hash)), chunks: [hash], files: 1, bytes: bytes.byteLength, by: "the test" });
     };
     const within = await synthetic("within");
-    expect(await chunkHashes("cutoff")).toContain(orphans[0]);
+    for (const orphan of orphans) expect(await chunkHashes("cutoff")).toContain(orphan);
     await runInDurableObject(env.PASTURE.getByName("cutoff"), (instance: Pasture) => {
       instance.clock = () => Date.now() + 2 * 60 * 60 * 1000;
     });
     const last = await synthetic("past");
     const left = await chunkHashes("cutoff");
-    expect(left).not.toContain(orphans[0]);
+    for (const orphan of orphans) expect(left).not.toContain(orphan);
     // What is left is what the two kept saves name, the last commit's and the one before it; the first script's went with its generation.
     expect(left).toEqual([last.chunks[0]!, within.chunks[0]!].sort());
   });

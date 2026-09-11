@@ -68,16 +68,21 @@
  *
  * Fold phase 1: the pasture's cache, `/cache` in the container, travels as
  * one record (`record.ts`) cut into chunks of `CACHE_CHUNK_BYTES`, each a
- * blob named by its hash. Put back: a `manifest` may carry `cache`, the
+ * blob named by its hash. Fold phase 3: a chunk is gzipped where it is made
+ * and inflated where it lands, so what a `blob` carries and what the
+ * pasture's object holds is the deflated form and `size` is its length,
+ * while the hash is the chunk's plain bytes'; and a `need` for the cache
+ * may name up to `CACHE_NEED_CHUNKS` chunks, answered in the order asked.
+ * Put back: a `manifest` may carry `cache`, the
  * record's hash and its chunks' hashes in order; once the files are on
- * disk the agent empties `/cache` and asks for the chunks one `need` at a
+ * disk the agent empties `/cache` and asks for the chunks a `need` at a
  * time, one hash in each, writing the record's entries as each arrives,
  * and says `checkout` when the last is written. A chunk the cell no longer
  * has is `error {of: "need", id}` from the cell: the agent empties `/cache`
  * and says `checkout`, and setup runs cold. Kept: `cache {id}` from the
  * cell asks the container to describe `/cache`; the agent writes the
  * record to its scratch in chunks and answers `cache {id, hash, chunks,
- * files, bytes}`; the cell asks for the chunks it lacks, one `need` of one
+ * files, bytes}`; the cell asks for the chunks it lacks, a `need` of up to three
  * hash at a time, and says `synced` when it is done with the description,
  * whatever it did with it. No frame ever carries two chunks between two
  * `need`s, in either direction.
@@ -224,12 +229,26 @@ export const PASTURE_DIR_MODE = 0o555;
 
 /** Fold phase 1: where the pasture's cache lives in the container, npm's global prefix. */
 export const CACHE_ROOT = "/cache";
-/** One chunk of the cache's record: 8 MiB, a quarter of a WebSocket message, and what the cell holds at once. */
+/** One chunk of the cache's record: 8 MiB of plain bytes, a quarter of a WebSocket message; what travels is that chunk gzipped. */
 export const CACHE_CHUNK_BYTES = 8 * 1024 * 1024;
+/**
+ * Fold phase 3: what a chunk may come to deflated. gzip cannot shrink a
+ * stream of random bytes and makes it a little longer — its header, and
+ * deflate's stored blocks — so what travels and what the object keeps is
+ * capped a margin above the plain chunk, not at it.
+ */
+export const CACHE_STORED_BYTES = CACHE_CHUNK_BYTES + 64 * 1024;
+/**
+ * Fold phase 3: how many of the cache's chunks one `need` may name, in
+ * either direction, so the link carries the next while the receiver writes
+ * the last. Three is what bounds the cell's memory: 24 MB of a Durable
+ * Object's 128, where one chunk was 8.
+ */
+export const CACHE_NEED_CHUNKS = 3;
 /** A record over this is not kept: the station's instance has 4 GB of disk, and the record, its chunks, and the tree share it during a save. */
 export const CACHE_MAX_BYTES = 1024 * 1024 * 1024;
 
-/** A record as the manifest carries it: its hash and its chunks' hashes, in order. */
+/** A record as the manifest carries it: its hash and its chunks' hashes (each over the chunk's plain bytes), in order. */
 export interface CacheRef {
   hash: string;
   chunks: string[];
@@ -305,8 +324,17 @@ export type ContainerFrame =
    * sync the error lands in is over: `unsupported` and `malformed` are the
    * frame's fault, `mismatch` a blob whose bytes are not its hash,
    * `failed` the disk's.
+   *
+   * The one exception is `of: "cache"` with the sync-in's `id` (fold phase
+   * 3): a chunk of the put-back the container cannot use — one that does
+   * not inflate, or whose inflated bytes are not the hash it was asked for,
+   * which is what a cache kept before the chunks were deflated looks like.
+   * It ends the put-back and not the sync-in: `/cache` goes empty, the
+   * `checkout` that follows completes the sync-in, setup runs cold, and the
+   * cell's log says why. A sheep's command is not where a bad cache is
+   * reported.
    */
-  | { type: "error"; code: "unsupported" | "malformed" | "mismatch" | "failed"; of: string; message: string };
+  | { type: "error"; code: "unsupported" | "malformed" | "mismatch" | "failed"; of: string; id?: string; message: string };
 
 export type Frame = CellFrame | ContainerFrame;
 

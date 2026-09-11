@@ -40,9 +40,9 @@
  * Fold phase 1: the pasture's cache rides two syncs here, and is decided
  * in `pen/cache.ts`. A sync-in may carry a `CacheRestore`: its record goes
  * in the manifest as `cache`, every `need` that names one of its chunks is
- * the restore's to answer, one chunk each, and the `checkout` that ends the
+ * the restore's to answer, up to three each (fold phase 3), and the `checkout` that ends the
  * sync tells it how the put-back went. `keepCache` is a third kind of sync,
- * `cache {id}` and the chunks back one `need` at a time, whose frames and
+ * `cache {id}` and the chunks back a `need` of up to three at a time, whose frames and
  * bytes the `CacheSave` takes; the bytes it waits on are registered with
  * the socket's one guard, as a sync-out's are. No chunk is ever a row.
  */
@@ -199,7 +199,7 @@ export class Checkout {
         id,
         frame: async (frame) => {
           if (frame.type === "need" && frame.id === id) {
-            // A chunk of the cache is the restore's, alone in its `need`.
+            // The cache's chunks are the restore's, up to three in a `need`, and never beside a file's blob.
             if (restore !== undefined && restore.has(frame)) {
               await restore.answer(frame, this.channel());
               return;
@@ -218,6 +218,11 @@ export class Checkout {
               this.send({ type: "blob", hash, size: bytes.byteLength });
               this.sendBytes(bytes);
             }
+            return;
+          }
+          // Fold phase 3: a chunk the container could not use ends the put-back, cold; the `checkout` behind it ends the sync-in.
+          if (frame.type === "error" && frame.of === "cache" && frame.id === id) {
+            restore?.unusable(frame.message);
             return;
           }
           if (frame.type === "checkout" && frame.id === id) {
@@ -248,7 +253,7 @@ export class Checkout {
   /**
    * Fold phase 1: asks the container to describe `/cache`, and keeps it in
    * the pasture's object when `pen/cache.ts` says so, passing each chunk the
-   * object lacks from the socket to the object, one `need` at a time.
+   * object lacks from the socket to the object, a `need` of up to three at a time.
    * Resolves with what came of it once `synced` is sent.
    */
   keepCache(request: CacheSaveRequest): Promise<CacheSaved> {
@@ -463,7 +468,10 @@ export class Checkout {
         // The forward's frames are not the checkout's, in a sync or out of one; what the two share is the socket's one guard.
         if (frame.type === "response") return;
         if (this.expecting !== null) throw new CheckoutProtocolError(`expected the bytes of blob ${this.expecting.hash}, got a ${frame.type} frame`);
-        if (frame.type === "error") throw new CheckoutProtocolError(`the container reported ${frame.code} on ${frame.of}: ${frame.message}`);
+        // An error about the cache being put back is the put-back's, not the sync-in's (fold phase 3): the sync-in's own
+        // handler takes it, and the `checkout` behind it ends the sync as any other would.
+        const cacheError = frame.type === "error" && frame.of === "cache" && this.pending !== null && frame.id === this.pending.id;
+        if (frame.type === "error" && !cacheError) throw new CheckoutProtocolError(`the container reported ${frame.code} on ${frame.of}: ${frame.message}`);
         if (this.pending === null) {
           if (frame.type === "changed") this.arrived = frame;
           return;

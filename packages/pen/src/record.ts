@@ -14,6 +14,13 @@
  * across chunks; each side holds the one file it is on and the one chunk,
  * never the record.
  *
+ * Fold phase 3: a chunk is gzipped where it is made and inflated where it
+ * lands (`gzipBytes`, `gunzipBytes`, over `CompressionStream` and
+ * `DecompressionStream`, which workerd and Node both have). The chunk's
+ * hash stays over its plain bytes, so a zlib that packs differently moves
+ * no identity and an unchanged install still hashes the same; what travels
+ * and what the pasture's object holds is the deflated form.
+ *
  * Fold phase 2: a file with two names is written once. When the disk says
  * two entries are one file (`DiskEntry.file`, a hard link; npm makes them
  * for an install's largest binaries), the first name in path order carries
@@ -273,6 +280,38 @@ function concat(parts: Uint8Array[], length: number): Uint8Array {
     offset += part.byteLength;
   }
   return out;
+}
+
+/** One stream's bytes, read to the end and joined. */
+async function drain(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
+  const reader = stream.getReader();
+  const parts: Uint8Array[] = [];
+  let length = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    parts.push(value);
+    length += value.byteLength;
+  }
+  return concat(parts, length);
+}
+
+/** Through one of the platform's transform streams, whole: what goes in is one write, what comes out is read to the end. */
+async function through(bytes: Uint8Array, stream: { writable: WritableStream<Uint8Array>; readable: ReadableStream<Uint8Array> }): Promise<Uint8Array> {
+  const writer = stream.writable.getWriter();
+  const written = writer.write(bytes).then(() => writer.close());
+  const [out] = await Promise.all([drain(stream.readable), written]);
+  return out;
+}
+
+/** Fold phase 3: a chunk as it travels and as the object keeps it. */
+export function gzipBytes(bytes: Uint8Array): Promise<Uint8Array> {
+  return through(bytes, new CompressionStream("gzip"));
+}
+
+/** The other way, before the hash is checked: the plain bytes are what a chunk's hash is over. */
+export function gunzipBytes(bytes: Uint8Array): Promise<Uint8Array> {
+  return through(bytes, new DecompressionStream("gzip"));
 }
 
 /** Removes everything under a disk's root, the root kept. */

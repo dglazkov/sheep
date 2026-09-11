@@ -168,7 +168,14 @@ its disk. Three is the rule: a Durable Object has 128 MB, a WebSocket's
 pasture's object and passes it on, so it never holds more than three. A later sync-in on the same socket carries no cache: the container
 has it. A chunk the object no longer has is a cache that moved under
 the restore; the agent empties `/cache`, setup runs cold, and the log
-says so.
+says so. **A chunk the container cannot use goes the same way**: one that
+does not inflate, or whose bytes are not the hash it was asked for. A
+cache is a cache, and the sheep's command is not the place to report one
+that has gone bad — the put-back ends, `/cache` is empty, setup runs
+cold, and the next save replaces it. The case that will happen is a home
+upgraded across the deflating: every cache kept before it is plain bytes
+under a plain-bytes name, and the first fresh container of each pasture
+finds it so.
 
 **Kept.** After a setup that exits 0, the cell asks the container to
 describe `/cache`. The agent writes the record to its own disk in

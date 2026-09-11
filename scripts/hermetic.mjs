@@ -332,7 +332,11 @@
  * with n1's check, each counted minted and ended, so a6 still lists
  * `sessions: 0`. The two setups' times are printed side by side: the cold
  * install's ms, and the warm put-back's ms beside the warm setup's own,
- * which is the station's answer to the issue's two minutes. It needs no
+ * which is the station's answer to the issue's two minutes. Fold phase 3
+ * prints what the put-back was made of with them — the record's chunks, the
+ * deflated bytes that travelled, and the part of the put-back the cell
+ * spent reading the pasture's object — so a slow one names its own cause
+ * rather than needing another guess. It needs no
  * token beyond the Cloudflare one, so it has no skip; the save's ms and the
  * chunk count are lines of the station's log, which no verb reads, and are
  * named among what was not checked.
@@ -3724,9 +3728,16 @@ async function journeyFold(ring, station, { step = "f1" } = {}) {
   // Cold and kept, then warm with the same cache, put back in so many ms and unchanged by setup; setup's own word agreeing.
   const { cold, warm } = births;
   if (cold?.found !== "cold" || cold.kept !== true || cold.refused !== undefined || !(cold.bytes > 0) || !(cold.files > 0)) ring.fail(step, `sheep log ${ids.cold} --json (the birth's cache)`, { stdout: JSON.stringify(cold ?? null), stderr: "expected found: cold, kept: true, and the bytes and files of what setup left in /cache", code: 1 });
+  // Fold phase 3: the entry says how many chunks the record is and what they came to deflated, which is what travelled.
+  if (!(cold.chunks > 0) || !(cold.stored > 0) || !(cold.stored < cold.bytes)) {
+    ring.fail(step, `sheep log ${ids.cold} --json (the birth's cache)`, { stdout: JSON.stringify(cold), stderr: `expected chunks and stored, the stored bytes fewer than the record's ${cold.bytes}`, code: 1 });
+  }
   if (said.cold.word !== "installed") ring.fail(step, `sheep log ${ids.cold} --json (setup's word)`, { stdout: JSON.stringify(said.cold), stderr: "expected the cold setup to have installed the tool", code: 1 });
   if (warm?.found !== "warm" || warm.kept !== undefined || warm.refused !== undefined || warm.bytes !== cold.bytes || warm.files !== cold.files || typeof warm.ms !== "number") {
     ring.fail(step, `sheep log ${ids.warm} --json (the birth's cache)`, { stdout: JSON.stringify(warm ?? null), stderr: `expected found: warm, the cold one's ${cold.bytes} bytes and ${cold.files} files put back, its ms, and neither kept nor refused (setup changed nothing)`, code: 1 });
+  }
+  if (warm.chunks !== cold.chunks || warm.stored !== cold.stored || typeof warm.read !== "number" || warm.read > warm.ms) {
+    ring.fail(step, `sheep log ${ids.warm} --json (the birth's cache)`, { stdout: JSON.stringify(warm), stderr: `expected the same ${cold.chunks} chunks and ${cold.stored} stored bytes put back, and a read within the put-back's ${warm.ms} ms`, code: 1 });
   }
   if (said.warm.word !== "found") ring.fail(step, `sheep log ${ids.warm} --json (setup's word)`, { stdout: JSON.stringify(said.warm), stderr: "expected the warm setup to have found the tool on PATH, and not installed it", code: 1 });
 
@@ -3743,9 +3754,19 @@ async function journeyFold(ring, station, { step = "f1" } = {}) {
   }
   const seconds = ((Date.now() - started) / 1000).toFixed(0);
   ring.ok(step, `sheep pasture new ${pasture} --repo ${FOLD_REPO.url}; sheep pasture put ${pasture} setup.sh (${FOLD_TOOL.spec}, guarded); sheep new --pasture ${pasture} --detach (cold, then warm); sheep attach --detach; sheep wait`, `${seconds}s; ${FOLD_TOOL.asked} answered ${said.cold.version} and ${said.warm.version}`);
-  ring.ok(step, `sheep log ${ids.cold} --json; sheep log ${ids.warm} --json (the birth entries)`, `cold: kept, ${cold.bytes} bytes, ${cold.files} files, setup ${said.cold.word} in ${said.cold.ms} ms; warm: put back in ${warm.ms} ms, setup ${said.warm.word} in ${said.warm.ms} ms`);
-  // The two setups side by side: what a fresh container paid before its first command, cold and warm.
-  console.log(`  ${step} setups side by side: cold ${(said.cold.ms / 1000).toFixed(1)} s (${said.cold.word}) | warm ${((warm.ms + said.warm.ms) / 1000).toFixed(1)} s (put back ${(warm.ms / 1000).toFixed(1)} s, then ${said.warm.word} in ${said.warm.ms} ms); ${cold.bytes} bytes, ${cold.files} files`);
+  const mb = (bytes) => `${(bytes / 1e6).toFixed(1)} MB`;
+  ring.ok(
+    step,
+    `sheep log ${ids.cold} --json; sheep log ${ids.warm} --json (the birth entries)`,
+    `cold: kept, ${cold.bytes} bytes in ${cold.files} files, ${cold.chunks} chunks, ${mb(cold.stored)} stored, setup ${said.cold.word} in ${said.cold.ms} ms; warm: put back in ${warm.ms} ms (${warm.read} ms of it reading the object), setup ${said.warm.word} in ${said.warm.ms} ms`,
+  );
+  // The two setups side by side, and what the put-back was made of: what a fresh container paid before its first command.
+  console.log(
+    `  ${step} setups side by side: cold ${(said.cold.ms / 1000).toFixed(1)} s (${said.cold.word}) | warm ${((warm.ms + said.warm.ms) / 1000).toFixed(1)} s (put back ${(warm.ms / 1000).toFixed(1)} s, then ${said.warm.word} in ${said.warm.ms} ms)`,
+  );
+  console.log(
+    `  ${step} the put-back: ${cold.chunks} chunks, ${mb(cold.stored)} of ${mb(cold.bytes)} travelled, ${(warm.read / 1000).toFixed(1)} s of the ${(warm.ms / 1000).toFixed(1)} s was the cell reading the object (${(cold.stored / 1e6 / (warm.ms / 1000)).toFixed(1)} MB/s over the link)`,
+  );
   ring.ok(step, `sheep pasture ${pasture} --json; sheep pasture ${pasture}`, `${line}; current, for setup.sh ${setupHash.slice(0, 7)}`);
   ring.unchecked.push(`fold journey 3 ${step}: the save's ms and the cache's chunk count are lines of the station's log ("[pen] cache kept for setup.sh …, N chunks (M sent) in K ms"), which no verb reads`);
 

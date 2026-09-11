@@ -23,7 +23,7 @@
  * a sync, so both halves run inside one of its syncs, over the
  * `SyncChannel` it lends them; everything they decide is here.
  */
-import { CACHE_CHUNK_BYTES, type CacheRef, type CellFrame, type ContainerFrame, type NeedFrame, recordHashInput } from "@sheep/pen/protocol";
+import { CACHE_NEED_CHUNKS, CACHE_STORED_BYTES, type CacheRef, type CellFrame, type ContainerFrame, type NeedFrame, recordHashInput } from "@sheep/pen/protocol";
 import type { CacheCommit, KeptCache } from "../pasture.ts";
 import { hashBytes } from "../workspace/files.ts";
 
@@ -87,8 +87,14 @@ export function overCapRefusal(max: number): string {
 // ---------------------------------------------------------------------------
 // Put back.
 
-/** How a put-back ended: the whole record written, or not, and why. */
-export type RestoreEnd = { restored: true; ms: number } | { restored: false; reason: string };
+/**
+ * How a put-back ended: the whole record written, or not, and why. Fold
+ * phase 3 splits the time: `ms` is the whole, from the first `need` to the
+ * container's `checkout`, and `readMs` the part of it this cell spent in
+ * `cacheChunk`, reading the object; `stored` is the deflated bytes that
+ * travelled, which is what a slow link is slow about.
+ */
+export type RestoreEnd = { restored: true; ms: number; readMs: number; stored: number } | { restored: false; reason: string };
 
 /**
  * One put-back, for one sync-in. `has` says whether a `need` is the
@@ -103,6 +109,9 @@ export class CacheRestore {
   private served = 0;
   private started: number | undefined;
   private lost: string | undefined;
+  /** Fold phase 3: how long this cell has spent reading chunks from the object, and how many bytes it has passed on. */
+  private readMs = 0;
+  private stored = 0;
 
   constructor(kept: KeptCache, store: Pick<CacheStore, "cacheChunk">, now: () => number = Date.now) {
     this.kept = kept;
@@ -122,25 +131,44 @@ export class CacheRestore {
   }
 
   /**
-   * One chunk for one `need`: read from the object now and sent, the only
-   * chunk this cell holds while it is in flight. A `need` naming two, or a
-   * chunk beside a file, is refused: one per `need` is the protocol. A
-   * chunk the object no longer has is the cache moving under the put-back,
-   * and the agent is told so, not the sync failed.
+   * The chunks of one `need`, up to three (fold phase 3), each read from
+   * the object and sent in the order asked, so this cell holds one at a
+   * time and the link carries the next while the container writes the last.
+   * A `need` naming more than three, or a chunk beside a file, is refused.
+   * A chunk the object no longer has is the cache moving under the
+   * put-back, and the agent is told so, not the sync failed. Each chunk
+   * goes as the object holds it, deflated: this cell never inflates one.
    */
   async answer(frame: NeedFrame, channel: SyncChannel): Promise<void> {
-    if (frame.hashes.length !== 1) throw new CacheProtocolError(`a need for the cache names one chunk; ${frame.id} named ${frame.hashes.length} hashes`);
-    const hash = frame.hashes[0]!;
-    this.started ??= this.now();
-    const bytes = await this.store.cacheChunk(hash);
-    if (bytes === undefined) {
-      this.lost = `the pasture no longer has chunk ${hash.slice(0, 12)} of the cache it was putting back; it changed during the put-back`;
-      channel.send({ type: "error", code: "refused", of: "need", id: frame.id, message: this.lost });
-      return;
+    if (frame.hashes.length === 0 || frame.hashes.length > CACHE_NEED_CHUNKS) {
+      throw new CacheProtocolError(`a need for the cache names one to ${CACHE_NEED_CHUNKS} chunks; ${frame.id} named ${frame.hashes.length} hashes`);
     }
-    channel.send({ type: "blob", hash, size: bytes.byteLength });
-    channel.sendBytes(bytes);
-    this.served++;
+    this.started ??= this.now();
+    for (const hash of frame.hashes) {
+      const read = this.now();
+      const bytes = await this.store.cacheChunk(hash);
+      this.readMs += this.now() - read;
+      if (bytes === undefined) {
+        this.lost = `the pasture no longer has chunk ${hash.slice(0, 12)} of the cache it was putting back; it changed during the put-back`;
+        channel.send({ type: "error", code: "refused", of: "need", id: frame.id, message: this.lost });
+        return;
+      }
+      channel.send({ type: "blob", hash, size: bytes.byteLength });
+      channel.sendBytes(bytes);
+      this.stored += bytes.byteLength;
+      this.served++;
+    }
+  }
+
+  /**
+   * Fold phase 3: the container could not use a chunk it was given — one
+   * that did not inflate, or whose inflated bytes were not the hash it was
+   * asked for, which is what a cache kept before the chunks were deflated
+   * looks like. It has emptied `/cache` and will say `checkout`; this
+   * put-back is over, cold, and the sync-in is not.
+   */
+  unusable(reason: string): void {
+    this.lost = `the container could not use the cache it was given: ${reason}`;
   }
 
   /** How the put-back ended, once the container said `checkout`; `undefined` before, or when the sync-in failed. */
@@ -150,7 +178,7 @@ export class CacheRestore {
   finish(): RestoreEnd {
     if (this.lost !== undefined) this.ended = { restored: false, reason: this.lost };
     else if (this.served < this.kept.chunks.length) this.ended = { restored: false, reason: `the container asked for ${this.served} of the cache's ${this.kept.chunks.length} chunks` };
-    else this.ended = { restored: true, ms: this.started === undefined ? 0 : this.now() - this.started };
+    else this.ended = { restored: true, ms: this.started === undefined ? 0 : this.now() - this.started, readMs: this.readMs, stored: this.stored };
     return this.ended;
   }
 }
@@ -187,8 +215,11 @@ export class CacheSave {
   private readonly channel: SyncChannel;
   private readonly resolve: (saved: CacheSaved) => void;
   private described: Extract<ContainerFrame, { type: "cache" }> | null = null;
-  /** The chunks still to ask for, in order; the first is the one asked for now. */
+  /** The chunks still to ask for, in order, the ones named in the `need` now outstanding first (fold phase 3: up to three). */
   private wanted: string[] = [];
+  /** How many of `wanted` the outstanding `need` named, and how many of those have landed. */
+  private asked = 0;
+  private landed = 0;
   /** The chunk whose `blob` is awaited, once its frame came. */
   private announced: { hash: string; size: number } | null = null;
   private sent = 0;
@@ -212,8 +243,9 @@ export class CacheSave {
       return;
     }
     if (frame.type === "blob") {
-      if (this.announced !== null || frame.hash !== this.wanted[0]) throw new CacheProtocolError(`the container sent chunk ${frame.hash}, which was not asked for`);
-      if (frame.size > CACHE_CHUNK_BYTES) throw new CacheProtocolError(`chunk ${frame.hash} is ${frame.size} bytes, over a chunk`);
+      // The chunks come back in the order they were asked for: this `blob` must name the next of the outstanding `need`.
+      if (this.announced !== null || frame.hash !== this.wanted[this.landed]) throw new CacheProtocolError(`the container sent chunk ${frame.hash}, which was not asked for`);
+      if (frame.size > CACHE_STORED_BYTES) throw new CacheProtocolError(`chunk ${frame.hash} is ${frame.size} bytes deflated, over a chunk`);
       this.channel.expect(frame.hash, frame.size);
       this.announced = { hash: frame.hash, size: frame.size };
       return;
@@ -221,18 +253,26 @@ export class CacheSave {
     throw new CacheProtocolError(`unexpected ${frame.type} frame during cache ${this.id}`);
   }
 
+  /**
+   * One chunk's bytes, as the container deflated them (fold phase 3): put
+   * to the object and let go. This cell does not inflate them to check the
+   * hash, which is over the plain bytes; what it checks is that they are
+   * the chunk it asked for, of the length announced. The container that
+   * next has this cache inflates and checks the hash there, which is where
+   * the bytes are used.
+   */
   async bytes(bytes: Uint8Array): Promise<void> {
     const announced = this.announced;
     this.announced = null;
     this.channel.arrived();
     if (announced === null) throw new CacheProtocolError("bytes with no chunk frame before them");
     if (bytes.byteLength !== announced.size) throw new CacheProtocolError(`chunk ${announced.hash} announced ${announced.size} bytes and carried ${bytes.byteLength}`);
-    const hash = hashBytes(bytes);
-    if (hash !== announced.hash) throw new CacheProtocolError(`chunk ${announced.hash} hashes to ${hash}; nothing kept`);
-    // Passed on and let go: the object has it before the next is asked for.
-    await this.request.store.cachePut(this.request.save, hash, bytes);
+    // Passed on and let go: the object has it before the last of the outstanding `need` lands.
+    await this.request.store.cachePut(this.request.save, announced.hash, bytes);
     this.sent++;
-    this.wanted.shift();
+    this.landed++;
+    if (this.landed < this.asked) return;
+    this.wanted = this.wanted.slice(this.asked);
     await this.next();
   }
 
@@ -248,11 +288,13 @@ export class CacheSave {
     await this.next();
   }
 
-  /** The next chunk, alone in its `need`; or, with none left, the commit. */
+  /** The next chunks, up to three in one `need` (fold phase 3); or, with none left, the commit. */
   private async next(): Promise<void> {
-    const hash = this.wanted[0];
-    if (hash !== undefined) {
-      this.channel.send({ type: "need", id: this.id, hashes: [hash] });
+    const hashes = this.wanted.slice(0, CACHE_NEED_CHUNKS);
+    this.asked = hashes.length;
+    this.landed = 0;
+    if (hashes.length > 0) {
+      this.channel.send({ type: "need", id: this.id, hashes });
       return;
     }
     const frame = this.described!;

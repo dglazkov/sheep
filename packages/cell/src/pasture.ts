@@ -22,7 +22,7 @@
  * after it, and a save cut off leaves the committed one as it was.
  */
 import { DurableObject } from "cloudflare:workers";
-import { CACHE_CHUNK_BYTES, type ManifestEntry, recordHashInput } from "@sheep/pen/protocol";
+import { CACHE_STORED_BYTES, type ManifestEntry, recordHashInput } from "@sheep/pen/protocol";
 import { CHUNK_BYTES, FilesTable, FsError, hashBytes, normalizePath, type TreeEntry } from "./workspace/files.ts";
 import { PASTURE_ROOT } from "./workspace/mount.ts";
 
@@ -85,9 +85,14 @@ export interface CacheCommit extends CacheRecord {
   by: string;
 }
 
-/** A kept save: the commit and when it was kept. */
+/**
+ * A kept save: the commit, when it was kept, and what its chunks come to
+ * on this object's disk (fold phase 3: the deflated bytes, which is what
+ * travels; `bytes` stays the record's own, the tree's size).
+ */
 export interface KeptCache extends CacheCommit {
   keptAt: number;
+  stored: number;
 }
 
 /**
@@ -131,6 +136,12 @@ export class Pasture extends DurableObject<Env> {
     )`);
     ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS cache_chunks (hash TEXT NOT NULL, idx INTEGER NOT NULL, content BLOB NOT NULL, PRIMARY KEY (hash, idx))");
     ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS cache_sizes (hash TEXT PRIMARY KEY, size INTEGER NOT NULL)");
+    // Fold phase 3: a chunk is kept deflated, under the name its plain bytes hash to, so the name cannot say which it is. A
+    // chunk kept before that is plain, and the save that names it again must send it rather than find it here: the column
+    // says which, and an object from before this phase has it added with every chunk it holds marked as not deflated.
+    if (!ctx.storage.sql.exec("PRAGMA table_info(cache_sizes)").toArray().some((column) => (column as { name: string }).name === "deflated")) {
+      ctx.storage.sql.exec("ALTER TABLE cache_sizes ADD COLUMN deflated INTEGER NOT NULL DEFAULT 0");
+    }
     ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS cache_claims (save TEXT NOT NULL, hash TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (save, hash))");
     this.files = new FilesTable(ctx.storage.sql, Date.now, [PASTURE_ROOT]);
     this.files.init();
@@ -254,17 +265,28 @@ export class Pasture extends DurableObject<Env> {
         "SELECT generation, save, key, hash, chunks, files, bytes, kept_at, by FROM cache ORDER BY generation DESC",
       )
       .toArray()
-      .map((row) => ({
-        generation: row.generation,
-        save: row.save,
-        key: row.key,
-        hash: row.hash,
-        chunks: JSON.parse(row.chunks) as string[],
-        files: row.files,
-        bytes: row.bytes,
-        keptAt: row.kept_at,
-        by: row.by,
-      }));
+      .map((row) => {
+        const chunks = JSON.parse(row.chunks) as string[];
+        return {
+          generation: row.generation,
+          save: row.save,
+          key: row.key,
+          hash: row.hash,
+          chunks,
+          files: row.files,
+          bytes: row.bytes,
+          keptAt: row.kept_at,
+          by: row.by,
+          stored: this.storedBytes(chunks),
+        };
+      });
+  }
+
+  /** What a record's chunks come to here, deflated as they are kept; a chunk gone (an older save's, deleted) counts nothing. */
+  private storedBytes(chunks: readonly string[]): number {
+    let stored = 0;
+    for (const hash of new Set(chunks)) stored += this.ctx.storage.sql.exec<{ size: number }>("SELECT size FROM cache_sizes WHERE hash = ?", hash).toArray()[0]?.size ?? 0;
+    return stored;
   }
 
   /** The committed save, when there is one. */
@@ -284,9 +306,9 @@ export class Pasture extends DurableObject<Env> {
     return kept;
   }
 
-  /** Whether a chunk is here, whole. */
+  /** Whether a chunk is here, whole and deflated: one kept before fold phase 3 is plain, and counts as missing so the save replaces it. */
   private hasChunk(hash: string): boolean {
-    return this.ctx.storage.sql.exec("SELECT 1 FROM cache_sizes WHERE hash = ?", hash).toArray().length > 0;
+    return this.ctx.storage.sql.exec("SELECT 1 FROM cache_sizes WHERE hash = ? AND deflated = 1", hash).toArray().length > 0;
   }
 
   /** One chunk's bytes by its hash, its rows joined; `undefined` when no kept save or save in flight has it. */
@@ -321,13 +343,15 @@ export class Pasture extends DurableObject<Env> {
 
   /**
    * One chunk, whole, in one method and so one transaction: its rows of
-   * one MiB and its size, claimed for the save. Bytes that are not their
-   * hash, or over a chunk, are refused before a row is written.
+   * one MiB and its size, claimed for the save. Bytes over a chunk, or
+   * none, are refused before a row is written. Fold phase 3: what is kept
+   * is the chunk deflated, under the name its plain bytes hash to, so this
+   * object cannot check the name against the bytes and does not try; the
+   * container that is given the chunk inflates it and checks the hash
+   * there, which is where the bytes are used.
    */
   cachePut(save: string, hash: string, bytes: Uint8Array): void {
-    if (bytes.byteLength === 0 || bytes.byteLength > CACHE_CHUNK_BYTES) throw new Error(`a chunk is 1 to ${CACHE_CHUNK_BYTES} bytes, not ${bytes.byteLength}`);
-    const actual = hashBytes(bytes);
-    if (actual !== hash) throw new Error(`chunk ${hash} hashes to ${actual}; nothing kept`);
+    if (bytes.byteLength === 0 || bytes.byteLength > CACHE_STORED_BYTES) throw new Error(`a chunk is 1 to ${CACHE_STORED_BYTES} bytes deflated, not ${bytes.byteLength}`);
     const sql = this.ctx.storage.sql;
     sql.exec("INSERT OR REPLACE INTO cache_claims (save, hash, at) VALUES (?, ?, ?)", save, hash, this.clock());
     if (this.hasChunk(hash)) return;
@@ -335,7 +359,7 @@ export class Pasture extends DurableObject<Env> {
     for (let offset = 0, index = 0; offset < bytes.byteLength; offset += CHUNK_BYTES, index++) {
       sql.exec("INSERT INTO cache_chunks (hash, idx, content) VALUES (?, ?, ?)", hash, index, bytes.subarray(offset, offset + CHUNK_BYTES));
     }
-    sql.exec("INSERT INTO cache_sizes (hash, size) VALUES (?, ?)", hash, bytes.byteLength);
+    sql.exec("INSERT OR REPLACE INTO cache_sizes (hash, size, deflated) VALUES (?, ?, 1)", hash, bytes.byteLength);
   }
 
   /**
@@ -372,7 +396,7 @@ export class Pasture extends DurableObject<Env> {
         sql.exec("DELETE FROM cache_sizes WHERE hash = ?", row.hash);
       }
     });
-    return { key: commit.key, hash: commit.hash, chunks: commit.chunks, files: commit.files, bytes: commit.bytes, by: commit.by, keptAt };
+    return { key: commit.key, hash: commit.hash, chunks: commit.chunks, files: commit.files, bytes: commit.bytes, by: commit.by, keptAt, stored: this.storedBytes(commit.chunks) };
   }
 
   /** The committed save as the route says it, read from its row and never a chunk; `current` asks the tree for `setup.sh`'s hash now. */

@@ -119,9 +119,14 @@ export type SetupEnd = { exit: number } | { error: string };
  */
 export type CacheOutcome = {
   found: "warm" | "cold";
+  /** The record's own bytes: the tree's size, whatever the chunks come to deflated. */
   bytes: number;
   files: number;
   ms: number;
+  /** Fold phase 3, so a slow put-back names its own cause: the record's chunks, the deflated bytes that travelled, and the part of `ms` the cell spent reading them from the pasture's object. */
+  chunks?: number;
+  stored?: number;
+  read?: number;
   kept?: true;
   refused?: string;
 };
@@ -338,7 +343,7 @@ interface Lease {
    * the save, and how long, or nothing when it put nothing back.
    */
   cacheAsked: boolean;
-  putBack?: { key: string; kept: KeptCache; ms: number };
+  putBack?: { key: string; kept: KeptCache; ms: number; readMs: number; stored: number };
 }
 
 export class CellExecutionEnv implements ExecutionEnv {
@@ -875,8 +880,8 @@ export class CellExecutionEnv implements ExecutionEnv {
     const ended = restore?.ended;
     if (restore !== undefined && key !== undefined && ended !== undefined) {
       if (ended.restored) {
-        lease.putBack = { key, kept: restore.kept, ms: ended.ms };
-        console.info(`[pen] cache warm, ${cacheSize(restore.kept.bytes)} in ${ended.ms} ms`);
+        lease.putBack = { key, kept: restore.kept, ms: ended.ms, readMs: ended.readMs, stored: ended.stored };
+        console.info(`[pen] cache warm, ${cacheSize(restore.kept.bytes)} in ${ended.ms} ms: ${restore.kept.chunks.length} chunks, ${cacheSize(ended.stored)} stored, ${ended.readMs} ms of it reading the object`);
       } else {
         console.info(`[pen] cache cold: ${ended.reason}; /cache was emptied and setup runs cold`);
       }
@@ -1261,7 +1266,15 @@ export class CellExecutionEnv implements ExecutionEnv {
     const { checkout } = lease;
     // Warm only when what was put back was for this script: a `setup.sh` changed since the socket's first sync-in runs on it as on a cold one.
     const found: CacheOutcome = lease.putBack !== undefined && lease.putBack.key === key
-      ? { found: "warm", bytes: lease.putBack.kept.bytes, files: lease.putBack.kept.files, ms: lease.putBack.ms }
+      ? {
+          found: "warm",
+          bytes: lease.putBack.kept.bytes,
+          files: lease.putBack.kept.files,
+          ms: lease.putBack.ms,
+          chunks: lease.putBack.kept.chunks.length,
+          stored: lease.putBack.stored,
+          read: lease.putBack.readMs,
+        }
       : { found: "cold", bytes: 0, files: 0, ms: 0 };
     let output = "";
     const failed = (outcome: Outcome): Ran => {
@@ -1350,8 +1363,9 @@ export class CellExecutionEnv implements ExecutionEnv {
         return found;
       }
       const { kept, sent } = saved;
-      console.info(`[pen] cache kept for ${setupName(key)}, ${cacheSize(kept.bytes)}, ${kept.files} files, ${kept.chunks.length} chunks (${sent} sent) in ${Date.now() - started} ms`);
-      return { ...found, ...(found.found === "cold" ? { bytes: kept.bytes, files: kept.files } : {}), kept: true };
+      console.info(`[pen] cache kept for ${setupName(key)}, ${cacheSize(kept.bytes)}, ${kept.files} files, ${kept.chunks.length} chunks, ${cacheSize(kept.stored)} stored (${sent} sent) in ${Date.now() - started} ms`);
+      // A cold save learns the counts here; a warm one keeps the put-back's, which are the same record's.
+      return { ...found, ...(found.found === "cold" ? { bytes: kept.bytes, files: kept.files, chunks: kept.chunks.length, stored: kept.stored } : {}), kept: true };
     } catch (error) {
       return refuse(`the save failed: ${messageOf(error)}`);
     }

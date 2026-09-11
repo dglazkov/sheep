@@ -48,6 +48,21 @@
  * its own last sync; a manifest without `home` leaves `~` as it is, and
  * the agent forgets it until one carries it again.
  *
+ * Fold phase 3: a chunk of a put-back the container cannot use — one that
+ * does not inflate, or whose inflated bytes are not the hash it was asked
+ * for, which is what a cache kept before the chunks were deflated looks
+ * like — ends the put-back the way a chunk the object no longer has does:
+ * `/cache` empty, `checkout` said, setup cold, and the cell told why. The
+ * sync-in completes and the container stays usable; a sheep's command is
+ * not where a bad cache is reported.
+ *
+ * Fold phase 3: a chunk is gzipped where it is made and inflated where it
+ * lands, and its hash stays over its plain bytes, so the scratch, the
+ * socket, and the pasture's object all hold the deflated form and nothing
+ * about a record's identity depends on a zlib. A `need` for the cache may
+ * name up to three chunks, answered in the order asked, in both
+ * directions.
+ *
  * Fold phase 1 gives it a fourth disk, the pasture's cache, rooted at
  * `/cache`, and a scratch for the chunks a description made. Neither is
  * ever walked by a sync-out. A `manifest` that carries `cache` is put back
@@ -67,10 +82,11 @@
  * stat walk rather than a record.
  */
 import ignore from "ignore";
-import { Chunker, emptyDisk, RecordReader, writeRecord } from "./record.ts";
+import { Chunker, emptyDisk, gunzipBytes, gzipBytes, RecordReader, writeRecord } from "./record.ts";
 import {
   BUILT_IN_IGNORES,
   CACHE_CHUNK_BYTES,
+  CACHE_NEED_CHUNKS,
   type CacheRef,
   type CellFrame,
   type ChangedEntry,
@@ -93,7 +109,7 @@ import {
   type Refused,
 } from "./protocol.ts";
 
-export { Chunker, emptyDisk, RecordError, RecordReader, writeRecord } from "./record.ts";
+export { Chunker, emptyDisk, gunzipBytes, gzipBytes, RecordError, RecordReader, writeRecord } from "./record.ts";
 
 export interface DiskEntry {
   /** Relative to the checkout root, no leading slash. */
@@ -392,10 +408,11 @@ class Agent {
   } | null = null;
   /**
    * A put-back in progress (fold phase 1): the sync-in it belongs to, the
-   * chunks in order, the one asked for now, and the reader writing them
-   * onto `/cache`. `checkout` waits for it.
+   * chunks in order, the one to land next, how many have been asked for
+   * (fold phase 3: up to three at a time), and the reader writing them onto
+   * `/cache`. `checkout` waits for it.
    */
-  private restoring: { id: string; ref: CacheRef; next: number; reader: RecordReader } | null = null;
+  private restoring: { id: string; ref: CacheRef; next: number; asked: number; reader: RecordReader } | null = null;
   /**
    * Fold phase 2: the last put-back, whole: the record it was, its counts,
    * and `/cache` as the walk after its last write found it, path by path.
@@ -403,8 +420,12 @@ class Agent {
    * off, or when the disk cannot say a size and an mtime.
    */
   private putBack: { ref: CacheRef; files: number; bytes: number; stat: Map<string, string> } | null = null;
-  /** A description the cell has not said `synced` to: its id and the chunks on the scratch. */
-  private describing: { id: string; chunks: Set<string> } | null = null;
+  /**
+   * A description the cell has not said `synced` to: its id, and by the
+   * chunk's own hash what lies on the scratch for it (fold phase 3: the
+   * deflated bytes, their own digest, and their length).
+   */
+  private describing: { id: string; chunks: Map<string, { stored: string; size: number }> } | null = null;
   /**
    * The frame whose binary message is next, and whose it is: a `blob`'s
    * bytes during a sync-in, a `fetch`'s body during a look. There is at
@@ -412,7 +433,14 @@ class Agent {
    * first one's bytes is a socket whose two lanes have collided, and
    * `handle` throws on any frame at all while this is set.
    */
-  private expecting: { of: "blob"; hash: string; size: number } | { of: "fetch"; frame: FetchFrame } | null = null;
+  private expecting: { of: "blob"; hash: string; size: number; drop?: true } | { of: "fetch"; frame: FetchFrame } | null = null;
+  /**
+   * Chunks of a put-back this agent ended early: the rest of the `need` it
+   * had asked for, already on their way. Their `blob`s and bytes are read
+   * off the socket and dropped, so the frames stay in step and the socket
+   * lives on.
+   */
+  private dropping = new Set<string>();
   /** A sync-out in progress; `home` when it reported `~`. */
   private out: {
     id: string;
@@ -510,7 +538,13 @@ class Agent {
         return;
       case "blob": {
         const restoring = this.restoring;
-        const chunk = restoring !== null && restoring.ref.chunks[restoring.next] === frame.hash;
+        // A chunk of a put-back this agent has given up on: read off the socket and dropped.
+        if (this.dropping.has(frame.hash)) {
+          this.expecting = { of: "blob", hash: frame.hash, size: frame.size, drop: true };
+          return;
+        }
+        // The chunks land in the order they were asked for: the next one is the one this `blob` must name.
+        const chunk = restoring !== null && restoring.next < restoring.asked && restoring.ref.chunks[restoring.next] === frame.hash;
         if (!chunk && (this.checkout === null || !this.checkout.needed.has(frame.hash))) {
           throw new ProtocolError("malformed", "blob", `no sync-in is waiting for blob ${frame.hash}`);
         }
@@ -668,6 +702,11 @@ class Agent {
     const expecting = this.expecting;
     if (expecting === null) throw new ProtocolError("malformed", "binary", "bytes with no frame to announce them");
     this.expecting = null;
+    // A chunk of a put-back that is over: its bytes are read and let go, and the socket is where it was.
+    if (expecting.of === "blob" && expecting.drop === true) {
+      this.dropping.delete(expecting.hash);
+      return;
+    }
     if (expecting.of === "fetch") {
       const { frame } = expecting;
       if (bytes.byteLength !== frame.size) {
@@ -884,8 +923,9 @@ class Agent {
 
   /**
    * The put-back's first step: `/cache` emptied, whatever was there, so
-   * what lands is the record and nothing beside it; then the first chunk
-   * asked for, alone. A record of no chunks is an empty `/cache`.
+   * what lands is the record and nothing beside it; then the first chunks
+   * asked for, up to three (fold phase 3). A record of no chunks is an
+   * empty `/cache`.
    */
   private async beginRestore(id: string, ref: CacheRef, disk: Disk): Promise<void> {
     this.putBack = null;
@@ -898,27 +938,69 @@ class Agent {
       this.send({ type: "checkout", id });
       return;
     }
-    this.restoring = { id, ref, next: 0, reader };
-    this.send({ type: "need", id, hashes: [ref.chunks[0]!] });
+    this.restoring = { id, ref, next: 0, asked: 0, reader };
+    this.askForChunks(this.restoring);
   }
 
-  /** One chunk of the put-back, checked against its hash and written through the reader; then the next is asked for, or the sync-in is done. */
+  /** The next chunks of a put-back, up to three, in the order they are to land; the receiver writes the last while the link carries the next. */
+  private askForChunks(restoring: NonNullable<Agent["restoring"]>): void {
+    const hashes = restoring.ref.chunks.slice(restoring.next, restoring.next + CACHE_NEED_CHUNKS);
+    restoring.asked = restoring.next + hashes.length;
+    this.send({ type: "need", id: restoring.id, hashes });
+  }
+
+  /**
+   * One chunk of the put-back: inflated, then checked against its hash,
+   * which is over those plain bytes and not the deflated form it travelled
+   * as (fold phase 3), and written through the reader. When the chunks
+   * asked for have all landed, the next three are asked for; when the
+   * record's last has, the sync-in is done.
+   */
   private async restoreChunk(restoring: NonNullable<Agent["restoring"]>, expecting: { hash: string; size: number }, bytes: Uint8Array): Promise<void> {
     if (bytes.byteLength !== expecting.size) {
       throw new ProtocolError("mismatch", "blob", `chunk ${expecting.hash} announced ${expecting.size} bytes and carried ${bytes.byteLength}`);
     }
-    const hash = await this.cacheDisk!.digest(bytes);
-    if (hash !== expecting.hash) throw new ProtocolError("mismatch", "blob", `chunk ${expecting.hash} hashes to ${hash}`);
-    await restoring.reader.push(bytes);
+    let plain: Uint8Array;
+    try {
+      plain = await gunzipBytes(bytes);
+    } catch (error) {
+      await this.endRestoreCold(restoring, `chunk ${expecting.hash.slice(0, 12)} is not a gzip stream: ${error instanceof Error ? error.message : String(error)}`);
+      return;
+    }
+    const hash = await this.cacheDisk!.digest(plain);
+    if (hash !== expecting.hash) {
+      await this.endRestoreCold(restoring, `chunk ${expecting.hash.slice(0, 12)} inflates to bytes that hash to ${hash.slice(0, 12)}`);
+      return;
+    }
+    await restoring.reader.push(plain);
     restoring.next++;
     if (restoring.next < restoring.ref.chunks.length) {
-      this.send({ type: "need", id: restoring.id, hashes: [restoring.ref.chunks[restoring.next]!] });
+      if (restoring.next === restoring.asked) this.askForChunks(restoring);
       return;
     }
     const count = await restoring.reader.end();
     this.restoring = null;
     this.putBack = await Agent.keptStat(this.cacheDisk!, restoring.ref, count);
     this.send({ type: "checkout", id: restoring.id });
+  }
+
+  /**
+   * A chunk the container cannot use ends the put-back and not the sync-in
+   * (fold phase 3), the way a chunk the object no longer has does:
+   * `/cache` goes empty, the cell is told why under the sync-in's id, and
+   * `checkout` completes the sync-in, so setup runs cold, the description
+   * after it writes a record, and the sheep's command never sees this. The
+   * chunks already on their way, the rest of the `need`, are dropped as
+   * they arrive.
+   */
+  private async endRestoreCold(restoring: NonNullable<Agent["restoring"]>, reason: string): Promise<void> {
+    const { id } = restoring;
+    for (const hash of restoring.ref.chunks.slice(restoring.next + 1, restoring.asked)) this.dropping.add(hash);
+    this.restoring = null;
+    this.putBack = null;
+    await emptyDisk(this.cacheDisk!);
+    this.send({ type: "error", code: "mismatch", of: "cache", id, message: reason });
+    this.send({ type: "checkout", id });
   }
 
   /**
@@ -967,23 +1049,27 @@ class Agent {
     // Nothing touched since the put-back: its record is the answer, and not a byte is written to learn it.
     const putBack = this.putBack;
     if (putBack !== null && (max === undefined || putBack.bytes <= max) && (await Agent.untouched(cache, putBack.stat))) {
-      this.describing = { id, chunks: new Set() };
+      this.describing = { id, chunks: new Map() };
       this.send({ type: "cache", id, hash: putBack.ref.hash, chunks: putBack.ref.chunks, files: putBack.files, bytes: putBack.bytes });
       return;
     }
     await emptyDisk(scratch);
     const chunks: string[] = [];
-    const written = new Set<string>();
+    const written = new Map<string, { stored: string; size: number }>();
     const chunker = new Chunker(CACHE_CHUNK_BYTES, async (chunk) => {
+      // The hash is the chunk's plain bytes'; what lies on the scratch, travels, and is kept is that chunk gzipped.
       const hash = await scratch.digest(chunk);
-      if (!written.has(hash)) await scratch.write(hash, chunk, { mode: 0o600 });
-      written.add(hash);
+      if (!written.has(hash)) {
+        const stored = await gzipBytes(chunk);
+        await scratch.write(hash, stored, { mode: 0o600 });
+        written.set(hash, { stored: await scratch.digest(stored), size: stored.byteLength });
+      }
       chunks.push(hash);
     });
     const count = await writeRecord(cache, (bytes) => chunker.push(bytes), max === undefined ? {} : { max });
     if (count.over) {
       await emptyDisk(scratch);
-      this.describing = { id, chunks: new Set() };
+      this.describing = { id, chunks: new Map() };
       this.send({ type: "cache", id, hash: "", chunks: [], files: count.files, bytes: count.bytes });
       return;
     }
@@ -993,17 +1079,28 @@ class Agent {
     this.send({ type: "cache", id, hash, chunks, files: count.files, bytes: count.bytes });
   }
 
-  /** The cell's `need` for a description's chunk: one hash, off the scratch, checked, sent. */
+  /**
+   * The cell's `need` for a description's chunks: up to three hashes, each
+   * read off the scratch in the order asked and sent as it lies there, the
+   * deflated form (fold phase 3). What is checked is that deflated form's
+   * own digest, taken when it was written: the plain hash is the cell's to
+   * check when the chunk comes back, and inflating to check it here would
+   * be work the sender has no reason to do.
+   */
   private async answerChunkNeed(id: string, hashes: string[]): Promise<void> {
     const describing = this.describing!;
-    if (hashes.length !== 1) throw new ProtocolError("malformed", "need", `a need for the cache ${id} names one chunk, not ${hashes.length}`);
-    const hash = hashes[0]!;
-    if (!describing.chunks.has(hash)) throw new ProtocolError("malformed", "need", `the cache ${id} did not offer ${hash}`);
-    const bytes = await this.scratch!.read(hash);
-    const now = await this.scratch!.digest(bytes);
-    if (now !== hash) throw new ProtocolError("mismatch", "need", `chunk ${hash} changed on the scratch: ${now}`);
-    this.send({ type: "blob", hash, size: bytes.byteLength });
-    this.sendBytes(bytes);
+    if (hashes.length === 0 || hashes.length > CACHE_NEED_CHUNKS) {
+      throw new ProtocolError("malformed", "need", `a need for the cache ${id} names one to ${CACHE_NEED_CHUNKS} chunks, not ${hashes.length}`);
+    }
+    for (const hash of hashes) {
+      const offered = describing.chunks.get(hash);
+      if (offered === undefined) throw new ProtocolError("malformed", "need", `the cache ${id} did not offer ${hash}`);
+      const bytes = await this.scratch!.read(hash);
+      const now = await this.scratch!.digest(bytes);
+      if (now !== offered.stored) throw new ProtocolError("mismatch", "need", `chunk ${hash} changed on the scratch: ${now}`);
+      this.send({ type: "blob", hash, size: bytes.byteLength });
+      this.sendBytes(bytes);
+    }
   }
 
   syncOut(id: string): Promise<Refused[]> {

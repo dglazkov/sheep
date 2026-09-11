@@ -38,16 +38,24 @@
  * description asked for over an untouched put-back answers with the record
  * put back and writes nothing to the scratch, while one file touched brings
  * the whole description back.
+ *
+ * Fold phase 3: the chunks travel gzipped, each named by its plain bytes'
+ * hash, which the test checks by inflating what the agent sent; and a
+ * `need` may name three, answered in the order asked, which the test both
+ * sends and, on the put-back, reads off the agent's own `need`s. `/cache`
+ * here is five chunks: a binary of random bytes gzip cannot shrink, and a
+ * file of one letter it takes to nothing.
  */
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createServer, type Server } from "node:http";
+import { gunzipSync } from "node:zlib";
 import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type WebSocket, WebSocketServer } from "ws";
-import { CELL_URL_ENV, decodeFrame, encodeFrame, FETCH_FAILED_STATUS, type Frame, type ManifestEntry, TOKEN_ENV, TOKEN_PARAM } from "../src/protocol.ts";
+import { CACHE_NEED_CHUNKS, CELL_URL_ENV, decodeFrame, encodeFrame, FETCH_FAILED_STATUS, type Frame, type ManifestEntry, TOKEN_ENV, TOKEN_PARAM } from "../src/protocol.ts";
 
 const entry = new URL("../bin/pen-agent.mjs", import.meta.url).pathname;
 const encoder = new TextEncoder();
@@ -493,6 +501,9 @@ describe("pen-agent, the process", () => {
       'head -c 9437184 /dev/urandom > "$NPM_CONFIG_PREFIX/lib/node_modules/tool/bin/blob.bin"',
       // A second name for the binary, as npm gives wrangler's `workerd`: earlier in path order, so it is the name that carries the bytes.
       'mkdir -p "$NPM_CONFIG_PREFIX/lib/node_modules/other" && ln "$NPM_CONFIG_PREFIX/lib/node_modules/tool/bin/blob.bin" "$NPM_CONFIG_PREFIX/lib/node_modules/other/blob.bin"',
+      // 24 MiB of one letter, which gzip takes to a few KiB: with the binary it makes a record of five chunks, so a `need` of
+      // three is answered by three and the two that are left by a `need` of two.
+      'tr "\\000" "x" < /dev/zero | head -c 25165824 > "$NPM_CONFIG_PREFIX/lib/node_modules/tool/share.txt"',
       'printf data > "$NPM_CONFIG_PREFIX/share/ro/inner/file" && chmod 555 "$NPM_CONFIG_PREFIX/share/ro"',
       "tool",
     ].join("\n");
@@ -519,30 +530,44 @@ describe("pen-agent, the process", () => {
     expect(await first.next()).toEqual(state);
     first.socket.send(encodeFrame({ type: "synced", id: "setup", refused: [], home: [] }));
 
-    // Kept: `/cache` described as a record in chunks on the scratch, then each chunk asked for alone. The binary's two names are
-    // four file entries' worth of names and one file's worth of bytes: two chunks, where two copies would be three.
+    // Kept: `/cache` described as a record in chunks on the scratch, then the chunks asked for three at a time. The binary's
+    // two names are four file entries' worth of names and one file's worth of bytes, and the record is five chunks.
     first.socket.send(encodeFrame({ type: "cache", id: "save" }));
     const described = (await first.next()) as { type: string; id: string; hash: string; chunks: string[]; files: number; bytes: number };
-    expect(described).toMatchObject({ type: "cache", id: "save", files: 4 });
-    expect(described.chunks).toHaveLength(2);
-    expect(await scratchOf(first.tmp)).toHaveLength(2);
+    expect(described).toMatchObject({ type: "cache", id: "save", files: 5 });
+    // More than three, so a `need` of three is answered by three and the rest by another; the letter's size decides how many.
+    expect(described.chunks.length).toBeGreaterThan(CACHE_NEED_CHUNKS);
+    // One file on the scratch per distinct chunk: the letter's chunks are one another's bytes, and a repeat is written once.
+    expect(await scratchOf(first.tmp)).toHaveLength(new Set(described.chunks).size);
+    expect(new Set(described.chunks).size).toBeLessThan(described.chunks.length);
     expect(described.hash).toBe(sha256(encoder.encode(described.chunks.join("\n"))));
-    expect(described.bytes).toBeGreaterThan(9437184);
-    expect(described.bytes).toBeLessThan(9437184 + 4096);
+    expect(described.bytes).toBeGreaterThan(9437184 + 20_000_000);
+    /** The chunks as they travel, deflated, by the hash of their plain bytes. */
     const chunks = new Map<string, Uint8Array>();
-    for (const hash of described.chunks) {
-      first.socket.send(encodeFrame({ type: "need", id: "save", hashes: [hash] }));
-      const announced = (await first.next()) as { type: string; hash: string; size: number };
-      expect(announced).toMatchObject({ type: "blob", hash });
-      const bytes = (await first.next()) as Uint8Array;
-      expect(bytes.byteLength).toBe(announced.size);
-      expect(sha256(bytes)).toBe(hash);
-      chunks.set(hash, bytes);
+    for (let at = 0; at < described.chunks.length; at += CACHE_NEED_CHUNKS) {
+      const asked = described.chunks.slice(at, at + CACHE_NEED_CHUNKS);
+      first.socket.send(encodeFrame({ type: "need", id: "save", hashes: asked }));
+      // Answered in the order asked, and never a fourth: the frames come back blob, bytes, blob, bytes, for these and no others.
+      for (const hash of asked) {
+        const announced = (await first.next()) as { type: string; hash: string; size: number };
+        expect(announced).toMatchObject({ type: "blob", hash });
+        const bytes = (await first.next()) as Uint8Array;
+        expect(bytes.byteLength).toBe(announced.size);
+        // What travelled is the chunk gzipped; what it is named by is the hash of the bytes inside it.
+        expect(sha256(bytes)).not.toBe(hash);
+        expect(sha256(new Uint8Array(gunzipSync(bytes)))).toBe(hash);
+        chunks.set(hash, bytes);
+      }
     }
-    expect(chunks.get(described.chunks[0]!)!.byteLength).toBe(8 * 1024 * 1024);
-    // The later name is a `link` entry to the earlier one, by path; its bytes are that path.
+    const plain = described.chunks.map((hash) => new Uint8Array(gunzipSync(chunks.get(hash)!)));
+    expect(plain[0]!.byteLength).toBe(8 * 1024 * 1024);
+    // The letter's chunks are a fraction of a chunk deflated; the random binary's are not, which is why a chunk's cap has a margin.
+    const stored = [...chunks.values()].reduce((total, bytes) => total + bytes.byteLength, 0);
+    expect(stored).toBeLessThan(described.bytes / 2);
+    expect(Math.max(...[...chunks.values()].map((bytes) => bytes.byteLength))).toBeGreaterThan(8 * 1024 * 1024);
+    // The later name is a `link` entry to the earlier one, by path; its bytes are that path, in the record's plain bytes.
     const linkLine = `${JSON.stringify({ path: "lib/node_modules/tool/bin/blob.bin", kind: "link", mode: 0o644, size: "lib/node_modules/other/blob.bin".length })}\nlib/node_modules/other/blob.bin`;
-    expect(new TextDecoder("latin1").decode(chunks.get(described.chunks[1]!)!)).toContain(linkLine);
+    expect(plain.map((bytes) => new TextDecoder("latin1").decode(bytes)).join("")).toContain(linkLine);
     first.socket.send(encodeFrame({ type: "synced", id: "save", refused: [] }));
     first.socket.send(encodeFrame({ type: "ping", id: "after-save" }));
     expect(await first.next()).toEqual({ type: "pong", id: "after-save" });
@@ -563,9 +588,15 @@ describe("pen-agent, the process", () => {
     expect(await fresh.next()).toEqual({ type: "need", id: "in-2", hashes: [sha256(state), sha256(gitconfig)] });
     blob(fresh.socket, state);
     blob(fresh.socket, gitconfig);
-    for (const hash of described.chunks) {
-      expect(await fresh.next()).toEqual({ type: "need", id: "in-2", hashes: [hash] });
-      blob(fresh.socket, chunks.get(hash)!);
+    // The agent asks for three, then the two that are left, and the cell sends each in the order asked, deflated as it holds it.
+    for (let at = 0; at < described.chunks.length; at += CACHE_NEED_CHUNKS) {
+      const asked = described.chunks.slice(at, at + CACHE_NEED_CHUNKS);
+      expect(await fresh.next()).toEqual({ type: "need", id: "in-2", hashes: asked });
+      for (const hash of asked) {
+        const bytes = chunks.get(hash)!;
+        fresh.socket.send(encodeFrame({ type: "blob", hash, size: bytes.byteLength }));
+        fresh.socket.send(bytes);
+      }
     }
     expect(await fresh.next()).toEqual({ type: "checkout", id: "in-2" });
     expect(await readFile(join(fresh.home, ".config/tool/state"), "utf8")).toBe("who = walker\n");
@@ -582,7 +613,7 @@ describe("pen-agent, the process", () => {
 
     // Setup left `/cache` as the put-back wrote it: the description is the record that was put back, and the scratch stays empty.
     fresh.socket.send(encodeFrame({ type: "cache", id: "warm-save" }));
-    expect(await fresh.next()).toEqual({ type: "cache", id: "warm-save", hash: described.hash, chunks: described.chunks, files: 4, bytes: described.bytes });
+    expect(await fresh.next()).toEqual({ type: "cache", id: "warm-save", hash: described.hash, chunks: described.chunks, files: 5, bytes: described.bytes });
     expect(await scratchOf(fresh.tmp)).toEqual([]);
     fresh.socket.send(encodeFrame({ type: "synced", id: "warm-save", refused: [] }));
 
@@ -605,18 +636,45 @@ describe("pen-agent, the process", () => {
     fresh.socket.send(encodeFrame({ type: "need", id: "touch", hashes: [] }));
     fresh.socket.send(encodeFrame({ type: "synced", id: "touch", refused: [], home: [] }));
     fresh.socket.send(encodeFrame({ type: "cache", id: "touched" }));
-    expect(await fresh.next()).toEqual({ type: "cache", id: "touched", hash: described.hash, chunks: described.chunks, files: 4, bytes: described.bytes });
-    expect(await scratchOf(fresh.tmp)).toHaveLength(2);
+    expect(await fresh.next()).toEqual({ type: "cache", id: "touched", hash: described.hash, chunks: described.chunks, files: 5, bytes: described.bytes });
+    expect(await scratchOf(fresh.tmp)).toHaveLength(new Set(described.chunks).size);
     fresh.socket.send(encodeFrame({ type: "synced", id: "touched", refused: [] }));
 
     // A put-back whose chunk the cell no longer has: `/cache` emptied on a real disk, its `0555` directory and all, and the
     // sync-in ends whole, cold.
     fresh.socket.send(encodeFrame({ type: "manifest", id: "in-3", entries: [], home: keptHome, cache: ref }));
     expect(await fresh.next()).toEqual({ type: "need", id: "in-3", hashes: [] });
-    expect(await fresh.next()).toEqual({ type: "need", id: "in-3", hashes: [described.chunks[0]] });
+    expect(await fresh.next()).toEqual({ type: "need", id: "in-3", hashes: described.chunks.slice(0, CACHE_NEED_CHUNKS) });
     fresh.socket.send(encodeFrame({ type: "error", code: "refused", of: "need", id: "in-3", message: "the chunk is gone" }));
     expect(await fresh.next()).toEqual({ type: "checkout", id: "in-3" });
     expect(await readdir(fresh.cache)).toEqual([]);
+
+    // A cache kept before the chunks were deflated: the plain bytes under the plain bytes' name. The container cannot use
+    // them, so the put-back ends and the sync-in does not: `/cache` goes empty, the cell is told why, `checkout` comes, and
+    // the chunks already on their way are dropped. The container is then as usable as it was.
+    fresh.socket.send(encodeFrame({ type: "manifest", id: "in-4", entries: [], home: keptHome, cache: ref }));
+    expect(await fresh.next()).toEqual({ type: "need", id: "in-4", hashes: [] });
+    const asked = described.chunks.slice(0, CACHE_NEED_CHUNKS);
+    expect(await fresh.next()).toEqual({ type: "need", id: "in-4", hashes: asked });
+    for (const hash of asked) {
+      const plain = new Uint8Array(gunzipSync(chunks.get(hash)!));
+      fresh.socket.send(encodeFrame({ type: "blob", hash, size: plain.byteLength }));
+      fresh.socket.send(plain);
+    }
+    const unusable = (await fresh.next()) as { type: string; code: string; of: string; id: string; message: string };
+    expect(unusable).toMatchObject({ type: "error", code: "mismatch", of: "cache", id: "in-4" });
+    expect(unusable.message).toContain("is not a gzip stream");
+    expect(await fresh.next()).toEqual({ type: "checkout", id: "in-4" });
+    expect(await readdir(fresh.cache)).toEqual([]);
+    // In step, and still the agent: the two chunks behind the first were read and dropped, and the next frames are answered.
+    fresh.socket.send(encodeFrame({ type: "ping", id: "after-the-bad-cache" }));
+    expect(await fresh.next()).toEqual({ type: "pong", id: "after-the-bad-cache" });
+    fresh.socket.send(encodeFrame({ type: "run", id: "after", command: "echo still here", cwd: "/workspace", env: {} }));
+    expect(await fresh.next()).toEqual({ type: "stdout", id: "after", data: "still here\n" });
+    expect(await fresh.next()).toEqual({ type: "exit", id: "after", code: 0 });
+    expect(await fresh.next()).toEqual({ type: "changed", id: "after", entries: [], deleted: [], home: { entries: [], deleted: [] } });
+    fresh.socket.send(encodeFrame({ type: "need", id: "after", hashes: [] }));
+    fresh.socket.send(encodeFrame({ type: "synced", id: "after", refused: [], home: [] }));
 
     fresh.socket.close(1000, "cell done");
     expect(await exited(fresh.child)).toBe(0);
