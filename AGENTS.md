@@ -18,7 +18,10 @@ Chromium, prints the page's report, and leaves the picture for `read`.
 [Project serve](docs/projects/serve/design.md) joined the eyes to the
 container: `look --serve '<command>'` runs a dev server for the length of
 one look and stops it, the page reached over two frames on the socket the
-container already opened, so nothing connects into the container. Setup and usage are in [README.md](README.md).
+container already opened, so nothing connects into the container.
+[Project end](docs/projects/end/design.md) gives the dog the other half
+of minting: `sheep rm <id>` ends a sheep and releases everything it
+held, the pasture excepted. Setup and usage are in [README.md](README.md).
 Read a project's `phases.md` for where its work stands and what the next
 phase is; [docs/projects/README.md](docs/projects/README.md) lists them.
 `/conduct <project>` is how a phase is run: briefed to a subagent, proved
