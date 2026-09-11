@@ -1,8 +1,8 @@
 ---
-status: partial
+status: done
 since: 2026-09-10
 see: end
-note: "written 10 Sep 2026, the evening serve closed, from the shepherd's issue #1 (a herd member with no purpose left). The dog can mint a sheep and cannot end one: `abort` stops a turn and the row stays in `sheep ls` with its workspace, its container, and its browser, forever. One verb, `sheep rm <id>`, ends it: the open turn aborted, the container destroyed, the browser closed, the cell's rows deleted, the directory's row gone. The pasture stays; the pasture is the shepherd's. End phase 0 closed the same evening: the mechanism proved in workerd against the fake container and the pool's real Chrome, journeys 1 and 2 in the cell's terms; end phase 1 the same night: `sheep rm`, every verb on an ended id the one sentence, journey 5 carrying journey 1 in the home ring, the account ring's step written; journeys 1 and 2 walked on the local home with Docker and a real model, journey 3 steps 1 and 2 with them. Step 3, the account ring, waits on the shepherd."
+note: "written 10 Sep 2026, the evening serve closed, from the shepherd's issue #1 (a herd member with no purpose left). The dog can mint a sheep and cannot end one: `abort` stops a turn and the row stays in `sheep ls` with its workspace, its container, and its browser, forever. One verb, `sheep rm <id>`, ends it: the open turn aborted, the container destroyed, the browser closed, the cell's rows deleted, the directory's row gone. The pasture stays; the pasture is the shepherd's. End phase 0 closed the same evening: the mechanism proved in workerd against the fake container and the pool's real Chrome, journeys 1 and 2 in the cell's terms; end phase 1 the same night: `sheep rm`, every verb on an ended id the one sentence, journey 5 carrying journey 1 in the home ring, the account ring's step written; journeys 1 and 2 walked on the local home with Docker and a real model, journey 3 steps 1 and 2 with them. Journey 3 step 3 walked by the account ring the shepherd typed: six sheep ended on the platform, the delete listing none. The project is done."
 ---
 
 # End — the journeys

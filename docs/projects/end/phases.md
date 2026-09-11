@@ -21,20 +21,18 @@ detail.
 
 ---
 
-**Where we are: end phase 0 CLOSED, end phase 1 PART-DONE; the project waits on one ⚑ step. Next: the shepherd types `pnpm hermetic --ring account --yes <sha>`, then `end phase 1` closes.**
-Planned 10 Sep 2026, the evening serve closed, from the shepherd's
-issue #1, and built the same night. Phase 0: the cell's end in five
-steps, the Directory's removal, `DELETE /s/<id>`, one refusal sentence
-on every `/s/<id>` route, proved in workerd against the fake container
-and the pool's real Chrome. Phase 1: `sheep rm <id>`, every verb on an
-ended id refusing in that sentence, the docs, journey 5's home-ring
-test carrying journey 1 steps 1 to 4, the account ring's `n1` step; and
-the walk on the local home with Docker and a real model: journey 3 step
-1 and journey 1 whole, `tests` ended mid-turn on a 120 s `node` line
-with its container gone from `docker ps`. What waits: journey 3 step 3,
-the account ring with its new step, which deploys a station on the
-shepherd's account and is the one place the platform's own container
-destroy is exercised.
+**Where we are: end is done, 10 Sep 2026. Both phases CLOSED.** A dog
+can end a sheep: `sheep rm <id>` aborts its open turn, disconnects its
+terminals, destroys its container, closes its browser, empties its
+cell, and removes its row, in that order, and every verb on the ended
+id refuses in one sentence that names `sheep ls`; the pasture stays.
+Planned and built in one evening from the shepherd's issue #1. Phase
+0 proved the mechanism in workerd against the fake container and the
+pool's real Chrome; phase 1 added the verb and the docs, walked
+journeys 1 and 2 on the local home with Docker and a real model, and
+closed on the account ring, typed by the shepherd, which ended six
+sheep on the platform and deleted a station listing none. Two open
+debts under the phases; nothing waits on work.
 
 The order is dependency order. Phase 0 is the mechanism, which the
 verb needs. Phase 1 is the verb and the walk.
@@ -118,7 +116,7 @@ container. **⚑** journey 3 step 3: `pnpm hermetic --ring account --yes
 <sha>` with the new step, a station deployed and deleted on the
 shepherd's account, a few container minutes and one deploy.
 
-**Status: PART-DONE.** 2026-09-10. Journeys 1 and 2 walked on the local home with Docker and a real model, journey 3 steps 1 and 2 with them; `pnpm test` exits 0 across all three rings with journey 5 carrying journey 1 steps 1 to 4; the CLI typecheck exits 0. Journey 3 step 3, the account ring, waits on the shepherd.
+**Status: CLOSED.** 2026-09-10. Journeys 1, 2, and 3 walked: 1 and 2 on the local home with Docker and a real model, 3 steps 1 and 2 with them, step 3 by the account ring the shepherd typed, `ok n1`; `pnpm test` exits 0 across all three rings with journey 5 carrying journey 1 steps 1 to 4.
 
 **Findings:**
 
@@ -129,4 +127,4 @@ shepherd's account, a few container minutes and one deploy.
 - **2026-09-10 — The walk, with Docker and a real model:** `docs` ended with its container gone from `docker ps` at once; `tests` ended mid-turn on a 120 s `node` line in under a second, its container gone; the minutes read 0.204 before and after a 30 s wait.
 - **2026-09-10 — wrangler's `-proxy` sidecars outlive a destroyed container by seconds,** gone within the walk's 30 s wait. They are wrangler's, not the sheep's.
 - **2026-09-10 — Open: `sheep attach <ended> --detach -- "…"` prints the id on stdout before the refusal,** since `detach` prints first and prompts after. For whoever next touches `detach`.
-- **2026-09-10 — Open: ⚑ journey 3 step 3 waits on the shepherd:** `pnpm hermetic --ring account --yes <sha>` with the ring's `n1` step, a station deployed and deleted on the account, a few container minutes and one deploy. It is where `PenContainer.destroy()` meets the platform.
+- **2026-09-10 — The account ring, typed by the shepherd: `ok n1` in 7 s.** Six sheep ended on the station, the older release's and a3's with its container and a8's two that had cloned and pushed; none listed after; the delete listed `sessions: 0`, `sessions deleted: 0`. `PenContainer.destroy()` met the platform there.
