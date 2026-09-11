@@ -23,19 +23,16 @@ cell's rows has found the bug, not a detail.
 
 ---
 
-**Where we are: 11 Sep 2026. Fold phases 0 and 1 CLOSED; phases 2 and 3
-PART-DONE.** A sheep's `~` is `/home/sheep`, rows synced both ways around
-every run; a pasture's `/cache` is chunks of one record in its object,
-keyed by `setup.sh`, put back before setup and kept whole after it. The
-image carries both, the dog's `sheep pasture` names the cache, and the
-walk on the local home with Docker and a real model has wrangler warm in
-1.85 s against a 9.8 s cold install. Nothing waits on work. One thing
-waits on work. Fold phase 3 is built and proved: the chunks are deflated
-(wrangler's record travels as 63.2 MB against 239) and three fly at once,
-a cache the container cannot use runs cold instead of failing a command,
-and a home upgraded across the change heals in one cold birth per
-pasture, walked on the local home. Journey 3 step 3's second run on the
-account, one ⚑ step, is all that is left, and it closes the project.
+**Where we are: fold is done, 11 Sep 2026. All four phases CLOSED.** A
+sheep's `~` is `/home/sheep`, rows synced both ways around every run; a
+pasture's `/cache` is chunks of one record in its object, keyed by
+`setup.sh`, deflated on the wire, put back before setup and kept whole
+after it. The image carries both, `sheep pasture` names the cache, and a
+birth's entry says whether setup found it warm. Journeys 1 and 2 are
+walked on the local home with Docker and a real model, journey 3 on the
+account: the ring the shepherd typed on release 5e9ebd2 put wrangler's
+cache back in 8.5 s against a 56.4 s cold install, `ok f1` among 32
+steps, none skipped. Nothing waits on work and nothing on a person.
 
 The order is dependency order. Phase 0 is `~`, which gives the agent and
 the checkout their third root and the cell's shell its `HOME`. Phase 1
@@ -234,7 +231,7 @@ rm -f`. **⚑** journey 3 step 3: `pnpm hermetic --ring account --yes
 deleted on the shepherd's account, a few container minutes and one
 deploy; no token beyond the Cloudflare one.
 
-**Status: PART-DONE.** 2026-09-11. Journeys 1 and 2 are walked whole on the local home with Docker and a real model, and journey 3 steps 1 and 2 with them: the image carries `~` and `/cache`, the dog's `sheep pasture` names the cache, the guide and README say both, and `pnpm test` exits 0 across all three rings. Journey 3 step 3 was walked on the account, `ok f1` on release 76809e8, and its acceptance is not met: the station's put-back is 31.3 s against a 38.9 s cold install. Fold phase 3 is the answer, and the step is walked again after it.
+**Status: CLOSED.** 2026-09-11. Journeys 1 and 2 are walked whole on the local home with Docker and a real model; the image carries `~` and `/cache`, `sheep pasture` names the cache, the guide and README say both, and `pnpm test` exits 0 across all three rings. Journey 3 step 3 was walked twice on the account: `ok f1` on release 76809e8 failed its acceptance (31.3 s against 38.9), and on release 5e9ebd2, after fold phase 3, it holds.
 
 **Findings:**
 
@@ -286,16 +283,16 @@ the record's stored bytes recorded beside fold phase 2's. **⚑** journey
 whose image CI pushed, a station deployed and deleted on the shepherd's
 account, a few container minutes and one deploy.
 
-**Status: PART-DONE.** 2026-09-11. The chunks are deflated and three fly at once: wrangler's record travels as 63.2 MB against 239, `pnpm test` exits 0 across all three rings, the three typechecks and `node --check` exit 0, and three mutations each fail the new tests. The upgrade case is walked on the local home. Journey 3 step 3's second run, on the account, waits on the shepherd.
+**Status: CLOSED.** 2026-09-11. The chunks are deflated and three fly at once; `pnpm test` exits 0 across all three rings, the three typechecks and `node --check` exit 0, and three mutations each fail the new tests. The upgrade case is walked on the local home, and journey 3 step 3 holds on the account: the ring the shepherd typed on release 5e9ebd2 put wrangler's cache back in 8.5 s against a 56.4 s cold install, `ok f1` among its 32 steps.
 
 **Findings:**
 
-- **2026-09-11 — wrangler's record deflates to 26%:** 63.2 MB travels against 239 MB of tree, in the same 29 chunks, since chunking is over plain bytes; `sheep pasture` still reports the tree's size.
-- **2026-09-11 — On the laptop the deflated put-back is slower, 2.79 s against 1.82,** the link never having been the cost there; the cell's reads of the object are 92–105 ms of it.
-- **2026-09-11 — A chunk's hash is its plain bytes',** so a chunk repacked by another zlib is the same chunk; the cell cannot check what it passes, and the container checks on restore.
-- **2026-09-11 — gzip grows incompressible data,** so what travels is capped at a chunk plus 64 KiB.
-- **2026-09-11 — A chunk the container cannot use ends the put-back, not the sheep's command:** `/cache` empties, `error {of: "cache"}` carries the reason, `checkout` completes the sync-in, and the chunks still in flight are read and dropped.
-- **2026-09-11 — An upgraded home would not have healed on its own:** stale plain chunks read as present, so the save would commit them again and every put-back after would fail. `cache_sizes.deflated` makes the save replace them.
-- **2026-09-11 — The upgrade walked on the local home:** a cache kept by fold phase 2's code, then this one over the same kennel — the first fresh container's turn exits 0 and keeps 63.2 MB deflated, and the next is warm in 2793 ms.
-- **2026-09-11 — workerd's `DecompressionStream` refuses a multi-member gzip and Node's takes it;** only the agent, which is Node, ever inflates.
-- **2026-09-11 — Open ⚑: journey 3 step 3 waits on the shepherd:** the ring again, to say whether 63 MB in flights of three is enough on a station.
+- **2026-09-11 — wrangler's record deflates to 26%:** 63.2 MB travels against 239 MB of tree, in the same 29 chunks; `sheep pasture` still reports the tree's size.
+- **2026-09-11 — A chunk's hash is its plain bytes',** so a chunk another zlib repacked is the same chunk; the container checks it on restore, since the cell cannot.
+- **2026-09-11 — gzip grows incompressible data,** so what travels is capped at a chunk and 64 KiB.
+- **2026-09-11 — A chunk the container cannot use ends the put-back, not the sheep's command:** `/cache` empties, `error {of: "cache"}` says why, `checkout` completes the sync-in, and chunks still in flight are dropped.
+- **2026-09-11 — An upgraded home would not have healed on its own:** stale plain chunks read as present, so the save would commit them again. `cache_sizes.deflated` makes it replace them instead.
+- **2026-09-11 — The upgrade walked on the local home:** a cache kept by fold phase 2's code, then this one over the same kennel — the first fresh container's turn exits 0, and the next is warm in 2793 ms.
+- **2026-09-11 — workerd's `DecompressionStream` refuses a multi-member gzip and Node's takes it;** only the agent, Node, ever inflates.
+- **2026-09-11 — The account ring on release 5e9ebd2 closes it: the put-back is 8.5 s against a 56.4 s cold install,** where fold phase 2's ring spent 31.3 against 38.9. `ok f1`, 32 steps, none skipped.
+- **2026-09-11 — The split says the link is what is left:** 63.2 MB travelled at 7.4 MB/s, and 1.6 s of the 8.5 was the cell reading the object. Fewer bytes, not more in flight, is the next gain.
