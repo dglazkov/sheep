@@ -124640,13 +124640,13 @@ __name(admitted, "admitted");
 var CHECKOUT_BUILD = { commit: "0.0.0-checkout", builtAt: null };
 function homeImage() {
   if (false) return null;
-  return true ? "docker.io/dglazkov2/sheep-pen@sha256:bbd91591e8d441f12c1b8d9967745f934ae9610fd3e6a9b4b5d90879168aa7d4" : null;
+  return true ? "docker.io/dglazkov2/sheep-pen@sha256:cd0f21a9a25076be8f909d8e1244c1eefd9e1cfcb25cd87b3a01c45af5438988" : null;
 }
 __name(homeImage, "homeImage");
 function homeBuild() {
   if (false) return CHECKOUT_BUILD;
   try {
-    const parsed = JSON.parse('{"commit":"b1c397d","builtAt":"2026-09-11T05:35:34Z"}');
+    const parsed = JSON.parse('{"commit":"531a152","builtAt":"2026-09-11T05:52:50Z"}');
     if (typeof parsed.commit === "string" && parsed.commit !== "") return { commit: parsed.commit, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
   } catch {
   }
@@ -124729,9 +124729,7 @@ var index_default = {
       if (pasture !== null && !isPastureName(pasture)) return new Response(badPastureName(pasture), { status: 400 });
       const refusal = pasture === null ? void 0 : await directory.refusal(pasture);
       if (refusal !== void 0) return new Response(refusal, { status: 409 });
-      const summary = await directory.create(name, pasture);
-      await env.SESSION_CELL.getByName(summary.id).fetch(new Request("https://cell/"));
-      return Response.json(summary, { status: 201 });
+      return Response.json(await directory.create(name, pasture), { status: 201 });
     }
     if (url.pathname === "/sessions" && request.method === "GET") {
       const pasture = url.searchParams.get("pasture");
