@@ -18,10 +18,14 @@ cd app && npm install
 Any template works. `node_modules`, `dist`, and `build` stay in the
 container and never come back to the workspace, which is what you want.
 
+Every bash line of yours starts in the workspace root: a `cd` holds for
+that line and no longer, so keep it on the line that needs it. The
+examples below are written from the root, with the app in `app/`.
+
 ## Look at the dev server
 
 ```sh
-look --serve 'npx vite --port $PORT --strictPort' /
+cd app && look --serve 'npx vite --port $PORT --strictPort' /
 ```
 
 This starts Vite in the container with `PORT` set, waits for it to
@@ -31,6 +35,15 @@ the page. The report's `server` section is Vite's own output: a compile
 error is there. A `[vite] failed to connect to websocket` line in
 `console` is expected on a served page and is not a bug.
 
+The closing line carries two numbers off one clock:
+
+```
+wrote look.png 1024x768 in 2.5s, served by `npx vite --port $PORT --strictPort` on 5173, ready in 1.3s
+```
+
+`in` is the whole served look and the `ready in` wait is a part of it,
+so the two numbers tell a slow server from a slow page.
+
 Every served look starts the server fresh, so an edit you made is what
 the next look shows. Add `--click` and `--fill` as on any look; `--port
 <n>` when the server must listen elsewhere; a path other than `/` to
@@ -39,17 +52,18 @@ see another route. `--root` does not combine with `--serve`.
 ## Look at a built site
 
 ```sh
-npx vite build --outDir site
-look --root site index.html
+cd app && npx vite build --outDir site
+cd app && look --root site index.html
 ```
 
 `site` syncs back to the workspace, so the built page is looked at from
-the files. Do this before you report a build is good.
+the files. Do this before you report a build is good, and say whether
+the built page is the one the dev server showed.
 
 ## Test between looks
 
 ```sh
-npx vitest run
+cd app && npx vitest run
 ```
 
 Tests run on the same lane as the server, one at a time, which is why

@@ -22,17 +22,16 @@ that starts one, the failures included.
 
 ---
 
-**Where we are: serve phases 0 and 1 closed, 10 Sep 2026. Next is serve
-phase 2.** A sheep on a home with a container can look at its dev server:
-`look --serve '<command>' [--port <n>] [<path>]` runs the command, renders
-the page its port serves, and stops it. Journey 1 was walked on the local
-home with a real model and a real container, and it changed the design
-twice — the forward now reaches either loopback, and the closing line has
-one clock. Serve phase 2 is the station and the skill: the release, the
-rings, the pasture skill walked, and the walk on the account. It is the
-first thing here that needs a person: its ⚑ steps upgrade `sheep-2` and
-stand the ring's station on the shepherd's account, and the container and
-browser minutes both spend.
+**Where we are: serve phases 0 and 1 closed, serve phase 2 PART-DONE,
+10 Sep 2026.** A sheep on a home with a container can look at its dev
+server, the package ring walks a served look in a real container under
+`--docker` and names it as unchecked without one, and the words say so.
+Journeys 1 and 2 are walked on the local home with a real model, and
+journey 3 step 1 on `sheep-2` before any upgrade. What is left is the
+account, and it waits on the shepherd: `sheep home deploy` to upgrade the
+station, journey 1 steps 1 to 3 on it, and `pnpm hermetic --ring account`.
+Those are serve phase 2's ⚑ steps and the Open finding under it names
+them. Nothing else in this project waits on anything.
 
 **Deliberately open.** Postponed on purpose: a server kept for a turn
 on a lane of its own; the websocket forwarded; the platform's port
@@ -159,4 +158,12 @@ shepherd's account, and the container and browser minutes both spend.
 
 **Findings.**
 
-**Status: NOT STARTED.**
+- **2026-09-10 — A hermetic ring cannot carry a prebuilt Vite scaffold.** `node_modules` is one of the container's kept directories and never syncs in, and the ring reaches no registry, so the fixture's server is Node's own `http`. The framework is not what a served look proves.
+- **2026-09-10 — The kill has to be read from the container, not the report.** The ring's server writes its pid to `/tmp/served.marker`, and a probe after the look finds both loopbacks refusing and that pid gone from `/proc` of the same container. A report saying it stopped the server is the look marking its own homework.
+- **2026-09-10 — The fixture binds `localhost`, as Vite does, so the ring walks the `::1` path.** A forward that reached one loopback would fail `s1`; serve phase 1's first finding is the thing this step would catch if it regressed.
+- **2026-09-10 — A red CI is a ring that cannot run at all.** `dadd7b6` failed on eyes' console assertion, so no pen image was pushed and `--ring package --docker` died at step 2 building `FROM …sheep-pen:dadd7b6`. Fixed in `601b4df`; the ring is green on the release that followed.
+- **2026-09-10 — `pnpm release --force` leaves the local `refs/heads/release` behind origin's, and the ring takes the local one silently.** The ring ran against a candidate whose image was never published and failed at step 2 for the second time, for a different reason than the first.
+- **2026-09-10 — The skill's own line is what the sheep typed.** Journey 2's sheep read `/pasture/skills/frontend/SKILL.md` before its first look and ran `look --serve 'npx vite --port $PORT --strictPort' /`, which works only because serve phase 1's walk made the forward reach either loopback.
+- **2026-09-10 — Open: the account half waits on the shepherd.** `sheep home deploy` (journey 3 step 2, with journey 1 steps 1 to 3 on the station) and `pnpm hermetic --ring account --yes <ref>` (journey 3 step 3) are ⚑ steps this conductor is not permitted to run.
+
+**Status: PART-DONE** 2026-09-10. Built and proved locally: the package ring walks a served look in a real container under `--docker` (`ok s1`, the kill read from `/proc` inside it) and names it unchecked without one, both exit 0; `pnpm test` exits 0 across all three inner rings; `README.md`, `SKILL.md` and the agent guide say a sheep can look at its dev server. Journey 2 is walked whole on the local home with a real model, all three criteria; journey 3 step 1 is walked on `sheep-2`. Journey 3 steps 2 and 3 wait on the shepherd, as the Open finding says.

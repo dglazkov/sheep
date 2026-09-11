@@ -59,6 +59,15 @@ Nothing is on npm. The first five minutes, as the dog walks them:
    this release has none until `sheep home deploy` upgrades it; `sheep home`
    prints `eyes: yes` or `no`.
 
+   With a container as well as eyes, a sheep can look at its own dev server:
+   `look --serve 'npx vite --port $PORT --strictPort' /` runs that command in
+   the container with `PORT` set, renders the page its port serves, and stops
+   it. A server lives for one look and no longer, which is why nothing is left
+   running behind a sheep. The recipe for a frontend app is a skill this
+   repository ships, [`docs/projects/serve/skills/frontend/SKILL.md`](docs/projects/serve/skills/frontend/SKILL.md);
+   `sheep pasture put <name> skills/frontend/SKILL.md <that file>` puts it in
+   a pasture and every sheep born there reads it.
+
    The **kennel** is `.sheep/` at or above the working directory, found the
    way git finds `.git`, and `~/.sheep` when there is none: this directory's
    config, its token, and its own local home. Open a dog in each of several
@@ -92,8 +101,9 @@ with the scripted model: `pnpm hermetic --ring package`. The walk includes
 a look: a sheep writes a page with a bug, looks at it, reads the picture,
 and clicks, the Chrome fetched into that fresh `HOME`. With `--docker`,
 on a machine with Docker, the walk's home has a container: a sheep names
-its tools from the registry's image, and the container is gone after the
-idle period.
+its tools from the registry's image, another looks at a page its own
+server serves and finds nothing listening afterwards, and the container is
+gone after the idle period.
 
 ## Developing sheep
 
@@ -124,9 +134,10 @@ What you get today:
 - On a home with eyes, `look <path>` in the shell renders a workspace page
   through the platform's Chromium and prints what the page said: errors,
   console, the accessibility tree, and the PNG it wrote, which the sheep
-  reads with `read`. The local home always has them; a station deployed
-  before they existed says `eyes: no` in `sheep home` until `sheep home
-  deploy` upgrades it.
+  reads with `read`. With a container too, `look --serve '<command>'
+  [<path>]` runs a dev server for the length of the look and stops it. The
+  local home always has them; a station deployed before they existed says
+  `eyes: no` in `sheep home` until `sheep home deploy` upgrades it.
 - A turn survives the cell being evicted. Pi's recovery settles the
   interrupted step honestly and continues.
 - `sheep export <id>` writes a pi SQLite session file that pi's own Node

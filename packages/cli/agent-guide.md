@@ -5,8 +5,8 @@ Sheep is a repository for coding agents that herd coding agents. A
 address, holding the transcript, a workspace, and the loop that drives the
 agent, at a **home**. You are the **sheepdog**, the agent with the
 terminal; the person you work for is the **shepherd**. A person does not
-run `sheep`. You do. This file ships beside the command and describes the
-build you run; `sheep --help` is the verb-by-verb reference.
+run `sheep`. You do. This file describes the build you run; `sheep --help`
+is the verb-by-verb reference.
 
 ## The command, and a home
 
@@ -18,20 +18,18 @@ is harmless and reports what is current. Upgrading is
 then `sheep home deploy` again from the newer package, which `sheep home`
 says on stderr while the home is older, with every session kept.
 
-Every verb talks to a home, and the first one is on this machine:
+Every verb talks to a home; the first is on this machine:
 
 ```sh
 sheep home local
 ```
 
 It starts a home under the kennel's `local/` (fetching a runtime once),
-writes the kennel's `config` so every later command in this directory
-finds it, and prints:
+writes the kennel's `config`, and prints:
 
 ```
 local home: http://127.0.0.1:<port> (started, pid <pid>)
 kennel: <dir>/.sheep
-files: <dir>/.sheep/local
 config: <dir>/.sheep/config written
 key: not held; export ANTHROPIC_API_KEY and run `sheep home local` again
 ```
@@ -45,9 +43,8 @@ nothing else. `sheep home local --faux` runs a scripted model that answers
 
 A `container:` line follows: with Docker on the machine the home rents
 one beside every cell and its sheep can clone, build, test, and push;
-without, one sentence says what a container would add and how to get one,
-and the sheep read, write, and edit. Tell the shepherd that sentence when
-the work needs a repository.
+without, one sentence says what a container would add and how to get one.
+Tell the shepherd that sentence when the work needs a repository.
 
 The home stops with `sheep home stop`, and the next verb that needs it
 starts it again, saying so on stderr. `sheep home` reports which
@@ -60,8 +57,7 @@ writes the kennel's config; without them it prints what it needs and
 costs, and makes nothing. `sheep home delete` ends that station after its
 name is typed at a terminal. `sheep home join <address>` is a second
 machine's way in: the station's token is one line of stdin, piped by the
-shepherd from the first machine's config, never an argument and never
-pasted; it writes this kennel's config.
+shepherd, never an argument and never pasted.
 
 ## The kennel
 
@@ -113,8 +109,8 @@ stderr as `sheep: …` with exit 2.
 
 A sheep has pi's tools: `read`, `write`, and `edit` on a workspace in its
 cell, and `bash`, a shell with the usual text tools. With a container the
-shell has `git`, `node`, `pnpm`, and `python` too; without one there is no
-`git`, `node`, or package manager, and the shell says so when asked.
+shell has `git`, `node`, `pnpm`, and `python` too; without one it says so
+when asked.
 
 On a home with eyes a sheep sees what it wrote: `look <path>` in its
 shell renders a workspace page in a real Chromium and prints errors,
@@ -122,6 +118,13 @@ console, and the accessibility tree beside a `look.png` it reads with
 `read`; the report is in `sheep log`. The local home has eyes, its first
 look fetching a Chrome; a station deployed before them says `eyes: no` in
 `sheep home` until `sheep home deploy` upgrades it.
+
+With a container too, `look --serve 'npx vite --port $PORT --strictPort'
+/` runs that command with `PORT` set, renders the page its port serves,
+and stops it: a server lives for one look and no longer, so nothing a
+sheep starts outlives its line. The recipe for a frontend app is a skill
+in the repository, `docs/projects/serve/skills/frontend/SKILL.md`, for a
+pasture.
 
 ## Pastures: a herd on one tree
 
@@ -149,17 +152,15 @@ on that repository should know.
 Split the goal, give each piece to a sheep with `--detach`, keep working,
 then `sheep wait` on all of them and read what came back. Name sheep
 (`--name docs`) so `sheep ls` reads. A sheep that goes wrong is aborted,
-not abandoned. Read `sheep log <id>` before deciding a sheep failed; the
-transcript is the whole story. Keep the ids: every later verb names the
-sheep by them.
+not abandoned. Read `sheep log <id>` before deciding a sheep failed. Keep
+the ids: every later verb names the sheep by them.
 
 ## What needs a person
 
 Three things, and only these:
 
 1. **A model key.** Ask the shepherd to `export ANTHROPIC_API_KEY`, then
-   run `sheep home local` again. Never ask them to paste the key into the
-   chat; never write it into a file yourself.
+   run `sheep home local` again. Never in the chat, never in a file.
 2. **An account for a deployed home.** The local home needs none; `sheep
    home deploy` says what it needs when the shepherd wants one.
 3. **A hand at a terminal.** `sheep new` or `sheep attach <id>` with no

@@ -262,6 +262,22 @@
  * `--no-eyes` to the package ring inside the container, which prints one
  * `skip` line for e1 and names it among what was not checked. The dog
  * ring's container half runs no package walk, so it has no e1 to skip.
+ *
+ * Serve phase 2 gives both rings the served look, one turn with the faux
+ * provider: `s1` in the package ring, after e1 and only with `--docker`,
+ * since a server needs a container; `s2` in the account ring, after e2,
+ * on the station. The program writes a page and a `server.mjs` of Node's
+ * own `http` — a hermetic ring reaches no registry, and a Vite scaffold
+ * cannot come in through the workspace either, `node_modules` being one
+ * of the container's kept directories — runs `look --serve 'node
+ * server.mjs' --click "#ping" /`, reads the PNG, and then probes the port
+ * from inside the container. The step reads the command's own lines out
+ * of the report's `server` section (one per request the page made), the
+ * served page out of the tree, the closing line's one clock, and the
+ * kill out of the container rather than the report: nothing listening on
+ * either loopback, and the pid the server wrote to `/tmp/served.marker`
+ * gone from `/proc`. Without `--docker` s1 is one `skip` line and is
+ * named among what was not checked, as journey 6 is.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -337,6 +353,105 @@ const LOOK_PROGRAM = {
   ],
 };
 const LOOK_AGAIN_PROGRAM = { steps: [{ tool: { name: "bash", args: { command: 'look index.html --click "#inc" --click "#inc"' } } }, { text: LOOK_AGAIN_REPLY }] };
+
+/** The port a served look uses when `--serve` is given no `--port`: `DEFAULT_PORT` in `look-command.ts`, and the number `PORT` carries. */
+const SERVE_PORT = 5173;
+
+/**
+ * Serve phase 2, s1 and s2: what a sheep writes before a served look.
+ * The server is Node's own `http`, not Vite, and the reason is the ring's
+ * rule rather than a preference — a hermetic ring reaches no registry, and
+ * a Vite scaffold cannot come in through the workspace either, since
+ * `node_modules` is one of the container's kept directories and never
+ * syncs in. What a served look must prove is the mechanism, not the
+ * framework: a command the container runs, a port it listens on, a page
+ * the browser reads through the forward, and a server that is gone
+ * afterwards. So the fixture serves four files of its own and says, on
+ * stdout, what it answered — which is what the report's `server` section
+ * carries back, and the only place a page's every request can be read.
+ *
+ * Two details are deliberate. The server listens on `localhost`, as Vite
+ * does, which in this image is `::1` and not `127.0.0.1` (serve phase 1's
+ * first finding): a forward that reached one loopback only would fail
+ * here. And it writes its pid to `/tmp/served.marker`, outside the
+ * workspace, so the probe that runs after the look can say it is in the
+ * same container and that that pid is gone from `/proc` — the project's
+ * one rule, read from the container rather than from the report.
+ */
+const SERVED_FILES = {
+  "server.mjs": `import { createServer } from "node:http";
+import { readFile, writeFile } from "node:fs/promises";
+import { extname } from "node:path";
+const port = Number(process.env.PORT);
+if (!Number.isInteger(port) || port <= 0) { console.error(\`PORT is \${JSON.stringify(process.env.PORT)}; a served look sets it\`); process.exit(1); }
+const types = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".json": "application/json" };
+createServer(async (request, response) => {
+  const path = new URL(request.url, "http://localhost").pathname;
+  // The browser asks for one on every page; answered, the report's errors are the page's own and nothing else.
+  if (path === "/favicon.ico") { console.log(\`\${request.method} \${path} 204\`); response.writeHead(204).end(); return; }
+  const name = path === "/" ? "index.html" : path.replace(/^\\/+/, "");
+  try {
+    const body = await readFile(new URL(name, import.meta.url));
+    console.log(\`\${request.method} \${path} 200 \${body.length}\`);
+    response.writeHead(200, { "content-type": types[extname(name)] ?? "application/octet-stream" });
+    response.end(body);
+  } catch {
+    console.log(\`\${request.method} \${path} 404\`);
+    response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+    response.end("not found");
+  }
+}).listen(port, "localhost", async () => {
+  await writeFile("/tmp/served.marker", String(process.pid));
+  console.log(\`serving on localhost:\${port} as pid \${process.pid}\`);
+});`,
+  "index.html": `<!doctype html><html><head><meta charset="utf-8"><title>served</title>
+<link rel="stylesheet" href="/style.css"><script type="module" src="/app.js"></script></head>
+<body><main><h1>Served</h1><button id="ping">ping</button><output id="n">0</output>
+<ul id="rows"></ul></main></body></html>`,
+  "style.css": `body{font-family:system-ui,sans-serif;background:#101a10;color:#e8ffe8;margin:0}
+main{max-width:480px;margin:40px auto;padding:24px;border:1px solid #354;border-radius:12px}
+button{font-size:20px;padding:8px 16px;border-radius:8px;border:0;background:#4caf50;color:#fff}
+output{margin-left:16px;font-size:28px;font-variant-numeric:tabular-nums}`,
+  "app.js": `const n = document.getElementById("n"); let count = 0;
+document.getElementById("ping").addEventListener("click", () => { n.textContent = String(++count); });
+const rows = await (await fetch("/rows.json")).json();
+for (const row of rows) { const li = document.createElement("li"); li.textContent = row; document.getElementById("rows").append(li); }
+console.log("served page ready, rows:", rows.length);`,
+  "rows.json": JSON.stringify(["port", "forward", "kill"]),
+  "probe.mjs": `import { connect } from "node:net";
+import { existsSync, readFileSync } from "node:fs";
+const port = Number(process.argv[2]);
+const dial = (host) => new Promise((done) => {
+  const socket = connect({ host, port });
+  const answer = (text) => { socket.destroy(); done(\`\${host} \${text}\`); };
+  socket.setTimeout(2000);
+  socket.on("connect", () => answer("listening"));
+  socket.on("timeout", () => answer("timed out"));
+  socket.on("error", (error) => answer(error.code ?? error.message));
+});
+const dialed = [await dial("127.0.0.1"), await dial("::1")];
+const marker = existsSync("/tmp/served.marker") ? readFileSync("/tmp/served.marker", "utf8").trim() : "";
+const alive = marker !== "" && existsSync(\`/proc/\${marker}\`);
+const pid1 = existsSync("/proc/1/cmdline") ? readFileSync("/proc/1/cmdline", "utf8").replace(/[\\0\\s]+/g, " ").trim() : "(no /proc/1)";
+console.log(\`probe port \${port}: \${dialed.join("; ")}\`);
+console.log(\`probe pid: marker \${marker === "" ? "absent (a different container)" : marker}, /proc/\${marker} \${alive ? "still there" : "gone"}\`);
+console.log(\`probe container: pid 1 is \${pid1}\`);`,
+};
+
+/** Journey 2's shape in one turn: the sheep writes the page and its server, looks at it served with a click, reads the picture, and checks nothing is left listening. */
+const SERVED_SENTENCE = "Write a small page with a server.mjs that serves the files beside it on $PORT, look at it served with a click on ping, and check that nothing is left listening afterwards.";
+const SERVED_REPLY = "I looked at the page served on 5173: it shows Served, the ping button, and the three rows, the click made the counter read 1, and afterwards nothing was listening on the port and the server's process was gone.";
+const SERVED_LOOK = `look --serve 'node server.mjs' --click "#ping" /`;
+const SERVED_PROGRAM = {
+  steps: [
+    ...Object.entries(SERVED_FILES).map(([name, content]) => ({ tool: { name: "write", args: { path: `/workspace/${name}`, content } } })),
+    { tool: { name: "bash", args: { command: SERVED_LOOK } } },
+    { tool: { name: "read", args: { path: "/workspace/look.png" } } },
+    // Two commands, so the line is never the tier-1 shape (`node <file>`) and always runs in the container the look served from.
+    { tool: { name: "bash", args: { command: `node probe.mjs ${SERVE_PORT} && echo probe done` } } },
+    { text: SERVED_REPLY },
+  ],
+};
 
 /**
  * Where miniflare puts the Chrome the local home's eyes need, under a
@@ -1204,6 +1319,18 @@ class Ring {
       this.unchecked.push(`eyes journey 1 steps 1 to 4 (e1): ${why}`);
     } else await this.eyesWalk(url);
 
+    // Serve phase 2, s1: the served look on blog's local home, which needs the container --docker gives it. Without one the step is
+    // a skip line and is named at the end, the way journey 6 and e1 are; the container it rents here is cold, d4 having emptied it.
+    if (this.noEyes || !this.docker) {
+      const why = this.noEyes
+        ? "not walked inside the machine ring's container, which has no eyes to look with and no Docker socket to rent a container of its own"
+        : "the ring's home has no container, so there is nowhere to run a server (`pnpm hermetic --ring package --docker` on a machine with Docker walks it)";
+      const line = `skip  ${"s1".padEnd(8)} ${why}`;
+      this.lines.push(line);
+      console.log(line);
+      this.unchecked.push(`serve journey 3's third criterion (s1): ${why}`);
+    } else await this.servedWalk({ step: "s1", home: url, token: this.token, where: "blog's local home" });
+
     // Step 7, first half: the export is a SQLite file with the tables the command reports.
     const file = join(this.dir, `${id}.sqlite`);
     const exported = await this.sheep(["export", id, file], { cwd: this.blog });
@@ -1329,6 +1456,81 @@ class Ring {
     const second0 = closings[1][3];
     this.ok(step, `POST /faux; sheep new -- "…"; POST /faux; sheep attach ${id} -- "…"; sheep log ${id} (in blog, on ${where})`, `turn 1 ${turnOne}s with the first look ${first0}s (launch included), turn 2 ${turnTwo}s with the second look ${second0}s (the session kept); errors: ReferenceError undefinedFunction; console: log and warn; tree: heading "Counter", button "+1", wool, grass, fence; "2" after two clicks; wrote look.png 1024x768 twice; Read image file [image/png]`);
     return { id, first: first0, second: second0 };
+  }
+
+  /**
+   * Serve phase 2, s1 and s2: a served look with the faux provider on a
+   * home with a container — journey 2's shape, one turn, no model. The
+   * program writes the page and its server, takes the look with a click,
+   * reads the PNG, and then probes the port from inside the container.
+   * Four things are read off the transcript, and they are the four the
+   * phase asks for: the command ran (the `server` section carries the
+   * line the server printed for every request the page made, which is the
+   * only place a page's requests can be read at all); the page was
+   * rendered from its port (the tree is the served page and the click
+   * moved it); the report has its `server` section and a closing line
+   * whose one clock contains the wait for the port; and the server was
+   * stopped — not from the report, which would be the look marking its
+   * own homework, but from the container: nothing listening on either
+   * loopback, and the pid the server wrote to `/tmp/served.marker` gone
+   * from `/proc`. Returns the turn's and the look's seconds.
+   */
+  async servedWalk({ step, home, token, where }) {
+    const post = async (program) => {
+      const posted = await fetch(`${home}/faux`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(program), signal: AbortSignal.timeout(30_000) });
+      if (posted.status !== 200) this.fail(step, `POST ${home}/faux`, { stdout: await posted.text(), stderr: `status ${posted.status}; expected 200 from the faux provider's route`, code: 1 });
+    };
+    await post(SERVED_PROGRAM);
+    const started = Date.now();
+    const created = await this.sheep(["new", "--", SERVED_SENTENCE], { cwd: this.blog });
+    const turn = ((Date.now() - started) / 1000).toFixed(1);
+    const id = /^session ([0-9a-f-]{36})\n/.exec(created.stderr)?.[1];
+    if (created.code !== 0 || created.stdout !== `${SERVED_REPLY}\n` || !id) this.fail(step, `sheep new -- "${SERVED_SENTENCE}" (in blog)`, { ...created, stderr: `${created.stderr}\nexpected the sheep's sentence ${JSON.stringify(SERVED_REPLY)} on stdout and the session id on stderr` });
+    // The program every cell answers from goes back to none before anything is judged, so a failure below leaves the home as it was.
+    await post(null);
+
+    const logged = await this.sheep(["log", id], { cwd: this.blog });
+    if (logged.code !== 0) this.fail(step, `sheep log ${id}`, logged);
+    const log = logged.stdout;
+    const missing = [];
+    const must = (what, held) => {
+      if (!held) missing.push(what);
+    };
+    // The log prints a tool call's arguments as JSON, so the selector's quotes arrive escaped and the command's single quotes do not.
+    must(`[tool bash] ${SERVED_LOOK}`, /look --serve 'node server\.mjs' --click \\?"#ping\\?" \//.test(log));
+    const report = log.split(/^errors:$/m)[1] ?? "";
+    must("one report, starting with `errors:`", log.split(/^errors:$/m).length === 2);
+    must("errors: none — the served page had no errors", /^errors:\n {2}none$/m.test(log));
+    must("`server:` between errors and console (a served look always has one)", /^server:$/m.test(report) && /^console:$/m.test(report));
+    const server = (report.split(/^server:$/m)[1] ?? "").split(/^console:$/m)[0] ?? "";
+    must("server: the server's own start line", /serving on localhost:\d+ as pid \d+/.test(server));
+    must("server: HEAD / 200, the readiness poll through the forward", server.includes("HEAD / 200"));
+    for (const line of ["GET / 200", "GET /style.css 200", "GET /app.js 200", "GET /rows.json 200"]) must(`server: ${line}, the page's request answered from the port`, server.includes(line));
+    must("console: the page's module ran and read its JSON from the server", /^console:\n {2}log: served page ready, rows: 3$/m.test(report));
+    const tree = ((report.split(/^tree:$/m)[1] ?? "").split(/^wrote look\.png/m)[0] ?? "");
+    must('tree: heading "Served"', tree.includes('heading "Served"'));
+    must('tree: button "ping"', tree.includes('button "ping"'));
+    must("tree: the three rows (port, forward, kill)", ["port", "forward", "kill"].every((row) => tree.includes(row)));
+    must('tree: "1" after the click', /"1"/.test(tree));
+    must("Read image file [image/png], the read tool's result for look.png", log.includes("Read image file [image/png]"));
+    const closing = /^wrote look\.png (\d+)x(\d+) in (\d+\.\d)s, served by `node server\.mjs` on (\d+), ready in (\d+\.\d)s$/m.exec(log);
+    must("the closing line `wrote look.png 1024x768 in N.Ns, served by `node server.mjs` on 5173, ready in N.Ns`", closing !== null && closing[1] === "1024" && closing[2] === "768" && closing[4] === String(SERVE_PORT));
+    must("one clock: the whole served look is not shorter than the wait for the port inside it", closing !== null && Number(closing[3]) >= Number(closing[5]));
+    const probed = /^probe port (\d+): (.*)$/m.exec(log);
+    const pidLine = /^probe pid: marker (\S+?),(.*)$/m.exec(log);
+    const inside = /^probe container: pid 1 is (.*)$/m.exec(log);
+    must(`the probe found nothing listening on ${SERVE_PORT}, on either loopback`, probed !== null && probed[1] === String(SERVE_PORT) && !probed[2].includes("listening"));
+    must("the probe ran in the container the look served from (/tmp/served.marker holds the server's pid)", pidLine !== null && /^\d+$/.test(pidLine[1]));
+    must("the server's pid gone from that container's /proc", pidLine !== null && pidLine[2].includes("gone"));
+    must("the probe's container is the pen agent's", inside !== null && inside[1].includes("pen-agent"));
+    must("the probe's line ran whole", log.includes("probe done"));
+    if (missing.length > 0) this.fail(step, `sheep log ${id} (in blog)`, { ...logged, stderr: `${logged.stderr}\nthe transcript lacks: ${missing.join("; ")}` });
+    this.ok(
+      step,
+      `POST /faux; sheep new -- "…"; sheep log ${id} (in blog, on ${where})`,
+      `turn ${turn}s with the served look ${closing[3]}s (the container's start included), ${closing[5]}s of it waiting for the port; server: ${server.trim().split("\n").length} lines, the start line, the poll's HEAD, and every request the page made (/, /style.css, /app.js, /rows.json); errors: none; console: the page's log; tree: heading "Served", button "ping", port, forward, kill, "1" after the click; wrote look.png 1024x768, served by \`node server.mjs\` on ${SERVE_PORT}; Read image file [image/png]; after the look ${probed[2]}, and the server's pid ${pidLine[1]} gone from /proc in the same container (pid 1 ${inside[1]})`,
+    );
+    return { id, turn, look: closing[3], ready: closing[5] };
   }
 
   /** What Docker runs now, by name; nothing when docker does not answer. */
@@ -2556,6 +2758,11 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     const looked = await ring.lookWalk({ step: "e2", home, token: config.token, where: `the station ${name}` });
     station.minted.push(looked.id);
     await ring.eyesReported("e2", `the station ${name}`);
+
+    // Serve phase 2, s2: the same served look on the station, where the container is the platform's and the browser is warm from e2;
+    // one more sheep for a6's count. Journey 3's third criterion is the package ring's line; this one is journey 3 on the account.
+    const served = await ring.servedWalk({ step: "s2", home, token: config.token, where: `the station ${name}` });
+    station.minted.push(served.id);
 
     // Step 4: pi becomes a kennel first (the package ring's k2.2; without it `sheep home local` falls back to ~/.sheep), then
     // the local home in pi, reached from blog with --home for one command; blog's config keeps naming the station.

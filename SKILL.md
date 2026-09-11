@@ -48,6 +48,14 @@ its first look fetches a Chrome, which `sheep home local` says. A station
 deployed before this release has none until `sheep home deploy` upgrades
 it; `sheep home` prints `eyes: yes` or `no`.
 
+With a container as well, a sheep can look at its own dev server: `look
+--serve '<command>' [<path>]` runs the command with `PORT` set, renders
+the page its port serves, and stops it — a server lives for one look and
+no longer. The recipe for a frontend app is a skill in the repository, at
+`docs/projects/serve/skills/frontend/SKILL.md`: put it in a pasture with
+`sheep pasture put <name> skills/frontend/SKILL.md <that file>` and every
+sheep born there reads it.
+
 ## What needs a person
 
 - **A model key**: ask them to `export ANTHROPIC_API_KEY` in the shell
