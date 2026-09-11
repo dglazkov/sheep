@@ -66,7 +66,7 @@ saying which.
 | a sheep's `~` | `/home/sheep`, `HOME` in the container and in the cell's shell | the cell's files table, a third root beside `/workspace` and `/tmp` |
 | the home rule | what stays in the container under `~`: `.cache`, `.npm`, and the cache rule's built-in names at any depth | `protocol.ts`, beside `BUILT_IN_IGNORES` |
 | the pasture's cache | `/cache` in the container: npm's global prefix, its `bin` on `PATH` | the pasture's object, as chunks of one record |
-| the record | the cache as one byte stream: every entry under `/cache`, sorted by path, each its path, kind, mode, and bytes | written and read by the agent |
+| the record | the cache as one byte stream: every entry under `/cache`, sorted by path, each its path, kind, mode, and bytes, a second name of a file a link to its first | written and read by the agent |
 | a chunk | 8 MiB of the record, named by its hash, a `blob` like any other | `cache_chunks` in the pasture's object |
 | the key | the hash of the `setup.sh` whose run left the cache | the cache's row |
 
@@ -175,8 +175,15 @@ says so.
 describe `/cache`. The agent writes the record to its own disk in
 chunks, hashes each, and answers with the record's hash, the chunks', and
 a count of files and bytes. The same hash as the cache it was given
-means setup changed nothing, and nothing moves; this is the warm path,
-every fresh container after the first. Otherwise the cell asks for the
+means setup changed nothing, and nothing moves. A container that had the
+cache put back does not write the record to learn that: the agent keeps
+what the put-back wrote under `/cache` (each path's kind, mode, size, and
+mtime after the write), and when a walk of `/cache` after setup finds
+exactly those, no more and no fewer, it answers with the hash it was
+given and writes nothing. This is the warm path, every fresh container
+after the first, and it costs a stat walk; fold phase 2's walk found the
+re-description it replaces at 1.4 s and at the warm container's highest
+memory, to learn that nothing had changed. Otherwise the cell asks for the
 chunks the object lacks, one `need` at a time, puts each to the object,
 and commits: the chunk list, the key, the counts, the time, and the sheep,
 in one transaction. The object keeps the committed cache and the one
@@ -201,6 +208,26 @@ agent's: sorted by path, each entry a JSON line with its path, kind,
 mode, and size, then its bytes; no mtime and no owner, so the same tree
 is the same bytes and an unchanged install hashes the same. Nobody else
 reads it.
+
+**A file with two names is written once.** npm hard-links an install's
+largest binaries: wrangler's `workerd` and `esbuild` each have a second
+name, and a record that copied them held 406 MB for a tree `du` calls
+234 MB (fold phase 2's walk). The record's entry for a later name is a
+`link` to the earlier one, by path, and the reader makes a hard link. The
+disk says which entries share a file (`nodeDisk` from `lstat`'s inode and
+link count; the memory disk has none), and the first name in path order
+carries the bytes, so the same tree is still the same record.
+
+**The socket does not deflate.** Node's built-in WebSocket offers
+`permessage-deflate`, and cannot be told not to; workerd accepts it and
+deflates every message it sends that client, an 8 MiB chunk included.
+That was 6.7 s of a warm put-back's 8.6 s on the laptop (fold phase 2's
+walk), CPU spent in the cell, the one place whose CPU is metered and
+shared with the session's turns, to shrink bytes on a link that is the
+platform's own. The agent dials with `ws`, pinned exactly, its second
+runtime dependency, with `perMessageDeflate` off. The change is pen's
+socket, so every sync gains it; the workspace's syncs were never large
+enough to show it.
 
 **The cap.** A cache over 1 GiB is not kept: the station's instance has
 4 GB of disk and 1 GiB of memory, and the record, the chunks, and the
@@ -279,3 +306,11 @@ a test on a machine without them).
 - **Prefixes for other ecosystems.** npm's is the image's; pip, pnpm,
   and cargo take `/cache` by their own flags, and the brief can say so.
 - **`~` on a home with no container.** Nothing there keeps state.
+- **Compressing the chunks.** gzip takes wrangler's record to about a
+  third, and on the laptop a put-back's saving is what decompressing
+  costs, while each save pays seconds to compress (fold phase 2's walk).
+  A station whose link is slow is the case that would buy it; the account
+  ring's step measures that.
+- **More than one chunk in flight.** With the socket not deflating, a
+  chunk costs about 50 ms on the laptop; a window of two or three would
+  save half a second against the rule that bounds the cell's memory.

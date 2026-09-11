@@ -140,9 +140,10 @@ model answers.
    once across a `docker rm -f` of the sheep's container.
 3. The account ring's walk gains a step after n1, on a station whose
    sheep are ended and whose containers are gone: a pasture on a public
-   repository whose `setup.sh` installs a small tool from npm; one sheep
-   born cold, a second born warm, both birth entries read from `sheep
-   log --json` with their counts and seconds, `sheep pasture --json`
+   repository whose `setup.sh` installs wrangler guarded by `command -v`,
+   as step 1's; one sheep born cold, a second born warm, both birth
+   entries read from `sheep log --json` with their counts and seconds,
+   the two setups' seconds recorded side by side, `sheep pasture --json`
    naming the cache; the step ends both sheep. **⚑** it deploys a
    station on the shepherd's account.
 

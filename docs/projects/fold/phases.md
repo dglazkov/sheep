@@ -185,10 +185,19 @@ kept; every chunk sent for the first `need`. **⚑** none.
 `NPM_CONFIG_PREFIX=/cache`, `/cache/bin` first on `PATH`, both
 directories made empty, `COREPACK_HOME=/opt/corepack` before `corepack
 prepare`. `packages/pen/src/node.ts`: the `~` and `/cache` disks
-(`PEN_HOME`, `PEN_CACHE`), the chunk scratch under `/tmp`.
+(`PEN_HOME`, `PEN_CACHE`), the chunk scratch under `/tmp`; the socket
+dialled with `ws`, pinned exactly in `packages/pen/package.json`, with
+`perMessageDeflate` off. `packages/pen/src/record.ts`, `agent.ts`: a file
+with two names written once, the later name a `link` entry (the `Disk`
+says which entries share a file: `nodeDisk` by inode, the memory disk
+never); the put-back's stat of what it wrote kept, and a description
+after setup that finds `/cache` exactly so answered with the hash given
+and no record written.
 `packages/pen/test/agent.test.ts`, the command ring's process test: the
 record over `nodeDisk` with real files, an executable and a symlink among them, and
-real `bash` writing under `~` and `/cache`. `packages/cli/src/pasture.ts`:
+real `bash` writing under `~` and `/cache`, a hard-linked pair among
+them restored as one file with two names; a warm description after an
+untouched put-back writing nothing to the scratch. `packages/cli/src/pasture.ts`:
 the `cache:` line after `created:`, the design's three forms; `--json`
 as the route has it. `packages/cli/agent-guide.md`, `README.md`: `~` is
 kept, what is not; `/cache` is the pasture's, setup's idiom guarded by
@@ -198,10 +207,11 @@ counts, cut from elsewhere if it must. `packages/cli/test/journey5.test.ts`:
 `sheep pasture <p>` prints `cache: none` and `--json` has `"cache":
 null` (the home ring has no container). `scripts/hermetic.mjs`: the
 account ring's new step, `f1`, after n1 and s1: a pasture on a public
-repository whose `setup.sh` installs a small tool from npm guarded by
-`command -v`; one sheep born cold and one born warm, each scripted by
+repository whose `setup.sh` installs wrangler guarded by `command -v`,
+as the walk's; one sheep born cold and one born warm, each scripted by
 the faux provider to run the tool; both birth entries read from `sheep
-log --json` (cold and kept, then warm, with counts and seconds); `sheep
+log --json` (cold and kept, then warm, with counts and seconds, the two
+setups' seconds printed side by side); `sheep
 pasture --json` naming the cache for that `setup.sh`; both sheep ended
 by the step with n1's check.
 
