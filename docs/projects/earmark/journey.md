@@ -139,11 +139,12 @@ model answers, and where the token is real.
    hash of `$PROBE` beside the checkout (never the value), the pasture's
    `PROBE` and one sheep's own; the two hashes differ as the two values
    do, and the model's `env` shows neither.
-2. The account ring's walk gains a step: journey 2 steps 1 and 2 on the
-   station against the scratch repository, with the shepherd's
-   playground token as one sheep's `GIT_TOKEN` and on no pasture; the
-   earmarked sheep's branch is seen on GitHub, the sibling's push is
-   refused and its branch is not, both sheep are among those n1 ends, and the branch is
+2. The account ring's walk gains a step after n1, on a station whose
+   sheep are ended and whose containers are gone: journey 2 steps 1 and
+   2 against the scratch repository, with the shepherd's playground
+   token as one sheep's `GIT_TOKEN` and on no pasture; the earmarked
+   sheep's branch is seen on GitHub, the sibling's push is refused and
+   its branch is not, the step ends both sheep itself, and the branch is
    deleted afterwards. **⚑** it deploys a station on the shepherd's
    account and uses the shepherd's token.
 

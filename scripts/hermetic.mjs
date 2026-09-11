@@ -292,10 +292,15 @@
  * its own after. The sheep is among those n1 ends, one more for a6's
  * count. No step of the walk sends a prompt to get an id.
  *
- * Earmark phase 1 gives the account ring `s1`, after a8 (earmark's
+ * Earmark phase 1 gives the account ring `s1`, after n1 (earmark's
  * journey 2 steps 1 and 2; the package ring's `s1` is serve's, a
- * different ring): a pasture named `earmark-<sha7>` on the scratch
- * repository with no secret, on a station with no `PEN_GIT_TOKEN`; one
+ * different ring). After n1 and not beside a8, because the station's
+ * `max_instances` is 3 and `PEN_IDLE` ten minutes: a8's two sheep and the
+ * steps before still held containers, and s1's sibling could rent none
+ * (the account ring on d37f9e6, pasture phase 5's open debt of births
+ * against idle containers); n1's ends destroy every container, so s1's
+ * two births fit. The step: a pasture named `earmark-<sha7>` on the
+ * scratch repository with no secret, on a station with no `PEN_GIT_TOKEN`; one
  * sheep minted with `sheep new --secret GIT_TOKEN`, the playground token
  * on its stdin and on no pasture, and a sibling with none, each scripted
  * to branch, commit, and push. `sheep ls` names `GIT_TOKEN` on the one
@@ -303,10 +308,11 @@
  * seen anonymously, and the sibling's push is refused for want of any
  * credential (the helper gets nothing from the broker, and git cannot read
  * a username), its branch absent. The token is in no transcript, export,
- * row, or output, and in no `ps` sample; both sheep are among those n1
- * ends, and the branch is deleted after. The broker's own sentence for the
- * refusal is a line of the station's log, which no verb reads, and is
- * named among what was not checked. Skipped as a8 is, with one line,
+ * row, or output, and in no `ps` sample; s1 ends its own two sheep with
+ * n1's check (`<id>\tended`, nothing on stderr), each counted minted and
+ * ended, so a6 still lists `sessions: 0`; the branch is deleted after.
+ * The broker's own sentence for the refusal is a line of the station's
+ * log, which no verb reads, and is named among what was not checked. Skipped as a8 is, with one line,
  * without `LAMB_PLAYGROUND_TOKEN`.
  */
 import { spawn, spawnSync } from "node:child_process";
@@ -2980,11 +2986,7 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     // Step 8 (station phase 2): journey 3 against the scratch repository, when its token is here; one skip line otherwise.
     await journeyThree(ring, station, { needles });
 
-    // Earmark phase 1, s1 (earmark's journey 2 steps 1 and 2): beside a8, the same scratch repository and the same token, which is
-    // this time one sheep's own `GIT_TOKEN`, given at its mint on stdin, and on no pasture; a sibling with none is refused the push.
-    await journeyEarmark(ring, station, { needles });
-
-    // End phase 1, n1 (end's journey 3 step 3): every sheep the walk minted is ended before the station goes, `sheep rm <id>`
+    // End phase 1, n1 (end's journey 3 step 3): every sheep the walk minted so far is ended before the station goes, `sheep rm <id>`
     // printing exactly `<id>\tended` for each, the older release's sheep included; after, `sheep ls` lists none of them, and a verb
     // on an ended id, over HTTP or through a socket, is the one sentence on stderr, exit 2, nothing on stdout. So the delete below
     // lists `sessions: 0`, and its `sessions deleted:` is 0 too: the end released each sheep's rows, container, and browser first.
@@ -3004,6 +3006,13 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
       if (refused.code !== 2 || refused.stdout !== "" || refused.stderr !== endedSentence) ring.fail("n1", `sheep ${verb.join(" ")} (on an ended id)`, { ...refused, stderr: `${refused.stderr}\nexpected exit 2, nothing on stdout, and the one sentence on stderr: ${endedSentence.trim()}` });
     }
     ring.ok("n1", `sheep rm <id> (${station.ended.length} times); sheep ls --json; sheep status|log|rm ${station.sheep} (ended)`, `${rmSeconds}s; ${station.ended.join(", ")} each ended with its one line; none listed after; every verb on the ended id is the sentence, exit 2, nothing on stdout`);
+
+    // Earmark phase 1, s1 (earmark's journey 2 steps 1 and 2): the same scratch repository and token as a8, this time one sheep's
+    // own `GIT_TOKEN`, given at its mint on stdin, and on no pasture; a sibling with none is refused the push. After n1, not beside
+    // a8: the station's `max_instances` is 3 and `PEN_IDLE` 10 minutes, so a8's two sheep (and earlier steps') still held containers
+    // and s1's sibling could rent none (the account ring on d37f9e6). n1's ends destroyed them all, so s1's two births fit under the
+    // cap; s1 ends its own two with n1's check, each counted minted and ended, so the delete below still lists `sessions: 0`.
+    await journeyEarmark(ring, station, { needles });
 
     // Step 6: the delete, the name on stdin: the listing first (station phase 3), counted against what the walk minted and did not
     // end (end phase 1: none); then the account listed, the last lines.
@@ -3454,8 +3463,12 @@ async function journeyThree(ring, station, { needles, step = "a8", prefix = "rin
  * that refusal, and the `from this sheep` of the hand-over, are lines of
  * the station's log, which no verb reads: named among what was not
  * checked. The token is in no transcript, export, row, or output of the
- * step's, and, by the walk's poll, in no process's arguments. Both sheep
- * are among those n1 ends; the branch is deleted after through a8's
+ * step's, and, by the walk's poll, in no process's arguments. The step
+ * runs after n1, on a station whose containers n1's ends destroyed: the
+ * cap is 3 instances and an idle container is held ten minutes, so beside
+ * a8 the sibling could rent none. It ends its own two sheep with n1's check,
+ * each pushed to `station.minted` and `station.ended`, so a6's listing
+ * still counts none left; the branch is deleted after through a8's
  * `GIT_ASKPASS` helper. Runs only with `LAMB_PLAYGROUND_TOKEN`, as a8 does.
  */
 async function journeyEarmark(ring, station, { needles, step = "s1" }) {
@@ -3549,6 +3562,8 @@ async function journeyEarmark(ring, station, { needles, step = "s1" }) {
       if (logged.code !== 0) ring.fail(step, `sheep log ${ids[name]}`, withheld(logged));
       if (logged.stdout.includes(playground)) ring.fail(step, `sheep log ${ids[name]}`, { stdout: "(withheld)", stderr: "the token is in the transcript", code: 1 });
       if (!/git clone/.test(logged.stdout)) ring.fail(step, `sheep log ${ids[name]}`, { ...logged, stderr: `${logged.stderr}\nexpected the birth's git clone` });
+      // A sheep that could rent no container proves nothing about the earmark (the account ring on d37f9e6, beside a8): said so.
+      if (logged.stdout.includes("no container could be rented")) ring.fail(step, `sheep log ${ids[name]}`, { ...logged, stderr: `${logged.stderr}\n${name}'s commands found no container (the station's max_instances against containers still idle): the earmark was not exercised` });
       logs[name] = logged.stdout;
     }
     if (!logs.own.includes(`git push -u origin ${branch("own")}`) || /could not read Username/.test(logs.own)) ring.fail(step, `sheep log ${ids.own}`, { stdout: logs.own, stderr: `expected own's push of ${branch("own")}, and no refusal for want of a credential`, code: 1 });
@@ -3564,6 +3579,18 @@ async function journeyEarmark(ring, station, { needles, step = "s1" }) {
     ring.ok(step, `sheep pasture new ${pasture} --repo …lamb-playground.git (no secret); sheep new --pasture ${pasture} --name own --secret GIT_TOKEN --detach (the token on stdin); sheep new … --name sibling --detach; sheep ls`, `own ${ids.own} lists GIT_TOKEN last, the sibling ${ids.sibling} nothing; no value in either form`);
     ring.ok(step, `POST /s/<id>/faux; sheep attach <id> --detach (twice); sheep wait; git ls-remote ${PLAYGROUND} 'refs/heads/${branch("*")}' (anonymous)`, `${workSeconds}s; ${onGitHub.join(", ")} alone on GitHub: own pushed with its own token; the sibling refused: "${refusedLine.trim().slice(0, 100)}"`);
     ring.ok(step, `sheep log ${ids.own}; sheep log ${ids.sibling}; sheep export (both)`, "the token in neither transcript, neither export's bytes, no row, no output of the step's, and, by the poll, in no process's arguments");
+
+    // The step runs after n1, so it ends its own two with n1's check: exactly `<id>\tended`, exit 0, nothing on stderr; each is then
+    // ended as well as minted, so a6's listing still counts none left. Neither is listed after.
+    for (const name of names) {
+      const removed = await ring.sheep(["rm", ids[name]]);
+      if (removed.code !== 0 || removed.stdout !== `${ids[name]}\tended\n` || removed.stderr !== "") ring.fail(step, `sheep rm ${ids[name]}`, { ...withheld(removed), stderr: `${withheld(removed).stderr}\nexpected exit 0, exactly "${ids[name]}\\tended" on stdout, nothing on stderr` });
+      station.ended.push(ids[name]);
+    }
+    const afterRm = JSON.parse((await ring.sheep(["ls", "--json"])).stdout);
+    const stillListed = afterRm.filter((row) => row.id === ids.own || row.id === ids.sibling).map((row) => row.id);
+    if (stillListed.length > 0) ring.fail(step, "sheep ls --json (after rm)", { stdout: JSON.stringify(afterRm), stderr: `expected neither of s1's sheep listed; still there: ${stillListed.join(", ")}`, code: 1 });
+    ring.ok(step, `sheep rm ${ids.own}; sheep rm ${ids.sibling}; sheep ls --json`, "each ended with its one line; neither listed after");
   } finally {
     if (pushed) {
       const results = [];

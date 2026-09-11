@@ -121,7 +121,7 @@ journey5.test.ts`: journey 1 steps 1, 2, 5, and 6 on a pasture with no
 repository (the home ring has no container), and journey 3 steps 2 to
 6, each refusal leaving `sheep ls --json` unchanged. A unit case for
 journey 3 step 1, stdin a terminal. `scripts/hermetic.mjs`: the account
-ring's new step, `s1`, beside a8 and skipped as a8 is without
+ring's new step, `s1`, after n1 and skipped as a8 is without
 `LAMB_PLAYGROUND_TOKEN`: a pasture on the scratch repository with no
 `GIT_TOKEN`; one sheep minted with `--secret GIT_TOKEN`, the token on
 stdin, and one without; each scripted by the faux provider to commit
@@ -129,7 +129,8 @@ and push a branch; the earmarked sheep's branch seen on GitHub
 anonymously, the sibling's push refused (git's line in its log, its
 branch absent); the
 token absent from every transcript, export, and `ps` sample the step
-takes; both sheep added to those n1 ends, the branch deleted after.
+takes; both sheep ended by the step with n1's check, the branch deleted
+after.
 
 **Not this phase:** Nothing open above.
 
@@ -152,7 +153,8 @@ shepherd's account, a few container minutes and one deploy.
 - **2026-09-11 — The values are read in `main`, not `dispatch`:** `dispatch` runs twice when the local home starts on demand, and stdin would be spent the second time; every refusal is before the first request.
 - **2026-09-11 — The walk: a mint with a secret in 0.18 s, no container;** two first prompts, clone and setup, 2.4 s each; the earmarked sheep's setup hashed its own `PROBE` (`aa72c913fa59`), the sibling's the pasture's (`9b23d0d2f4c4`), as computed; `env` counted 0 in both.
 - **2026-09-11 — The walk's first try named a branch the repository lacks** (`main` for `octocat/Hello-World`): the clone exited 128 and setup ran at the first command instead, with the same hashes; the second try, `--branch master`, cloned, then set up.
-- **2026-09-11 — The sixth `ls` column changed two pasture tests' column counts,** and the guide paid for its `--secret` bullet with cut redundancies: 1497 words against the cap of 1500.
+- **2026-09-11 — The guide paid for its `--secret` bullet with cut redundancies:** 1497 words against the cap of 1500.
 - **2026-09-11 — Open: the broker's refusal reaches git as nothing.** Pen's agent answers the helper with nothing, so a sheep reads "could not read Username" and never the sentence that names the sheep, pasture, and home; carrying it is pen's to change. Waits on work.
 - **2026-09-11 — Open: `join.test.ts`'s terminal case warns and passes without running on macOS:** `script` will not start with a socket as stdin; `earmark.test.ts` gives it `/dev/null`, and its case ran. Waits on work.
-- **2026-09-11 — Open: `s1` on the station.** Waits on the shepherd's account ring.
+- **2026-09-11 — The account ring on d37f9e6 failed at `s1` on the container cap, not the earmark:** `own` pushed with its own token, but beside a8 the sibling could rent no container (`max_instances` 3, idle 10 min; pasture's open debt). `s1` now runs after n1 and ends its own two.
+- **2026-09-11 — Open: `s1` on the station.** Waits on the shepherd's account ring on the release with `s1` after n1.
