@@ -30630,6 +30630,8 @@ var PASTURE_FILE_MODE = 292;
 var PASTURE_DIR_MODE = 365;
 var CACHE_ROOT = "/cache";
 var CACHE_CHUNK_BYTES = 8 * 1024 * 1024;
+var CACHE_STORED_BYTES = CACHE_CHUNK_BYTES + 64 * 1024;
+var CACHE_NEED_CHUNKS = 3;
 var CACHE_MAX_BYTES = 1024 * 1024 * 1024;
 function recordHashInput(chunks) {
   return chunks.join("\n");
@@ -31299,6 +31301,9 @@ var Pasture = class extends DurableObject {
     )`);
     ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS cache_chunks (hash TEXT NOT NULL, idx INTEGER NOT NULL, content BLOB NOT NULL, PRIMARY KEY (hash, idx))");
     ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS cache_sizes (hash TEXT PRIMARY KEY, size INTEGER NOT NULL)");
+    if (!ctx.storage.sql.exec("PRAGMA table_info(cache_sizes)").toArray().some((column) => column.name === "deflated")) {
+      ctx.storage.sql.exec("ALTER TABLE cache_sizes ADD COLUMN deflated INTEGER NOT NULL DEFAULT 0");
+    }
     ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS cache_claims (save TEXT NOT NULL, hash TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (save, hash))");
     this.files = new FilesTable(ctx.storage.sql, Date.now, [PASTURE_ROOT]);
     this.files.init();
@@ -31402,17 +31407,27 @@ var Pasture = class extends DurableObject {
   keptSaves() {
     return this.ctx.storage.sql.exec(
       "SELECT generation, save, key, hash, chunks, files, bytes, kept_at, by FROM cache ORDER BY generation DESC"
-    ).toArray().map((row) => ({
-      generation: row.generation,
-      save: row.save,
-      key: row.key,
-      hash: row.hash,
-      chunks: JSON.parse(row.chunks),
-      files: row.files,
-      bytes: row.bytes,
-      keptAt: row.kept_at,
-      by: row.by
-    }));
+    ).toArray().map((row) => {
+      const chunks = JSON.parse(row.chunks);
+      return {
+        generation: row.generation,
+        save: row.save,
+        key: row.key,
+        hash: row.hash,
+        chunks,
+        files: row.files,
+        bytes: row.bytes,
+        keptAt: row.kept_at,
+        by: row.by,
+        stored: this.storedBytes(chunks)
+      };
+    });
+  }
+  /** What a record's chunks come to here, deflated as they are kept; a chunk gone (an older save's, deleted) counts nothing. */
+  storedBytes(chunks) {
+    let stored = 0;
+    for (const hash of new Set(chunks)) stored += this.ctx.storage.sql.exec("SELECT size FROM cache_sizes WHERE hash = ?", hash).toArray()[0]?.size ?? 0;
+    return stored;
   }
   /** The committed save, when there is one. */
   committed() {
@@ -31429,9 +31444,9 @@ var Pasture = class extends DurableObject {
     const { generation: _generation, save: _save, ...kept2 } = committed;
     return kept2;
   }
-  /** Whether a chunk is here, whole. */
+  /** Whether a chunk is here, whole and deflated: one kept before fold phase 3 is plain, and counts as missing so the save replaces it. */
   hasChunk(hash) {
-    return this.ctx.storage.sql.exec("SELECT 1 FROM cache_sizes WHERE hash = ?", hash).toArray().length > 0;
+    return this.ctx.storage.sql.exec("SELECT 1 FROM cache_sizes WHERE hash = ? AND deflated = 1", hash).toArray().length > 0;
   }
   /** One chunk's bytes by its hash, its rows joined; `undefined` when no kept save or save in flight has it. */
   cacheChunk(hash) {
@@ -31463,13 +31478,15 @@ var Pasture = class extends DurableObject {
   }
   /**
    * One chunk, whole, in one method and so one transaction: its rows of
-   * one MiB and its size, claimed for the save. Bytes that are not their
-   * hash, or over a chunk, are refused before a row is written.
+   * one MiB and its size, claimed for the save. Bytes over a chunk, or
+   * none, are refused before a row is written. Fold phase 3: what is kept
+   * is the chunk deflated, under the name its plain bytes hash to, so this
+   * object cannot check the name against the bytes and does not try; the
+   * container that is given the chunk inflates it and checks the hash
+   * there, which is where the bytes are used.
    */
   cachePut(save, hash, bytes) {
-    if (bytes.byteLength === 0 || bytes.byteLength > CACHE_CHUNK_BYTES) throw new Error(`a chunk is 1 to ${CACHE_CHUNK_BYTES} bytes, not ${bytes.byteLength}`);
-    const actual = hashBytes(bytes);
-    if (actual !== hash) throw new Error(`chunk ${hash} hashes to ${actual}; nothing kept`);
+    if (bytes.byteLength === 0 || bytes.byteLength > CACHE_STORED_BYTES) throw new Error(`a chunk is 1 to ${CACHE_STORED_BYTES} bytes deflated, not ${bytes.byteLength}`);
     const sql2 = this.ctx.storage.sql;
     sql2.exec("INSERT OR REPLACE INTO cache_claims (save, hash, at) VALUES (?, ?, ?)", save, hash, this.clock());
     if (this.hasChunk(hash)) return;
@@ -31477,7 +31494,7 @@ var Pasture = class extends DurableObject {
     for (let offset = 0, index3 = 0; offset < bytes.byteLength; offset += CHUNK_BYTES, index3++) {
       sql2.exec("INSERT INTO cache_chunks (hash, idx, content) VALUES (?, ?, ?)", hash, index3, bytes.subarray(offset, offset + CHUNK_BYTES));
     }
-    sql2.exec("INSERT INTO cache_sizes (hash, size) VALUES (?, ?)", hash, bytes.byteLength);
+    sql2.exec("INSERT OR REPLACE INTO cache_sizes (hash, size, deflated) VALUES (?, ?, 1)", hash, bytes.byteLength);
   }
   /**
    * A save becomes the pasture's cache, in one transaction: every chunk it
@@ -31513,7 +31530,7 @@ var Pasture = class extends DurableObject {
         sql2.exec("DELETE FROM cache_sizes WHERE hash = ?", row.hash);
       }
     });
-    return { key: commit.key, hash: commit.hash, chunks: commit.chunks, files: commit.files, bytes: commit.bytes, by: commit.by, keptAt };
+    return { key: commit.key, hash: commit.hash, chunks: commit.chunks, files: commit.files, bytes: commit.bytes, by: commit.by, keptAt, stored: this.storedBytes(commit.chunks) };
   }
   /** The committed save as the route says it, read from its row and never a chunk; `current` asks the tree for `setup.sh`'s hash now. */
   cacheSummary() {
@@ -117349,6 +117366,9 @@ var CacheRestore = class {
   served = 0;
   started;
   lost;
+  /** Fold phase 3: how long this cell has spent reading chunks from the object, and how many bytes it has passed on. */
+  readMs = 0;
+  stored = 0;
   constructor(kept2, store, now = Date.now) {
     this.kept = kept2;
     this.store = store;
@@ -117364,25 +117384,43 @@ var CacheRestore = class {
     return frame.hashes.some((hash) => this.chunks.has(hash));
   }
   /**
-   * One chunk for one `need`: read from the object now and sent, the only
-   * chunk this cell holds while it is in flight. A `need` naming two, or a
-   * chunk beside a file, is refused: one per `need` is the protocol. A
-   * chunk the object no longer has is the cache moving under the put-back,
-   * and the agent is told so, not the sync failed.
+   * The chunks of one `need`, up to three (fold phase 3), each read from
+   * the object and sent in the order asked, so this cell holds one at a
+   * time and the link carries the next while the container writes the last.
+   * A `need` naming more than three, or a chunk beside a file, is refused.
+   * A chunk the object no longer has is the cache moving under the
+   * put-back, and the agent is told so, not the sync failed. Each chunk
+   * goes as the object holds it, deflated: this cell never inflates one.
    */
   async answer(frame, channel) {
-    if (frame.hashes.length !== 1) throw new CacheProtocolError(`a need for the cache names one chunk; ${frame.id} named ${frame.hashes.length} hashes`);
-    const hash = frame.hashes[0];
-    this.started ??= this.now();
-    const bytes = await this.store.cacheChunk(hash);
-    if (bytes === void 0) {
-      this.lost = `the pasture no longer has chunk ${hash.slice(0, 12)} of the cache it was putting back; it changed during the put-back`;
-      channel.send({ type: "error", code: "refused", of: "need", id: frame.id, message: this.lost });
-      return;
+    if (frame.hashes.length === 0 || frame.hashes.length > CACHE_NEED_CHUNKS) {
+      throw new CacheProtocolError(`a need for the cache names one to ${CACHE_NEED_CHUNKS} chunks; ${frame.id} named ${frame.hashes.length} hashes`);
     }
-    channel.send({ type: "blob", hash, size: bytes.byteLength });
-    channel.sendBytes(bytes);
-    this.served++;
+    this.started ??= this.now();
+    for (const hash of frame.hashes) {
+      const read = this.now();
+      const bytes = await this.store.cacheChunk(hash);
+      this.readMs += this.now() - read;
+      if (bytes === void 0) {
+        this.lost = `the pasture no longer has chunk ${hash.slice(0, 12)} of the cache it was putting back; it changed during the put-back`;
+        channel.send({ type: "error", code: "refused", of: "need", id: frame.id, message: this.lost });
+        return;
+      }
+      channel.send({ type: "blob", hash, size: bytes.byteLength });
+      channel.sendBytes(bytes);
+      this.stored += bytes.byteLength;
+      this.served++;
+    }
+  }
+  /**
+   * Fold phase 3: the container could not use a chunk it was given — one
+   * that did not inflate, or whose inflated bytes were not the hash it was
+   * asked for, which is what a cache kept before the chunks were deflated
+   * looks like. It has emptied `/cache` and will say `checkout`; this
+   * put-back is over, cold, and the sync-in is not.
+   */
+  unusable(reason) {
+    this.lost = `the container could not use the cache it was given: ${reason}`;
   }
   /** How the put-back ended, once the container said `checkout`; `undefined` before, or when the sync-in failed. */
   ended;
@@ -117390,7 +117428,7 @@ var CacheRestore = class {
   finish() {
     if (this.lost !== void 0) this.ended = { restored: false, reason: this.lost };
     else if (this.served < this.kept.chunks.length) this.ended = { restored: false, reason: `the container asked for ${this.served} of the cache's ${this.kept.chunks.length} chunks` };
-    else this.ended = { restored: true, ms: this.started === void 0 ? 0 : this.now() - this.started };
+    else this.ended = { restored: true, ms: this.started === void 0 ? 0 : this.now() - this.started, readMs: this.readMs, stored: this.stored };
     return this.ended;
   }
 };
@@ -117403,8 +117441,11 @@ var CacheSave = class {
   channel;
   resolve;
   described = null;
-  /** The chunks still to ask for, in order; the first is the one asked for now. */
+  /** The chunks still to ask for, in order, the ones named in the `need` now outstanding first (fold phase 3: up to three). */
   wanted = [];
+  /** How many of `wanted` the outstanding `need` named, and how many of those have landed. */
+  asked = 0;
+  landed = 0;
   /** The chunk whose `blob` is awaited, once its frame came. */
   announced = null;
   sent = 0;
@@ -117425,25 +117466,33 @@ var CacheSave = class {
       return;
     }
     if (frame.type === "blob") {
-      if (this.announced !== null || frame.hash !== this.wanted[0]) throw new CacheProtocolError(`the container sent chunk ${frame.hash}, which was not asked for`);
-      if (frame.size > CACHE_CHUNK_BYTES) throw new CacheProtocolError(`chunk ${frame.hash} is ${frame.size} bytes, over a chunk`);
+      if (this.announced !== null || frame.hash !== this.wanted[this.landed]) throw new CacheProtocolError(`the container sent chunk ${frame.hash}, which was not asked for`);
+      if (frame.size > CACHE_STORED_BYTES) throw new CacheProtocolError(`chunk ${frame.hash} is ${frame.size} bytes deflated, over a chunk`);
       this.channel.expect(frame.hash, frame.size);
       this.announced = { hash: frame.hash, size: frame.size };
       return;
     }
     throw new CacheProtocolError(`unexpected ${frame.type} frame during cache ${this.id}`);
   }
+  /**
+   * One chunk's bytes, as the container deflated them (fold phase 3): put
+   * to the object and let go. This cell does not inflate them to check the
+   * hash, which is over the plain bytes; what it checks is that they are
+   * the chunk it asked for, of the length announced. The container that
+   * next has this cache inflates and checks the hash there, which is where
+   * the bytes are used.
+   */
   async bytes(bytes) {
     const announced = this.announced;
     this.announced = null;
     this.channel.arrived();
     if (announced === null) throw new CacheProtocolError("bytes with no chunk frame before them");
     if (bytes.byteLength !== announced.size) throw new CacheProtocolError(`chunk ${announced.hash} announced ${announced.size} bytes and carried ${bytes.byteLength}`);
-    const hash = hashBytes(bytes);
-    if (hash !== announced.hash) throw new CacheProtocolError(`chunk ${announced.hash} hashes to ${hash}; nothing kept`);
-    await this.request.store.cachePut(this.request.save, hash, bytes);
+    await this.request.store.cachePut(this.request.save, announced.hash, bytes);
     this.sent++;
-    this.wanted.shift();
+    this.landed++;
+    if (this.landed < this.asked) return;
+    this.wanted = this.wanted.slice(this.asked);
     await this.next();
   }
   async onDescribed(frame) {
@@ -117456,11 +117505,13 @@ var CacheSave = class {
     this.wanted = await this.request.store.cacheMissing(this.request.save, frame.chunks);
     await this.next();
   }
-  /** The next chunk, alone in its `need`; or, with none left, the commit. */
+  /** The next chunks, up to three in one `need` (fold phase 3); or, with none left, the commit. */
   async next() {
-    const hash = this.wanted[0];
-    if (hash !== void 0) {
-      this.channel.send({ type: "need", id: this.id, hashes: [hash] });
+    const hashes = this.wanted.slice(0, CACHE_NEED_CHUNKS);
+    this.asked = hashes.length;
+    this.landed = 0;
+    if (hashes.length > 0) {
+      this.channel.send({ type: "need", id: this.id, hashes });
       return;
     }
     const frame = this.described;
@@ -117796,6 +117847,10 @@ var Checkout = class {
             }
             return;
           }
+          if (frame.type === "error" && frame.of === "cache" && frame.id === id2) {
+            restore?.unusable(frame.message);
+            return;
+          }
           if (frame.type === "checkout" && frame.id === id2) {
             this.pending = null;
             restore?.finish();
@@ -117823,7 +117878,7 @@ var Checkout = class {
   /**
    * Fold phase 1: asks the container to describe `/cache`, and keeps it in
    * the pasture's object when `pen/cache.ts` says so, passing each chunk the
-   * object lacks from the socket to the object, one `need` at a time.
+   * object lacks from the socket to the object, a `need` of up to three at a time.
    * Resolves with what came of it once `synced` is sent.
    */
   keepCache(request) {
@@ -118024,7 +118079,8 @@ var Checkout = class {
         const frame = decodeFrame(data);
         if (frame.type === "response") return;
         if (this.expecting !== null) throw new CheckoutProtocolError(`expected the bytes of blob ${this.expecting.hash}, got a ${frame.type} frame`);
-        if (frame.type === "error") throw new CheckoutProtocolError(`the container reported ${frame.code} on ${frame.of}: ${frame.message}`);
+        const cacheError = frame.type === "error" && frame.of === "cache" && this.pending !== null && frame.id === this.pending.id;
+        if (frame.type === "error" && !cacheError) throw new CheckoutProtocolError(`the container reported ${frame.code} on ${frame.of}: ${frame.message}`);
         if (this.pending === null) {
           if (frame.type === "changed") this.arrived = frame;
           return;
@@ -119775,8 +119831,8 @@ Cannot execute bash commands.`));
     const ended = restore?.ended;
     if (restore !== void 0 && key !== void 0 && ended !== void 0) {
       if (ended.restored) {
-        lease.putBack = { key, kept: restore.kept, ms: ended.ms };
-        console.info(`[pen] cache warm, ${cacheSize(restore.kept.bytes)} in ${ended.ms} ms`);
+        lease.putBack = { key, kept: restore.kept, ms: ended.ms, readMs: ended.readMs, stored: ended.stored };
+        console.info(`[pen] cache warm, ${cacheSize(restore.kept.bytes)} in ${ended.ms} ms: ${restore.kept.chunks.length} chunks, ${cacheSize(ended.stored)} stored, ${ended.readMs} ms of it reading the object`);
       } else {
         console.info(`[pen] cache cold: ${ended.reason}; /cache was emptied and setup runs cold`);
       }
@@ -120111,7 +120167,15 @@ Cannot execute bash commands.`));
     const key = setupKey(tree);
     if (key === void 0) return { skipped: true };
     const { checkout } = lease;
-    const found = lease.putBack !== void 0 && lease.putBack.key === key ? { found: "warm", bytes: lease.putBack.kept.bytes, files: lease.putBack.kept.files, ms: lease.putBack.ms } : { found: "cold", bytes: 0, files: 0, ms: 0 };
+    const found = lease.putBack !== void 0 && lease.putBack.key === key ? {
+      found: "warm",
+      bytes: lease.putBack.kept.bytes,
+      files: lease.putBack.kept.files,
+      ms: lease.putBack.ms,
+      chunks: lease.putBack.kept.chunks.length,
+      stored: lease.putBack.stored,
+      read: lease.putBack.readMs
+    } : { found: "cold", bytes: 0, files: 0, ms: 0 };
     let output = "";
     const failed3 = /* @__PURE__ */ __name((outcome) => {
       const full = "error" in outcome ? output : `${line(outcome.exitCode)}
@@ -120197,8 +120261,8 @@ ${output}`;
         return found;
       }
       const { kept: kept2, sent } = saved;
-      console.info(`[pen] cache kept for ${setupName(key)}, ${cacheSize(kept2.bytes)}, ${kept2.files} files, ${kept2.chunks.length} chunks (${sent} sent) in ${Date.now() - started} ms`);
-      return { ...found, ...found.found === "cold" ? { bytes: kept2.bytes, files: kept2.files } : {}, kept: true };
+      console.info(`[pen] cache kept for ${setupName(key)}, ${cacheSize(kept2.bytes)}, ${kept2.files} files, ${kept2.chunks.length} chunks, ${cacheSize(kept2.stored)} stored (${sent} sent) in ${Date.now() - started} ms`);
+      return { ...found, ...found.found === "cold" ? { bytes: kept2.bytes, files: kept2.files, chunks: kept2.chunks.length, stored: kept2.stored } : {}, kept: true };
     } catch (error) {
       return refuse(`the save failed: ${messageOf3(error)}`);
     }
@@ -120319,6 +120383,10 @@ function cacheOf(value3) {
     bytes: number("bytes"),
     files: number("files"),
     ms: number("ms"),
+    // Fold phase 3's three, each only when the entry has it: an entry from before them reads as it did.
+    ...typeof record2.chunks === "number" ? { chunks: record2.chunks } : {},
+    ...typeof record2.stored === "number" ? { stored: record2.stored } : {},
+    ...typeof record2.read === "number" ? { read: record2.read } : {},
     ...record2.kept === true ? { kept: true } : {},
     ...typeof record2.refused === "string" ? { refused: record2.refused } : {}
   };
@@ -125303,13 +125371,13 @@ __name(admitted, "admitted");
 var CHECKOUT_BUILD = { commit: "0.0.0-checkout", builtAt: null };
 function homeImage() {
   if (false) return null;
-  return true ? "docker.io/dglazkov2/sheep-pen@sha256:b4f2a1babfdb54cd996bb77307fdf5feab4395afed93f97c8dea3464b8ddc614" : null;
+  return true ? "docker.io/dglazkov2/sheep-pen@sha256:673d013c98772bb78a6e1bd803c9045cdda265814d440fc49d761d3355c0a3be" : null;
 }
 __name(homeImage, "homeImage");
 function homeBuild() {
   if (false) return CHECKOUT_BUILD;
   try {
-    const parsed = JSON.parse('{"commit":"6dc3148","builtAt":"2026-09-11T22:59:23Z"}');
+    const parsed = JSON.parse('{"commit":"8f8cf85","builtAt":"2026-09-11T23:34:59Z"}');
     if (typeof parsed.commit === "string" && parsed.commit !== "") return { commit: parsed.commit, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
   } catch {
   }
