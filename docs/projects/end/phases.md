@@ -126,5 +126,5 @@ shepherd's account, a few container minutes and one deploy.
 - **2026-09-10 — The guide is at its 1500-word ceiling.** The verb cost about sixty words of redundancy elsewhere; the next verb pays the same way or the budget moves.
 - **2026-09-10 — The walk, with Docker and a real model:** `docs` ended with its container gone from `docker ps` at once; `tests` ended mid-turn on a 120 s `node` line in under a second, its container gone; the minutes read 0.204 before and after a 30 s wait.
 - **2026-09-10 — wrangler's `-proxy` sidecars outlive a destroyed container by seconds,** gone within the walk's 30 s wait. They are wrangler's, not the sheep's.
-- **2026-09-10 — Open: `sheep attach <ended> --detach -- "…"` prints the id on stdout before the refusal,** since `detach` prints first and prompts after. For whoever next touches `detach`.
+- **2026-09-10 — `sheep attach <ended> --detach -- "…"` printed the id before the refusal,** since `detach` printed first. Closed by mint phase 1: the send comes first, the id after.
 - **2026-09-10 — The account ring, typed by the shepherd: `ok n1` in 7 s.** Six sheep ended on the station, the older release's and a3's with its container and a8's two that had cloned and pushed; none listed after; the delete listed `sessions: 0`, `sessions deleted: 0`. `PenContainer.destroy()` met the platform there.

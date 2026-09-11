@@ -239,4 +239,79 @@ describe.skipIf(typeof home === "string")("journey 5: a dog and its flock, throu
     for (const id of [docs, tests, types]) expect(remaining).not.toContain(id);
     expect(remaining.length).toBeGreaterThan(0);
   });
+
+  it("mint phase 1, journey 1 steps 1 to 4, 6, and 7: a sheep named before it has anything to say", { timeout: 120_000 }, async () => {
+    // The program every cell answers from, for this case: one text step, at once, so the reply names the step it came from. This
+    // home has no container and the storage is not read here (that is the cell's proof, in workerd); "nothing booted" is `sheep
+    // log` empty, `sheep status` at zero, and the program's first answered step being the first prompt's.
+    const MINT = { steps: [{ text: "the first prompt's answer" }] };
+    await script("/faux", MINT);
+
+    // Step 1: the mint alone: one line, the id, exit 0, nothing on stderr, and back at once. The time is the whole command,
+    // the process spawned and the bundle loaded included; the ring's bound is loose, and the number is printed for the record.
+    const started = Date.now();
+    const minted = await sheep("new", "--detach");
+    const mintMs = Date.now() - started;
+    expect(minted.code).toBe(0);
+    expect(minted.stderr).toBe("");
+    expect(minted.stdout).toMatch(/^[0-9a-f-]{36}\n$/);
+    const id = minted.stdout.trim();
+    expect(mintMs).toBeLessThan(5_000);
+    process.stderr.write(`mint phase 1: sheep new --detach took ${mintMs} ms through the CLI\n`);
+    // --json adds nothing: the id is the id. A second sheep, named, for step 6.
+    const spareMinted = await sheep("new", "--name", "spare", "--detach", "--json");
+    expect(spareMinted.code).toBe(0);
+    expect(spareMinted.stderr).toBe("");
+    expect(spareMinted.stdout).toMatch(/^[0-9a-f-]{36}\n$/);
+    const spare = spareMinted.stdout.trim();
+
+    // Step 2: listed idle with no task and no name; --json has task: null.
+    const ls = await sheep("ls");
+    expect(ls.code).toBe(0);
+    expect(ls.stdout).toMatch(new RegExp(`^${id}\\t\\t\\d{4}-[^\\t]+\\tidle\\t$`, "m"));
+    expect(ls.stdout).toMatch(new RegExp(`^${spare}\\tspare\\t\\d{4}-[^\\t]+\\tidle\\t$`, "m"));
+    const rows = JSON.parse((await sheep("ls", "--json")).stdout) as Array<{ id: string; state: string; task: string | null; pasture: string | null }>;
+    expect(rows.find((row) => row.id === id)).toMatchObject({ state: "idle", task: null, pasture: null });
+    expect(rows.find((row) => row.id === spare)).toMatchObject({ state: "idle", task: null });
+
+    // Step 3: no model was called: the log is empty, and the status is idle with no operation, no tool, zero tokens, no messages.
+    // Both read the lane, which is the first boot; a pastureless cell's boot births nothing.
+    expect(await sheep("log", id)).toEqual({ code: 0, stdout: "", stderr: "" });
+    expect((await sheep("log", id, "--json")).stdout).toBe("");
+    const status = await sheep("status", id);
+    expect(status.code).toBe(0);
+    expect(status.stdout).toBe(`id: ${id}\nstate: idle\noperation: none\ntool: none\ntokens: input=0 output=0 cacheRead=0 cacheWrite=0\nmessages: 0\n`);
+
+    // Step 4: the first prompt is the sheep's first turn: the reply streams, the task is the prompt's first line, the log starts
+    // with the prompt. The reply is the program's first step, so the mint consumed none of it.
+    const reply = await sheep("attach", id, "--", "write the essay\nabout sheep");
+    expect(reply.code).toBe(0);
+    expect(reply.stdout).toBe(`${MINT.steps[0]!.text}\n`);
+    const prompted = JSON.parse((await sheep("ls", "--json")).stdout) as Array<{ id: string; state: string; task: string | null }>;
+    expect(prompted.find((row) => row.id === id)).toMatchObject({ state: "idle", task: "write the essay" });
+    const log = await sheep("log", id);
+    expect(log.code).toBe(0);
+    const blocks = log.stdout.trimEnd().split("\n\n");
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toMatch(new RegExp(`^\\[user\\] [0-9a-f-]{36} \\d{4}-[^\\n]*\\nwrite the essay\\nabout sheep$`));
+    expect(blocks[1]).toMatch(new RegExp(`^\\[assistant\\] [0-9a-f-]{36} [^\\n]*\\n${MINT.steps[0]!.text}$`));
+    expect((await sheep("status", id)).stdout).toMatch(/^messages: 2$/m);
+
+    // Step 6: a sheep minted and never asked anything is ended with the one line; nothing was started to be stopped.
+    expect(await sheep("rm", spare)).toEqual({ code: 0, stdout: `${spare}\tended\n`, stderr: "" });
+    expect((await sheep("ls")).stdout).not.toContain(spare);
+
+    // Step 7: --detach with nothing to send, on attach and on -c, is the one sentence, exit 2, nothing on stdout: nothing is asked
+    // of the home. And --detach with a prompt to an ended id is the ended sentence alone: the send comes before the id is printed.
+    const nothingToSend = "sheep: --detach with no prompt is sheep new's; there is nothing to send\n";
+    expect(await sheep("attach", id, "--detach")).toEqual({ code: 2, stdout: "", stderr: nothingToSend });
+    expect(await sheep("-c", "--detach")).toEqual({ code: 2, stdout: "", stderr: nothingToSend });
+    expect(await sheep("attach", id, "--detach", "--json")).toEqual({ code: 2, stdout: "", stderr: nothingToSend });
+    expect(await sheep("attach", spare, "--detach", "--", "x")).toEqual({ code: 2, stdout: "", stderr: refusal(spare) });
+    expect(await sheep("attach", spare, "--detach", "--json", "--", "x")).toEqual({ code: 2, stdout: "", stderr: refusal(spare) });
+    // With a prompt to a live sheep, --detach still prints the id, after the send, and the sheep takes the turn.
+    const detached = await sheep("attach", id, "--detach", "--", "and again");
+    expect(detached).toEqual({ code: 0, stdout: `${id}\n`, stderr: "" });
+    expect((await sheep("wait", "--timeout", "30", id)).stdout).toBe(`${id}\t${MINT.steps[0]!.text}\n`);
+  });
 });

@@ -26,7 +26,7 @@ const USAGE = `sheep — pi, running in a cell
 usage:
   sheep new [--name <name>] [--pasture <name>] [--detach] [--wait] [-- <prompt>]
                                             mint a session at the home, born into a pasture or into none; attach pi's
-                                            terminal, or send the prompt
+                                            terminal, or send the prompt; with --detach alone, print the id and exit
   sheep -c | --continue [--detach] [--wait] [-- <prompt>]       the same, on the newest session
   sheep attach <id> [--detach] [--wait] [-- <prompt>]           the same, on a named session; a second terminal on the same cell
   sheep ls [--pasture <name>]               the home's sessions: id, name, created, lane state, pasture; one per line, tab
@@ -100,7 +100,9 @@ options:
                   ls rows carry "pasture": null | "<name>" and "task": null | "<first line of the first prompt>";
                   rm is {"id": …, "ended": true, "aborted": <whether a turn was stopped>}
   --pasture <name>  with new: the pasture to be born into; with ls: only that herd
-  --detach        with a prompt: send it and exit before the first token; the id is the first line of stdout
+  --detach        with a prompt: send it and exit before the first token; the id is the first line of stdout.
+                  With new and no prompt: mint the session, print its id, and exit; the sheep is idle, costs
+                  nothing, and is born into its pasture at the first thing that asks it (a prompt, status, log)
   --wait          with a prompt to a busy session: stream the queued turn when it starts
   --faux          with home local: the scripted model that answers "ok", for a look at the plumbing without a key;
                   with home deploy: the same provider set as the station's var, the account ring's flag
@@ -244,6 +246,8 @@ async function dispatch(command: string, parsed: Parsed, config: SheepConfig, ou
     }
     case "-c":
     case "--continue": {
+      // The refusal (mint phase 1): a detach with nothing to send is `new`'s verb alone; nothing is asked of the home.
+      if (parsed.detach && parsed.prompt === undefined) return fail(NOTHING_TO_SEND);
       const newest = (await home.list())[0];
       if (newest === undefined) return fail("no sessions at this home; run `sheep new`");
       return await (parsed.detach ? detach(home, newest.id, parsed) : attach(home, newest.id, parsed, output));
@@ -251,6 +255,7 @@ async function dispatch(command: string, parsed: Parsed, config: SheepConfig, ou
     case "attach": {
       const id = parsed.rest[1];
       if (id === undefined) return fail("attach needs a session id");
+      if (parsed.detach && parsed.prompt === undefined) return fail(NOTHING_TO_SEND);
       return await (parsed.detach ? detach(home, id, parsed) : attach(home, id, parsed, output));
     }
     case "status": {
@@ -521,15 +526,26 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
   }
 }
 
+/** The refusal for `--detach` with no prompt on `attach` and `-c` (mint phase 1); `fail` adds the `sheep: ` prefix. */
+const NOTHING_TO_SEND = "--detach with no prompt is sheep new's; there is nothing to send";
+
 /**
- * The id first, on its own line, then the prompt is sent through the
- * cell's HTTP face, which returns once the operation is durable, or once
- * the prompt is queued behind a running one. Nothing streams.
+ * The verb (mint phase 1): with no prompt, the id alone on stdout, one
+ * line, and nothing else happens; `new` minted it a moment ago and the
+ * sheep is idle until something is asked of it. With a prompt, it is sent
+ * through the cell's HTTP face, which returns once the operation is
+ * durable, or once the prompt is queued behind a running one, and the id
+ * is printed after: so on an id the home lacks the refusal is the whole
+ * output, the sentence on stderr and nothing on stdout (end phase 1 left
+ * that open, since the id was printed first). Nothing streams.
  */
 async function detach(home: Home, sessionId: string, parsed: Parsed): Promise<number> {
-  process.stdout.write(`${sessionId}\n`);
-  if (parsed.prompt === undefined) return 0;
+  if (parsed.prompt === undefined) {
+    process.stdout.write(`${sessionId}\n`);
+    return 0;
+  }
   const response = await home.prompt(sessionId, parsed.prompt);
+  process.stdout.write(`${sessionId}\n`);
   if ("entryId" in response) process.stderr.write(`queued ${sessionId}\n`);
   if (parsed.json) process.stdout.write(`${JSON.stringify(response)}\n`);
   return 0;

@@ -281,6 +281,16 @@
  * either loopback, and the pid the server wrote to `/tmp/served.marker`
  * gone from `/proc`. Without `--docker` s1 is one `skip` line and is
  * named among what was not checked, as journey 6 is.
+ *
+ * Mint phase 1 gives the account ring `m1`, after a3 (mint's journey 3
+ * step 3): `sheep new --detach` with no prompt printing the id alone and
+ * nothing on stderr, `sheep ls --json` listing it idle with `task: null`,
+ * its first prompt through `sheep attach <id> --detach -- "hello"` (the
+ * id printed after the send), and its reply through `sheep wait <id>`,
+ * `<id>\tok`, the task then `hello`. The program is one text step posted
+ * to `/faux` before the mint, so the turn rents no container; e2 posts
+ * its own after. The sheep is among those n1 ends, one more for a6's
+ * count. No step of the walk sends a prompt to get an id.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -2866,6 +2876,32 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     station.minted.push(id);
     ring.ok("a3", `POST /faux; sheep new -- "${sentence}"; sheep log ${id}`, `${newSeconds}s; "git, node, pnpm"; the shell in the container: git version ${versions.git ?? "?"}, node ${versions.node ?? "?"}, pnpm ${versions.pnpm ?? "?"}`);
     console.log(`image: ${station.image}${station.image.includes("@sha256:") ? " (by digest)" : ` (by tag; ${station.digest} on the registry)`}`);
+
+    // Mint phase 1, m1 (mint's journey 3 step 3): a sheep named before it has anything to say. `sheep new --detach` with no prompt
+    // prints the id alone and returns at once, nothing on stderr; `sheep ls --json` lists it idle with `task: null`; then its first
+    // prompt through `attach --detach`, the id printed after the send, and its reply through `wait`. The program is one text step,
+    // posted to the home before the mint, so the turn rents no container and the reply is the faux one; e2 posts its own after.
+    // The sheep joins the minted for n1 to end, one more for a6's count. No step of the walk sends a prompt to get an id.
+    const mintProgram = { steps: [{ text: FAUX_REPLY }] };
+    const mintPosted = await fetch(`${home}/faux`, { method: "POST", headers: { authorization: `Bearer ${config.token}`, "content-type": "application/json" }, body: JSON.stringify(mintProgram), signal: AbortSignal.timeout(30_000) });
+    if (mintPosted.status !== 200) ring.fail("m1", `POST ${home}/faux`, { stdout: await mintPosted.text(), stderr: `status ${mintPosted.status}; expected 200 from the faux provider's route`, code: 1 });
+    const mintStarted = Date.now();
+    const minted = await ring.sheep(["new", "--detach"]);
+    const mintSeconds = ((Date.now() - mintStarted) / 1000).toFixed(1);
+    const mintedId = /^([0-9a-f-]{36})\n$/.exec(minted.stdout)?.[1];
+    if (minted.code !== 0 || !mintedId || minted.stderr !== "") ring.fail("m1", "sheep new --detach (no prompt)", { ...minted, stderr: `${minted.stderr}\nexpected exit 0, exactly the id on stdout, nothing on stderr` });
+    station.minted.push(mintedId);
+    const mintedRows = parse("m1", "sheep ls --json (after the mint)", await ring.sheep(["ls", "--json"]));
+    const mintedRow = mintedRows.find((row) => row.id === mintedId);
+    if (mintedRow === undefined || mintedRow.state !== "idle" || mintedRow.task !== null) ring.fail("m1", "sheep ls --json (after the mint)", { stdout: JSON.stringify(mintedRows), stderr: `expected ${mintedId} listed idle with task null`, code: 1 });
+    const firstPrompt = await ring.sheep(["attach", mintedId, "--detach", "--", "hello"]);
+    if (firstPrompt.code !== 0 || firstPrompt.stdout !== `${mintedId}\n` || firstPrompt.stderr !== "") ring.fail("m1", `sheep attach ${mintedId} --detach -- hello`, { ...firstPrompt, stderr: `${firstPrompt.stderr}\nexpected exit 0, the id alone on stdout after the send, nothing on stderr` });
+    const firstWaited = await ring.sheep(["wait", "--timeout", "120", mintedId]);
+    if (firstWaited.code !== 0 || firstWaited.stdout !== `${mintedId}\t${FAUX_REPLY}\n`) ring.fail("m1", `sheep wait ${mintedId}`, { ...firstWaited, stderr: `${firstWaited.stderr}\nexpected exit 0 and exactly "${mintedId}\\t${FAUX_REPLY}"` });
+    const promptedRows = parse("m1", "sheep ls --json (after the first prompt)", await ring.sheep(["ls", "--json"]));
+    const promptedRow = promptedRows.find((row) => row.id === mintedId);
+    if (promptedRow === undefined || promptedRow.state !== "idle" || promptedRow.task !== "hello") ring.fail("m1", "sheep ls --json (after the first prompt)", { stdout: JSON.stringify(promptedRows), stderr: `expected ${mintedId} listed idle with the task "hello"`, code: 1 });
+    ring.ok("m1", `POST /faux; sheep new --detach; sheep ls --json; sheep attach ${mintedId} --detach -- hello; sheep wait ${mintedId}; sheep ls --json`, `${mintSeconds}s to the id alone, nothing on stderr; listed idle, task null; the first prompt sent, the id after it; wait: "${FAUX_REPLY}"; listed idle, task "hello"`);
 
     // Eyes phase 2, e2: journey 1 of the eyes on the station, the first look paying the platform's launch and the second
     // connecting to the browser it left warm; one more sheep for a6's count. The program is a3's no longer, and a7 sets its own per cell.

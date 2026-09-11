@@ -21,13 +21,17 @@ bug, not a detail.
 
 ---
 
-**Where we are: mint phase 0 CLOSED, 10 Sep 2026; mint phase 1 NOT
-STARTED.** The mint is one row: `POST /sessions` inserts and answers,
-the cell boots on the first thing that asks it, and a sheep born into a
-pasture with a repository is born inside that first boot; proved in
-workerd against the fake container and falsified by restoring the boot.
-Next is mint phase 1, the verb's docs, the refusal on `attach`, journey
-5 in the home ring, and the walk. One ⚑ step there, the account ring.
+**Where we are: mint phase 0 CLOSED, mint phase 1 PART-DONE, 10 Sep
+2026; nothing waits on work.** A dog can name a sheep before it has
+anything to say: `sheep new --detach` mints one row and prints the id
+in a fifth of a second on the local home, the sheep idle with no task
+and no container until something is asked of it, and a sheep born into
+a pasture with a repository is cloned and set up at its first prompt.
+Journeys 1 and 2 walked on the local home with Docker and a real model,
+journey 3 steps 1 and 2 with them. Journey 3 step 3 waits on the
+shepherd: `pnpm hermetic --ring account --yes <sha>` on the release CI
+builds from this push, the account ring's new step `m1`, a station
+deployed and deleted on their account. Two open debts under the phases.
 
 The order is dependency order. Phase 0 is the mechanism, which the
 verb's promise needs. Phase 1 is the verb's docs, the refusal, and the
@@ -120,4 +124,15 @@ in `sheep log`; journey 1 with a real model. **⚑** journey 3 step 3:
 deployed and deleted on the shepherd's account, a few container minutes
 and one deploy.
 
-**Status: NOT STARTED.**
+**Status: PART-DONE.** 2026-09-10. Journeys 1 and 2 walked on the local home with Docker and a real model, journey 3 steps 1 and 2 with them; `pnpm test` exits 0 across all three rings with journey 5 carrying journey 1's steps; the account ring's step is written and waits on the shepherd to type it.
+
+**Findings:**
+
+- **2026-09-10 — The mint through the CLI is about 170 ms,** the process included, against the row's 3 ms in the pool; on the local home with Docker the pastured mint printed the id in 0.19 s with `docker ps` listing nothing for it.
+- **2026-09-10 — The first prompt into a pasture returned in 2.4 s with the birth done:** `octocat/Hello-World` cloned and `setup.sh` run in the container `docker ps` then listed, the entry first and the prompt second; `sheep status` alone births in 2.3 s.
+- **2026-09-10 — Send-before-print is what the ended-id case proves:** with `detach` printing first, journey 5's new case fails at exactly `sheep attach <ended> --detach -- x`; end phase 1's open finding is closed.
+- **2026-09-10 — `sheep -c --detach` with no prompt is refused before `home.list`:** the refusal is a usage error and asks nothing of the home.
+- **2026-09-10 — The guide had four words of room; the mint bullet cost 63,** cut from redundancies elsewhere; 1495 by the test's count.
+- **2026-09-10 — `m1` posts one text step before its mint,** since after a3 the home's program is a3's container one; e2 posts its own after.
+- **2026-09-10 — Open: the walk's first pastured sheep was born into no container:** wrangler answered "No such image available" for the image it had just built; a restart of the home rebuilt it. Cause not found; the home ring's `wrangler dev`s ran beside it.
+- **2026-09-10 — Open: journey 3 step 3 waits on the shepherd:** `pnpm hermetic --ring account --yes <sha>` on the release CI builds from this push; a station deployed and deleted on their account, a few container minutes and one deploy.
