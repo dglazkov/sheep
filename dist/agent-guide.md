@@ -12,8 +12,7 @@ is the verb-by-verb reference.
 
 `sheep --version` says which build this is. If the command is missing,
 `npx github:dglazkov/sheep#release setup` installs it, puts the skill in
-the current directory, and prints the next sentence; `sheep setup` again
-is harmless. Upgrading is
+the current directory, and prints the next sentence. Upgrading is
 `npm install -g github:dglazkov/sheep#release` again, then `sheep home
 deploy` for a deployed home, which `sheep home` asks for on stderr while
 the home is older; every session is kept.
@@ -51,29 +50,27 @@ kennel it found, which home the config names, and whether it answers.
 `--home <url>` or `SHEEP_HOME` selects another home for one command.
 `sheep home deploy` puts this package's home on the shepherd's Cloudflare
 account, a container beside every cell: with `CLOUDFLARE_API_TOKEN` and
-`ANTHROPIC_API_KEY` in your shell it deploys and writes the kennel's
-config; without them it prints what it needs and
-costs, and makes nothing. `sheep home delete` ends that station after its
-name is typed at a terminal. `sheep home join <address>` is a second
-machine's way in: the station's token is one line of stdin, piped by the
-shepherd, never an argument.
+`ANTHROPIC_API_KEY` in your shell it deploys; without them it prints
+what it needs and costs, and makes nothing. `sheep home delete` ends that
+station after its name is typed at a terminal. `sheep home join
+<address>` is a second machine's way in: the station's token is one line
+of stdin, piped by the shepherd, never an argument.
 
 ## The kennel
 
 The **kennel** is `.sheep/` at or above the working directory, found the
 way git finds `.git`, and `~/.sheep` when there is none. It
 holds this directory's config and local home, so each of several
-directories has its own sheep, token, and home, and nothing is shared but
-the command. `sheep setup` makes one here, and in a git work tree appends
-`.sheep/` to the `.gitignore` beside it, since the config holds a token.
+directories has its own sheep, token, and home. `sheep setup` makes one
+here, and in a git work tree appends `.sheep/` to the `.gitignore` beside
+it, since the config holds a token.
 `cd` is how you switch. If the command says
 `.sheep` is tracked, tell the shepherd a token is in their repository; do
 not fix it yourself.
 
 ## The verbs
 
-Every verb exits, and each has a `--json` form whose shapes are pi's:
-entries are pi entries, a status is pi's lane snapshot. Errors go to
+Every verb exits, and each has a `--json` form in pi's shapes. Errors go to
 stderr as `sheep: …` with exit 2.
 
 - `sheep new [--name <name>] [--pasture <name>] -- "<prompt>"` mints a
@@ -81,14 +78,13 @@ stderr as `sheep: …` with exit 2.
   exits when the turn ends. With neither a prompt nor `--detach` it opens
   pi's interactive terminal, for a person; do not run it so.
 - `sheep new --detach -- "<prompt>"` mints, sends, and returns before the
-  first token, the id as the first line of stdout. The sheep works whether
-  or not anyone is attached; this is how you start several at once.
+  first token, the id as the first line of stdout. This is how you start
+  several at once.
 - `sheep new --detach` with no prompt mints and prints the id alone: a
   sheep to address before its first prompt exists. It is idle and costs
   nothing until asked; a pastured one is cloned and set up at its first
-  prompt, or the first verb that reads it (`status`, `log`, `wait`), not
-  at the mint. On `attach` or `-c`, `--detach` with no prompt is refused:
-  nothing to send.
+  prompt, or the first verb that reads it, not at the mint. On `attach`
+  or `-c`, `--detach` with no prompt is refused: nothing to send.
 - `sheep -c -- "<prompt>"` is `attach` on the newest sheep.
 - `sheep attach <id> -- "<prompt>"` sends a prompt to a sheep and streams
   the reply. To a busy sheep the prompt is queued behind the running turn;
@@ -96,7 +92,7 @@ stderr as `sheep: …` with exit 2.
   streams the queued turn when it starts. `--detach` returns at once.
 - `sheep ls [--pasture <name>]` lists the home's sheep, one per line,
   tab-separated: id, name, created, lane state (`idle`, `running`, `waiting`),
-  pasture.
+  pasture, secret names.
 - `sheep status <id>` is the lane now: `state`, the open `operation`, the
   last `tool` call, `tokens` so far, `messages`.
 - `sheep wait [--timeout <seconds>] <id>...` blocks until every named
@@ -109,8 +105,7 @@ stderr as `sheep: …` with exit 2.
   aborted, its container and browser released, its rows gone, the pasture
   kept. `--json` adds `"aborted"`. No undo.
 - `sheep log [--since <entry id | ISO time>] [--last <n>] <id>` prints the
-  transcript as text, oldest first, one block per entry, tool calls and
-  results included.
+  transcript, oldest first, tool calls and results included.
 - `sheep export <id> [file]` writes the session as a pi SQLite file,
   `<id>.sqlite` by default, and prints the file and its table counts.
 
@@ -148,6 +143,11 @@ repository should know.
 - `sheep pasture secret set <name> <KEY>` reads the value from stdin,
   never an argument (`GIT_TOKEN` is the credential a sheep pushes with);
   `sheep pasture secret ls <name>` prints the names, never a value.
+- `sheep new --pasture <name> --secret <NAME> --detach` gives one sheep a
+  secret of its own, one line of stdin per `--secret`, in order. Its setup
+  sees it over the pasture's by name; as `GIT_TOKEN`, git uses it before
+  the pasture's or the home's. `sheep rm` ends it with the sheep; `sheep
+  ls` shows names, never values.
 - `sheep new --pasture <name> -- "…"` and `sheep ls --pasture <name>` are
   birth and the roll call.
 
@@ -158,8 +158,7 @@ then `sheep wait` on all of them and read what came back. Name sheep
 (`--name docs`) so `sheep ls` reads. A sheep that goes wrong is aborted,
 not abandoned. Read `sheep log <id>` before deciding a sheep failed. A
 sheep you are finished with is ended with `sheep rm <id>` (`sheep export
-<id>` first if the transcript matters). Keep the ids: every later verb
-names the sheep by them.
+<id>` first if the transcript matters).
 
 ## What needs a person
 
