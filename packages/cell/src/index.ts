@@ -20,7 +20,7 @@
  * browser binding, asked of the one place that decides (`hasEyes`), so
  * `sheep home` can print it beside the container.
  */
-import { type Budget, unknownPasture } from "./directory.ts";
+import { type Budget, unknownPasture, unknownSession } from "./directory.ts";
 import { hasEyes } from "./eyes/eyes.ts";
 import { type FauxProgram, isFauxProgram } from "./models.ts";
 import { badPastureName, isPastureName, isSecretName } from "./pasture.ts";
@@ -156,7 +156,7 @@ export default {
     const door = PEN_DOOR.exec(url.pathname);
     if (door && request.method === "GET") {
       const id = decodeURIComponent(door[1]!);
-      if ((await directory.get(id)) === undefined) return new Response("unknown session", { status: 404 });
+      if ((await directory.get(id)) === undefined) return new Response(unknownSession(id), { status: 404 });
       const inner = new URL(request.url);
       inner.pathname = "/pen";
       return env.SESSION_CELL.getByName(id).fetch(new Request(inner, request));
@@ -212,10 +212,21 @@ export default {
     const match = /^\/s\/([^/]+)(\/.*)?$/.exec(url.pathname);
     if (match) {
       const id = decodeURIComponent(match[1]!);
-      if ((await directory.get(id)) === undefined) return new Response("unknown session", { status: 404 });
+      // The sentence for a session this home does not have: every verb that asks over HTTP gets it, `rm` again included.
+      if ((await directory.get(id)) === undefined) return new Response(unknownSession(id), { status: 404 });
       const inner = new URL(request.url);
       inner.pathname = match[2] ?? "/";
-      return env.SESSION_CELL.getByName(id).fetch(new Request(inner, request));
+      const cell = env.SESSION_CELL.getByName(id);
+      if (request.method === "DELETE" && inner.pathname === "/") {
+        // The end (end phase 0): the cell's end first, the row after and only then. A row removed first would make a failed
+        // end unreachable, its storage and container orphaned; removed last, a failed end is the cell's 500 with its sentence,
+        // the row stays, and the dog asks again.
+        const ended = await cell.fetch(new Request(inner, request));
+        if (!ended.ok) return ended;
+        await directory.remove(id);
+        return ended;
+      }
+      return cell.fetch(new Request(inner, request));
     }
     return new Response("not found", { status: 404 });
   },

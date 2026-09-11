@@ -41,6 +41,11 @@ export interface PastureSummary {
   createdAt: number;
 }
 
+/** The refusal every `/s/<id>` route gives for a session this home does not have (end phase 0): one sentence, in `unknownPasture`'s shape. */
+export function unknownSession(id: string): string {
+  return `no session ${id} at this home; \`sheep ls\` lists the ones there are`;
+}
+
 /** The directory's refusal of a birth into a name it does not know. */
 export function unknownPasture(name: string): string {
   return `no pasture named ${name} at this home; \`sheep pasture ls\` lists the ones there are`;
@@ -198,9 +203,29 @@ export class Directory extends DurableObject<Env> {
     return this.list().find((session) => session.id === id);
   }
 
-  /** A cell's report of its lane, at each transition it drives or observes. */
+  /**
+   * A cell's report of its lane, at each transition it drives or observes.
+   * An `UPDATE`, never an upsert: a report that arrives after `remove` must
+   * update nothing rather than resurrect the row (lamb phase 5, end phase 0).
+   */
   setState(id: string, state: LaneState): void {
     this.ctx.storage.sql.exec("UPDATE sessions SET state = ? WHERE id = ?", state, id);
+  }
+
+  /**
+   * The removal (end phase 0): the session's row goes, and its container
+   * row is closed now, so a container the platform is still stopping has
+   * its minutes counted and `containerMinutes` stops growing for this
+   * sheep; the container's own `onStop`, arriving later, finds nothing to
+   * close and adds nothing. The pastures table is untouched: the pasture
+   * is the shepherd's, and its herd is a query over sessions. `false` when
+   * there was no row, which changes nothing either.
+   */
+  remove(id: string, at: number = Date.now()): boolean {
+    this.containerClosed(id, at);
+    const had = this.ctx.storage.sql.exec("SELECT 1 FROM sessions WHERE id = ?", id).toArray().length > 0;
+    this.ctx.storage.sql.exec("DELETE FROM sessions WHERE id = ?", id);
+    return had;
   }
 
   /** Test-only, with the faux provider: the program every cell without one of its own answers from. */

@@ -34,18 +34,32 @@ class WebSocketByteConnection implements ByteConnection {
   }
 }
 
+/** The close code the cell's end gives every terminal: `1001`, going away, which is what an ended sheep does. */
+export const ENDED_CLOSE_CODE = 1001;
+
+/** The reason on that close: the one word a terminal reads when its sheep was ended under it. */
+export const ENDED_REASON = "ended";
+
 export class WebSocketListener implements ServerListener {
   #accept: ByteConnectionAcceptor | undefined;
-  readonly #handlers = new Map<WebSocket, ByteConnectionHandler>();
+  readonly #handlers = new Map<WebSocket, { handler: ByteConnectionHandler; connection: WebSocketByteConnection }>();
 
   async start(accept: ByteConnectionAcceptor): Promise<void> {
     this.#accept = accept;
   }
 
-  async close(): Promise<void> {
-    for (const [socket, handler] of this.#handlers) {
+  /**
+   * Closes every socket it holds, with a code and a reason. pi's `Server.stop()`
+   * calls it bare and the sockets say `server closing`; the cell's end (end
+   * phase 0) calls it with `ENDED_REASON`, so a terminal on the far side reads
+   * why its connection went.
+   */
+  async close(code: number = 1001, reason: string = "server closing"): Promise<void> {
+    for (const [socket, { handler, connection }] of this.#handlers) {
+      // Marked closed first, so a later `close` of the connection from the server's side is the no-op it should be.
+      connection.closed = true;
       handler.onClose();
-      socket.close(1001, "server closing");
+      socket.close(code, reason);
     }
     this.#handlers.clear();
     this.#accept = undefined;
@@ -61,7 +75,7 @@ export class WebSocketListener implements ServerListener {
     if (accept === undefined) throw new Error("Listener has not started");
     const connection = new WebSocketByteConnection(socket);
     const handler = accept(connection);
-    this.#handlers.set(socket, handler);
+    this.#handlers.set(socket, { handler, connection });
     // Frames arrive as ArrayBuffer or Blob depending on the peer; read them in order.
     let tail = Promise.resolve();
     socket.addEventListener("message", (event) => {

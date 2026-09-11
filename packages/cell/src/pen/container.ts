@@ -67,6 +67,22 @@ export class PenContainer extends Container<Env> {
     return { running };
   }
 
+  /**
+   * Ends the container now (end phase 0), whether or not a lease is live.
+   * A destroy of nothing is nothing: a container that is not running is
+   * not started to be destroyed, and the platform is not asked to destroy
+   * what it does not have, since its own `destroy()` may throw for that.
+   * `onStop` reports the minutes, as it does for an idle-out.
+   */
+  override async destroy(): Promise<void> {
+    if (!this.running) {
+      console.info(`[pen ${this.sessionId}] destroy asked of no running container; nothing to do`);
+      return;
+    }
+    console.info(`[pen ${this.sessionId}] destroying the container`);
+    await super.destroy();
+  }
+
   override onStart(): void {
     console.info(`[pen ${this.sessionId}] container started`);
     this.env.DIRECTORY.getByName("home")

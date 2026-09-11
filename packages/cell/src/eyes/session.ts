@@ -10,7 +10,11 @@
  * would hand the platform back a browser the next look has to pay three
  * to ten seconds to launch again; disconnecting leaves it idle with its
  * keep-alive running, and the next look reaches it in under half a
- * second. Nothing here closes a browser: a session ends by idling out.
+ * second. A session ends one of two ways: by idling out, or by `close()`
+ * (end phase 0), which the cell's end asks for so a sheep's browser goes
+ * with the sheep rather than ten minutes after it. The close connects by
+ * the kept id and never launches: a browser that is not there is nothing
+ * to close.
  */
 import puppeteer, { type Browser } from "@cloudflare/puppeteer";
 
@@ -58,6 +62,26 @@ export class EyesSession {
   /** Hand the browser back, warm, at the end of a look. */
   async release(browser: Browser): Promise<void> {
     await browser.disconnect();
+  }
+
+  /**
+   * The end of the session (end phase 0): when the row holds an id, connect
+   * by it and close the browser, so the platform takes it back now rather
+   * than when its keep-alive runs out; then the row goes. A connect that
+   * fails is a browser already gone — idled out, or taken back — and there
+   * is nothing to close; the row goes just the same. Never a launch: a
+   * cell that never looked, or whose row is already gone, does nothing here.
+   */
+  async close(): Promise<void> {
+    const kept = this.id();
+    if (kept === undefined) return;
+    try {
+      const browser = await puppeteer.connect(this.binding, kept);
+      await browser.close();
+    } catch {
+      // Already gone: a session that idled out looks like this from here, and it is what a close wants.
+    }
+    this.sql.exec("DELETE FROM eyes_session WHERE key = ?", KEY);
   }
 
   private remember(browser: Browser): Browser {

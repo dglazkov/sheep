@@ -1,8 +1,8 @@
 ---
-status: planned
+status: partial
 since: 2026-09-10
 see: end
-note: "written 10 Sep 2026, the evening serve closed, from the shepherd's issue #1 (a herd member with no purpose left). The dog can mint a sheep and cannot end one: `abort` stops a turn and the row stays in `sheep ls` with its workspace, its container, and its browser, forever. One verb, `sheep rm <id>`, ends it: the open turn aborted, the container destroyed, the browser closed, the cell's rows deleted, the directory's row gone. The pasture stays; the pasture is the shepherd's."
+note: "written 10 Sep 2026, the evening serve closed, from the shepherd's issue #1 (a herd member with no purpose left). The dog can mint a sheep and cannot end one: `abort` stops a turn and the row stays in `sheep ls` with its workspace, its container, and its browser, forever. One verb, `sheep rm <id>`, ends it: the open turn aborted, the container destroyed, the browser closed, the cell's rows deleted, the directory's row gone. The pasture stays; the pasture is the shepherd's. End phase 0 closed the same evening: the mechanism proved in workerd against the fake container and the pool's real Chrome, journeys 1 and 2 in the cell's terms; the verb and the walk are phase 1."
 ---
 
 # End — the journeys

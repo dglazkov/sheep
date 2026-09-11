@@ -172,6 +172,19 @@ export class PenLease implements ContainerLease {
 
   /** Gives the container up: the socket is closed, the starter told to destroy it, and the next rent starts anew. */
   discard(reason: string): void {
+    this.close(reason);
+    this.log(`discarding the container: ${reason}`);
+    void this.options.starter.destroy().catch((error: unknown) => this.log(`destroy failed: ${messageOf(error)}`));
+  }
+
+  /**
+   * Lets go of the container without destroying it (end phase 0): the
+   * socket is closed, the keep-alive stopped, and a rent still waiting for
+   * a container to dial in is refused, so nothing is left holding the
+   * door. The cell's end calls this and then asks the starter for the
+   * destroy itself, once, whether or not a lease was ever live.
+   */
+  close(reason: string): void {
     const socket = this.live;
     this.live = undefined;
     this.stopKeepAlive();
@@ -182,8 +195,7 @@ export class PenLease implements ContainerLease {
         // Already closed.
       }
     }
-    this.log(`discarding the container: ${reason}`);
-    void this.options.starter.destroy().catch((error: unknown) => this.log(`destroy failed: ${messageOf(error)}`));
+    this.fail(new Error(`no container will be rented: ${reason}`));
   }
 
   async budgetSpent(): Promise<boolean> {

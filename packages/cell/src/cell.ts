@@ -32,7 +32,7 @@ import { DurableObject } from "cloudflare:workers";
 import { BIRTH_ENTRY, BIRTH_TAIL_BYTES, BIRTH_TAIL_LINES, BIRTH_TIMEOUT_S, type BirthData, type BirthRecord, birthCommand, birthProjector } from "./birth.ts";
 import { type LaneState, taskOf } from "./directory.ts";
 import { CellExecutionEnv, type ContainerLineResult } from "./env/execution-env.ts";
-import { eyesFor } from "./eyes/eyes.ts";
+import { eyesFor, sessionFor } from "./eyes/eyes.ts";
 import { type CellModels, createCellModels, type FauxProgram, isFauxProgram } from "./models.ts";
 import { CredentialBroker, homeMinter, pastureMinter, type PastureSecrets } from "./pen/broker.ts";
 import { DEFAULT_IDLE } from "./pen/container.ts";
@@ -41,11 +41,25 @@ import { type ContainerStarter, parseDuration, PenLease } from "./pen/lease.ts";
 import { type CellPasture, cellSystemPrompt } from "./prompt.ts";
 import { createCellSessionRepo } from "./storage/sqlite.ts";
 import { createCellHost } from "./wire/host.ts";
-import { WebSocketListener } from "./wire/listener.ts";
+import { ENDED_CLOSE_CODE, ENDED_REASON, WebSocketListener } from "./wire/listener.ts";
 import { TEMP_ROOT, WORKSPACE_ROOT } from "./workspace/files.ts";
 
 /** How far ahead the heartbeat is armed while an operation is open. */
 export const HEARTBEAT_MS = 5_000;
+
+/**
+ * How much longer than the kill timeout the end waits for an aborted lane
+ * to settle (end phase 0): the kill's deadline, then the sync-out and the
+ * tool result behind it, then the turn's own settling. Past it the end goes
+ * on; the drive is cancelled in the next step either way.
+ */
+export const END_SETTLE_MARGIN_MS = 2_000;
+
+/** The end's answer: `aborted` is whether step 1 found a turn to stop. */
+export interface EndReport {
+  ended: true;
+  aborted: boolean;
+}
 
 interface Runtime {
   repo: SqliteSessionRepo;
@@ -126,6 +140,13 @@ export class SessionCell extends DurableObject<Env> {
    * holds (pasture phase 3).
    */
   #lease: PenLease | undefined;
+  /**
+   * Whoever starts this cell's container, made once (end phase 0): the
+   * lease rents through it, and the end asks it for the destroy whether or
+   * not a lease is live, so an ended sheep's container goes even when the
+   * incarnation that rented it was evicted.
+   */
+  #starter: ContainerStarter | undefined;
   readonly test: EvictionTestHooks = { step: 0, killAt: -1, effects: {} };
 
   get sessionId(): string {
@@ -350,12 +371,14 @@ export class SessionCell extends DurableObject<Env> {
   }
 
   /**
-   * Tier 2 for this cell, when the home has it: the `PEN_CONTAINER`
-   * binding when bound, else a starter the test set before the first boot.
-   * Configuration, never the platform: nothing here asks where it runs. A
-   * home with none has no tier 2, and the shell does not route.
+   * Whoever starts this cell's container, when the home has one: the
+   * `PEN_CONTAINER` binding when bound, else a starter the test set before
+   * the first boot; `undefined` on a home with neither. Made once and kept,
+   * so the lease and the end (end phase 0) ask the same one. Configuration,
+   * never the platform: nothing here asks where it runs.
    */
-  private leaseFor(pasture: { name: string; object: PastureSecrets } | undefined): PenLease | undefined {
+  private starterFor(): ContainerStarter | undefined {
+    if (this.#starter !== undefined) return this.#starter;
     const binding = this.env.PEN_CONTAINER;
     const starter: ContainerStarter | undefined =
       this.test.starter ??
@@ -369,6 +392,16 @@ export class SessionCell extends DurableObject<Env> {
             };
           })()
         : undefined);
+    this.#starter = starter;
+    return starter;
+  }
+
+  /**
+   * Tier 2 for this cell, when the home has it: a lease over the starter.
+   * A home with none has no tier 2, and the shell does not route.
+   */
+  private leaseFor(pasture: { name: string; object: PastureSecrets } | undefined): PenLease | undefined {
+    const starter = this.starterFor();
     if (starter === undefined) return undefined;
     const directory = this.env.DIRECTORY.getByName("home");
     const origin = this.env.PEN_CELL_ORIGIN;
@@ -539,6 +572,113 @@ export class SessionCell extends DurableObject<Env> {
     return { aborted: result.ok };
   }
 
+  /**
+   * The cell's end (end phase 0): everything minting and working gave this
+   * sheep, released in the order that costs least if the end is cut short.
+   * Each step goes on if the one before failed, so an end interrupted by an
+   * eviction can be asked again and finishes; a step that failed makes the
+   * whole end fail after the rest ran, so the Worker keeps the row and the
+   * dog asks again. Idempotent: a second end finds nothing at every step.
+   *
+   * 1. The open turn is aborted, as `abort()` aborts it: pi cancels the
+   *    tool, the env's kill path ends the command in the container and
+   *    records it on the container's ledger, and the end waits for the lane
+   *    to settle, bounded by the kill timeout plus a margin. A runtime that
+   *    is not live has no turn running anywhere: the platform evicted it,
+   *    and the alarm that would resume it goes in step 5 before it fires.
+   * 2. The terminals are disconnected: every WebSocket the listener holds
+   *    is closed with `ended`, the drives are cancelled and the watch
+   *    unsubscribed, as `evict()` does, and the runtime and the door are
+   *    forgotten so nothing dials into an ended cell.
+   * 3. The container is destroyed, through the starter, whether or not a
+   *    lease is live and whether or not a container was ever started. The
+   *    lease, if live, lets go first so its socket closes and its
+   *    keep-alive stops.
+   * 4. The browser is closed, by its kept id, never launched.
+   * 5. The storage is emptied: the alarm, then every table and key.
+   */
+  async end(): Promise<EndReport> {
+    const id = this.sessionId;
+    const log = (line: string) => console.info(`[cell ${id}] end: ${line}`);
+    const failures: string[] = [];
+    const attempt = async (step: string, run: () => Promise<void>): Promise<void> => {
+      try {
+        await run();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        log(`${step} failed: ${message}`);
+        failures.push(`${step}: ${message}`);
+      }
+    };
+    const booted = this.#runtime;
+    // A boot that failed, or one still failing, is no runtime: there is nothing live to abort or disconnect.
+    const runtime = booted === undefined ? undefined : await booted.catch(() => undefined);
+
+    // 1. The open turn.
+    let aborted = false;
+    if (runtime !== undefined) {
+      await attempt("abort", async () => {
+        const result = await runtime.lane.abort(BACKGROUND_CONTEXT);
+        aborted = result.ok;
+        if (!aborted) return;
+        const bound = seconds(this.env.PEN_KILL_TIMEOUT, 10) * 1000 + END_SETTLE_MARGIN_MS;
+        const deadline = Date.now() + bound;
+        while ((await runtime.lane.inspectExecution(BACKGROUND_CONTEXT)).current !== null) {
+          if (Date.now() >= deadline) {
+            log(`the aborted turn did not settle within ${bound} ms; going on`);
+            return;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        log("the open turn was aborted and settled");
+      });
+    }
+
+    // 2. The terminals, the drives, the watch; and the runtime and the door forgotten, as `evict()` forgets them.
+    this.#runtime = undefined;
+    this.#lease = undefined;
+    if (runtime !== undefined) {
+      await attempt("disconnect", async () => {
+        for (const cancel of runtime.drives) cancel();
+        runtime.drives.clear();
+        runtime.watch.unsubscribe();
+        const terminals = runtime.listener.connectionCount;
+        await runtime.listener.close(ENDED_CLOSE_CODE, ENDED_REASON);
+        log(`${terminals} terminal${terminals === 1 ? "" : "s"} disconnected`);
+        // The protocol server behind them, best effort: its sockets are already closed, and nothing routes here again.
+        await runtime.server.close().catch((error: unknown) => log(`the protocol server did not close cleanly: ${error instanceof Error ? error.message : String(error)}`));
+      });
+    }
+
+    // 3. The container.
+    await attempt("destroy", async () => {
+      runtime?.lease?.close(ENDED_REASON);
+      const starter = this.starterFor();
+      if (starter === undefined) return;
+      await starter.destroy();
+      log("the container was destroyed");
+    });
+
+    // 4. The browser.
+    await attempt("close the browser", async () => {
+      const session = runtime?.env.eyes?.session ?? sessionFor(this.env, this.ctx.storage.sql);
+      if (session === undefined) return;
+      const kept = session.id();
+      await session.close();
+      if (kept !== undefined) log(`the browser session ${kept} was closed`);
+    });
+
+    // 5. The storage.
+    await attempt("empty the storage", async () => {
+      await this.ctx.storage.deleteAlarm();
+      await this.ctx.storage.deleteAll();
+      log("the storage was emptied");
+    });
+
+    if (failures.length > 0) throw new Error(`the end of ${id} did not finish: ${failures.join("; ")}`);
+    return { ended: true, aborted };
+  }
+
   /** Waits until the lane has no operation, or `timeoutMs` passes. */
   async waitForIdle(timeoutMs: number): Promise<CellState> {
     const deadline = Date.now() + timeoutMs;
@@ -615,6 +755,7 @@ export class SessionCell extends DurableObject<Env> {
         return Response.json(await this.prompt(body.text));
       }
       if (route === "POST /abort") return Response.json(await this.abort());
+      if (route === "DELETE /") return Response.json(await this.end());
       if (route === "GET /export") return Response.json(await this.exportRows());
       if (route === "POST /faux" && this.env.SHEEP_PROVIDER === "faux") {
         // Test-only: the program this cell's faux model answers from.

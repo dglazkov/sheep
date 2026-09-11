@@ -21,13 +21,16 @@ detail.
 
 ---
 
-**Where we are: end phases 0 and 1 NOT STARTED. Next: `end phase 0`.**
+**Where we are: end phase 0 CLOSED, end phase 1 NOT STARTED. Next: `end phase 1`.**
 Planned 10 Sep 2026, the evening serve closed, from the shepherd's
-issue #1. Two phases: the end in the cell, the Directory, and the
-Worker, proved in workerd against the fake container and the pool's
-browser; then the verb, the docs, the home ring's walk, and the walk on
-the local home with Docker and a real model. One ⚑ step, in end phase
-1: the account ring with its new step.
+issue #1. Phase 0 was built and proved the same evening: the cell's
+end in the design's five steps, the Directory's removal, `DELETE
+/s/<id>` on the Worker, and one refusal sentence on every `/s/<id>`
+route, proved in workerd against the fake container and the pool's
+real Chrome, and falsified by three mutations. Phase 1 is the verb, the
+docs, the home ring's walk, and the walk on the local home with Docker
+and a real model; its one ⚑ step is the account ring with its new
+step. Nothing waits on a person before phase 1's ⚑.
 
 The order is dependency order. Phase 0 is the mechanism, which the
 verb needs. Phase 1 is the verb and the walk.
@@ -71,7 +74,17 @@ close with no row a no-op.
 and the rings guard green; `pnpm --filter @sheep/cell typecheck` exits 0.
 **⚑** none.
 
-**Status: NOT STARTED.**
+**Status: CLOSED.** 2026-09-10. Journey 1 steps 1 to 5 and journey 2 hold in the cell's terms: `docs` idle, `tests` mid-turn with its line killed on the fake's ledger, `types` never rented, `nonsense` and a second end the sentence, the pasture's herd a query of none, a terminal closed `1001 ended`, a warm browser refused after the end; the storage empty of tables and alarm each time. `pnpm test` exits 0 across all three rings; falsified by three mutations.
+
+**Findings:**
+
+- **2026-09-10 — Ending a sheep mid-turn takes about 9 ms against the fake.** The abort's kill is answered, the sync-out runs, and the lane settles well inside `PEN_KILL_TIMEOUT` plus the 2 s margin; the bound is for a container that ignores the kill.
+- **2026-09-10 — The starter outlives the lease.** `starterFor()` makes the `PenContainer` stub or the test's fake once and keeps it, so an end asks the destroy of the same starter whether or not a lease is live, evicted incarnations included.
+- **2026-09-10 — `PenContainer.destroy()` of a container that is not running is a logged no-op,** since the platform's own `destroy()` may throw for what it does not have. By construction only, the pool binding no container; journey 3's Docker walk proves it.
+- **2026-09-10 — `PenLease.close()` refuses a pending rent, and `discard()` composes it.** Benign today: discard is only called from the kill path with a live socket. An end during a rent that never dials in is refused rather than left for the start deadline.
+- **2026-09-10 — miniflare's browser emulation asserts on a connect to a closed session** (`sessionInfo must be set before connecting`, as `[mf:error]`) and logs `Can't call WebSocket send() after close()`; noise, the connect rejects as the platform's would.
+- **2026-09-10 — Three mutations failed the test:** the removal deleting nothing (six cases), the Worker removing the row without ending the cell (five), and the browser's close forgetting the row without closing (one).
+- **2026-09-10 — Open: a request between the cell's end and the row's removal boots a fresh empty cell** whose tables step 5 dropped; nothing routes to it afterwards and it holds nothing. A finding if a walk ever sees it.
 
 ## Phase 1: The verb and the walk
 

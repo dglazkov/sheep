@@ -92,6 +92,17 @@ export function hasEyes(env: Pick<Env, "BROWSER">): boolean {
   return env.BROWSER !== undefined;
 }
 
+/**
+ * The cell's browser session alone, without the eyes around it (end phase
+ * 0): what the cell's end closes when no runtime is live to hold the eyes
+ * for it. The same decision `eyesFor` makes, so a home without the binding
+ * has no session to close, and the same row, so the id it finds is the one
+ * the last look kept.
+ */
+export function sessionFor(env: Pick<Env, "BROWSER">, sql: SqlStorage): EyesSession | undefined {
+  return env.BROWSER === undefined ? undefined : new EyesSession(env.BROWSER, sql);
+}
+
 export class Eyes {
   /** The cell's browser, kept warm between looks. Public so a later phase can report the session a look used. */
   readonly session: EyesSession;

@@ -18,6 +18,7 @@
  * The report is a pure function, so its shape is asserted without a
  * browser at all.
  */
+import puppeteer from "@cloudflare/puppeteer";
 import { env, runInDurableObject, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import type { SessionCell } from "../src/cell.ts";
@@ -302,6 +303,38 @@ describe("the eyes in workerd", () => {
 
         const seen = await eyes.look({ path: "/workspace/index.html" });
         expect(seen.seen.errors.filter((line) => line.includes("gone.css"))).toEqual(["404 /gone.css"]);
+      });
+    },
+    LOOK_TIMEOUT_MS,
+  );
+});
+
+describe("end phase 0: the session's close", () => {
+  it(
+    "close() closes the kept browser by its id and forgets the row, so a connect by that id is refused after; a close with no row is a no-op; the next look launches anew",
+    async () => {
+      await looker("closing", FIXTURE, async (eyes) => {
+        // No row yet: nothing to close, nothing launched.
+        await eyes.session.close();
+        expect(eyes.session.id()).toBeUndefined();
+
+        await eyes.look({ path: "/workspace/index.html" });
+        const kept = eyes.session.id();
+        expect(kept).toBeTypeOf("string");
+        // Warm: the kept id answers a connect.
+        await (await puppeteer.connect(env.BROWSER!, kept!)).disconnect();
+
+        await eyes.session.close();
+        expect(eyes.session.id()).toBeUndefined();
+        await expect(puppeteer.connect(env.BROWSER!, kept!)).rejects.toThrow();
+        // Again, with no row: a no-op.
+        await eyes.session.close();
+        expect(eyes.session.id()).toBeUndefined();
+
+        // A look after the close has no session to connect to and launches another, which the row then names.
+        await eyes.look({ path: "/workspace/index.html" });
+        expect(eyes.session.id()).toBeTypeOf("string");
+        expect(eyes.session.id()).not.toBe(kept);
       });
     },
     LOOK_TIMEOUT_MS,
