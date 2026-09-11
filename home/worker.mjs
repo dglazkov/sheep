@@ -16845,8 +16845,8 @@ function getRetryDelayMs(error, retryIndex, maxRetryDelayMs) {
   }
   const retryAfter = error.headers?.get("retry-after");
   if (retryAfter) {
-    const seconds2 = Number.parseFloat(retryAfter);
-    const delayMs = Number.isNaN(seconds2) ? Date.parse(retryAfter) - Date.now() : seconds2 * 1e3;
+    const seconds3 = Number.parseFloat(retryAfter);
+    const delayMs = Number.isNaN(seconds3) ? Date.parse(retryAfter) - Date.now() : seconds3 * 1e3;
     return validateServerRetryDelayMs(delayMs, maxRetryDelayMs, error.message);
   }
   const exponentialDelay = Math.min(0.5 * 2 ** retryIndex, 8) * 1e3;
@@ -30619,6 +30619,50 @@ import { DurableObject as DurableObject2 } from "cloudflare:workers";
 // src/pasture.ts
 import { DurableObject } from "cloudflare:workers";
 
+// ../pen/src/protocol.ts
+var CELL_URL_ENV = "PEN_CELL_URL";
+var TOKEN_ENV = "PEN_TOKEN";
+function homePath(path4) {
+  return `~/${path4}`;
+}
+__name(homePath, "homePath");
+var PASTURE_FILE_MODE = 292;
+var PASTURE_DIR_MODE = 365;
+var CACHE_ROOT = "/cache";
+var CACHE_CHUNK_BYTES = 8 * 1024 * 1024;
+var CACHE_MAX_BYTES = 1024 * 1024 * 1024;
+function recordHashInput(chunks) {
+  return chunks.join("\n");
+}
+__name(recordHashInput, "recordHashInput");
+function encodeFrame(frame) {
+  return JSON.stringify(frame);
+}
+__name(encodeFrame, "encodeFrame");
+function decodeFrame(text) {
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("frame is not JSON");
+  }
+  if (typeof parsed !== "object" || parsed === null || typeof parsed.type !== "string") {
+    throw new Error("frame has no type");
+  }
+  return parsed;
+}
+__name(decodeFrame, "decodeFrame");
+async function messageBytes(data) {
+  if (data instanceof ArrayBuffer) return new Uint8Array(data);
+  if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  const tag = Object.prototype.toString.call(data);
+  if (tag === "[object ArrayBuffer]") return new Uint8Array(data);
+  if (tag === "[object Blob]") return new Uint8Array(await data.arrayBuffer());
+  return void 0;
+}
+__name(messageBytes, "messageBytes");
+var HOME_IGNORES = [".cache", ".npm"];
+
 // src/workspace/files.ts
 import { createHash } from "node:crypto";
 import { posix } from "node:path";
@@ -31229,15 +31273,33 @@ function treePath(relative) {
   return absolute.startsWith(`${PASTURE_ROOT}/`) ? absolute : void 0;
 }
 __name(treePath, "treePath");
+var CACHE_CLAIM_MS = 60 * 60 * 1e3;
+var CACHE_KEPT_SAVES = 2;
 var Pasture = class extends DurableObject {
   static {
     __name(this, "Pasture");
   }
   files;
+  /** The object's clock for the cache's claims; a test moves it past the hour rather than waiting one. */
+  clock = /* @__PURE__ */ __name(() => Date.now(), "clock");
   constructor(ctx, env) {
     super(ctx, env);
     ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
     ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS secrets (name TEXT PRIMARY KEY, value TEXT NOT NULL)");
+    ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS cache (
+      generation INTEGER PRIMARY KEY,
+      save       TEXT NOT NULL,
+      key        TEXT NOT NULL,
+      hash       TEXT NOT NULL,
+      chunks     TEXT NOT NULL,
+      files      INTEGER NOT NULL,
+      bytes      INTEGER NOT NULL,
+      kept_at    INTEGER NOT NULL,
+      by         TEXT NOT NULL
+    )`);
+    ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS cache_chunks (hash TEXT NOT NULL, idx INTEGER NOT NULL, content BLOB NOT NULL, PRIMARY KEY (hash, idx))");
+    ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS cache_sizes (hash TEXT PRIMARY KEY, size INTEGER NOT NULL)");
+    ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS cache_claims (save TEXT NOT NULL, hash TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (save, hash))");
     this.files = new FilesTable(ctx.storage.sql, Date.now, [PASTURE_ROOT]);
     this.files.init();
   }
@@ -31333,6 +31395,132 @@ var Pasture = class extends DurableObject {
       environment[row.name] = row.value;
     }
     return environment;
+  }
+  // -------------------------------------------------------------------------
+  // Fold phase 1: the pasture's cache.
+  /** The kept saves, newest first. */
+  keptSaves() {
+    return this.ctx.storage.sql.exec(
+      "SELECT generation, save, key, hash, chunks, files, bytes, kept_at, by FROM cache ORDER BY generation DESC"
+    ).toArray().map((row) => ({
+      generation: row.generation,
+      save: row.save,
+      key: row.key,
+      hash: row.hash,
+      chunks: JSON.parse(row.chunks),
+      files: row.files,
+      bytes: row.bytes,
+      keptAt: row.kept_at,
+      by: row.by
+    }));
+  }
+  /** The committed save, when there is one. */
+  committed() {
+    return this.keptSaves()[0];
+  }
+  /**
+   * The cache a fresh container gets for the tree's `setup.sh` whose hash
+   * is `key`: the committed save when it was left by that script, and
+   * nothing otherwise, however many older ones there are.
+   */
+  cacheFor(key) {
+    const committed = this.committed();
+    if (committed === void 0 || committed.key !== key) return void 0;
+    const { generation: _generation, save: _save, ...kept2 } = committed;
+    return kept2;
+  }
+  /** Whether a chunk is here, whole. */
+  hasChunk(hash) {
+    return this.ctx.storage.sql.exec("SELECT 1 FROM cache_sizes WHERE hash = ?", hash).toArray().length > 0;
+  }
+  /** One chunk's bytes by its hash, its rows joined; `undefined` when no kept save or save in flight has it. */
+  cacheChunk(hash) {
+    const size = this.ctx.storage.sql.exec("SELECT size FROM cache_sizes WHERE hash = ?", hash).toArray()[0]?.size;
+    if (size === void 0) return void 0;
+    const out = new Uint8Array(size);
+    let offset = 0;
+    for (const row of this.ctx.storage.sql.exec("SELECT content FROM cache_chunks WHERE hash = ? ORDER BY idx", hash).toArray()) {
+      const bytes = new Uint8Array(row.content);
+      out.set(bytes, offset);
+      offset += bytes.byteLength;
+    }
+    if (offset !== size) throw new Error(`chunk ${hash} is ${offset} bytes of ${size}`);
+    return out;
+  }
+  /**
+   * Which of a save's chunks the object lacks, in order and once each. Every
+   * one named is claimed for the save, the ones here too, so a commit by
+   * another save in the meantime does not delete what this one relies on.
+   */
+  cacheMissing(save, hashes) {
+    const now = this.clock();
+    const missing = [];
+    for (const hash of new Set(hashes)) {
+      this.ctx.storage.sql.exec("INSERT OR REPLACE INTO cache_claims (save, hash, at) VALUES (?, ?, ?)", save, hash, now);
+      if (!this.hasChunk(hash)) missing.push(hash);
+    }
+    return missing;
+  }
+  /**
+   * One chunk, whole, in one method and so one transaction: its rows of
+   * one MiB and its size, claimed for the save. Bytes that are not their
+   * hash, or over a chunk, are refused before a row is written.
+   */
+  cachePut(save, hash, bytes) {
+    if (bytes.byteLength === 0 || bytes.byteLength > CACHE_CHUNK_BYTES) throw new Error(`a chunk is 1 to ${CACHE_CHUNK_BYTES} bytes, not ${bytes.byteLength}`);
+    const actual = hashBytes(bytes);
+    if (actual !== hash) throw new Error(`chunk ${hash} hashes to ${actual}; nothing kept`);
+    const sql2 = this.ctx.storage.sql;
+    sql2.exec("INSERT OR REPLACE INTO cache_claims (save, hash, at) VALUES (?, ?, ?)", save, hash, this.clock());
+    if (this.hasChunk(hash)) return;
+    sql2.exec("DELETE FROM cache_chunks WHERE hash = ?", hash);
+    for (let offset = 0, index3 = 0; offset < bytes.byteLength; offset += CHUNK_BYTES, index3++) {
+      sql2.exec("INSERT INTO cache_chunks (hash, idx, content) VALUES (?, ?, ?)", hash, index3, bytes.subarray(offset, offset + CHUNK_BYTES));
+    }
+    sql2.exec("INSERT INTO cache_sizes (hash, size) VALUES (?, ?)", hash, bytes.byteLength);
+  }
+  /**
+   * A save becomes the pasture's cache, in one transaction: every chunk it
+   * names must be here, or nothing changes and the commit throws; then it
+   * is the newest kept save, the oldest past `CACHE_KEPT_SAVES` goes, this
+   * save's claims and every claim older than the hour go, and every chunk
+   * no kept save names and no claim holds goes. The last commit wins, whole.
+   */
+  cacheCommit(save, commit) {
+    if (hashBytes(new TextEncoder().encode(recordHashInput(commit.chunks))) !== commit.hash) throw new Error(`the cache ${commit.hash} is not the record of its chunks`);
+    const keptAt = this.clock();
+    const sql2 = this.ctx.storage.sql;
+    this.ctx.storage.transactionSync(() => {
+      for (const hash of new Set(commit.chunks)) if (!this.hasChunk(hash)) throw new Error(`the save ${save} names chunk ${hash}, which the pasture does not have; nothing was kept`);
+      sql2.exec(
+        "INSERT INTO cache (generation, save, key, hash, chunks, files, bytes, kept_at, by) VALUES ((SELECT coalesce(max(generation), 0) + 1 FROM cache), ?, ?, ?, ?, ?, ?, ?, ?)",
+        save,
+        commit.key,
+        commit.hash,
+        JSON.stringify(commit.chunks),
+        commit.files,
+        commit.bytes,
+        keptAt,
+        commit.by
+      );
+      const kept2 = this.keptSaves();
+      for (const old of kept2.slice(CACHE_KEPT_SAVES)) sql2.exec("DELETE FROM cache WHERE generation = ?", old.generation);
+      sql2.exec("DELETE FROM cache_claims WHERE save = ? OR at < ?", save, keptAt - CACHE_CLAIM_MS);
+      const named = new Set(kept2.slice(0, CACHE_KEPT_SAVES).flatMap((one) => one.chunks));
+      for (const row of sql2.exec("SELECT hash FROM cache_sizes WHERE hash NOT IN (SELECT hash FROM cache_claims)").toArray()) {
+        if (named.has(row.hash)) continue;
+        sql2.exec("DELETE FROM cache_chunks WHERE hash = ?", row.hash);
+        sql2.exec("DELETE FROM cache_sizes WHERE hash = ?", row.hash);
+      }
+    });
+    return { key: commit.key, hash: commit.hash, chunks: commit.chunks, files: commit.files, bytes: commit.bytes, by: commit.by, keptAt };
+  }
+  /** The committed save as the route says it, read from its row and never a chunk; `current` asks the tree for `setup.sh`'s hash now. */
+  cacheSummary() {
+    const committed = this.committed();
+    if (committed === void 0) return null;
+    const setup = this.files.get(`${PASTURE_ROOT}/setup.sh`);
+    return { bytes: committed.bytes, files: committed.files, setup: committed.key, keptAt: committed.keptAt, by: committed.by, current: setup?.kind === "file" && setup.hash === committed.key };
   }
 };
 var SETUP_EXCLUDED_SECRET = "GIT_TOKEN";
@@ -73800,7 +73988,7 @@ function resolveMaxFrameLength(options) {
   return value3;
 }
 __name(resolveMaxFrameLength, "resolveMaxFrameLength");
-function encodeFrame(payload) {
+function encodeFrame2(payload) {
   if (!(payload instanceof Uint8Array)) throw new TypeError("Frame payload must be a Uint8Array");
   if (payload.byteLength > MAX_UINT322) throw new RangeError("Frame payload exceeds the unsigned 32-bit length limit");
   const frame = new Uint8Array(FRAME_HEADER_LENGTH + payload.byteLength);
@@ -73812,7 +74000,7 @@ function encodeFrame(payload) {
   frame.set(payload, FRAME_HEADER_LENGTH);
   return frame;
 }
-__name(encodeFrame, "encodeFrame");
+__name(encodeFrame2, "encodeFrame");
 var FrameDecoder = class {
   constructor(options) {
     this.header = new Uint8Array(FRAME_HEADER_LENGTH);
@@ -74028,7 +74216,7 @@ function encodeProtocolMessage(value3, parse2, kind, options) {
   const validated = parse2(value3);
   try {
     const maxFrameLength = options?.maxFrameLength ?? DEFAULT_MAX_FRAME_LENGTH;
-    return encodeFrame(encodeCbor(validated, { maxByteLength: maxFrameLength }));
+    return encodeFrame2(encodeCbor(validated, { maxByteLength: maxFrameLength }));
   } catch (error) {
     if (error instanceof ProtocolValidationError) throw error;
     throw new ProtocolValidationError(`Unable to encode ${kind} protocol message: ${boundedErrorMessage(error)}`);
@@ -117118,42 +117306,172 @@ __name(XO, "XO");
 // src/env/execution-env.ts
 import { posix as posix9 } from "node:path";
 
-// ../pen/src/protocol.ts
-var CELL_URL_ENV = "PEN_CELL_URL";
-var TOKEN_ENV = "PEN_TOKEN";
-function homePath(path4) {
-  return `~/${path4}`;
-}
-__name(homePath, "homePath");
-var PASTURE_FILE_MODE = 292;
-var PASTURE_DIR_MODE = 365;
-function encodeFrame2(frame) {
-  return JSON.stringify(frame);
-}
-__name(encodeFrame2, "encodeFrame");
-function decodeFrame(text) {
-  let parsed;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    throw new Error("frame is not JSON");
+// src/pen/cache.ts
+var CacheProtocolError = class extends Error {
+  static {
+    __name(this, "CacheProtocolError");
   }
-  if (typeof parsed !== "object" || parsed === null || typeof parsed.type !== "string") {
-    throw new Error("frame has no type");
+  constructor(message) {
+    super(message);
+    this.name = "CacheProtocolError";
   }
-  return parsed;
+};
+function cacheSize(bytes) {
+  if (bytes < 1e3) return `${bytes} B`;
+  const units = ["kB", "MB", "GB", "TB"];
+  let value3 = bytes / 1e3;
+  let unit = 0;
+  while (value3 >= 1e3 && unit < units.length - 1) {
+    value3 /= 1e3;
+    unit++;
+  }
+  return `${value3 >= 10 ? Math.round(value3) : Math.round(value3 * 10) / 10} ${units[unit]}`;
 }
-__name(decodeFrame, "decodeFrame");
-async function messageBytes(data) {
-  if (data instanceof ArrayBuffer) return new Uint8Array(data);
-  if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-  const tag = Object.prototype.toString.call(data);
-  if (tag === "[object ArrayBuffer]") return new Uint8Array(data);
-  if (tag === "[object Blob]") return new Uint8Array(await data.arrayBuffer());
-  return void 0;
+__name(cacheSize, "cacheSize");
+function setupName(key) {
+  return `setup.sh ${key.slice(0, 7)}`;
 }
-__name(messageBytes, "messageBytes");
-var HOME_IGNORES = [".cache", ".npm"];
+__name(setupName, "setupName");
+var OWN_SECRET_REFUSAL = "a secret of this sheep's own was in setup's environment";
+var EMPTY_REFUSAL = "setup left /cache empty";
+function overCapRefusal(max) {
+  return `it was over the cap of ${cacheSize(max)}`;
+}
+__name(overCapRefusal, "overCapRefusal");
+var CacheRestore = class {
+  static {
+    __name(this, "CacheRestore");
+  }
+  kept;
+  store;
+  chunks;
+  now;
+  served = 0;
+  started;
+  lost;
+  constructor(kept2, store, now = Date.now) {
+    this.kept = kept2;
+    this.store = store;
+    this.chunks = new Set(kept2.chunks);
+    this.now = now;
+  }
+  /** The record as the manifest carries it. */
+  get ref() {
+    return { hash: this.kept.hash, chunks: this.kept.chunks };
+  }
+  /** Whether a `need` asks for the cache: it names one of its chunks. */
+  has(frame) {
+    return frame.hashes.some((hash) => this.chunks.has(hash));
+  }
+  /**
+   * One chunk for one `need`: read from the object now and sent, the only
+   * chunk this cell holds while it is in flight. A `need` naming two, or a
+   * chunk beside a file, is refused: one per `need` is the protocol. A
+   * chunk the object no longer has is the cache moving under the put-back,
+   * and the agent is told so, not the sync failed.
+   */
+  async answer(frame, channel) {
+    if (frame.hashes.length !== 1) throw new CacheProtocolError(`a need for the cache names one chunk; ${frame.id} named ${frame.hashes.length} hashes`);
+    const hash = frame.hashes[0];
+    this.started ??= this.now();
+    const bytes = await this.store.cacheChunk(hash);
+    if (bytes === void 0) {
+      this.lost = `the pasture no longer has chunk ${hash.slice(0, 12)} of the cache it was putting back; it changed during the put-back`;
+      channel.send({ type: "error", code: "refused", of: "need", id: frame.id, message: this.lost });
+      return;
+    }
+    channel.send({ type: "blob", hash, size: bytes.byteLength });
+    channel.sendBytes(bytes);
+    this.served++;
+  }
+  /** How the put-back ended, once the container said `checkout`; `undefined` before, or when the sync-in failed. */
+  ended;
+  /** The container said `checkout`: the record is on its disk when every chunk was served and none was lost. */
+  finish() {
+    if (this.lost !== void 0) this.ended = { restored: false, reason: this.lost };
+    else if (this.served < this.kept.chunks.length) this.ended = { restored: false, reason: `the container asked for ${this.served} of the cache's ${this.kept.chunks.length} chunks` };
+    else this.ended = { restored: true, ms: this.started === void 0 ? 0 : this.now() - this.started };
+    return this.ended;
+  }
+};
+var CacheSave = class {
+  static {
+    __name(this, "CacheSave");
+  }
+  id;
+  request;
+  channel;
+  resolve;
+  described = null;
+  /** The chunks still to ask for, in order; the first is the one asked for now. */
+  wanted = [];
+  /** The chunk whose `blob` is awaited, once its frame came. */
+  announced = null;
+  sent = 0;
+  constructor(id2, request, channel, resolve2) {
+    this.id = id2;
+    this.request = request;
+    this.channel = channel;
+    this.resolve = resolve2;
+  }
+  /** The frame that begins it. */
+  get begin() {
+    return { type: "cache", id: this.id, max: this.request.max };
+  }
+  async frame(frame) {
+    if (this.described === null) {
+      if (frame.type !== "cache" || frame.id !== this.id) throw new CacheProtocolError(`expected cache ${this.id}, got ${frame.type}`);
+      await this.onDescribed(frame);
+      return;
+    }
+    if (frame.type === "blob") {
+      if (this.announced !== null || frame.hash !== this.wanted[0]) throw new CacheProtocolError(`the container sent chunk ${frame.hash}, which was not asked for`);
+      if (frame.size > CACHE_CHUNK_BYTES) throw new CacheProtocolError(`chunk ${frame.hash} is ${frame.size} bytes, over a chunk`);
+      this.channel.expect(frame.hash, frame.size);
+      this.announced = { hash: frame.hash, size: frame.size };
+      return;
+    }
+    throw new CacheProtocolError(`unexpected ${frame.type} frame during cache ${this.id}`);
+  }
+  async bytes(bytes) {
+    const announced = this.announced;
+    this.announced = null;
+    this.channel.arrived();
+    if (announced === null) throw new CacheProtocolError("bytes with no chunk frame before them");
+    if (bytes.byteLength !== announced.size) throw new CacheProtocolError(`chunk ${announced.hash} announced ${announced.size} bytes and carried ${bytes.byteLength}`);
+    const hash = hashBytes(bytes);
+    if (hash !== announced.hash) throw new CacheProtocolError(`chunk ${announced.hash} hashes to ${hash}; nothing kept`);
+    await this.request.store.cachePut(this.request.save, hash, bytes);
+    this.sent++;
+    this.wanted.shift();
+    await this.next();
+  }
+  async onDescribed(frame) {
+    this.described = frame;
+    const described = { hash: frame.hash, chunks: frame.chunks, files: frame.files, bytes: frame.bytes };
+    if (frame.bytes > this.request.max) return this.end({ described, refused: overCapRefusal(this.request.max) });
+    if (frame.chunks.length === 0) return this.end({ described, refused: EMPTY_REFUSAL });
+    if (hashBytes(new TextEncoder().encode(recordHashInput(frame.chunks))) !== frame.hash) throw new CacheProtocolError(`the cache ${frame.hash} is not the record of its chunks`);
+    if (this.request.putBack === frame.hash) return this.end({ described, unchanged: true });
+    this.wanted = await this.request.store.cacheMissing(this.request.save, frame.chunks);
+    await this.next();
+  }
+  /** The next chunk, alone in its `need`; or, with none left, the commit. */
+  async next() {
+    const hash = this.wanted[0];
+    if (hash !== void 0) {
+      this.channel.send({ type: "need", id: this.id, hashes: [hash] });
+      return;
+    }
+    const frame = this.described;
+    const kept2 = await this.request.store.cacheCommit(this.request.save, { key: this.request.key, hash: frame.hash, chunks: frame.chunks, files: frame.files, bytes: frame.bytes });
+    this.end({ described: { hash: frame.hash, chunks: frame.chunks, files: frame.files, bytes: frame.bytes }, kept: kept2, sent: this.sent });
+  }
+  end(saved) {
+    this.channel.send({ type: "synced", id: this.id, refused: [] });
+    this.resolve(saved);
+  }
+};
 
 // src/pen/checkout.ts
 import { posix as posix4 } from "node:path";
@@ -117271,7 +117589,7 @@ var Forward = class {
     });
   }
   send(frame) {
-    this.sendRaw(encodeFrame2(frame));
+    this.sendRaw(encodeFrame(frame));
   }
   /** A send that fails is a socket that is gone: every request out is over, whatever the runtime's wording. */
   sendRaw(data) {
@@ -117436,11 +117754,15 @@ var Checkout = class {
    * and the second root as it was sent is what the sync-in resolves to,
    * so the caller knows what the container's `/pasture` holds now without
    * a second hop (pasture phase 4 asks it for `setup.sh`); without a
-   * pasture it resolves to nothing, as before.
+   * pasture it resolves to nothing, as before. With a restore (fold phase
+   * 1), the manifest carries its record and the restore answers the
+   * `need`s for its chunks; its `finish()` is called at `checkout`, and
+   * the caller reads it after.
    */
-  async syncIn() {
+  async syncIn(options = {}) {
     const pasture = this.pasture === void 0 ? void 0 : await pastureManifest(this.pasture);
     const source2 = this.pasture;
+    const restore = pasture === void 0 || options.cache === void 0 ? void 0 : await options.cache(pasture);
     return this.start((id2, resolve2, reject) => {
       const entries = this.files.manifest();
       const home = this.files.hasRoot(HOME_ROOT) ? this.files.manifest(HOME_ROOT) : void 0;
@@ -117455,6 +117777,10 @@ var Checkout = class {
         id: id2,
         frame: /* @__PURE__ */ __name(async (frame) => {
           if (frame.type === "need" && frame.id === id2) {
+            if (restore !== void 0 && restore.has(frame)) {
+              await restore.answer(frame, this.channel());
+              return;
+            }
             for (const hash of frame.hashes) {
               const row = byHash.get(hash);
               let bytes;
@@ -117472,6 +117798,7 @@ var Checkout = class {
           }
           if (frame.type === "checkout" && frame.id === id2) {
             this.pending = null;
+            restore?.finish();
             resolve2(pasture);
             return;
           }
@@ -117483,8 +117810,46 @@ var Checkout = class {
         reject
       };
       this.pending = pending;
-      this.send({ type: "manifest", id: id2, entries, ...pasture === void 0 ? {} : { pasture }, ...home === void 0 ? {} : { home } });
+      this.send({
+        type: "manifest",
+        id: id2,
+        entries,
+        ...pasture === void 0 ? {} : { pasture },
+        ...home === void 0 ? {} : { home },
+        ...restore === void 0 ? {} : { cache: restore.ref }
+      });
     });
+  }
+  /**
+   * Fold phase 1: asks the container to describe `/cache`, and keeps it in
+   * the pasture's object when `pen/cache.ts` says so, passing each chunk the
+   * object lacks from the socket to the object, one `need` at a time.
+   * Resolves with what came of it once `synced` is sent.
+   */
+  keepCache(request) {
+    return this.start((id2, resolve2, reject) => {
+      const save = new CacheSave(id2, request, this.channel(), (saved) => {
+        this.pending = null;
+        resolve2(saved);
+      });
+      this.pending = { id: id2, frame: /* @__PURE__ */ __name((frame) => save.frame(frame), "frame"), bytes: /* @__PURE__ */ __name((bytes) => save.bytes(bytes), "bytes"), reject };
+      this.send(save.begin);
+    });
+  }
+  /** What a sync lends the cache's half of it: the sends, and this checkout's record of the bytes it waits on, which the guard backs. */
+  channel() {
+    return {
+      send: /* @__PURE__ */ __name((frame) => this.send(frame), "send"),
+      sendBytes: /* @__PURE__ */ __name((bytes) => this.sendBytes(bytes), "sendBytes"),
+      expect: /* @__PURE__ */ __name((hash, size) => {
+        this.guard.announce(`chunk ${hash}`);
+        this.expecting = { hash, size };
+      }, "expect"),
+      arrived: /* @__PURE__ */ __name(() => {
+        this.expecting = null;
+        this.guard.release();
+      }, "arrived")
+    };
   }
   /**
    * Waits for the container's `changed` (under `id` when given, else the
@@ -117631,7 +117996,7 @@ var Checkout = class {
     });
   }
   send(frame) {
-    this.sendRaw(encodeFrame2(frame));
+    this.sendRaw(encodeFrame(frame));
   }
   sendBytes(bytes) {
     this.sendRaw(bytes);
@@ -117669,7 +118034,7 @@ var Checkout = class {
         const bytes = await messageBytes(data);
         if (bytes === void 0) throw new CheckoutProtocolError("a binary message the cell cannot read");
         if (this.pending === null) throw new CheckoutProtocolError("bytes with no sync in progress");
-        this.pending.bytes(bytes);
+        await this.pending.bytes(bytes);
       }
     } catch (error) {
       this.fail(error instanceof Error ? error : new Error(String(error)));
@@ -117932,11 +118297,11 @@ var KillUnanswered = class extends RunInterrupted {
   }
   killReason;
   seconds;
-  constructor(killReason, seconds2) {
-    super(DISCARDED_CLOSE_CODE, `no answer to kill (${killReason}) within ${seconds2} s`);
+  constructor(killReason, seconds3) {
+    super(DISCARDED_CLOSE_CODE, `no answer to kill (${killReason}) within ${seconds3} s`);
     this.name = "KillUnanswered";
     this.killReason = killReason;
-    this.seconds = seconds2;
+    this.seconds = seconds3;
   }
 };
 var RunFailed = class extends Error {
@@ -118002,7 +118367,7 @@ var ContainerRun = class {
   }
   send(frame) {
     try {
-      this.socket.send(encodeFrame2(frame));
+      this.socket.send(encodeFrame(frame));
     } catch (error) {
       this.fail(new RunInterrupted(1006, error instanceof Error ? error.message : String(error)));
     }
@@ -118745,8 +119110,8 @@ function interruptedDuringSyncOut(end) {
   return `the command ${how} and the container went away while its changes were syncing back; the workspace may hold part of them. ${REPORT_AND_STOP}`;
 }
 __name(interruptedDuringSyncOut, "interruptedDuringSyncOut");
-function killUnanswered(reason, seconds2) {
-  return `the container did not answer the kill (${reason}) within ${seconds2} s and was discarded; its output up to that point is above, and nothing it changed after the last sync came back. ${REPORT_AND_STOP}`;
+function killUnanswered(reason, seconds3) {
+  return `the container did not answer the kill (${reason}) within ${seconds3} s and was discarded; its output up to that point is above, and nothing it changed after the last sync came back. ${REPORT_AND_STOP}`;
 }
 __name(killUnanswered, "killUnanswered");
 var ISOLATE_EXTENSIONS = [".mjs", ".js", ".cjs"];
@@ -118945,6 +119310,7 @@ var CellExecutionEnv = class _CellExecutionEnv {
   fs;
   /** The second backing, or `undefined` for a pastureless cell, which has none anywhere. */
   pasture;
+  cacheMaxBytes;
   /** The program, or `undefined` for a pastureless cell, whose shell is made without it. */
   pastureProgram;
   /** The eyes, or `undefined` on a home without them, whose shell is made without `look`. */
@@ -118969,6 +119335,7 @@ var CellExecutionEnv = class _CellExecutionEnv {
     this.files.init();
     this.fs = new CellFs(this.files);
     this.pasture = options.pasture;
+    this.cacheMaxBytes = options.cacheMaxBytes ?? CACHE_MAX_BYTES;
     this.pastureProgram = options.pastureProgram;
     this.eyes = options.eyes?.(this.files);
     const custom = [...this.pastureProgram === void 0 ? [] : PASTURE_PROGRAMS, ...this.eyes === void 0 ? [] : LOOK_PROGRAMS];
@@ -119358,10 +119725,55 @@ Cannot execute bash commands.`));
         socket,
         checkout: new Checkout(socket, this.files, this.pasture === void 0 ? {} : { pasture: this.pasture }),
         forward: new Forward(socket),
-        warmed: false
+        warmed: false,
+        cacheAsked: false
       };
     }
     return this.lease;
+  }
+  /**
+   * Fold phase 1: the sync-in, with the pasture's cache when this is the
+   * socket's first and the pasture has one for the tree's `setup.sh`. The
+   * lookup is one hop to the object, asked with the tree the sync-in is
+   * about to send; what the restore came to is logged and recorded on the
+   * lease for the save and the birth. A later sync-in carries nothing: the
+   * container has it, or went cold.
+   */
+  async syncIn(lease) {
+    const pasture = this.pasture;
+    if (lease.cacheAsked || pasture === void 0) return lease.checkout.syncIn();
+    lease.cacheAsked = true;
+    let restore;
+    let key;
+    const tree = await lease.checkout.syncIn({
+      cache: /* @__PURE__ */ __name(async (tree2) => {
+        key = setupKey(tree2);
+        if (key === void 0) return void 0;
+        let kept2;
+        try {
+          kept2 = await pasture.cacheFor(key);
+        } catch (error) {
+          console.info(`[pen] cache cold: the pasture's cache could not be looked up: ${messageOf3(error)}`);
+          return void 0;
+        }
+        if (kept2 === void 0) {
+          console.info(`[pen] cache cold, none for ${setupName(key)}`);
+          return void 0;
+        }
+        restore = new CacheRestore(kept2, pasture);
+        return restore;
+      }, "cache")
+    });
+    const ended = restore?.ended;
+    if (restore !== void 0 && key !== void 0 && ended !== void 0) {
+      if (ended.restored) {
+        lease.putBack = { key, kept: restore.kept, ms: ended.ms };
+        console.info(`[pen] cache warm, ${cacheSize(restore.kept.bytes)} in ${ended.ms} ms`);
+      } else {
+        console.info(`[pen] cache cold: ${ended.reason}; /cache was emptied and setup runs cold`);
+      }
+    }
+    return tree;
   }
   /**
    * One line in the container, whole, outside any tool call: pasture phase
@@ -119398,7 +119810,8 @@ Cannot execute bash commands.`));
         output: view.text,
         truncated: view.truncation.truncated,
         end: "error" in ran.outcome ? { error: ran.outcome.error.message } : { exit: ran.outcome.exitCode },
-        ...ran.setup === void 0 ? {} : { setup: ran.setup }
+        ...ran.setup === void 0 ? {} : { setup: ran.setup },
+        ...ran.cache === void 0 ? {} : { cache: ran.cache }
       };
     } finally {
       capture.dispose();
@@ -119431,7 +119844,7 @@ Cannot execute bash commands.`));
       const syncInStarted = Date.now();
       let tree;
       try {
-        tree = await checkout.syncIn();
+        tree = await this.syncIn(lease);
       } catch (error) {
         if (error instanceof CheckoutInterrupted) return unavailable2(error.message, error);
         return { full, outcome: { error: new ExecutionError("unknown", `the sync-in failed: ${messageOf3(error)}`) } };
@@ -119480,7 +119893,7 @@ Cannot execute bash commands.`));
         const warmed = await this.warm(lease, tree, signal, capture, setupFailedAfterLine);
         if (!warmed.skipped) {
           if (warmed.failed !== void 0) full += warmed.failed.full;
-          return { full, outcome: { exitCode: end.exit }, setup: warmed.end };
+          return { full, outcome: { exitCode: end.exit }, setup: warmed.end, ...warmed.cache === void 0 ? {} : { cache: warmed.cache } };
         }
       }
       return { full, outcome: { exitCode: end.exit } };
@@ -119528,7 +119941,7 @@ Cannot execute bash commands.`));
     try {
       let tree;
       try {
-        tree = await checkout.syncIn();
+        tree = await this.syncIn(lease);
       } catch (error) {
         throw new Error(error instanceof CheckoutInterrupted ? error.message : `the sync-in failed: ${messageOf3(error)}`);
       }
@@ -119680,12 +120093,17 @@ Cannot execute bash commands.`));
    * marked; otherwise it becomes the `failed` `Ran`, `line(exit)` first,
    * pushed into the capture for the caller to return. The run is synced
    * out like any other, so what setup wrote to the checkout is rows.
+   * Fold phase 1: after a setup that exits 0 and its sync-out, the
+   * pasture's cache is kept (`keep`); every outcome carries what the cache
+   * came to, warm or cold, for the birth's entry.
    */
   async warm(lease, tree, signal, capture, line) {
     const pasture = this.pasture;
     if (lease.warmed || pasture === void 0) return { skipped: true };
-    if (!tree?.some((entry) => entry.path === SETUP_PATH && entry.kind === "file")) return { skipped: true };
+    const key = setupKey(tree);
+    if (key === void 0) return { skipped: true };
     const { checkout } = lease;
+    const found = lease.putBack !== void 0 && lease.putBack.key === key ? { found: "warm", bytes: lease.putBack.kept.bytes, files: lease.putBack.kept.files, ms: lease.putBack.ms } : { found: "cold", bytes: 0, files: 0, ms: 0 };
     let output = "";
     const failed3 = /* @__PURE__ */ __name((outcome) => {
       const full = "error" in outcome ? output : `${line(outcome.exitCode)}
@@ -119693,20 +120111,20 @@ ${output}`;
       capture.push(full);
       return { full, outcome };
     }, "failed");
-    const unavailable2 = /* @__PURE__ */ __name((message, cause) => ({ skipped: false, end: { error: message }, failed: failed3({ error: new ExecutionError("shell_unavailable", message, cause) }) }), "unavailable");
+    const unavailable2 = /* @__PURE__ */ __name((message, cause) => ({ skipped: false, end: { error: message }, failed: failed3({ error: new ExecutionError("shell_unavailable", message, cause) }), cache: found }), "unavailable");
     let secrets;
     try {
-      secrets = await pasture.secrets();
+      secrets = await pasture.setupEnvironment();
     } catch (error) {
       const message = `the pasture's secrets could not be read for setup: ${messageOf3(error)}`;
-      return { skipped: false, end: { error: message }, failed: failed3({ error: new ExecutionError("unknown", message) }) };
+      return { skipped: false, end: { error: message }, failed: failed3({ error: new ExecutionError("unknown", message) }), cache: found };
     }
     const { PATH: _path, HOME: _home, ...runEnv } = this.shellEnv;
     const id2 = `setup-${++this.runs}`;
     const started = Date.now();
     const frame = await this.runFrame(
       lease.socket,
-      { id: id2, command: SETUP_COMMAND, cwd: WORKSPACE_ROOT, env: { ...runEnv, ...secrets, PWD: WORKSPACE_ROOT }, timeout: SETUP_TIMEOUT_S },
+      { id: id2, command: SETUP_COMMAND, cwd: WORKSPACE_ROOT, env: { ...runEnv, ...secrets.environment, PWD: WORKSPACE_ROOT }, timeout: SETUP_TIMEOUT_S },
       signal,
       (data) => {
         output += data;
@@ -119715,7 +120133,7 @@ ${output}`;
     );
     if ("failed" in frame) {
       const { outcome } = frame.failed;
-      return { skipped: false, end: "error" in outcome ? { error: outcome.error.message } : { exit: outcome.exitCode }, failed: failed3(outcome) };
+      return { skipped: false, end: "error" in outcome ? { error: outcome.error.message } : { exit: outcome.exitCode }, failed: failed3(outcome), cache: found };
     }
     const { end } = frame;
     try {
@@ -119723,17 +120141,59 @@ ${output}`;
     } catch (error) {
       if (error instanceof CheckoutInterrupted) return unavailable2(interruptedDuringSyncOut(end), error);
       const message = `the sync-out after setup failed: ${messageOf3(error)}`;
-      return { skipped: false, end: { error: message }, failed: failed3({ error: new ExecutionError("unknown", message) }) };
+      return { skipped: false, end: { error: message }, failed: failed3({ error: new ExecutionError("unknown", message) }), cache: found };
     }
-    if (frame.aborted || signal?.aborted) return { skipped: false, end: { error: "aborted" }, failed: failed3({ error: new ExecutionError("aborted", "aborted") }) };
+    if (frame.aborted || signal?.aborted) return { skipped: false, end: { error: "aborted" }, failed: failed3({ error: new ExecutionError("aborted", "aborted") }), cache: found };
     if ("killed" in end) {
       const message = end.killed === "timeout" ? `setup ran for ${SETUP_TIMEOUT_S} s without ending and was killed` : `the container ended setup: ${end.killed}`;
-      return { skipped: false, end: { error: message }, failed: failed3({ error: new ExecutionError(end.killed === "timeout" ? "timeout" : "unknown", message) }) };
+      return { skipped: false, end: { error: message }, failed: failed3({ error: new ExecutionError(end.killed === "timeout" ? "timeout" : "unknown", message) }), cache: found };
     }
     console.info(`[pen] setup exit ${end.exit} after ${Date.now() - started} ms, ${output.length} bytes of output`);
-    if (end.exit !== 0) return { skipped: false, end: { exit: end.exit }, failed: failed3({ exitCode: end.exit }) };
+    if (end.exit !== 0) return { skipped: false, end: { exit: end.exit }, failed: failed3({ exitCode: end.exit }), cache: found };
     lease.warmed = true;
-    return { skipped: false, end: { exit: 0 } };
+    return { skipped: false, end: { exit: 0 }, cache: await this.keep(lease, key, secrets.own, found) };
+  }
+  /**
+   * Fold phase 1: what setup left in `/cache` becomes the pasture's cache,
+   * or does not, and why. Never for a sheep whose setup held a value of its
+   * own, which is asked before the container is: the log names the reason
+   * and the names, never a value. Otherwise the container describes `/cache`
+   * and `pen/cache.ts` decides: the same record as the one put back moves
+   * nothing, one over the cap or empty is not kept, and any other is passed
+   * from the socket to the object one chunk at a time and committed. A save
+   * that fails is logged and said; setup's result is setup's either way.
+   */
+  async keep(lease, key, own, found) {
+    const pasture = this.pasture;
+    const refuse = /* @__PURE__ */ __name((reason, described) => {
+      console.info(`[pen] cache not kept for ${setupName(key)}: ${reason}`);
+      return { ...found, ...found.found === "cold" && described !== void 0 ? { bytes: described.bytes, files: described.files } : {}, refused: reason };
+    }, "refuse");
+    if (own.length > 0) {
+      console.info(`[pen] cache not kept for ${setupName(key)}: setup's environment held this sheep's own ${own.join(", ")}`);
+      return { ...found, refused: OWN_SECRET_REFUSAL };
+    }
+    if (lease.putBack !== void 0 && lease.putBack.key !== key) return refuse(`setup.sh changed after ${setupName(lease.putBack.key)}'s cache was put back into this container`);
+    const started = Date.now();
+    try {
+      const saved = await lease.checkout.keepCache({
+        key,
+        ...lease.putBack?.key === key ? { putBack: lease.putBack.kept.hash } : {},
+        max: this.cacheMaxBytes,
+        save: crypto.randomUUID(),
+        store: pasture
+      });
+      if ("refused" in saved) return refuse(saved.refused, saved.described);
+      if ("unchanged" in saved) {
+        console.info(`[pen] cache unchanged by setup, ${cacheSize(saved.described.bytes)}`);
+        return found;
+      }
+      const { kept: kept2, sent } = saved;
+      console.info(`[pen] cache kept for ${setupName(key)}, ${cacheSize(kept2.bytes)}, ${kept2.files} files, ${kept2.chunks.length} chunks (${sent} sent) in ${Date.now() - started} ms`);
+      return { ...found, ...found.found === "cold" ? { bytes: kept2.bytes, files: kept2.files } : {}, kept: true };
+    } catch (error) {
+      return refuse(`the save failed: ${messageOf3(error)}`);
+    }
   }
   /** The whole output to a file under `/tmp` when the view was truncated, as pi's bash renderer expects. */
   async spill(capture, full, options, context2) {
@@ -119749,6 +120209,10 @@ ${output}`;
   async cleanup(_context) {
   }
 };
+function setupKey(tree) {
+  return tree?.find((entry) => entry.path === SETUP_PATH && entry.kind === "file")?.hash ?? void 0;
+}
+__name(setupKey, "setupKey");
 function never(resolved) {
   return Promise.reject(readOnly("open", resolved));
 }
@@ -119800,6 +120264,8 @@ function birthText(data) {
   else if (data.exit !== void 0) head = `The birth of this session into the pasture ${data.pasture} failed: \`${data.command}\` ran ${where} and exited ${data.exit}. ${data.cwd} is as the failure left it.`;
   else head = `The birth of this session into the pasture ${data.pasture} failed: \`${data.command}\` could not run ${where}: ${data.error ?? "no reason was given"}. ${data.cwd} is as the failure left it.`;
   if (data.setup !== void 0) head += ` ${setupSentence(data.setup)}`;
+  if (data.home !== void 0) head += ` ${homeSentence(data.home)}`;
+  if (data.cache !== void 0) head += ` ${cacheSentence(data.cache)}`;
   const output = data.output.replace(/\n$/, "");
   if (output === "") return head;
   return `${head}
@@ -119814,6 +120280,42 @@ function setupSentence(setup) {
   return `Then \`${SETUP_COMMAND}\` ran in the same container and exited ${setup.exit}, so the checkout is not warmed up; its output is below.`;
 }
 __name(setupSentence, "setupSentence");
+function homeSentence(home) {
+  return `Its home directory, ~, is ${home}, and is kept with the session.`;
+}
+__name(homeSentence, "homeSentence");
+function seconds(ms2) {
+  return `${Math.round(ms2 / 100) / 10} s`;
+}
+__name(seconds, "seconds");
+function cacheSentence(cache) {
+  if (cache.found === "warm") {
+    const first3 = `The pasture's cache for this setup.sh was put back into ${CACHE_ROOT} first, ${cacheSize(cache.bytes)} in ${seconds(cache.ms)}`;
+    if (cache.kept) return `${first3}; setup changed it, and what it left was kept.`;
+    if (cache.refused !== void 0) return `${first3}; what setup left in ${CACHE_ROOT} was not kept: ${cache.refused}.`;
+    return `${first3}.`;
+  }
+  const first2 = `The pasture had no cache for this setup.sh, so setup ran cold`;
+  if (cache.kept) return `${first2}, and what it left in ${CACHE_ROOT} was kept, ${cacheSize(cache.bytes)}.`;
+  if (cache.refused !== void 0) return `${first2}, and what it left in ${CACHE_ROOT} was not kept: ${cache.refused}.`;
+  return `${first2}.`;
+}
+__name(cacheSentence, "cacheSentence");
+function cacheOf(value3) {
+  if (typeof value3 !== "object" || value3 === null) return void 0;
+  const record2 = value3;
+  if (record2.found !== "warm" && record2.found !== "cold") return void 0;
+  const number = /* @__PURE__ */ __name((key) => typeof record2[key] === "number" ? record2[key] : 0, "number");
+  return {
+    found: record2.found,
+    bytes: number("bytes"),
+    files: number("files"),
+    ms: number("ms"),
+    ...record2.kept === true ? { kept: true } : {},
+    ...typeof record2.refused === "string" ? { refused: record2.refused } : {}
+  };
+}
+__name(cacheOf, "cacheOf");
 function setupOf(value3) {
   if (typeof value3 !== "object" || value3 === null) return void 0;
   const record2 = value3;
@@ -119828,6 +120330,7 @@ function birthData(entry) {
   const record2 = data;
   if (typeof record2.command !== "string" || typeof record2.output !== "string" || typeof record2.pasture !== "string") return void 0;
   const setup = setupOf(record2.setup);
+  const cache = cacheOf(record2.cache);
   return {
     pasture: record2.pasture,
     repo: typeof record2.repo === "string" ? record2.repo : "",
@@ -119838,7 +120341,9 @@ function birthData(entry) {
     ...typeof record2.error === "string" ? { error: record2.error } : {},
     output: record2.output,
     truncated: record2.truncated === true,
-    ...setup === void 0 ? {} : { setup }
+    ...setup === void 0 ? {} : { setup },
+    ...typeof record2.home === "string" ? { home: record2.home } : {},
+    ...cache === void 0 ? {} : { cache }
   };
 }
 __name(birthData, "birthData");
@@ -119974,7 +120479,7 @@ var CredentialBroker = class {
       reply = { type: "credential", id: frame.id, ...minted.answer };
     }
     try {
-      socket.send(encodeFrame2(reply));
+      socket.send(encodeFrame(reply));
     } catch (error) {
       this.log(`credential ${frame.id} for ${host} could not be sent: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -121529,14 +122034,14 @@ var PenLease = class {
     }
     const token = crypto.randomUUID();
     const since = this.now();
-    const seconds2 = this.options.startTimeoutMs / 1e3;
+    const seconds3 = this.options.startTimeoutMs / 1e3;
     const admitted2 = new Promise((resolve2, reject) => {
       this.pending = {
         token,
         resolve: resolve2,
         reject,
         since,
-        timer: setTimeout(() => this.fail(new Error(`the container did not connect within ${seconds2} s`)), this.options.startTimeoutMs)
+        timer: setTimeout(() => this.fail(new Error(`the container did not connect within ${seconds3} s`)), this.options.startTimeoutMs)
       };
     });
     this.log(`starting a container for ${cellUrl}`);
@@ -124168,20 +124673,34 @@ function promptText(entry) {
 __name(promptText, "promptText");
 function laidOver(pasture, sheep) {
   return {
-    async secrets() {
+    async setupEnvironment() {
       const [herds, own] = await Promise.all([pasture.secrets(), sheep.secrets()]);
       const { [PASTURE_GIT_TOKEN]: _pastureToken, ...shared } = herds;
       const { [PASTURE_GIT_TOKEN]: _sheepToken, ...mine } = own;
-      return { ...shared, ...mine };
+      return { environment: { ...shared, ...mine }, own: Object.keys(mine).sort() };
     }
   };
 }
 __name(laidOver, "laidOver");
-function seconds(value3, fallback) {
+function pastureSourceFor(object, sheep, sessionId) {
+  return {
+    snapshot: /* @__PURE__ */ __name(() => object.snapshot(), "snapshot"),
+    readByHash: /* @__PURE__ */ __name((hash) => object.readByHash(hash), "readByHash"),
+    read: /* @__PURE__ */ __name((path4) => object.read(path4), "read"),
+    ...laidOver(object, sheep),
+    cacheFor: /* @__PURE__ */ __name((key) => object.cacheFor(key), "cacheFor"),
+    cacheChunk: /* @__PURE__ */ __name((hash) => object.cacheChunk(hash), "cacheChunk"),
+    cacheMissing: /* @__PURE__ */ __name((save, hashes) => object.cacheMissing(save, hashes), "cacheMissing"),
+    cachePut: /* @__PURE__ */ __name((save, hash, bytes) => object.cachePut(save, hash, bytes), "cachePut"),
+    cacheCommit: /* @__PURE__ */ __name((save, commit) => object.cacheCommit(save, { ...commit, by: sessionId }), "cacheCommit")
+  };
+}
+__name(pastureSourceFor, "pastureSourceFor");
+function seconds2(value3, fallback) {
   const parsed = value3 === void 0 || value3.trim() === "" ? Number.NaN : Number(value3);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
-__name(seconds, "seconds");
+__name(seconds2, "seconds");
 var SessionCell = class extends DurableObject4 {
   static {
     __name(this, "SessionCell");
@@ -124230,20 +124749,16 @@ var SessionCell = class extends DurableObject4 {
     this.#lease = lease;
     const loader = this.env.LOADER;
     const env = new CellExecutionEnv(this.ctx.storage.sql, {
-      ...lease === void 0 ? {} : { container: lease, containerUp: /* @__PURE__ */ __name(() => lease.socket !== void 0, "containerUp"), killTimeoutMs: seconds(this.env.PEN_KILL_TIMEOUT, 10) * 1e3 },
-      ...loader === void 0 ? {} : { isolate: new Isolate(loader, { cpuMs: seconds(this.env.PEN_ISOLATE_CPU_MS, DEFAULT_CPU_MS) }) },
+      ...lease === void 0 ? {} : { container: lease, containerUp: /* @__PURE__ */ __name(() => lease.socket !== void 0, "containerUp"), killTimeoutMs: seconds2(this.env.PEN_KILL_TIMEOUT, 10) * 1e3 },
+      ...loader === void 0 ? {} : { isolate: new Isolate(loader, { cpuMs: seconds2(this.env.PEN_ISOLATE_CPU_MS, DEFAULT_CPU_MS) }) },
       // The eyes (eyes phase 1), over the env's own files table and this cell's SQLite for the session row; `eyesFor` decides
       // whether this home has any, and a home without the binding gets none and no `look`.
       eyes: /* @__PURE__ */ __name((files) => eyesFor(this.env, files, this.ctx.storage.sql), "eyes"),
       // The mount and the program, both over the one stub: what the program puts, the mount's next call reads. Setup's
       // secrets are the pasture's with the sheep's laid over them (earmark phase 0), both read when setup runs.
       ...pasture === void 0 || object === void 0 ? {} : {
-        pasture: {
-          snapshot: /* @__PURE__ */ __name(() => object.snapshot(), "snapshot"),
-          readByHash: /* @__PURE__ */ __name((hash) => object.readByHash(hash), "readByHash"),
-          read: /* @__PURE__ */ __name((path4) => object.read(path4), "read"),
-          ...laidOver(object, sheep)
-        },
+        // The cache's store too (fold phase 1): what this cell's setups keep, signed with its id.
+        pasture: pastureSourceFor(object, sheep, this.sessionId),
         pastureProgram: { name: pasture.name, sessionId: this.sessionId, object, herd: /* @__PURE__ */ __name(() => directory.herd(pasture.name), "herd") }
       }
     });
@@ -124383,9 +124898,13 @@ var SessionCell = class extends DurableObject4 {
       ..."exit" in ran.end ? { exit: ran.end.exit } : { error: ran.end.error },
       output: ran.output,
       truncated: ran.truncated,
-      ...ran.setup === void 0 ? {} : { setup: ran.setup }
+      ...ran.setup === void 0 ? {} : { setup: ran.setup },
+      // Fold phase 1: `~` where it is kept, on a home that keeps it; and what the pasture's cache came to around setup.
+      ...env.homeDir === HOME_ROOT ? { home: HOME_ROOT } : {},
+      ...ran.cache === void 0 ? {} : { cache: ran.cache }
     };
-    const setupEnded = ran.setup === void 0 ? "" : `, setup ${"exit" in ran.setup ? `exit ${ran.setup.exit}` : `could not run: ${ran.setup.error}`}`;
+    const cacheEnded = ran.cache === void 0 ? "" : `, cache ${ran.cache.found}${ran.cache.kept ? " and kept" : ran.cache.refused === void 0 ? "" : " and not kept"}`;
+    const setupEnded = ran.setup === void 0 ? "" : `, setup ${"exit" in ran.setup ? `exit ${ran.setup.exit}` : `could not run: ${ran.setup.error}`}${cacheEnded}`;
     log(`${"exit" in ran.end ? `exit ${ran.end.exit}` : `could not run: ${ran.end.error}`}${setupEnded} after ${Date.now() - started} ms, ${env.files.manifest().length} rows`);
     try {
       await lane.appendCustomEntry(BIRTH_ENTRY, { ...data }, BACKGROUND_CONTEXT);
@@ -124446,7 +124965,7 @@ var SessionCell = class extends DurableObject4 {
       cellUrl: origin === void 0 || origin === "" ? void 0 : `${origin.replace(/\/$/, "")}/s/${encodeURIComponent(this.sessionId)}/pen`,
       starter,
       ledger: { spent: /* @__PURE__ */ __name(async () => (await directory.budget()).spent, "spent") },
-      startTimeoutMs: seconds(this.env.PEN_START_TIMEOUT, 90) * 1e3,
+      startTimeoutMs: seconds2(this.env.PEN_START_TIMEOUT, 90) * 1e3,
       renewEveryMs: Math.max(1e3, Math.min(idleSeconds * 1e3 / 2, 6e4)),
       broker,
       log
@@ -124621,7 +125140,7 @@ var SessionCell = class extends DurableObject4 {
         const result = await runtime.lane.abort(BACKGROUND_CONTEXT);
         aborted = result.ok;
         if (!aborted) return;
-        const bound = seconds(this.env.PEN_KILL_TIMEOUT, 10) * 1e3 + END_SETTLE_MARGIN_MS;
+        const bound = seconds2(this.env.PEN_KILL_TIMEOUT, 10) * 1e3 + END_SETTLE_MARGIN_MS;
         const deadline = Date.now() + bound;
         while ((await runtime.lane.inspectExecution(BACKGROUND_CONTEXT)).current !== null) {
           if (Date.now() >= deadline) {
@@ -124776,13 +125295,13 @@ __name(admitted, "admitted");
 var CHECKOUT_BUILD = { commit: "0.0.0-checkout", builtAt: null };
 function homeImage() {
   if (false) return null;
-  return true ? "docker.io/dglazkov2/sheep-pen@sha256:accd7f27ee6080c0192478e1d705d69341b748428ee11f06801e7690df3831e6" : null;
+  return true ? "docker.io/dglazkov2/sheep-pen@sha256:f2055cedef12916b954d7aa4b9826cd2c3cb5e3dc475dab874c7b8b3734e0da7" : null;
 }
 __name(homeImage, "homeImage");
 function homeBuild() {
   if (false) return CHECKOUT_BUILD;
   try {
-    const parsed = JSON.parse('{"commit":"d4d4708","builtAt":"2026-09-11T18:55:56Z"}');
+    const parsed = JSON.parse('{"commit":"d154ba1","builtAt":"2026-09-11T19:50:39Z"}');
     if (typeof parsed.commit === "string" && parsed.commit !== "") return { commit: parsed.commit, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
   } catch {
   }
@@ -124803,7 +125322,7 @@ async function pastureRoute(request, env, name, path4) {
   const method = request.method;
   if (path4 === "/" && method === "GET") {
     const meta = await pasture.meta();
-    return Response.json({ ...meta ?? { name, repo: null, branch: null, createdAt: null }, herd: await directory.herd(name) });
+    return Response.json({ ...meta ?? { name, repo: null, branch: null, createdAt: null }, herd: await directory.herd(name), cache: await pasture.cacheSummary() });
   }
   if (path4 === "/tree" && method === "GET") return Response.json(await pasture.manifest());
   if (path4.startsWith("/tree/")) {
