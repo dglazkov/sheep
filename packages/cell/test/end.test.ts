@@ -108,8 +108,9 @@ async function pastured(): Promise<void> {
 
 /**
  * A sheep born into the pasture, with a starter set before its first boot,
- * and a faux program if it has one. Booted once through the home's face,
- * as the Worker boots a cell at birth, so an idle sheep holds its rows.
+ * and a faux program if it has one. Booted once through the home's face:
+ * the mint boots no cell (mint phase 0), and these cases end sheep that
+ * hold rows, so the boot is asked for here.
  */
 async function sheep(name: string, program?: FauxProgram): Promise<{ id: string; stub: Stub }> {
   const { id } = await env.DIRECTORY.getByName("home").create(name, PASTURE);

@@ -1,8 +1,8 @@
 ---
-status: planned
+status: partial
 since: 2026-09-10
 see: mint
-note: "written 10 Sep 2026, the night end closed, from the shepherd's issue #3 (a sheep I can name before I have anything to say). The only way to a sheep's id without pi's terminal is to send it a prompt, so a dog pays a model turn for an identifier, and a mint into a pasture with a repository clones and sets up before the id is printed. Two phases: the mint becomes one row in the Directory, the cell booting and being born on the first thing that asks it; then the verb's docs, the refusal on attach, and the walk. Nothing built."
+note: "written 10 Sep 2026, the night end closed, from the shepherd's issue #3 (a sheep I can name before I have anything to say). The only way to a sheep's id without pi's terminal is to send it a prompt, so a dog pays a model turn for an identifier, and a mint into a pasture with a repository clones and sets up before the id is printed. Two phases: the mint becomes one row in the Directory, the cell booting and being born on the first thing that asks it; then the verb's docs, the refusal on attach, and the walk. Mint phase 0 closed the same night: the mint is one row, proved in workerd against the fake container, journey 1 steps 1 to 3 and 6 and journey 2 in the cell's terms, falsified by restoring the boot."
 ---
 
 # Mint — the journeys

@@ -21,9 +21,13 @@ bug, not a detail.
 
 ---
 
-**Where we are: planned, 10 Sep 2026. Both phases NOT STARTED.** Next
-is mint phase 0, the mint as one row, proved in workerd. Nothing waits
-on a person until mint phase 1's account ring, one ⚑ step.
+**Where we are: mint phase 0 CLOSED, 10 Sep 2026; mint phase 1 NOT
+STARTED.** The mint is one row: `POST /sessions` inserts and answers,
+the cell boots on the first thing that asks it, and a sheep born into a
+pasture with a repository is born inside that first boot; proved in
+workerd against the fake container and falsified by restoring the boot.
+Next is mint phase 1, the verb's docs, the refusal on `attach`, journey
+5 in the home ring, and the walk. One ⚑ step there, the account ring.
 
 The order is dependency order. Phase 0 is the mechanism, which the
 verb's promise needs. Phase 1 is the verb's docs, the refusal, and the
@@ -68,7 +72,16 @@ cell is corrected to ask the cell, never weakened.
 and the rings guard green; `pnpm --filter @sheep/cell typecheck` exits 0.
 **⚑** none.
 
-**Status: NOT STARTED.**
+**Status: CLOSED.** 2026-09-10. Journey 1 steps 1 to 3 and 6 and journey 2 steps 1 to 4 hold in the cell's terms: after `POST /sessions` the cell's storage has no table and no alarm, the row is idle with no task, and no model was called; `GET /s/<id>/` is the first boot; the first prompt is the provider's first call, the birth entry ahead of it for a pastured sheep; a sheep ended before any boot starts nothing. `pnpm test` exits 0 across all three rings; falsified by restoring the boot.
+
+**Findings:**
+
+- **2026-09-10 — The mint is one Directory row.** In the pool `POST /sessions` takes 3 ms against 18 ms with the boot, for a pastureless sheep; nothing in the tree assumed the boot at mint but one comment in `end.test.ts`, which boots explicitly.
+- **2026-09-10 — The test-only `POST /s/<id>/faux` before any boot leaves `_cf_KV` in `sqlite_master`** and no alarm; the proof reads `sqlite_master` before scripting anything and filters the platform's own tables, else the one rule would misfire.
+- **2026-09-10 — A pastured mint through the Worker's route is unprovable in workerd:** the pool binds no container, so `directory.refusal` refuses the repository before any row. The test mints through `directory.create`, as `birth.test.ts` does; the route's pastured path is mint phase 1's walk.
+- **2026-09-10 — The first boot's birth reports `idle` before `boot()` returns,** so `GET /s/<id>/` on a minted pastured sheep answers with the row already idle and the birth entry alone on the lane; 24 ms against the fake, the first prompt with the birth 29 ms.
+- **2026-09-10 — One mutation failed the test:** the boot restored at the mint fails journey 1's two cases at "no table after the mint" (22 objects in the cell's SQLite, `table sessions` first); journey 2's cases never went through the route and pass either way.
+- **2026-09-10 — Open: pen's loopback test (`agent.test.ts`, serve phase 1) failed twice in a row at 22:44** with a 404 where the `::1` server should answer, then passed six runs; nothing in `packages/pen` changed. Waits on a cause; a third red run should find one.
 
 ## Phase 1: The verb and the walk
 

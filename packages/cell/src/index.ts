@@ -173,10 +173,9 @@ export default {
       // The Directory's refusal, before any cell exists; its sentence is the whole body.
       const refusal = pasture === null ? undefined : await directory.refusal(pasture);
       if (refusal !== undefined) return new Response(refusal, { status: 409 });
-      const summary = await directory.create(name, pasture);
-      // Boot the cell now so the session exists even if the terminal dies before rendering.
-      await env.SESSION_CELL.getByName(summary.id).fetch(new Request("https://cell/"));
-      return Response.json(summary, { status: 201 });
+      // The mint (mint phase 0): the row, and nothing else. No cell is addressed: it boots on the first thing that asks
+      // it, as after an eviction, and a sheep born into a pasture with a repository is born inside that first boot.
+      return Response.json(await directory.create(name, pasture), { status: 201 });
     }
     if (url.pathname === "/sessions" && request.method === "GET") {
       const pasture = url.searchParams.get("pasture");
