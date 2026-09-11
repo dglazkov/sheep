@@ -27,6 +27,9 @@ prompt mints a sheep and prints its id, and nothing else happens until
 something is asked of it. [Project earmark](docs/projects/earmark/design.md)
 gave one sheep a secret of its own: `sheep new --secret <NAME>`, the
 value on stdin, laid over its pasture's by name and ended with it.
+[Project fold](docs/projects/fold/design.md) keeps what outlives the
+container: a sheep's `~` as rows beside its workspace, and a pasture's
+`/cache`, put back before setup and kept after it.
 Setup and usage are in [README.md](README.md).
 Read a project's `phases.md` for where its work stands and what the next
 phase is; [docs/projects/README.md](docs/projects/README.md) lists them.
