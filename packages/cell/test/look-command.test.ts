@@ -200,7 +200,10 @@ describe("the look program in workerd", () => {
         expect(out).toContain("ReferenceError");
         expect(out).toContain("undefinedFunction");
         expect(out).toContain("  404 /favicon.ico");
-        expect(out).toContain("console:\n  log: app ready, items: 3\n  warn: a warning the sheep should see\n");
+        // The page's own two lines, adjacent and in that order. Not anchored to `console:` itself: Chrome reports the
+        // favicon 404 as a console error of its own, and whether that lands before or after the module's log is a race
+        // the page does not decide. CI lost it on 10 Sep 2026 (run 34543282212) with both lines present, one line lower.
+        expect(out).toContain("  log: app ready, items: 3\n  warn: a warning the sheep should see\n");
         expect(out).toContain(`heading "Counter"`);
         expect(out).toContain(`button "+1"`);
         expect(out).toContain("wool");
