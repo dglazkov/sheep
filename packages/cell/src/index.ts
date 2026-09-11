@@ -22,6 +22,9 @@
  * Earmark phase 0: `POST /sessions` takes `secrets`, name to value, and
  * refuses a bad one before any row; the answer, like `GET /sessions`,
  * carries the names and never a value.
+ * Fold phase 1: `GET /p/<name>/` carries `cache`, the pasture's cache as
+ * its object's row says it (size, files, the `setup.sh` it is for, when,
+ * by whom, and whether that script is the tree's now), or `null`.
  */
 import { type Budget, mintSecrets, unknownPasture, unknownSession } from "./directory.ts";
 import { hasEyes } from "./eyes/eyes.ts";
@@ -107,7 +110,8 @@ async function pastureRoute(request: Request, env: Env, name: string, path: stri
   const method = request.method;
   if (path === "/" && method === "GET") {
     const meta = await pasture.meta();
-    return Response.json({ ...(meta ?? { name, repo: null, branch: null, createdAt: null }), herd: await directory.herd(name) });
+    // Fold phase 1: the cache as its row says it, `null` when none was kept; never a chunk.
+    return Response.json({ ...(meta ?? { name, repo: null, branch: null, createdAt: null }), herd: await directory.herd(name), cache: await pasture.cacheSummary() });
   }
   if (path === "/tree" && method === "GET") return Response.json(await pasture.manifest());
   if (path.startsWith("/tree/")) {

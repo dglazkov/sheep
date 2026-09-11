@@ -47,10 +47,24 @@
  * agent knows is kept per root, so the two trees are compared each with
  * its own last sync; a manifest without `home` leaves `~` as it is, and
  * the agent forgets it until one carries it again.
+ *
+ * Fold phase 1 gives it a fourth disk, the pasture's cache, rooted at
+ * `/cache`, and a scratch for the chunks a description made. Neither is
+ * ever walked by a sync-out. A `manifest` that carries `cache` is put back
+ * after the files land: `/cache` emptied, then one chunk asked for per
+ * `need`, each written through the record's reader as it arrives, and
+ * `checkout` said only when the last is written. A `cache` frame is
+ * answered by writing `/cache` as a record to the scratch, in chunks, and
+ * describing it; the cell asks for what it lacks, one chunk per `need`,
+ * and its `synced` lets the scratch go. A chunk the cell refuses during a
+ * put-back empties `/cache` and ends the sync-in whole, cold.
  */
 import ignore from "ignore";
+import { Chunker, emptyDisk, RecordReader, writeRecord } from "./record.ts";
 import {
   BUILT_IN_IGNORES,
+  CACHE_CHUNK_BYTES,
+  type CacheRef,
   type CellFrame,
   type ChangedEntry,
   type ContainerFrame,
@@ -68,8 +82,11 @@ import {
   messageBytes,
   PASTURE_DIR_MODE,
   PASTURE_FILE_MODE,
+  recordHashInput,
   type Refused,
 } from "./protocol.ts";
+
+export { Chunker, emptyDisk, RecordError, RecordReader, writeRecord } from "./record.ts";
 
 export interface DiskEntry {
   /** Relative to the checkout root, no leading slash. */
@@ -299,11 +316,15 @@ export interface ServeAgentOptions {
   pasture?: Disk;
   /** Fold phase 0: the disk rooted at `/home/sheep`, a sheep's `~`, synced both ways from a manifest's third root. Absent, a manifest's `home` is ignored and no sync-out reports `~`. */
   home?: Disk;
+  /** Fold phase 1: the disk rooted at `/cache`, the pasture's cache, put back from a manifest's `cache` and described on a `cache` frame. Absent, a manifest's `cache` is ignored and a `cache` frame is unsupported. */
+  cache?: Disk;
+  /** Fold phase 1: where a description's chunks wait for the cell's `need`s, emptied before each description and after its `synced`. Needed with `cache`. */
+  scratch?: Disk;
 }
 
 /** Wires the agent to a socket. Frames are handled in the order they arrive, one at a time; a run's work, and a fetch's, are not on that chain. */
 export function serveAgent(socket: AgentSocket, disk: Disk, runner: Runner, fetcher: Fetcher, options: ServeAgentOptions = {}): ServedAgent {
-  const agent = new Agent(socket, disk, runner, fetcher, options.pasture, options.home);
+  const agent = new Agent(socket, disk, runner, fetcher, options);
   return { closed: agent.closed, syncOut: (id) => agent.syncOut(id), askCredential: (request, options) => agent.askCredential(request, options) };
 }
 
@@ -318,6 +339,9 @@ class Agent {
   private readonly disk: Disk;
   private readonly pasture: Disk | undefined;
   private readonly home: Disk | undefined;
+  /** Fold phase 1: `/cache`, and the scratch its descriptions are written to; both or neither. */
+  private readonly cacheDisk: Disk | undefined;
+  private readonly scratch: Disk | undefined;
   private readonly runner: Runner;
   private readonly fetcher: Fetcher;
   readonly closed: Promise<void>;
@@ -338,7 +362,17 @@ class Agent {
     blobs: Map<string, Uint8Array>;
     pasture: RootCheckout | null;
     home: RootCheckout | null;
+    /** The cache to put back once the files are written, when the manifest carried one and this agent has `/cache`. */
+    cache: CacheRef | null;
   } | null = null;
+  /**
+   * A put-back in progress (fold phase 1): the sync-in it belongs to, the
+   * chunks in order, the one asked for now, and the reader writing them
+   * onto `/cache`. `checkout` waits for it.
+   */
+  private restoring: { id: string; ref: CacheRef; next: number; reader: RecordReader } | null = null;
+  /** A description the cell has not said `synced` to: its id and the chunks on the scratch. */
+  private describing: { id: string; chunks: Set<string> } | null = null;
   /**
    * The frame whose binary message is next, and whose it is: a `blob`'s
    * bytes during a sync-in, a `fetch`'s body during a look. There is at
@@ -360,11 +394,13 @@ class Agent {
   private credentials = new Map<string, { settle: (answer: CredentialAnswer | undefined) => void }>();
   private credentialCount = 0;
 
-  constructor(socket: AgentSocket, disk: Disk, runner: Runner, fetcher: Fetcher, pasture: Disk | undefined, home: Disk | undefined) {
+  constructor(socket: AgentSocket, disk: Disk, runner: Runner, fetcher: Fetcher, options: ServeAgentOptions) {
     this.socket = socket;
     this.disk = disk;
-    this.pasture = pasture;
-    this.home = home;
+    this.pasture = options.pasture;
+    this.home = options.home;
+    this.cacheDisk = options.cache !== undefined && options.scratch !== undefined ? options.cache : undefined;
+    this.scratch = this.cacheDisk === undefined ? undefined : options.scratch;
     this.runner = runner;
     this.fetcher = fetcher;
     socket.addEventListener("message", (event) => {
@@ -415,6 +451,11 @@ class Agent {
       // Whatever failed, the sync it was part of is over, and the cell is told.
       this.checkout = null;
       this.expecting = null;
+      // A put-back cut off leaves no half of a cache behind: `/cache` goes empty, and the next setup runs cold.
+      if (this.restoring !== null && this.cacheDisk !== undefined) {
+        this.restoring = null;
+        await emptyDisk(this.cacheDisk).catch(() => undefined);
+      }
       const message = error instanceof Error ? error.message : String(error);
       if (error instanceof ProtocolError) this.send({ type: "error", code: error.code, of: error.of, message });
       else this.send({ type: "error", code: "failed", of, message });
@@ -432,13 +473,19 @@ class Agent {
         this.send(frame.id === undefined ? { type: "pong" } : { type: "pong", id: frame.id });
         return;
       case "manifest":
-        await this.receiveManifest(frame.id, frame.entries, frame.pasture, frame.home);
+        await this.receiveManifest(frame.id, frame.entries, frame.pasture, frame.home, frame.cache);
         return;
-      case "blob":
-        if (this.checkout === null || !this.checkout.needed.has(frame.hash)) {
+      case "blob": {
+        const restoring = this.restoring;
+        const chunk = restoring !== null && restoring.ref.chunks[restoring.next] === frame.hash;
+        if (!chunk && (this.checkout === null || !this.checkout.needed.has(frame.hash))) {
           throw new ProtocolError("malformed", "blob", `no sync-in is waiting for blob ${frame.hash}`);
         }
         this.expecting = { of: "blob", hash: frame.hash, size: frame.size };
+        return;
+      }
+      case "cache":
+        await this.describe(frame.id, frame.max);
         return;
       case "fetch":
         // A body's bytes are the next message; without one there is nothing to wait for and the fetch goes at once.
@@ -455,6 +502,12 @@ class Agent {
         });
         return;
       case "synced":
+        if (this.describing !== null && this.describing.id === frame.id) {
+          // The cell is done with the description, whatever it kept: the chunks on the scratch go.
+          this.describing = null;
+          if (this.scratch !== undefined) await emptyDisk(this.scratch);
+          return;
+        }
         this.finishSyncOut(frame.id, frame.refused, frame.home ?? []);
         return;
       case "run":
@@ -473,6 +526,14 @@ class Agent {
       }
       case "error":
         if (frame.of === "credential" && frame.id !== undefined) this.settleCredential(frame.id, undefined);
+        // The cell could not give a chunk of the cache it is putting back: the cache moved under the put-back. `/cache` goes
+        // empty, the files are already written, and the sync-in ends whole; setup runs cold.
+        if (frame.of === "need" && this.restoring !== null && frame.id === this.restoring.id && this.cacheDisk !== undefined) {
+          const { id } = this.restoring;
+          this.restoring = null;
+          await emptyDisk(this.cacheDisk);
+          this.send({ type: "checkout", id });
+        }
         return;
       default: {
         // Every frame the protocol names is handled above; one it does not is answered, not dropped.
@@ -582,6 +643,11 @@ class Agent {
       this.forward(frame, bytes);
       return;
     }
+    const restoring = this.restoring;
+    if (restoring !== null && restoring.ref.chunks[restoring.next] === expecting.hash) {
+      await this.restoreChunk(restoring, expecting, bytes);
+      return;
+    }
     if (this.checkout === null) throw new ProtocolError("malformed", "binary", "bytes with no sync-in to take them");
     if (bytes.byteLength !== expecting.size) {
       throw new ProtocolError("mismatch", "blob", `blob ${expecting.hash} announced ${expecting.size} bytes and carried ${bytes.byteLength}`);
@@ -630,7 +696,13 @@ class Agent {
     return { kept: listed.filter((entry) => !cached(entry.path, entry.kind)), present: new Set(listed.map((entry) => entry.path)) };
   }
 
-  private async receiveManifest(id: string, entries: ManifestEntry[], pastureEntries: ManifestEntry[] | undefined, homeEntries: ManifestEntry[] | undefined): Promise<void> {
+  private async receiveManifest(
+    id: string,
+    entries: ManifestEntry[],
+    pastureEntries: ManifestEntry[] | undefined,
+    homeEntries: ManifestEntry[] | undefined,
+    cache: CacheRef | undefined,
+  ): Promise<void> {
     const { state } = await this.scan();
     const needed = new Set<string>();
     const missing = (manifest: ManifestEntry[], have: Map<string, Scanned>) => {
@@ -654,7 +726,8 @@ class Agent {
       home = { entries: homeEntries, have: (await this.scanHome(this.home)).state };
       missing(homeEntries, home.have);
     }
-    this.checkout = { id, entries, have: state, needed, blobs: new Map(), pasture, home };
+    // The cache is not in this `need`: its chunks are asked for one at a time, after the files are written.
+    this.checkout = { id, entries, have: state, needed, blobs: new Map(), pasture, home, cache: cache !== undefined && this.cacheDisk !== undefined ? cache : null };
     this.send({ type: "need", id, hashes: [...needed] });
     if (needed.size === 0) await this.applyCheckout();
   }
@@ -768,7 +841,99 @@ class Agent {
     } else {
       this.knownHome = null;
     }
+    // The cache last, once the files are down and their blobs let go: `checkout` waits for its last chunk.
+    if (checkout.cache !== null && this.cacheDisk !== undefined) {
+      await this.beginRestore(checkout.id, checkout.cache, this.cacheDisk);
+      return;
+    }
     this.send({ type: "checkout", id: checkout.id });
+  }
+
+  /**
+   * The put-back's first step: `/cache` emptied, whatever was there, so
+   * what lands is the record and nothing beside it; then the first chunk
+   * asked for, alone. A record of no chunks is an empty `/cache`.
+   */
+  private async beginRestore(id: string, ref: CacheRef, disk: Disk): Promise<void> {
+    await emptyDisk(disk);
+    const expected = await disk.digest(encoder.encode(recordHashInput(ref.chunks)));
+    if (expected !== ref.hash) throw new ProtocolError("mismatch", "manifest", `the cache ${ref.hash} is not the record of its chunks (${expected})`);
+    const reader = new RecordReader(disk);
+    if (ref.chunks.length === 0) {
+      await reader.end();
+      this.send({ type: "checkout", id });
+      return;
+    }
+    this.restoring = { id, ref, next: 0, reader };
+    this.send({ type: "need", id, hashes: [ref.chunks[0]!] });
+  }
+
+  /** One chunk of the put-back, checked against its hash and written through the reader; then the next is asked for, or the sync-in is done. */
+  private async restoreChunk(restoring: NonNullable<Agent["restoring"]>, expecting: { hash: string; size: number }, bytes: Uint8Array): Promise<void> {
+    if (bytes.byteLength !== expecting.size) {
+      throw new ProtocolError("mismatch", "blob", `chunk ${expecting.hash} announced ${expecting.size} bytes and carried ${bytes.byteLength}`);
+    }
+    const hash = await this.cacheDisk!.digest(bytes);
+    if (hash !== expecting.hash) throw new ProtocolError("mismatch", "blob", `chunk ${expecting.hash} hashes to ${hash}`);
+    await restoring.reader.push(bytes);
+    restoring.next++;
+    if (restoring.next < restoring.ref.chunks.length) {
+      this.send({ type: "need", id: restoring.id, hashes: [restoring.ref.chunks[restoring.next]!] });
+      return;
+    }
+    await restoring.reader.end();
+    this.restoring = null;
+    this.send({ type: "checkout", id: restoring.id });
+  }
+
+  /**
+   * The description (fold phase 1): `/cache` as a record, onto the
+   * scratch in chunks named by their hashes, and then `cache` with the
+   * record's hash, the chunks', and its counts. Past `max` the writer
+   * stops, the scratch is emptied, and `bytes` says it was over; nothing
+   * is offered. The chunks stay until the cell's `synced`.
+   */
+  private async describe(id: string, max: number | undefined): Promise<void> {
+    const cache = this.cacheDisk;
+    const scratch = this.scratch;
+    if (cache === undefined || scratch === undefined) {
+      this.send({ type: "error", code: "unsupported", of: "cache", message: "this container has no /cache" });
+      return;
+    }
+    this.describing = null;
+    await emptyDisk(scratch);
+    const chunks: string[] = [];
+    const written = new Set<string>();
+    const chunker = new Chunker(CACHE_CHUNK_BYTES, async (chunk) => {
+      const hash = await scratch.digest(chunk);
+      if (!written.has(hash)) await scratch.write(hash, chunk, { mode: 0o600 });
+      written.add(hash);
+      chunks.push(hash);
+    });
+    const count = await writeRecord(cache, (bytes) => chunker.push(bytes), max === undefined ? {} : { max });
+    if (count.over) {
+      await emptyDisk(scratch);
+      this.describing = { id, chunks: new Set() };
+      this.send({ type: "cache", id, hash: "", chunks: [], files: count.files, bytes: count.bytes });
+      return;
+    }
+    await chunker.end();
+    const hash = await scratch.digest(encoder.encode(recordHashInput(chunks)));
+    this.describing = { id, chunks: written };
+    this.send({ type: "cache", id, hash, chunks, files: count.files, bytes: count.bytes });
+  }
+
+  /** The cell's `need` for a description's chunk: one hash, off the scratch, checked, sent. */
+  private async answerChunkNeed(id: string, hashes: string[]): Promise<void> {
+    const describing = this.describing!;
+    if (hashes.length !== 1) throw new ProtocolError("malformed", "need", `a need for the cache ${id} names one chunk, not ${hashes.length}`);
+    const hash = hashes[0]!;
+    if (!describing.chunks.has(hash)) throw new ProtocolError("malformed", "need", `the cache ${id} did not offer ${hash}`);
+    const bytes = await this.scratch!.read(hash);
+    const now = await this.scratch!.digest(bytes);
+    if (now !== hash) throw new ProtocolError("mismatch", "need", `chunk ${hash} changed on the scratch: ${now}`);
+    this.send({ type: "blob", hash, size: bytes.byteLength });
+    this.sendBytes(bytes);
   }
 
   syncOut(id: string): Promise<Refused[]> {
@@ -797,6 +962,10 @@ class Agent {
   }
 
   private async answerNeed(id: string, hashes: string[]): Promise<void> {
+    if (this.describing !== null && this.describing.id === id) {
+      await this.answerChunkNeed(id, hashes);
+      return;
+    }
     const out = this.out;
     if (out === null || out.id !== id) throw new ProtocolError("malformed", "need", `no sync-out ${id} is in progress`);
     // One `need` for both roots: a hash is read from whichever root offered it first, the checkout before `~`.

@@ -44,6 +44,13 @@
  * as the manifest's third root. On a home with none, nothing moves: `HOME`
  * is `/workspace`, `~` resolves there, and `/home/sheep` is outside the
  * fence. Which of the two a home is, is decided once, at construction.
+ * Fold phase 1: with a pasture whose tree has `setup.sh`, the first sync-in
+ * of a socket carries the pasture's cache when it has one for that
+ * script's hash, and the `Lease` records what was put back; after a setup
+ * that exits 0 the container is asked to describe `/cache`, and it is kept
+ * unless setup's environment held a secret of the sheep's own (the setup
+ * source says so) or the record is over the cap. What came of both is the
+ * `cache` a birth's entry says, and a log line for every fresh container.
  */
 import type { Context } from "@earendil-works/pi-agent-core";
 import {
@@ -59,12 +66,14 @@ import {
   type ShellExecOptions,
   type ShellExecResult,
 } from "@earendil-works/pi-agent-core";
-import type { ManifestEntry, Refused } from "@sheep/pen/protocol";
+import { CACHE_MAX_BYTES, type ManifestEntry, type Refused } from "@sheep/pen/protocol";
 import { Bash, type Command } from "just-bash/browser";
 import { posix } from "node:path";
 import type { Eyes, Origin } from "../eyes/eyes.ts";
 import { ForwardOrigin } from "../eyes/origin.ts";
 import { SERVER_LINES } from "../eyes/report.ts";
+import type { KeptCache } from "../pasture.ts";
+import { CacheRestore, cacheSize, type CacheStore, OWN_SECRET_REFUSAL, setupName } from "../pen/cache.ts";
 import { Checkout, CheckoutInterrupted } from "../pen/checkout.ts";
 import { Forward, type ForwardResponse } from "../pen/forward.ts";
 import { type Isolate, IsolateEnded } from "../pen/isolate.ts";
@@ -99,6 +108,24 @@ export const NO_CONTAINER_NOTICE = "this home has no container";
 /** How a setup run ended (pasture phase 4): the script's exit code, or the sentence when it could not run to one. */
 export type SetupEnd = { exit: number } | { error: string };
 
+/**
+ * What the pasture's cache came to around one setup (fold phase 1), as a
+ * birth's entry keeps it: `warm` when the cache for this `setup.sh` was put
+ * back first, with its size and how long the put-back took; `cold` when
+ * there was none or it could not be put back, with what setup left in
+ * `/cache` when that was described. Then `kept` when what setup left became
+ * the pasture's cache, or `refused` with the reason it did not; neither
+ * when setup changed nothing, or did not exit 0.
+ */
+export type CacheOutcome = {
+  found: "warm" | "cold";
+  bytes: number;
+  files: number;
+  ms: number;
+  kept?: true;
+  refused?: string;
+};
+
 /** What a line run whole in the container came to (pasture phase 3): the output's tail, bounded, and how it ended. */
 export interface ContainerLineResult {
   /** The tail of the output, within the caller's limits. */
@@ -108,6 +135,8 @@ export interface ContainerLineResult {
   end: { exit: number } | { error: string };
   /** How setup ended when it ran after the line (pasture phase 4); absent when it did not run. */
   setup?: SetupEnd;
+  /** Fold phase 1: what the pasture's cache came to around that setup; absent when setup did not run. */
+  cache?: CacheOutcome;
 }
 
 /** When setup runs around a line in the container: before it, as a tool's line has it; after it, as a birth's clone does; or not at all. */
@@ -226,9 +255,21 @@ export interface ContainerLease {
   budgetSpent?(): Promise<boolean>;
 }
 
-/** What setup asks of the pasture's object at the moment of its run (pasture phase 4): every secret but `GIT_TOKEN`, name to value. The `Pasture` stub is one. */
+/**
+ * What setup asks for at the moment of its run (pasture phase 4): every
+ * secret but `GIT_TOKEN`, name to value, the pasture's with the sheep's own
+ * laid over them (earmark, `laidOver` in `cell.ts`). Fold phase 1: with the
+ * names in it that are the sheep's own, read in the same breath, so a setup
+ * whose environment held one never keeps the pasture's cache.
+ */
 export interface SetupSecrets {
-  secrets(): Promise<Record<string, string>>;
+  setupEnvironment(): Promise<SetupEnvironment>;
+}
+
+export interface SetupEnvironment {
+  environment: Record<string, string>;
+  /** The names whose values were the sheep's own; empty for a sheep with none but `GIT_TOKEN`. */
+  own: string[];
 }
 
 export interface CellExecutionEnvOptions {
@@ -246,8 +287,10 @@ export interface CellExecutionEnvOptions {
   containerUp?: () => boolean;
   /** Tier 1. Absent, this home has no Worker Loader: `node` is the container's or nobody's, and the table says so. */
   isolate?: Isolate;
-  /** The pasture this sheep was born into, as the cell reaches its object. Absent, there is no `/pasture`, no second backing, and no setup. */
-  pasture?: PastureSource & SetupSecrets;
+  /** The pasture this sheep was born into, as the cell reaches its object, the cache's store among it (fold phase 1). Absent, there is no `/pasture`, no second backing, no setup, and no cache. */
+  pasture?: PastureSource & SetupSecrets & CacheStore;
+  /** Fold phase 1: the cap past which a setup's `/cache` is not kept; absent, `CACHE_MAX_BYTES`. A test lowers it; nothing else does. */
+  cacheMaxBytes?: number;
   /** The program's needs, for a sheep with a pasture: its name, this sheep's id, the object, and the directory's herd. Absent, the shell has no `pasture`. */
   pastureProgram?: PastureProgram;
   /**
@@ -261,15 +304,16 @@ export interface CellExecutionEnvOptions {
 /** How a command ended, before the capture is settled. */
 type Outcome = { exitCode: number } | { error: ExecutionError };
 
-/** A command's whole output, for the spill file, and how it ended; with `setup`, how the setup after it ended (pasture phase 4). */
+/** A command's whole output, for the spill file, and how it ended; with `setup`, how the setup after it ended (pasture phase 4), and what the cache came to around it (fold phase 1). */
 interface Ran {
   full: string;
   outcome: Outcome;
   setup?: SetupEnd;
+  cache?: CacheOutcome;
 }
 
-/** How a setup run went: nothing to run, or how it ended, with the `Ran` a tool call returns in the command's place when it did not exit 0. */
-type Warmed = { skipped: true } | { skipped: false; end: SetupEnd; failed?: Ran };
+/** How a setup run went: nothing to run, or how it ended, with the `Ran` a tool call returns in the command's place when it did not exit 0, and the cache around it. */
+type Warmed = { skipped: true } | { skipped: false; end: SetupEnd; failed?: Ran; cache?: CacheOutcome };
 
 /**
  * The record for one container socket: its checkout, its forward, and
@@ -288,6 +332,13 @@ interface Lease {
   checkout: Checkout;
   forward: Forward;
   warmed: boolean;
+  /**
+   * Fold phase 1: whether this socket's first sync-in has gone (it alone
+   * may carry the cache), and what it put back: the `setup.sh` it was for,
+   * the save, and how long, or nothing when it put nothing back.
+   */
+  cacheAsked: boolean;
+  putBack?: { key: string; kept: KeptCache; ms: number };
 }
 
 export class CellExecutionEnv implements ExecutionEnv {
@@ -296,7 +347,8 @@ export class CellExecutionEnv implements ExecutionEnv {
   /** The shell's file system over the rows alone; a shell run with a pasture gets a `CellFs` of its own, with that call's mount. */
   readonly fs: CellFs;
   /** The second backing, or `undefined` for a pastureless cell, which has none anywhere. */
-  readonly pasture: (PastureSource & SetupSecrets) | undefined;
+  readonly pasture: (PastureSource & SetupSecrets & CacheStore) | undefined;
+  private readonly cacheMaxBytes: number;
   /** The program, or `undefined` for a pastureless cell, whose shell is made without it. */
   readonly pastureProgram: PastureProgram | undefined;
   /** The eyes, or `undefined` on a home without them, whose shell is made without `look`. */
@@ -323,6 +375,7 @@ export class CellExecutionEnv implements ExecutionEnv {
     this.files.init();
     this.fs = new CellFs(this.files);
     this.pasture = options.pasture;
+    this.cacheMaxBytes = options.cacheMaxBytes ?? CACHE_MAX_BYTES;
     this.pastureProgram = options.pastureProgram;
     this.eyes = options.eyes?.(this.files);
     const custom = [...(this.pastureProgram === undefined ? [] : PASTURE_PROGRAMS), ...(this.eyes === undefined ? [] : LOOK_PROGRAMS)];
@@ -780,9 +833,55 @@ export class CellExecutionEnv implements ExecutionEnv {
         checkout: new Checkout(socket, this.files, this.pasture === undefined ? {} : { pasture: this.pasture }),
         forward: new Forward(socket),
         warmed: false,
+        cacheAsked: false,
       };
     }
     return this.lease;
+  }
+
+  /**
+   * Fold phase 1: the sync-in, with the pasture's cache when this is the
+   * socket's first and the pasture has one for the tree's `setup.sh`. The
+   * lookup is one hop to the object, asked with the tree the sync-in is
+   * about to send; what the restore came to is logged and recorded on the
+   * lease for the save and the birth. A later sync-in carries nothing: the
+   * container has it, or went cold.
+   */
+  private async syncIn(lease: Lease): Promise<ManifestEntry[] | undefined> {
+    const pasture = this.pasture;
+    if (lease.cacheAsked || pasture === undefined) return lease.checkout.syncIn();
+    lease.cacheAsked = true;
+    let restore: CacheRestore | undefined;
+    let key: string | undefined;
+    const tree = await lease.checkout.syncIn({
+      cache: async (tree) => {
+        key = setupKey(tree);
+        if (key === undefined) return undefined;
+        let kept: KeptCache | undefined;
+        try {
+          kept = await pasture.cacheFor(key);
+        } catch (error) {
+          console.info(`[pen] cache cold: the pasture's cache could not be looked up: ${messageOf(error)}`);
+          return undefined;
+        }
+        if (kept === undefined) {
+          console.info(`[pen] cache cold, none for ${setupName(key)}`);
+          return undefined;
+        }
+        restore = new CacheRestore(kept, pasture);
+        return restore;
+      },
+    });
+    const ended = restore?.ended;
+    if (restore !== undefined && key !== undefined && ended !== undefined) {
+      if (ended.restored) {
+        lease.putBack = { key, kept: restore.kept, ms: ended.ms };
+        console.info(`[pen] cache warm, ${cacheSize(restore.kept.bytes)} in ${ended.ms} ms`);
+      } else {
+        console.info(`[pen] cache cold: ${ended.reason}; /cache was emptied and setup runs cold`);
+      }
+    }
+    return tree;
   }
 
   /**
@@ -820,6 +919,7 @@ export class CellExecutionEnv implements ExecutionEnv {
         truncated: view.truncation.truncated,
         end: "error" in ran.outcome ? { error: ran.outcome.error.message } : { exit: ran.outcome.exitCode },
         ...(ran.setup === undefined ? {} : { setup: ran.setup }),
+        ...(ran.cache === undefined ? {} : { cache: ran.cache }),
       };
     } finally {
       capture.dispose();
@@ -862,7 +962,7 @@ export class CellExecutionEnv implements ExecutionEnv {
       const syncInStarted = Date.now();
       let tree: ManifestEntry[] | undefined;
       try {
-        tree = await checkout.syncIn();
+        tree = await this.syncIn(lease);
       } catch (error) {
         if (error instanceof CheckoutInterrupted) return unavailable(error.message, error);
         return { full, outcome: { error: new ExecutionError("unknown", `the sync-in failed: ${messageOf(error)}`) } };
@@ -921,7 +1021,7 @@ export class CellExecutionEnv implements ExecutionEnv {
         const warmed = await this.warm(lease, tree, signal, capture, setupFailedAfterLine);
         if (!warmed.skipped) {
           if (warmed.failed !== undefined) full += warmed.failed.full;
-          return { full, outcome: { exitCode: end.exit }, setup: warmed.end };
+          return { full, outcome: { exitCode: end.exit }, setup: warmed.end, ...(warmed.cache === undefined ? {} : { cache: warmed.cache }) };
         }
       }
       return { full, outcome: { exitCode: end.exit } };
@@ -971,7 +1071,7 @@ export class CellExecutionEnv implements ExecutionEnv {
       // The server sees what the sheep wrote up to this line, which is what a reload would show.
       let tree: ManifestEntry[] | undefined;
       try {
-        tree = await checkout.syncIn();
+        tree = await this.syncIn(lease);
       } catch (error) {
         throw new Error(error instanceof CheckoutInterrupted ? error.message : `the sync-in failed: ${messageOf(error)}`);
       }
@@ -1149,33 +1249,41 @@ export class CellExecutionEnv implements ExecutionEnv {
    * marked; otherwise it becomes the `failed` `Ran`, `line(exit)` first,
    * pushed into the capture for the caller to return. The run is synced
    * out like any other, so what setup wrote to the checkout is rows.
+   * Fold phase 1: after a setup that exits 0 and its sync-out, the
+   * pasture's cache is kept (`keep`); every outcome carries what the cache
+   * came to, warm or cold, for the birth's entry.
    */
   private async warm(lease: Lease, tree: ManifestEntry[] | undefined, signal: AbortSignal | undefined, capture: OutputCapture, line: (exit: number) => string): Promise<Warmed> {
     const pasture = this.pasture;
     if (lease.warmed || pasture === undefined) return { skipped: true };
-    if (!tree?.some((entry) => entry.path === SETUP_PATH && entry.kind === "file")) return { skipped: true };
+    const key = setupKey(tree);
+    if (key === undefined) return { skipped: true };
     const { checkout } = lease;
+    // Warm only when what was put back was for this script: a `setup.sh` changed since the socket's first sync-in runs on it as on a cold one.
+    const found: CacheOutcome = lease.putBack !== undefined && lease.putBack.key === key
+      ? { found: "warm", bytes: lease.putBack.kept.bytes, files: lease.putBack.kept.files, ms: lease.putBack.ms }
+      : { found: "cold", bytes: 0, files: 0, ms: 0 };
     let output = "";
     const failed = (outcome: Outcome): Ran => {
       const full = "error" in outcome ? output : `${line(outcome.exitCode)}\n${output}`;
       capture.push(full);
       return { full, outcome };
     };
-    const unavailable = (message: string, cause?: Error): Warmed => ({ skipped: false, end: { error: message }, failed: failed({ error: new ExecutionError("shell_unavailable", message, cause) }) });
+    const unavailable = (message: string, cause?: Error): Warmed => ({ skipped: false, end: { error: message }, failed: failed({ error: new ExecutionError("shell_unavailable", message, cause) }), cache: found });
 
-    let secrets: Record<string, string>;
+    let secrets: SetupEnvironment;
     try {
-      secrets = await pasture.secrets();
+      secrets = await pasture.setupEnvironment();
     } catch (error) {
       const message = `the pasture's secrets could not be read for setup: ${messageOf(error)}`;
-      return { skipped: false, end: { error: message }, failed: failed({ error: new ExecutionError("unknown", message) }) };
+      return { skipped: false, end: { error: message }, failed: failed({ error: new ExecutionError("unknown", message) }), cache: found };
     }
     const { PATH: _path, HOME: _home, ...runEnv } = this.shellEnv;
     const id = `setup-${++this.runs}`;
     const started = Date.now();
     const frame = await this.runFrame(
       lease.socket,
-      { id, command: SETUP_COMMAND, cwd: WORKSPACE_ROOT, env: { ...runEnv, ...secrets, PWD: WORKSPACE_ROOT }, timeout: SETUP_TIMEOUT_S },
+      { id, command: SETUP_COMMAND, cwd: WORKSPACE_ROOT, env: { ...runEnv, ...secrets.environment, PWD: WORKSPACE_ROOT }, timeout: SETUP_TIMEOUT_S },
       signal,
       (data) => {
         output += data;
@@ -1184,7 +1292,7 @@ export class CellExecutionEnv implements ExecutionEnv {
     );
     if ("failed" in frame) {
       const { outcome } = frame.failed;
-      return { skipped: false, end: "error" in outcome ? { error: outcome.error.message } : { exit: outcome.exitCode }, failed: failed(outcome) };
+      return { skipped: false, end: "error" in outcome ? { error: outcome.error.message } : { exit: outcome.exitCode }, failed: failed(outcome), cache: found };
     }
     const { end } = frame;
     try {
@@ -1192,17 +1300,61 @@ export class CellExecutionEnv implements ExecutionEnv {
     } catch (error) {
       if (error instanceof CheckoutInterrupted) return unavailable(interruptedDuringSyncOut(end), error);
       const message = `the sync-out after setup failed: ${messageOf(error)}`;
-      return { skipped: false, end: { error: message }, failed: failed({ error: new ExecutionError("unknown", message) }) };
+      return { skipped: false, end: { error: message }, failed: failed({ error: new ExecutionError("unknown", message) }), cache: found };
     }
-    if (frame.aborted || signal?.aborted) return { skipped: false, end: { error: "aborted" }, failed: failed({ error: new ExecutionError("aborted", "aborted") }) };
+    if (frame.aborted || signal?.aborted) return { skipped: false, end: { error: "aborted" }, failed: failed({ error: new ExecutionError("aborted", "aborted") }), cache: found };
     if ("killed" in end) {
       const message = end.killed === "timeout" ? `setup ran for ${SETUP_TIMEOUT_S} s without ending and was killed` : `the container ended setup: ${end.killed}`;
-      return { skipped: false, end: { error: message }, failed: failed({ error: new ExecutionError(end.killed === "timeout" ? "timeout" : "unknown", message) }) };
+      return { skipped: false, end: { error: message }, failed: failed({ error: new ExecutionError(end.killed === "timeout" ? "timeout" : "unknown", message) }), cache: found };
     }
     console.info(`[pen] setup exit ${end.exit} after ${Date.now() - started} ms, ${output.length} bytes of output`);
-    if (end.exit !== 0) return { skipped: false, end: { exit: end.exit }, failed: failed({ exitCode: end.exit }) };
+    if (end.exit !== 0) return { skipped: false, end: { exit: end.exit }, failed: failed({ exitCode: end.exit }), cache: found };
     lease.warmed = true;
-    return { skipped: false, end: { exit: 0 } };
+    return { skipped: false, end: { exit: 0 }, cache: await this.keep(lease, key, secrets.own, found) };
+  }
+
+  /**
+   * Fold phase 1: what setup left in `/cache` becomes the pasture's cache,
+   * or does not, and why. Never for a sheep whose setup held a value of its
+   * own, which is asked before the container is: the log names the reason
+   * and the names, never a value. Otherwise the container describes `/cache`
+   * and `pen/cache.ts` decides: the same record as the one put back moves
+   * nothing, one over the cap or empty is not kept, and any other is passed
+   * from the socket to the object one chunk at a time and committed. A save
+   * that fails is logged and said; setup's result is setup's either way.
+   */
+  private async keep(lease: Lease, key: string, own: string[], found: CacheOutcome): Promise<CacheOutcome> {
+    const pasture = this.pasture!;
+    const refuse = (reason: string, described?: { files: number; bytes: number }): CacheOutcome => {
+      console.info(`[pen] cache not kept for ${setupName(key)}: ${reason}`);
+      return { ...found, ...(found.found === "cold" && described !== undefined ? { bytes: described.bytes, files: described.files } : {}), refused: reason };
+    };
+    if (own.length > 0) {
+      console.info(`[pen] cache not kept for ${setupName(key)}: setup's environment held this sheep's own ${own.join(", ")}`);
+      return { ...found, refused: OWN_SECRET_REFUSAL };
+    }
+    // A script changed since the put-back ran on another script's cache: what it left is not its alone.
+    if (lease.putBack !== undefined && lease.putBack.key !== key) return refuse(`setup.sh changed after ${setupName(lease.putBack.key)}'s cache was put back into this container`);
+    const started = Date.now();
+    try {
+      const saved = await lease.checkout.keepCache({
+        key,
+        ...(lease.putBack?.key === key ? { putBack: lease.putBack.kept.hash } : {}),
+        max: this.cacheMaxBytes,
+        save: crypto.randomUUID(),
+        store: pasture,
+      });
+      if ("refused" in saved) return refuse(saved.refused, saved.described);
+      if ("unchanged" in saved) {
+        console.info(`[pen] cache unchanged by setup, ${cacheSize(saved.described.bytes)}`);
+        return found;
+      }
+      const { kept, sent } = saved;
+      console.info(`[pen] cache kept for ${setupName(key)}, ${cacheSize(kept.bytes)}, ${kept.files} files, ${kept.chunks.length} chunks (${sent} sent) in ${Date.now() - started} ms`);
+      return { ...found, ...(found.found === "cold" ? { bytes: kept.bytes, files: kept.files } : {}), kept: true };
+    } catch (error) {
+      return refuse(`the save failed: ${messageOf(error)}`);
+    }
   }
 
   /** The whole output to a file under `/tmp` when the view was truncated, as pi's bash renderer expects. */
@@ -1221,6 +1373,11 @@ export class CellExecutionEnv implements ExecutionEnv {
   async cleanup(_context: Context): Promise<void> {
     // No processes to kill. The table stays; `/tmp` is truncated by the cell when the lane idles.
   }
+}
+
+/** Fold phase 1: the cache's key, the hash of the tree's `setup.sh`; `undefined` when the tree has none. */
+function setupKey(tree: ManifestEntry[] | undefined): string | undefined {
+  return tree?.find((entry) => entry.path === SETUP_PATH && entry.kind === "file")?.hash ?? undefined;
 }
 
 /** The mounted branch of a writing method: unreachable, since `refuseWrite` threw first. */

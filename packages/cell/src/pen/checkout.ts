@@ -36,6 +36,15 @@
  * resolves with it named `~/` in front, which is how the tool result says
  * it. A table without the root sends no `home` and writes none, so a
  * transcript is what it was.
+ *
+ * Fold phase 1: the pasture's cache rides two syncs here, and is decided
+ * in `pen/cache.ts`. A sync-in may carry a `CacheRestore`: its record goes
+ * in the manifest as `cache`, every `need` that names one of its chunks is
+ * the restore's to answer, one chunk each, and the `checkout` that ends the
+ * sync tells it how the put-back went. `keepCache` is a third kind of sync,
+ * `cache {id}` and the chunks back one `need` at a time, whose frames and
+ * bytes the `CacheSave` takes; the bytes it waits on are registered with
+ * the socket's one guard, as a sync-out's are. No chunk is ever a row.
  */
 import {
   type CellFrame,
@@ -53,6 +62,7 @@ import {
 import { posix } from "node:path";
 import { FilesTable, HOME_ROOT, hashBytes, MAX_FILE_BYTES, WORKSPACE_ROOT } from "../workspace/files.ts";
 import type { PastureSource } from "../workspace/mount.ts";
+import { type CacheRestore, CacheSave, type CacheSaved, type CacheSaveRequest, type SyncChannel } from "./cache.ts";
 import { type BinaryGuard, binaryGuard } from "./forward.ts";
 
 const encoder = new TextEncoder();
@@ -98,11 +108,11 @@ interface Landing {
   entry: ChangedEntry;
 }
 
-/** One sync in flight: what it does with each frame, and how it ends. A frame's handling may wait, as a `need` for the pasture's bytes does. */
+/** One sync in flight: what it does with each frame, and how it ends. A frame's handling may wait, as a `need` for the pasture's bytes does, and so may bytes, as a chunk put to the pasture's object does. */
 interface Pending {
   id: string;
   frame(frame: ContainerFrame): void | Promise<void>;
-  bytes(bytes: Uint8Array): void;
+  bytes(bytes: Uint8Array): void | Promise<void>;
   reject(error: Error): void;
 }
 
@@ -111,6 +121,15 @@ export interface CheckoutOptions {
   nextId?: () => string;
   /** Pasture phase 3: the pasture whose tree is the manifest's second root. Absent, the manifest has one root, as before. */
   pasture?: PastureCheckoutSource;
+}
+
+export interface SyncInOptions {
+  /**
+   * Fold phase 1: asked with the pasture's tree as this sync-in sends it,
+   * before the manifest goes; a restore it returns rides this sync-in, and
+   * `undefined` sends no cache. Only asked when the checkout has a pasture.
+   */
+  cache?: (tree: ManifestEntry[]) => Promise<CacheRestore | undefined>;
 }
 
 export class Checkout {
@@ -154,12 +173,17 @@ export class Checkout {
    * and the second root as it was sent is what the sync-in resolves to,
    * so the caller knows what the container's `/pasture` holds now without
    * a second hop (pasture phase 4 asks it for `setup.sh`); without a
-   * pasture it resolves to nothing, as before.
+   * pasture it resolves to nothing, as before. With a restore (fold phase
+   * 1), the manifest carries its record and the restore answers the
+   * `need`s for its chunks; its `finish()` is called at `checkout`, and
+   * the caller reads it after.
    */
-  async syncIn(): Promise<ManifestEntry[] | undefined> {
+  async syncIn(options: SyncInOptions = {}): Promise<ManifestEntry[] | undefined> {
     // The pasture's tree as it is now, one hop, before the manifest goes; a socket gone meanwhile fails at `start`.
     const pasture = this.pasture === undefined ? undefined : await pastureManifest(this.pasture);
     const source = this.pasture;
+    // The cache for that tree's `setup.sh`, one more hop, only when the caller asks (the first sync-in of a socket).
+    const restore = pasture === undefined || options.cache === undefined ? undefined : await options.cache(pasture);
     return this.start<ManifestEntry[] | undefined>((id, resolve, reject) => {
       const entries = this.files.manifest();
       // The third root, from the same rows, when the table has it: `~` on a home with a container.
@@ -175,6 +199,11 @@ export class Checkout {
         id,
         frame: async (frame) => {
           if (frame.type === "need" && frame.id === id) {
+            // A chunk of the cache is the restore's, alone in its `need`.
+            if (restore !== undefined && restore.has(frame)) {
+              await restore.answer(frame, this.channel());
+              return;
+            }
             for (const hash of frame.hashes) {
               const row = byHash.get(hash);
               let bytes: Uint8Array | undefined;
@@ -193,6 +222,7 @@ export class Checkout {
           }
           if (frame.type === "checkout" && frame.id === id) {
             this.pending = null;
+            restore?.finish();
             resolve(pasture);
             return;
           }
@@ -204,8 +234,48 @@ export class Checkout {
         reject,
       };
       this.pending = pending;
-      this.send({ type: "manifest", id, entries, ...(pasture === undefined ? {} : { pasture }), ...(home === undefined ? {} : { home }) });
+      this.send({
+        type: "manifest",
+        id,
+        entries,
+        ...(pasture === undefined ? {} : { pasture }),
+        ...(home === undefined ? {} : { home }),
+        ...(restore === undefined ? {} : { cache: restore.ref }),
+      });
     });
+  }
+
+  /**
+   * Fold phase 1: asks the container to describe `/cache`, and keeps it in
+   * the pasture's object when `pen/cache.ts` says so, passing each chunk the
+   * object lacks from the socket to the object, one `need` at a time.
+   * Resolves with what came of it once `synced` is sent.
+   */
+  keepCache(request: CacheSaveRequest): Promise<CacheSaved> {
+    return this.start<CacheSaved>((id, resolve, reject) => {
+      const save = new CacheSave(id, request, this.channel(), (saved) => {
+        this.pending = null;
+        resolve(saved);
+      });
+      this.pending = { id, frame: (frame) => save.frame(frame), bytes: (bytes) => save.bytes(bytes), reject };
+      this.send(save.begin);
+    });
+  }
+
+  /** What a sync lends the cache's half of it: the sends, and this checkout's record of the bytes it waits on, which the guard backs. */
+  private channel(): SyncChannel {
+    return {
+      send: (frame) => this.send(frame),
+      sendBytes: (bytes) => this.sendBytes(bytes),
+      expect: (hash, size) => {
+        this.guard.announce(`chunk ${hash}`);
+        this.expecting = { hash, size };
+      },
+      arrived: () => {
+        this.expecting = null;
+        this.guard.release();
+      },
+    };
   }
 
   /**
@@ -403,7 +473,7 @@ export class Checkout {
         const bytes = await messageBytes(data);
         if (bytes === undefined) throw new CheckoutProtocolError("a binary message the cell cannot read");
         if (this.pending === null) throw new CheckoutProtocolError("bytes with no sync in progress");
-        this.pending.bytes(bytes);
+        await this.pending.bytes(bytes);
       }
     } catch (error) {
       this.fail(error instanceof Error ? error : new Error(String(error)));

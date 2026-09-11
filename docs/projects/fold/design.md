@@ -228,8 +228,10 @@ cache: none
 `none` when there is no cache, or none for the tree's `setup.sh` now; a
 cache for an older script is named as `cache: none for this setup.sh (an
 older one's, 148 MB, goes at the next save)`. `--json` gains `"cache":
-{"bytes", "files", "setup", "keptAt", "by"}` or `null`. The route is
-`GET /pastures/<name>`, which reads the object's row and never a chunk.
+{"bytes", "files", "setup", "keptAt", "by", "current"}` or `null`,
+`current` saying whether the cache is for the tree's `setup.sh` now. The
+route is `GET /p/<name>/`, which reads the object's row and never a
+chunk.
 
 **`sheep log` for a birth.** The birth's entry, which the model reads
 too, gains two sentences after setup's. One for `~`: its home directory

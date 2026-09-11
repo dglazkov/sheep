@@ -66,6 +66,22 @@
  * `home`. Its blobs share the one `need` in both directions. Absent from
  * the manifest, `~` is left as it is and never reported.
  *
+ * Fold phase 1: the pasture's cache, `/cache` in the container, travels as
+ * one record (`record.ts`) cut into chunks of `CACHE_CHUNK_BYTES`, each a
+ * blob named by its hash. Put back: a `manifest` may carry `cache`, the
+ * record's hash and its chunks' hashes in order; once the files are on
+ * disk the agent empties `/cache` and asks for the chunks one `need` at a
+ * time, one hash in each, writing the record's entries as each arrives,
+ * and says `checkout` when the last is written. A chunk the cell no longer
+ * has is `error {of: "need", id}` from the cell: the agent empties `/cache`
+ * and says `checkout`, and setup runs cold. Kept: `cache {id}` from the
+ * cell asks the container to describe `/cache`; the agent writes the
+ * record to its scratch in chunks and answers `cache {id, hash, chunks,
+ * files, bytes}`; the cell asks for the chunks it lacks, one `need` of one
+ * hash at a time, and says `synced` when it is done with the description,
+ * whatever it did with it. No frame ever carries two chunks between two
+ * `need`s, in either direction.
+ *
  * This file must run anywhere: it is imported by the cell (workerd) and
  * by the agent (node). No `node:*`, no globals beyond JSON.
  */
@@ -206,6 +222,29 @@ export interface NeedFrame {
 export const PASTURE_FILE_MODE = 0o444;
 export const PASTURE_DIR_MODE = 0o555;
 
+/** Fold phase 1: where the pasture's cache lives in the container, npm's global prefix. */
+export const CACHE_ROOT = "/cache";
+/** One chunk of the cache's record: 8 MiB, a quarter of a WebSocket message, and what the cell holds at once. */
+export const CACHE_CHUNK_BYTES = 8 * 1024 * 1024;
+/** A record over this is not kept: the station's instance has 4 GB of disk, and the record, its chunks, and the tree share it during a save. */
+export const CACHE_MAX_BYTES = 1024 * 1024 * 1024;
+
+/** A record as the manifest carries it: its hash and its chunks' hashes, in order. */
+export interface CacheRef {
+  hash: string;
+  chunks: string[];
+}
+
+/**
+ * What the record's hash is the hash of: its chunks' hashes, one per line,
+ * in order. Each side digests it with its own SHA-256, as each hashes a
+ * blob; the same tree is the same record, the same chunks, and so the same
+ * hash, without either side holding the whole record to hash it.
+ */
+export function recordHashInput(chunks: readonly string[]): string {
+  return chunks.join("\n");
+}
+
 /** Frames the cell sends to the container. */
 export type CellFrame =
   | { type: "ping"; id?: string }
@@ -215,18 +254,22 @@ export type CellFrame =
    * read-only under `/pasture` beside the checkout; anything under `/pasture` it does not name is removed. Absent, `/pasture` is left as it is.
    * `home`, when present, is the third root (fold phase 0): a sheep's `~`, paths relative to `/home/sheep`, written under the home
    * rule and synced back after every run. Absent, `~` is left as it is and no sync-out reports it.
+   * `cache`, when present, is the pasture's cache (fold phase 1): once the files are written the agent empties `/cache` and
+   * asks for each chunk in its own `need`, and says `checkout` when the record is written. Absent, `/cache` is left as it is.
    */
-  | { type: "manifest"; id: string; entries: ManifestEntry[]; pasture?: ManifestEntry[]; home?: ManifestEntry[] }
+  | { type: "manifest"; id: string; entries: ManifestEntry[]; pasture?: ManifestEntry[]; home?: ManifestEntry[]; cache?: CacheRef }
   | BlobFrame
   | NeedFrame
   | FetchFrame
+  /** Fold phase 1: asks the container to describe `/cache` as a record, answered by `cache` under this id; `max` is the cap, past which the agent stops writing and says so by `bytes`. */
+  | { type: "cache"; id: string; max?: number }
   /** Runs `command` through the container's own bash under `cwd`; `stdout` and `stderr` frames follow as they happen, then `exit` or `killed`, then `changed`. */
   | { type: "run"; id: string; command: string; cwd: string; env: Record<string, string>; /** seconds; absent for no limit */ timeout?: number }
   /** Ends the run under this id early; `killed` answers it. A kill for a run that has already ended is ignored. */
   | { type: "kill"; id: string; reason: string }
   /** Asks the container to describe what changed since the last sync, as `changed` under this id. */
   | { type: "sync"; id: string }
-  /** The diff the container sent under this id has been written to the rows, except the files named; `home` names those under `~`, relative to it, when the diff had `home`. */
+  /** The diff the container sent under this id has been written to the rows, except the files named; `home` names those under `~`, relative to it, when the diff had `home`. After a `cache` description: the cell is done with it, and the scratch may go. */
   | { type: "synced"; id: string; refused: Refused[]; home?: Refused[] }
   /** The home's answer to the container's `credential` under this id. Handed to the program that asked; kept nowhere. */
   | ({ type: "credential"; id: string } & CredentialAnswer)
@@ -248,6 +291,11 @@ export type ContainerFrame =
   | { type: "killed"; id: string; reason: string }
   /** What changed since the last sync: new and changed entries, and paths no longer there; `home` the same for `~`, when the last manifest carried it. */
   | { type: "changed"; id: string; entries: ChangedEntry[]; deleted: string[]; home?: HomeChanged }
+  /**
+   * Fold phase 1: `/cache` as a record, on the agent's scratch in chunks: the record's hash, its chunks' hashes in order,
+   * its file entries, and its bytes. `bytes` over the `max` the cell sent means the agent stopped there, and `chunks` is empty.
+   */
+  | { type: "cache"; id: string; hash: string; chunks: string[]; files: number; bytes: number }
   | BlobFrame
   | ResponseFrame
   /** A program in the container asked the helper for a credential; the cell answers `credential` or `error` under this id. */

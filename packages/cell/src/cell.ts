@@ -34,7 +34,10 @@ import { type LaneState, taskOf } from "./directory.ts";
 import { CellExecutionEnv, type ContainerLineResult, type SetupSecrets } from "./env/execution-env.ts";
 import { eyesFor, sessionFor } from "./eyes/eyes.ts";
 import { type CellModels, createCellModels, type FauxProgram, isFauxProgram } from "./models.ts";
+import type { CacheCommit, Pasture } from "./pasture.ts";
 import { CredentialBroker, PASTURE_GIT_TOKEN, pastureMinter, type PastureSecrets, type SheepSecrets, sheepMinter } from "./pen/broker.ts";
+import type { CacheStore } from "./pen/cache.ts";
+import type { PastureSource } from "./workspace/mount.ts";
 import { DEFAULT_IDLE } from "./pen/container.ts";
 import { DEFAULT_CPU_MS, Isolate } from "./pen/isolate.ts";
 import { type ContainerStarter, parseDuration, PenLease } from "./pen/lease.ts";
@@ -42,7 +45,7 @@ import { type CellPasture, cellSystemPrompt } from "./prompt.ts";
 import { createCellSessionRepo } from "./storage/sqlite.ts";
 import { createCellHost } from "./wire/host.ts";
 import { ENDED_CLOSE_CODE, ENDED_REASON, WebSocketListener } from "./wire/listener.ts";
-import { TEMP_ROOT, WORKSPACE_ROOT } from "./workspace/files.ts";
+import { HOME_ROOT, TEMP_ROOT, WORKSPACE_ROOT } from "./workspace/files.ts";
 
 /** How far ahead the heartbeat is armed while an operation is open. */
 export const HEARTBEAT_MS = 5_000;
@@ -130,16 +133,45 @@ function promptText(entry: MessageEntry): string {
  * Setup's environment for one sheep (earmark phase 0): the pasture's
  * secrets, then the sheep's own laid over them by name, `GIT_TOKEN` out of
  * both, each read at the moment setup runs and kept nowhere. The env asks
- * `secrets()` at each setup run and is unchanged; this is what it asks.
+ * at each setup run; this is what it asks. Fold phase 1: the answer says
+ * which names were the sheep's own, from the same read, so a setup whose
+ * environment held one never keeps the pasture's cache; no second read of
+ * the Directory decides it.
  */
-export function laidOver(pasture: SetupSecrets, sheep: SheepSecrets): SetupSecrets {
+export function laidOver(pasture: { secrets(): Promise<Record<string, string>> }, sheep: SheepSecrets): SetupSecrets {
   return {
-    async secrets() {
+    async setupEnvironment() {
       const [herds, own] = await Promise.all([pasture.secrets(), sheep.secrets()]);
       const { [PASTURE_GIT_TOKEN]: _pastureToken, ...shared } = herds;
       const { [PASTURE_GIT_TOKEN]: _sheepToken, ...mine } = own;
-      return { ...shared, ...mine };
+      return { environment: { ...shared, ...mine }, own: Object.keys(mine).sort() };
     },
+  };
+}
+
+/** The pasture's object as the cell's env reaches it: the stub's RPCs, by name. */
+type PastureObject = Pick<
+  DurableObjectStub<Pasture>,
+  "snapshot" | "readByHash" | "read" | "secrets" | "cacheFor" | "cacheChunk" | "cacheMissing" | "cachePut" | "cacheCommit"
+>;
+
+/**
+ * Everything a pastured cell's env asks of its pasture, over one stub: the
+ * mount's reads, setup's environment with the sheep's secrets laid over
+ * (earmark), and the cache's store (fold phase 1), whose commits this cell
+ * signs as `by`. Boot builds it; a test builds the same one.
+ */
+export function pastureSourceFor(object: PastureObject, sheep: SheepSecrets, sessionId: string): PastureSource & SetupSecrets & CacheStore {
+  return {
+    snapshot: () => object.snapshot(),
+    readByHash: (hash: string) => object.readByHash(hash),
+    read: (path: string) => object.read(path),
+    ...laidOver(object, sheep),
+    cacheFor: (key: string) => object.cacheFor(key),
+    cacheChunk: (hash: string) => object.cacheChunk(hash),
+    cacheMissing: (save: string, hashes: string[]) => object.cacheMissing(save, hashes),
+    cachePut: (save: string, hash: string, bytes: Uint8Array) => object.cachePut(save, hash, bytes),
+    cacheCommit: (save: string, commit: Omit<CacheCommit, "by">) => object.cacheCommit(save, { ...commit, by: sessionId }),
   };
 }
 
@@ -211,12 +243,8 @@ export class SessionCell extends DurableObject<Env> {
       ...(pasture === undefined || object === undefined
         ? {}
         : {
-            pasture: {
-              snapshot: () => object.snapshot(),
-              readByHash: (hash: string) => object.readByHash(hash),
-              read: (path: string) => object.read(path),
-              ...laidOver(object, sheep),
-            },
+            // The cache's store too (fold phase 1): what this cell's setups keep, signed with its id.
+            pasture: pastureSourceFor(object, sheep, this.sessionId),
             pastureProgram: { name: pasture.name, sessionId: this.sessionId, object, herd: () => directory.herd(pasture.name) },
           }),
     });
@@ -377,8 +405,12 @@ export class SessionCell extends DurableObject<Env> {
       output: ran.output,
       truncated: ran.truncated,
       ...(ran.setup === undefined ? {} : { setup: ran.setup }),
+      // Fold phase 1: `~` where it is kept, on a home that keeps it; and what the pasture's cache came to around setup.
+      ...(env.homeDir === HOME_ROOT ? { home: HOME_ROOT } : {}),
+      ...(ran.cache === undefined ? {} : { cache: ran.cache }),
     };
-    const setupEnded = ran.setup === undefined ? "" : `, setup ${"exit" in ran.setup ? `exit ${ran.setup.exit}` : `could not run: ${ran.setup.error}`}`;
+    const cacheEnded = ran.cache === undefined ? "" : `, cache ${ran.cache.found}${ran.cache.kept ? " and kept" : ran.cache.refused === undefined ? "" : " and not kept"}`;
+    const setupEnded = ran.setup === undefined ? "" : `, setup ${"exit" in ran.setup ? `exit ${ran.setup.exit}` : `could not run: ${ran.setup.error}`}${cacheEnded}`;
     log(`${"exit" in ran.end ? `exit ${ran.end.exit}` : `could not run: ${ran.end.error}`}${setupEnded} after ${Date.now() - started} ms, ${env.files.manifest().length} rows`);
     try {
       // The entry first, then the record: a cell evicted between the two clones again only into a workspace still empty.

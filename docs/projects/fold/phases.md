@@ -23,12 +23,14 @@ cell's rows has found the bug, not a detail.
 
 ---
 
-**Where we are: 11 Sep 2026. Fold phase 0 CLOSED; phases 1 and 2 NOT
+**Where we are: 11 Sep 2026. Fold phases 0 and 1 CLOSED; phase 2 NOT
 STARTED.** A sheep's `~` is `/home/sheep`, a third root of rows synced
-both ways around every run, proved in workerd against the fake
-container; the image does not carry it yet. Next is fold phase 1, the
-pasture's cache, proved the same way. Nothing waits on a person until
-fold phase 2's account ring, one ⚑ step.
+both ways around every run; a pasture's `/cache` is chunks of one record
+in its object, keyed by `setup.sh`, put back one chunk per `need` before
+setup and kept whole after it. Both are proved in workerd against the
+fake container; the image carries neither yet. Next is fold phase 2, the
+image, the verbs, the docs, and the walk on the local home. Nothing
+waits on a person until its account ring, one ⚑ step.
 
 The order is dependency order. Phase 0 is `~`, which gives the agent and
 the checkout their third root and the cell's shell its `HOME`. Phase 1
@@ -134,7 +136,7 @@ description and the save, skipped for a sheep whose setup held a secret
 of its own (the setup source says so; `laidOver` in `cell.ts`), and for
 a record over the cap; the log lines. `packages/cell/src/birth.ts`:
 `cache` in the entry's data, the sentence for `~` and the sentence for
-the cache. `packages/cell/src/index.ts`: `GET /pastures/<name>` gains
+the cache. `packages/cell/src/index.ts`: `GET /p/<name>/` gains
 `cache`. Tests: `packages/cell/test/fold-cache.test.ts` in the checkout
 ring, in `setup.test.ts`'s and `birth.test.ts`'s shape: a pasture whose
 `setup.sh` the fake's runner runs as a script that writes into `/cache`
@@ -162,7 +164,18 @@ mutations, each failing the new tests and put back: the key ignored, so
 a cache is put back for another `setup.sh`; an earmarked sheep's cache
 kept; every chunk sent for the first `need`. **⚑** none.
 
-**Status: NOT STARTED.**
+**Status: CLOSED.** 2026-09-11. Journey 1 steps 1 to 7 hold in the cell's terms against the fake container: cold and kept, warm for a sibling and for a fresh container, cold again for a changed `setup.sh`, the model's installs gone with the container, an earmarked sheep's setup never kept; whole under a cut-off save and a racing commit, one chunk per `need`; `pnpm test` exits 0 across all three rings; falsified by all three mutations.
+
+**Findings:**
+
+- **2026-09-11 — The record's hash is the digest of its chunks' hashes, one per line:** neither side holds the whole record to hash it, and the same tree is the same chunks, so an unchanged install moves nothing.
+- **2026-09-11 — The put-back rides the sync-in after the files,** and `checkout` waits for the last chunk; `checkout.ts` routes a `need` naming a chunk, `cache.ts` decides.
+- **2026-09-11 — A chunk gone mid-restore is `error {of: "need"}` from the cell:** the agent empties `/cache` and says `checkout`, and setup runs cold; a restore racing two commits proved it.
+- **2026-09-11 — A save claims every chunk it names, present ones too;** a commit deletes only what no kept save names and no claim under an hour holds, and refuses if a named chunk is gone.
+- **2026-09-11 — An empty `/cache` is not kept,** and a save is refused when `setup.sh` changed after a cache was put back into that container.
+- **2026-09-11 — Mutations:** the key ignored fails three cases, an earmarked cache kept one (rerun by the conductor), every chunk on the first `need` two. Under the last the restore still landed whole: only the frame list catches it. Put back.
+- **2026-09-11 — Open: the record's writer and reader hold a whole file in memory,** since `Disk` has no append or ranged read; a binary of hundreds of MB, once on each side, against the instance's 1 GiB. Fold phase 2's walk with wrangler's `workerd` measures it.
+- **2026-09-11 — Open: the inner rings time out under load.** The first full run failed `deploy.test.ts`'s retry and journey 5 on timeouts, the CLI ring taking 767 s; the rerun took 72 s and passed. Beside phase 0's `flock.test.ts`.
 
 ## Phase 2: The image, the verbs, and the walk
 

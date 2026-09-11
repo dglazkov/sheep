@@ -11,7 +11,12 @@
  * the same entry saying so, the workspace left as the failure left it,
  * and the sheep alive to be asked about it. From pasture phase 4 the
  * clone is followed by `setup.sh` in the same container when the tree has
- * one, and the entry says how that ended too.
+ * one, and the entry says how that ended too. From fold phase 1 it says
+ * two more things after setup's sentence: where the session's `~` is and
+ * that it is kept, on a home that keeps it, and, when the tree has
+ * `setup.sh`, whether the pasture's cache was put back first or setup ran
+ * cold, and whether what it left was kept. An entry from before either
+ * reads as it always did.
  *
  * A birth runs once. The cell records that it ran in its own storage,
  * whatever the outcome, and a second boot does not clone again; the
@@ -19,7 +24,9 @@
  * sync-out and the record.
  */
 import { createCustomMessage, type CustomEntry, type EntryProjector } from "@earendil-works/pi-agent-core";
-import { SETUP_COMMAND, type SetupEnd } from "./env/execution-env.ts";
+import { CACHE_ROOT } from "@sheep/pen/protocol";
+import { type CacheOutcome, SETUP_COMMAND, type SetupEnd } from "./env/execution-env.ts";
+import { cacheSize } from "./pen/cache.ts";
 import { WORKSPACE_ROOT } from "./workspace/files.ts";
 
 /** The entry's `customType`, and the key of the record in the cell's storage. */
@@ -46,6 +53,10 @@ export interface BirthData {
   truncated: boolean;
   /** Pasture phase 4: how `setup.sh` ended after a clone that exited 0; absent when the tree had none, or the clone failed. */
   setup?: SetupEnd;
+  /** Fold phase 1: the session's `~`, on a home that keeps it (one with a container); absent on one that does not. */
+  home?: string;
+  /** Fold phase 1: what the pasture's cache came to around that setup: `found`, the numbers, and `kept` or `refused`; absent when setup did not run. */
+  cache?: CacheOutcome;
 }
 
 /** What the cell keeps once the birth has run: when, and how it ended. */
@@ -78,6 +89,8 @@ export function birthText(data: BirthData): string {
   else if (data.exit !== undefined) head = `The birth of this session into the pasture ${data.pasture} failed: \`${data.command}\` ran ${where} and exited ${data.exit}. ${data.cwd} is as the failure left it.`;
   else head = `The birth of this session into the pasture ${data.pasture} failed: \`${data.command}\` could not run ${where}: ${data.error ?? "no reason was given"}. ${data.cwd} is as the failure left it.`;
   if (data.setup !== undefined) head += ` ${setupSentence(data.setup)}`;
+  if (data.home !== undefined) head += ` ${homeSentence(data.home)}`;
+  if (data.cache !== undefined) head += ` ${cacheSentence(data.cache)}`;
   const output = data.output.replace(/\n$/, "");
   if (output === "") return head;
   return `${head}\n\n${data.truncated ? "The last of its output:" : "Its output:"}\n${output}`;
@@ -88,6 +101,50 @@ export function setupSentence(setup: SetupEnd): string {
   if ("error" in setup) return `Then \`${SETUP_COMMAND}\` could not run in the same container: ${setup.error}.`;
   if (setup.exit === 0) return `Then \`${SETUP_COMMAND}\` ran in the same container and exited 0.`;
   return `Then \`${SETUP_COMMAND}\` ran in the same container and exited ${setup.exit}, so the checkout is not warmed up; its output is below.`;
+}
+
+/** The sentence for `~` (fold phase 1): where it is, and that it outlives the container. */
+export function homeSentence(home: string): string {
+  return `Its home directory, ~, is ${home}, and is kept with the session.`;
+}
+
+/** Milliseconds as the sentence says them: `3.1 s`. */
+function seconds(ms: number): string {
+  return `${Math.round(ms / 100) / 10} s`;
+}
+
+/**
+ * The sentence for the pasture's cache (fold phase 1): put back first and
+ * how big and how long, or none for this `setup.sh` and setup cold; then
+ * whether what setup left in `/cache` was kept, and why not when it was not.
+ */
+export function cacheSentence(cache: CacheOutcome): string {
+  if (cache.found === "warm") {
+    const first = `The pasture's cache for this setup.sh was put back into ${CACHE_ROOT} first, ${cacheSize(cache.bytes)} in ${seconds(cache.ms)}`;
+    if (cache.kept) return `${first}; setup changed it, and what it left was kept.`;
+    if (cache.refused !== undefined) return `${first}; what setup left in ${CACHE_ROOT} was not kept: ${cache.refused}.`;
+    return `${first}.`;
+  }
+  const first = `The pasture had no cache for this setup.sh, so setup ran cold`;
+  if (cache.kept) return `${first}, and what it left in ${CACHE_ROOT} was kept, ${cacheSize(cache.bytes)}.`;
+  if (cache.refused !== undefined) return `${first}, and what it left in ${CACHE_ROOT} was not kept: ${cache.refused}.`;
+  return `${first}.`;
+}
+
+/** What the cache came to, read back off an entry's data; nothing when the shape is not one. */
+function cacheOf(value: unknown): CacheOutcome | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const record = value as Record<string, unknown>;
+  if (record.found !== "warm" && record.found !== "cold") return undefined;
+  const number = (key: string) => (typeof record[key] === "number" ? (record[key] as number) : 0);
+  return {
+    found: record.found,
+    bytes: number("bytes"),
+    files: number("files"),
+    ms: number("ms"),
+    ...(record.kept === true ? { kept: true as const } : {}),
+    ...(typeof record.refused === "string" ? { refused: record.refused } : {}),
+  };
 }
 
 /** How setup ended, read back off an entry's data; nothing when the shape is not one. */
@@ -106,6 +163,7 @@ export function birthData(entry: CustomEntry): BirthData | undefined {
   const record = data as Record<string, unknown>;
   if (typeof record.command !== "string" || typeof record.output !== "string" || typeof record.pasture !== "string") return undefined;
   const setup = setupOf(record.setup);
+  const cache = cacheOf(record.cache);
   return {
     pasture: record.pasture,
     repo: typeof record.repo === "string" ? record.repo : "",
@@ -117,6 +175,8 @@ export function birthData(entry: CustomEntry): BirthData | undefined {
     output: record.output,
     truncated: record.truncated === true,
     ...(setup === undefined ? {} : { setup }),
+    ...(typeof record.home === "string" ? { home: record.home } : {}),
+    ...(cache === undefined ? {} : { cache }),
   };
 }
 

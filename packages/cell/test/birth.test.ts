@@ -25,7 +25,7 @@ import { NO_CONTAINER_NOTICE } from "../src/env/execution-env.ts";
 import { setFauxScript } from "../src/models.ts";
 import { CREDENTIAL_TTL_MS, CredentialBroker, GIT_USERNAME, PASTURE_GIT_TOKEN, pastureMinter } from "../src/pen/broker.ts";
 import type { ContainerStarter } from "../src/pen/lease.ts";
-import { WORKSPACE_ROOT } from "../src/workspace/files.ts";
+import { HOME_ROOT, WORKSPACE_ROOT } from "../src/workspace/files.ts";
 import { type FakeContainer, type ScriptFor, serveFakeOn, type TranscriptEntry } from "./fake-container.ts";
 
 const context = BACKGROUND_CONTEXT;
@@ -225,6 +225,8 @@ describe("pasture phase 3: birth", () => {
       exit: 0,
       output: "Cloning into '.'...\n",
       truncated: false,
+      // Fold phase 1: a home with a container keeps `~`, and the entry says where; no `setup.sh`, so nothing of the cache.
+      home: HOME_ROOT,
     });
     // The birth was one run in the container, in /workspace, after a sync-in that carried the pasture as the second root.
     const sequence = frames(stub).map((entry) => `${entry.from}:${entry.frame.type}`);
