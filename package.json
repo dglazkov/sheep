@@ -25,10 +25,10 @@
     "@mariozechner/clipboard": "0.3.9"
   },
   "sheep": {
-    "commit": "8b55ef0",
-    "builtAt": "2026-09-11T17:59:55Z",
+    "commit": "120148d",
+    "builtAt": "2026-09-11T18:23:43Z",
     "wrangler": "4.129.0",
-    "image": "docker.io/dglazkov2/sheep-pen@sha256:7ba20c328a0c88a75c9a35ef7d8b5a3b51a350eab6a696398d4d1e4382a0aa0b"
+    "image": "docker.io/dglazkov2/sheep-pen@sha256:bbdcc67dec5492ac341fce220e06b98cd9d1d07afc1ea9d5da1924f9a32f9127"
   },
-  "//": "GENERATED BRANCH: `pnpm release` builds it from 8b55ef0 on main; develop there, not here. No `workspaces` and no scripts, deliberately: npm's git installer treats either as \"needs preparation\" and then installs this package into an empty directory (isocan #47). The bundles and the Worker are committed here for the same reason: there is no install-time build to make them."
+  "//": "GENERATED BRANCH: `pnpm release` builds it from 120148d on main; develop there, not here. No `workspaces` and no scripts, deliberately: npm's git installer treats either as \"needs preparation\" and then installs this package into an empty directory (isocan #47). The bundles and the Worker are committed here for the same reason: there is no install-time build to make them."
 }
