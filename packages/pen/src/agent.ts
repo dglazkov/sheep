@@ -58,6 +58,13 @@
  * describing it; the cell asks for what it lacks, one chunk per `need`,
  * and its `synced` lets the scratch go. A chunk the cell refuses during a
  * put-back empties `/cache` and ends the sync-in whole, cold.
+ *
+ * Fold phase 2: the put-back's walk of what it wrote under `/cache` is
+ * kept (each path's kind, mode, size, and mtime), and a `cache` frame whose
+ * walk of `/cache` finds exactly that, no more and no fewer, is answered
+ * with the record that was put back, and nothing is written to the
+ * scratch: setup changed nothing, and a warm container learns so from a
+ * stat walk rather than a record.
  */
 import ignore from "ignore";
 import { Chunker, emptyDisk, RecordReader, writeRecord } from "./record.ts";
@@ -93,6 +100,18 @@ export interface DiskEntry {
   path: string;
   kind: EntryKind;
   mode: number;
+  /**
+   * Fold phase 2, what a disk may say beside the three, each optional so a
+   * disk that cannot say leaves it out. `size`: a file's bytes, a symlink's
+   * target's. `mtime`: when its content was last written, in milliseconds;
+   * with `size`, what the put-back's stat of `/cache` keeps. `file`: an
+   * identity the entries share when they are one file under two names (a
+   * hard link), absent for a file with one name; the record writes such a
+   * file's bytes once.
+   */
+  size?: number;
+  mtime?: number;
+  file?: string;
 }
 
 /**
@@ -106,6 +125,12 @@ export interface Disk {
   mkdir(path: string, mode: number): Promise<void>;
   /** Replaces whatever is at `path`. */
   symlink(target: string, path: string): Promise<void>;
+  /**
+   * Fold phase 2: replaces whatever is at `path` with a second name for the
+   * file at `existing`, a hard link. Optional: a record read onto a disk
+   * without it writes the later name as a copy of the earlier one.
+   */
+  link?(existing: string, path: string): Promise<void>;
   readlink(path: string): Promise<string>;
   chmod(path: string, mode: number): Promise<void>;
   /** Every entry under the root, the root excluded, sorted by path. Applies no rule; the agent does. */
@@ -371,6 +396,13 @@ class Agent {
    * onto `/cache`. `checkout` waits for it.
    */
   private restoring: { id: string; ref: CacheRef; next: number; reader: RecordReader } | null = null;
+  /**
+   * Fold phase 2: the last put-back, whole: the record it was, its counts,
+   * and `/cache` as the walk after its last write found it, path by path.
+   * `null` before any, from the moment another begins, when one is cut
+   * off, or when the disk cannot say a size and an mtime.
+   */
+  private putBack: { ref: CacheRef; files: number; bytes: number; stat: Map<string, string> } | null = null;
   /** A description the cell has not said `synced` to: its id and the chunks on the scratch. */
   private describing: { id: string; chunks: Set<string> } | null = null;
   /**
@@ -454,6 +486,7 @@ class Agent {
       // A put-back cut off leaves no half of a cache behind: `/cache` goes empty, and the next setup runs cold.
       if (this.restoring !== null && this.cacheDisk !== undefined) {
         this.restoring = null;
+        this.putBack = null;
         await emptyDisk(this.cacheDisk).catch(() => undefined);
       }
       const message = error instanceof Error ? error.message : String(error);
@@ -855,12 +888,13 @@ class Agent {
    * asked for, alone. A record of no chunks is an empty `/cache`.
    */
   private async beginRestore(id: string, ref: CacheRef, disk: Disk): Promise<void> {
+    this.putBack = null;
     await emptyDisk(disk);
     const expected = await disk.digest(encoder.encode(recordHashInput(ref.chunks)));
     if (expected !== ref.hash) throw new ProtocolError("mismatch", "manifest", `the cache ${ref.hash} is not the record of its chunks (${expected})`);
     const reader = new RecordReader(disk);
     if (ref.chunks.length === 0) {
-      await reader.end();
+      this.putBack = await Agent.keptStat(disk, ref, await reader.end());
       this.send({ type: "checkout", id });
       return;
     }
@@ -881,9 +915,38 @@ class Agent {
       this.send({ type: "need", id: restoring.id, hashes: [restoring.ref.chunks[restoring.next]!] });
       return;
     }
-    await restoring.reader.end();
+    const count = await restoring.reader.end();
     this.restoring = null;
+    this.putBack = await Agent.keptStat(this.cacheDisk!, restoring.ref, count);
     this.send({ type: "checkout", id: restoring.id });
+  }
+
+  /**
+   * `/cache` as a walk finds it, one line per path: kind, mode, size, and
+   * mtime. `undefined` when the disk leaves out a size or an mtime, and then
+   * no walk can say that nothing changed.
+   */
+  private static async statOf(disk: Disk): Promise<Map<string, string> | undefined> {
+    const stat = new Map<string, string>();
+    for (const entry of await disk.list()) {
+      if (entry.size === undefined || entry.mtime === undefined) return undefined;
+      stat.set(entry.path, `${entry.kind} ${entry.mode} ${entry.size} ${entry.mtime}`);
+    }
+    return stat;
+  }
+
+  /** What a finished put-back leaves for the description after setup: the record, its counts, and the walk after its last write. */
+  private static async keptStat(disk: Disk, ref: CacheRef, count: { files: number; bytes: number }): Promise<Agent["putBack"]> {
+    const stat = await Agent.statOf(disk);
+    return stat === undefined ? null : { ref, files: count.files, bytes: count.bytes, stat };
+  }
+
+  /** Whether `/cache` is exactly what the put-back left: the same paths, no more and no fewer, each with the same line. */
+  private static async untouched(disk: Disk, kept: Map<string, string>): Promise<boolean> {
+    const now = await Agent.statOf(disk);
+    if (now === undefined || now.size !== kept.size) return false;
+    for (const [path, line] of now) if (kept.get(path) !== line) return false;
+    return true;
   }
 
   /**
@@ -901,6 +964,13 @@ class Agent {
       return;
     }
     this.describing = null;
+    // Nothing touched since the put-back: its record is the answer, and not a byte is written to learn it.
+    const putBack = this.putBack;
+    if (putBack !== null && (max === undefined || putBack.bytes <= max) && (await Agent.untouched(cache, putBack.stat))) {
+      this.describing = { id, chunks: new Set() };
+      this.send({ type: "cache", id, hash: putBack.ref.hash, chunks: putBack.ref.chunks, files: putBack.files, bytes: putBack.bytes });
+      return;
+    }
     await emptyDisk(scratch);
     const chunks: string[] = [];
     const written = new Set<string>();

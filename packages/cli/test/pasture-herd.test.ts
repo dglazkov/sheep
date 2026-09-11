@@ -99,7 +99,8 @@ describe.skipIf(typeof home === "string")("pasture phase 2: the program, and the
     const rows = rowsOf(view.stdout);
     expect(rows.slice(0, 3)).toEqual(["name: docs", "repo: (none)", "branch: main"]);
     expect(rows[3]).toMatch(/^created: \d{4}-\d{2}-\d{2}T.*Z$/);
-    expect(rows.slice(4).map((row) => row.split("\t"))).toEqual([
+    expect(rows[4]).toBe("cache: none");
+    expect(rows.slice(5).map((row) => row.split("\t"))).toEqual([
       [links, "links", "idle", expect.stringMatching(/^\d{4}-.*Z$/), linksTask],
       [typo, "typo", "idle", expect.stringMatching(/^\d{4}-.*Z$/), typoTask],
     ]);
@@ -123,7 +124,7 @@ describe.skipIf(typeof home === "string")("pasture phase 2: the program, and the
     expect(fromSheep).toContain(`\n*${typo}\t`);
     expect(fromDog.stdout).not.toContain("*");
     expect(fromSheep!.replace(`\n*${typo}\t`, `\n${typo}\t`)).toBe(fromDog.stdout);
-    expect(rowsOf(fromDog.stdout).slice(4).map((row) => row.split("\t"))).toEqual([
+    expect(rowsOf(fromDog.stdout).slice(5).map((row) => row.split("\t"))).toEqual([
       [links, "links", "idle", expect.stringMatching(/^\d{4}-.*Z$/), linksTask],
       [typo, "typo", "running", expect.stringMatching(/^\d{4}-.*Z$/), typoTask],
     ]);
@@ -180,6 +181,6 @@ describe.skipIf(typeof home === "string")("pasture phase 2: the program, and the
     expect((await sheep(["attach", solo, "--", "who is here?"])).stdout).toBe("just me\n");
     const one = rowsOf((await toolResults(solo)).at(-1)!);
     expect(one.slice(0, 3)).toEqual(["name: solo", "repo: (none)", "branch: main"]);
-    expect(one.slice(4)).toEqual([expect.stringMatching(new RegExp(`^\\*${solo}\tone\trunning\t\\d{4}-.*Z\tWhat does the brief say\\?$`))]);
+    expect(one.slice(5)).toEqual([expect.stringMatching(new RegExp(`^\\*${solo}\tone\trunning\t\\d{4}-.*Z\tWhat does the brief say\\?$`))]);
   });
 });

@@ -23,8 +23,7 @@ Every verb talks to a home; the first is on this machine:
 sheep home local
 ```
 
-It starts a home under the kennel's `local/` (fetching a runtime once),
-writes the kennel's `config`, and prints:
+It starts a home under the kennel and prints:
 
 ```
 local home: http://127.0.0.1:<port> (started, pid <pid>)
@@ -33,20 +32,17 @@ config: <dir>/.sheep/config written
 key: not held; export ANTHROPIC_API_KEY and run `sheep home local` again
 ```
 
-The `key:` line is the one thing you cannot do alone: ask the shepherd to
-export `ANTHROPIC_API_KEY` in your shell and run `sheep home local` again;
-it answers `key: held, in <dir>/.sheep/local/.dev.vars`. `sheep home
-local --faux` runs a scripted model that answers "ok" to everything: the
-plumbing, without a key.
+The `key:` line needs the shepherd (see the end); then it answers `key:
+held, in <dir>/.sheep/local/.dev.vars`. `sheep home local --faux` runs a
+scripted model that answers "ok": the plumbing, without a key.
 
 A `container:` line follows: with Docker on the machine the home rents
 one beside every cell and its sheep can clone, build, test, and push;
 without, one sentence says what a container would add and how to get one.
 Tell the shepherd that sentence when the work needs a repository.
 
-The home stops with `sheep home stop`, and the next verb that needs it
-starts it again, saying so on stderr. `sheep home` reports which
-kennel it found, which home the config names, and whether it answers.
+`sheep home stop` stops it; the next verb starts it again. `sheep home`
+reports the kennel, the home, and whether it answers.
 `--home <url>` or `SHEEP_HOME` selects another home for one command.
 `sheep home deploy` puts this package's home on the shepherd's Cloudflare
 account, a container beside every cell: with `CLOUDFLARE_API_TOKEN` and
@@ -59,9 +55,8 @@ of stdin, piped by the shepherd, never an argument.
 ## The kennel
 
 The **kennel** is `.sheep/` at or above the working directory, found the
-way git finds `.git`, and `~/.sheep` when there is none. It
-holds this directory's config and local home, so each of several
-directories has its own sheep, token, and home. `sheep setup` makes one
+way git finds `.git`, and `~/.sheep` when there is none. Each directory
+with one has its own config, sheep, token, and home. `sheep setup` makes one
 here, and in a git work tree appends `.sheep/` to the `.gitignore` beside
 it, since the config holds a token.
 `cd` is how you switch. If the command says
@@ -80,11 +75,10 @@ stderr as `sheep: …` with exit 2.
 - `sheep new --detach -- "<prompt>"` mints, sends, and returns before the
   first token, the id as the first line of stdout. This is how you start
   several at once.
-- `sheep new --detach` with no prompt mints and prints the id alone: a
-  sheep to address before its first prompt exists. It is idle and costs
-  nothing until asked; a pastured one is cloned and set up at its first
-  prompt, or the first verb that reads it, not at the mint. On `attach`
-  or `-c`, `--detach` with no prompt is refused: nothing to send.
+- `sheep new --detach` with no prompt mints and prints the id alone. It
+  is idle and costs nothing until asked; a pastured one is cloned and set
+  up at its first prompt, or the first verb that reads it, not at the
+  mint.
 - `sheep -c -- "<prompt>"` is `attach` on the newest sheep.
 - `sheep attach <id> -- "<prompt>"` sends a prompt to a sheep and streams
   the reply. To a busy sheep the prompt is queued behind the running turn;
@@ -111,14 +105,14 @@ stderr as `sheep: …` with exit 2.
 
 A sheep has pi's tools: `read`, `write`, and `edit` on a workspace in its
 cell, and `bash`, a shell with the usual text tools. With a container the
-shell has `git`, `node`, `pnpm`, and `python` too.
+shell has `git`, `node`, `pnpm`, and `python` too, and `~` is kept with
+the sheep, except `~/.cache`, `~/.npm`, and caches like `node_modules`.
 
 On a home with eyes a sheep sees what it wrote: `look <path>` in its
 shell renders a workspace page in a real Chromium and prints errors,
 console, and the accessibility tree beside a `look.png` it reads with
-`read`; the report is in `sheep log`. The local home has eyes; an older
-station says `eyes: no` in `sheep home` until `sheep home deploy`
-upgrades it.
+`read`; the report is in `sheep log`. The local home has eyes; `sheep
+home` says whether a station has them.
 
 With a container too, `look --serve 'npx vite --port $PORT --strictPort'
 /` runs that command with `PORT` set, renders the page its port serves,
@@ -135,7 +129,7 @@ repository should know.
   makes one and prints `<name>\t<repo>\t<branch>`. `--repo .` reads this
   checkout's `origin`, uploading nothing.
 - `sheep pasture ls` lists pastures; `sheep pasture <name>` prints the
-  meta, then the herd: id, name, state, born, task.
+  meta, the `cache:` line, then the herd: id, name, state, born, task.
 - `sheep pasture ls <name> [path]` lists the tree, a directory with its
   slash; `sheep pasture cat <name> <path>` prints a file; `sheep pasture
   put <name> <path> [file]` writes a file or stdin, whole; `sheep pasture
@@ -150,6 +144,11 @@ repository should know.
   ls` shows names, never values.
 - `sheep new --pasture <name> -- "…"` and `sheep ls --pasture <name>` are
   birth and the roll call.
+- `setup.sh` in the tree runs once per fresh container. Its `npm install
+  -g` lands in `/cache`, which the pasture keeps for that exact script and
+  puts back first next time, so write `command -v <tool> >/dev/null ||
+  npm install -g <spec>`. A changed `setup.sh` runs cold once; a turn's
+  installs, and a setup that saw a sheep's own secret, are never kept.
 
 ## How to herd
 

@@ -23,14 +23,16 @@ cell's rows has found the bug, not a detail.
 
 ---
 
-**Where we are: 11 Sep 2026. Fold phases 0 and 1 CLOSED; phase 2 NOT
-STARTED.** A sheep's `~` is `/home/sheep`, a third root of rows synced
-both ways around every run; a pasture's `/cache` is chunks of one record
-in its object, keyed by `setup.sh`, put back one chunk per `need` before
-setup and kept whole after it. Both are proved in workerd against the
-fake container; the image carries neither yet. Next is fold phase 2, the
-image, the verbs, the docs, and the walk on the local home. Nothing
-waits on a person until its account ring, one ⚑ step.
+**Where we are: 11 Sep 2026. Fold phases 0 and 1 CLOSED; phase 2
+PART-DONE.** A sheep's `~` is `/home/sheep`, rows synced both ways around
+every run; a pasture's `/cache` is chunks of one record in its object,
+keyed by `setup.sh`, put back before setup and kept whole after it. The
+image carries both, the dog's `sheep pasture` names the cache, and the
+walk on the local home with Docker and a real model has wrangler warm in
+1.85 s against a 9.8 s cold install. Nothing waits on work. One thing
+waits on the shepherd: fold phase 2's ⚑ account ring, `pnpm hermetic
+--ring account --yes <sha>` on a release whose image CI pushed, which
+closes journey 3 step 3 and the project.
 
 The order is dependency order. Phase 0 is `~`, which gives the agent and
 the checkout their third root and the cell's shell its `HOME`. Phase 1
@@ -229,4 +231,17 @@ rm -f`. **⚑** journey 3 step 3: `pnpm hermetic --ring account --yes
 deleted on the shepherd's account, a few container minutes and one
 deploy; no token beyond the Cloudflare one.
 
-**Status: NOT STARTED.**
+**Status: PART-DONE.** 2026-09-11. Journeys 1 and 2 are walked whole on the local home with Docker and a real model, and journey 3 steps 1 and 2 with them: the image carries `~` and `/cache`, the dog's `sheep pasture` names the cache, the guide and README say both, and `pnpm test` exits 0 across all three rings. Journey 3 step 3, the account ring's `f1`, is written and waits on the shepherd, the project's one ⚑ step.
+
+**Findings:**
+
+- **2026-09-11 — The image carries the fold:** `HOME=/home/sheep`, `NPM_CONFIG_PREFIX=/cache`, `/cache/bin` first on `PATH`, and `COREPACK_HOME=/opt/corepack`, without which every container's first `pnpm` is a download.
+- **2026-09-11 — After the design change a warm setup is 1.85 s against a 9.8 s cold install,** where it was 10.4 against 10.2: the put-back 1.82 s against 8.94, the record 239 MB in 29 chunks against 406 in 49.
+- **2026-09-11 — The conductor walked it too:** wrangler cold in 10.6 s kept 239 MB, a second sheep put it back in 1824 ms, and `~` held across a `docker rm -f`.
+- **2026-09-11 — An untouched warm cache is never re-described:** a fresh container with one command in its turn left the row's `by` and `keptAt` where the cold sheep put them.
+- **2026-09-11 — `ws` is pen's second runtime dependency,** pinned at 8.21.0; the agent's upgrade offers no `Sec-WebSocket-Extensions`, read off the server's headers.
+- **2026-09-11 — The scratch is made before the dial:** `mkdtemp` between the dial and `serveAgent` could drop a manifest, and hung the process test once.
+- **2026-09-11 — Open: two tier-2 commands in one turn collide on the checkout's one sync** (pen phase 1's rule); here the collision re-saved an identical record, moving the row's `by`. Pen's to fix.
+- **2026-09-11 — Open: the agent peaks at 512 MiB on a cold save,** holding one whole file; wrangler fits the instance's 1 GiB and a larger binary would not.
+- **2026-09-11 — Open: whether a station's edge deflates is unmeasured;** the agent no longer offers it, so the fix holds wherever it runs.
+- **2026-09-11 — Open ⚑: journey 3 step 3 waits on the shepherd:** `pnpm hermetic --ring account --yes <sha>`, which deploys and deletes a station on his account.

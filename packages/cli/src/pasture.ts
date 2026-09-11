@@ -1,6 +1,7 @@
 /**
  * The dog's pasture verbs: `sheep pasture new|ls|cat|put|rm|secret`, and
- * the bare `sheep pasture <name>` for the meta and the herd. Each is one or
+ * the bare `sheep pasture <name>` for the meta, the cache, and the herd.
+ * Each is one or
  * two requests to the home and exits. Nothing local is uploaded by
  * `--repo .`: the CLI reads the checkout's `origin` and stores the URL. A
  * secret's value is read from stdin and never taken as an argument, so it
@@ -10,7 +11,7 @@ import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import type { Output } from "./herd.js";
-import type { Home, SessionSummary } from "./home.js";
+import type { Home, PastureCache, SessionSummary } from "./home.js";
 
 /** A pasture's name is a Durable Object name and a column the herd view prints, so it is plain. */
 export const PASTURE_NAME = /^[a-z0-9-]+$/;
@@ -53,6 +54,32 @@ export interface PastureArgs {
 /** One line per sheep of the herd: id, name, state, born, task; the columns `sheep ls` has, less the pasture, which is the heading. */
 export function herdLine(session: SessionSummary): string {
   return `${session.id}\t${session.name ?? ""}\t${session.state}\t${new Date(session.createdAt).toISOString()}\t${session.task ?? ""}`;
+}
+
+/** A size as a person reads it: `148 MB`, decimal, as `du -h --si` says it and the cell's log does. */
+export function cacheSize(bytes: number): string {
+  if (bytes < 1000) return `${bytes} B`;
+  const units = ["kB", "MB", "GB", "TB"];
+  let value = bytes / 1000;
+  let unit = 0;
+  while (value >= 1000 && unit < units.length - 1) {
+    value /= 1000;
+    unit++;
+  }
+  return `${value >= 10 ? Math.round(value) : Math.round(value * 10) / 10} ${units[unit]}`;
+}
+
+/**
+ * The view's `cache:` line (fold phase 2), after `created:`: what the
+ * pasture keeps in `/cache` for the tree's `setup.sh` now, `none`, or a
+ * cache an older `setup.sh` left, which no fresh container is given. The
+ * sheep's own `pasture` prints the same line, and a test compares the two.
+ */
+export function cacheLine(cache: PastureCache | null): string {
+  if (cache === null) return "cache: none";
+  if (!cache.current) return `cache: none for this setup.sh (an older one's, ${cacheSize(cache.bytes)}, goes at the next save)`;
+  const kept = new Date(cache.keptAt).toISOString().replace(/\.\d{3}Z$/, "Z");
+  return `cache: ${cacheSize(cache.bytes)}, ${cache.files} files, for setup.sh ${cache.setup.slice(0, 7)}, kept ${kept} by ${cache.by}`;
 }
 
 export async function runPasture(home: Home, args: PastureArgs, output: Output): Promise<number> {
@@ -140,7 +167,7 @@ export async function runPasture(home: Home, args: PastureArgs, output: Output):
         output.out(`${JSON.stringify(view)}\n`);
         return 0;
       }
-      output.out(`name: ${view.name}\nrepo: ${view.repo ?? "(none)"}\nbranch: ${view.branch}\ncreated: ${new Date(view.createdAt).toISOString()}\n`);
+      output.out(`name: ${view.name}\nrepo: ${view.repo ?? "(none)"}\nbranch: ${view.branch}\ncreated: ${new Date(view.createdAt).toISOString()}\n${cacheLine(view.cache ?? null)}\n`);
       for (const session of view.herd) output.out(`${herdLine(session)}\n`);
       return 0;
     }

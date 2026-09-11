@@ -19,10 +19,10 @@
     "@types/node": "^22.0.0",
     "@types/ws": "^8.18.1",
     "typescript": "^5.9.0",
-    "vitest": "^4.1.0",
-    "ws": "^8.21.0"
+    "vitest": "^4.1.0"
   },
   "dependencies": {
-    "ignore": "7.0.8"
+    "ignore": "7.0.8",
+    "ws": "8.21.0"
   }
 }

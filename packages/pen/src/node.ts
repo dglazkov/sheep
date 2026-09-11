@@ -11,23 +11,38 @@
  * `fetch` frames, asked of a server on the container's own loopback. Exits when the
  * WebSocket closes, so a container that loses its cell is a container that
  * is gone.
+ *
+ * Fold phase 2 gives the process the two disks fold's agent takes: a
+ * sheep's `~` at `/home/sheep` (or `PEN_HOME`), synced both ways beside the
+ * checkout, and the pasture's cache at `/cache` (or `PEN_CACHE`), put back
+ * and described as a record, with the description's chunks on a scratch
+ * directory of the process's own under the system's temporary directory,
+ * removed when the process ends. `HOME`, npm's prefix, and `PATH` are the
+ * image's (`Dockerfile`); a test that moves the disks sets those to match.
  */
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import type { Dirent } from "node:fs";
-import { chmod, lstat, mkdir, readdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, link, lstat, mkdir, mkdtemp, readdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { createServer as createSocketServer } from "node:net";
-import { constants as osConstants } from "node:os";
+import { constants as osConstants, tmpdir } from "node:os";
 import { dirname, join, posix, relative } from "node:path";
-import { type AgentSocket, type Disk, type DiskEntry, type Fetcher, type RunHandle, type RunOutcome, type Runner, type RunRequest, serveAgent, type ServedAgent } from "./agent.ts";
-import { CELL_URL_ENV, DEFAULT_HELPER_SOCKET, HELPER_SOCKET_ENV, type HelperAnswer, type HelperRequest, TOKEN_ENV, TOKEN_PARAM } from "./protocol.ts";
+import WebSocket from "ws";
+import { type Disk, type DiskEntry, type Fetcher, type RunHandle, type RunOutcome, type Runner, type RunRequest, serveAgent, type ServedAgent } from "./agent.ts";
+import { CACHE_ROOT, CELL_URL_ENV, DEFAULT_HELPER_SOCKET, HELPER_SOCKET_ENV, type HelperAnswer, type HelperRequest, TOKEN_ENV, TOKEN_PARAM } from "./protocol.ts";
 
 export const WORKSPACE_ENV = "PEN_WORKSPACE";
 export const DEFAULT_WORKSPACE = "/workspace";
 /** Pasture phase 3: where the pasture's tree is written, read-only, beside the checkout (or `PEN_PASTURE`, for a test on a machine without one). */
 export const PASTURE_ENV = "PEN_PASTURE";
 export const DEFAULT_PASTURE = "/pasture";
+/** Fold phase 2: a sheep's `~`, `HOME` in the image, synced both ways (or `PEN_HOME`, for a test on a machine without one). */
+export const HOME_ENV = "PEN_HOME";
+export const DEFAULT_HOME = "/home/sheep";
+/** Fold phase 2: the pasture's cache, npm's global prefix in the image (or `PEN_CACHE`, for a test on a machine without one). */
+export const CACHE_ENV = "PEN_CACHE";
+export const DEFAULT_CACHE = CACHE_ROOT;
 /**
  * The one port the image exposes: a health answer, `ok`, for the platform
  * that started the container to see it is up. Cloudflare's local dev
@@ -39,19 +54,26 @@ export const HEALTH_PORT_ENV = "PEN_HEALTH_PORT";
 export const DEFAULT_HEALTH_PORT = 8080;
 
 /**
- * Node 24's global `WebSocket`, in the shape this process uses. `@types/node`
- * 22 does not declare the global (the repo pins 22 so one `@types/node`
- * serves every package), so the constructor is read off `globalThis`.
+ * The socket to the cell (fold phase 2): `ws`, pinned exactly in
+ * `package.json`, with `permessage-deflate` never offered. Node's built-in
+ * WebSocket offers it and cannot be told not to, and workerd accepts it and
+ * deflates every message it sends, an 8 MiB chunk of the pasture's cache
+ * included: 6.7 s of a warm put-back's 8.6 s on the laptop, CPU spent in
+ * the cell (fold phase 2's walk). Binary messages arrive as `ArrayBuffer`s;
+ * the shape the agent uses is `AgentSocket`'s.
  */
-interface NodeWebSocket extends AgentSocket {
-  binaryType: "blob" | "arraybuffer";
-  addEventListener(type: "message", listener: (event: { data: unknown }) => void): void;
-  addEventListener(type: "close", listener: (event: unknown) => void): void;
-  addEventListener(type: "open" | "error", listener: (event: unknown) => void, options?: { once?: boolean }): void;
+export function dialCell(address: string): WebSocket {
+  const socket = new WebSocket(address, { perMessageDeflate: false });
+  socket.binaryType = "arraybuffer";
+  return socket;
 }
-const NodeWebSocket = (globalThis as unknown as { WebSocket: new (url: string) => NodeWebSocket }).WebSocket;
 
-/** A disk over `node:fs` rooted at `root`. Modes are set explicitly so the umask never has a say. */
+/**
+ * A disk over `node:fs` rooted at `root`. Modes are set explicitly so the
+ * umask never has a say. Fold phase 2: `list` says each entry's size and
+ * mtime, and, for a file with more than one name, its device and inode as
+ * the identity its names share; `link` makes a hard link.
+ */
 export function nodeDisk(root: string): Disk {
   const at = (path: string) => join(root, path);
   return {
@@ -74,6 +96,11 @@ export function nodeDisk(root: string): Disk {
       await rm(at(path), { recursive: true, force: true });
       await symlink(target, at(path));
     },
+    async link(existing, path) {
+      await mkdir(dirname(at(path)), { recursive: true });
+      await rm(at(path), { recursive: true, force: true });
+      await link(at(existing), at(path));
+    },
     async readlink(path) {
       return readlink(at(path));
     },
@@ -94,18 +121,42 @@ export function nodeDisk(root: string): Disk {
         const absolute = join(dirent.parentPath, dirent.name);
         const path = relative(root, absolute).split("\\").join(posix.sep);
         const kind = dirent.isSymbolicLink() ? "symlink" : dirent.isDirectory() ? "directory" : "file";
-        const { mode } = await lstat(absolute);
-        entries.push({ path, kind, mode: mode & 0o7777 });
+        const stat = await lstat(absolute);
+        entries.push({
+          path,
+          kind,
+          mode: stat.mode & 0o7777,
+          size: stat.size,
+          mtime: stat.mtimeMs,
+          ...(kind === "file" && stat.nlink > 1 ? { file: `${stat.dev}:${stat.ino}` } : {}),
+        });
       }
       return entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
     },
     async remove(path) {
-      await rm(at(path), { recursive: true, force: true });
+      try {
+        await rm(at(path), { recursive: true, force: true });
+      } catch (error) {
+        // A read-only directory (a record may put back a `0555` one) refuses the removal of what is in it to anyone but
+        // root; the agent is root in the image, but a disk is a disk wherever it runs, so the subtree is made writable first.
+        const code = (error as { code?: string }).code;
+        if (code !== "EACCES" && code !== "EPERM") throw error;
+        await writable(at(path));
+        await rm(at(path), { recursive: true, force: true });
+      }
     },
     async digest(bytes) {
       return createHash("sha256").update(bytes).digest("hex");
     },
   };
+}
+
+/** Every directory under `absolute`, itself included, made writable by its owner, so the subtree can be removed. */
+async function writable(absolute: string): Promise<void> {
+  const stat = await lstat(absolute).catch(() => undefined);
+  if (stat === undefined || !stat.isDirectory()) return;
+  await chmod(absolute, (stat.mode & 0o7777) | 0o700);
+  for (const name of await readdir(absolute)) await writable(join(absolute, name));
 }
 
 /**
@@ -337,17 +388,28 @@ export async function main(env: NodeJS.ProcessEnv = process.env): Promise<number
     health.listen(healthPort);
     health.unref();
   }
-  const socket = new NodeWebSocket(cellAddress(cellUrl, token));
-  socket.binaryType = "arraybuffer";
+  const root = env[WORKSPACE_ENV] || DEFAULT_WORKSPACE;
+  const pastureRoot = env[PASTURE_ENV] || DEFAULT_PASTURE;
+  const homeRoot = env[HOME_ENV] || DEFAULT_HOME;
+  const cacheRoot = env[CACHE_ENV] || DEFAULT_CACHE;
+  const helperSocket = env[HELPER_SOCKET_ENV] || DEFAULT_HELPER_SOCKET;
+  // Fold phase 2: where a description of `/cache` waits for the cell's `need`s, the process's own and never a root the sync walks.
+  // Made before the socket is dialled: nothing may be awaited between the dial and `serveAgent`, or a manifest the cell sends
+  // the moment the socket opens arrives before anything listens for it, and the sync-in never starts.
+  const scratchRoot = await mkdtemp(join(tmpdir(), "pen-cache-"));
+  const socket = dialCell(cellAddress(cellUrl, token));
   const opened = new Promise<void>((resolve, reject) => {
     socket.addEventListener("open", () => resolve(), { once: true });
     socket.addEventListener("error", () => reject(new Error(`pen-agent: could not connect to ${cellUrl}`)), { once: true });
   });
-  const root = env[WORKSPACE_ENV] || DEFAULT_WORKSPACE;
-  const pastureRoot = env[PASTURE_ENV] || DEFAULT_PASTURE;
-  const helperSocket = env[HELPER_SOCKET_ENV] || DEFAULT_HELPER_SOCKET;
   // The second root (pasture phase 3): a disk of its own beside the checkout, so the sync-out's walk cannot reach it.
-  const served = serveAgent(socket, nodeDisk(root), nodeRunner(root, { [HELPER_SOCKET_ENV]: helperSocket }), nodeFetcher(), { pasture: nodeDisk(pastureRoot) });
+  // The third and fourth (fold phase 2): `~`, synced both ways, and `/cache`, put back and described whole, each its own disk.
+  const served = serveAgent(socket, nodeDisk(root), nodeRunner(root, { [HELPER_SOCKET_ENV]: helperSocket }), nodeFetcher(), {
+    pasture: nodeDisk(pastureRoot),
+    home: nodeDisk(homeRoot),
+    cache: nodeDisk(cacheRoot),
+    scratch: nodeDisk(scratchRoot),
+  });
   let closeHelper: (() => Promise<void>) | undefined;
   try {
     closeHelper = await serveHelper(helperSocket, served);
@@ -363,7 +425,7 @@ export async function main(env: NodeJS.ProcessEnv = process.env): Promise<number
       process.on(signal, () => {
         process.stderr.write(`pen-agent: ${signal}, exiting\n`);
         try {
-          (socket as unknown as { close(code?: number, reason?: string): void }).close(1000, signal);
+          socket.close(1000, signal);
         } catch {
           // Not open; nothing to close.
         }
@@ -376,9 +438,11 @@ export async function main(env: NodeJS.ProcessEnv = process.env): Promise<number
     await opened;
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    await rm(scratchRoot, { recursive: true, force: true });
     return 1;
   }
   await Promise.race([served.closed, stopped]);
   await closeHelper?.();
+  await rm(scratchRoot, { recursive: true, force: true });
   return 0;
 }

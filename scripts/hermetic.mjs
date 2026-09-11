@@ -314,9 +314,31 @@
  * The broker's own sentence for the refusal is a line of the station's
  * log, which no verb reads, and is named among what was not checked. Skipped as a8 is, with one line,
  * without `LAMB_PLAYGROUND_TOKEN`.
+ *
+ * Fold phase 2 gives the account ring `f1`, after n1 and s1 (fold's
+ * journey 3 step 3), on a station whose sheep n1 and s1 ended and whose
+ * containers their ends destroyed, for the same cap. A pasture named
+ * `fold-<sha7>` on a public repository (`octocat/Hello-World`, branch
+ * `master`) whose `setup.sh` installs wrangler guarded by `command -v`,
+ * the issue's tool and the walk's, and writes which it did, and in how
+ * many ms, to `.setup-said`. One sheep born cold and a second born warm, each minted
+ * detached and scripted by the faux provider to run the tool and read
+ * `.setup-said`: both birth entries read from `sheep log --json` (cold and
+ * kept, with its bytes and files; then warm, the same bytes and files put
+ * back in so many ms, setup changing nothing), the tool's answer and
+ * setup's own word in each turn's tool result, and `sheep pasture
+ * --json` naming the cache for that `setup.sh` (its hash, by the cold
+ * sheep, current) with the text line beside it. The step ends both sheep
+ * with n1's check, each counted minted and ended, so a6 still lists
+ * `sessions: 0`. The two setups' times are printed side by side: the cold
+ * install's ms, and the warm put-back's ms beside the warm setup's own,
+ * which is the station's answer to the issue's two minutes. It needs no
+ * token beyond the Cloudflare one, so it has no skip; the save's ms and the
+ * chunk count are lines of the station's log, which no verb reads, and are
+ * named among what was not checked.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
@@ -3014,6 +3036,11 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     // cap; s1 ends its own two with n1's check, each counted minted and ended, so the delete below still lists `sessions: 0`.
     await journeyEarmark(ring, station, { needles });
 
+    // Fold phase 2, f1 (fold's journey 3 step 3): a pasture's cache on the station, one sheep born cold and one born warm, the
+    // birth entries and the pasture's `cache` read back. After n1 and s1 for the same reason s1 is after n1: their ends destroyed
+    // every container, so f1's two births fit under the cap; f1 ends its own two with n1's check.
+    await journeyFold(ring, station);
+
     // Step 6: the delete, the name on stdin: the listing first (station phase 3), counted against what the walk minted and did not
     // end (end phase 1: none); then the account listed, the last lines.
     const { deleted, after, left } = await deleteStation(ring, api, station, token);
@@ -3604,6 +3631,134 @@ async function journeyEarmark(ring, station, { needles, step = "s1" }) {
     }
     rmSync(askpass, { force: true });
   }
+}
+
+/**
+ * f1's tool: wrangler, the issue's own, installed as the walk installed it, with a bin, and not in the image; `wrangler
+ * --version` prints its version on a line of its own. Its cache is the one fold phase 2's walk measured on the laptop.
+ */
+const FOLD_TOOL = { bin: "wrangler", spec: "wrangler", asked: "wrangler --version", answer: /^\d+\.\d+\.\d+\n/ };
+/** f1's pasture's repository: public, so the step needs no GitHub token and the station's broker is never asked. */
+const FOLD_REPO = { url: "https://github.com/octocat/Hello-World", branch: "master" };
+
+/**
+ * Fold's journey 3 step 3 on the station (fold phase 2, f1), with the
+ * faux provider: a pasture on a public repository whose `setup.sh`
+ * installs `FOLD_TOOL` from npm guarded by `command -v` and writes
+ * `installed` or `found`, with its own ms, to `.setup-said` in the
+ * checkout. `cold` is minted and asked first: its birth clones, finds no
+ * cache, setup installs into `/cache`, and what it left is kept, which the
+ * birth entry's `cache` says with the bytes and files. `warm` is minted
+ * and asked after: a fresh container of its own, the cache put back before
+ * setup, setup finding the tool, the entry `warm` with the same bytes and
+ * files and the restore's ms, and nothing kept, since setup changed
+ * nothing. Each turn runs the tool and reads `.setup-said`, and the tool
+ * result is the check that the tool ran, not the model's word. `sheep
+ * pasture --json` names the cache: the hash of the `setup.sh` put, by
+ * `cold`, current. Both sheep are ended with n1's check and counted
+ * minted and ended. No skip: the step needs nothing but the station.
+ */
+async function journeyFold(ring, station, { step = "f1" } = {}) {
+  const { home, token: stationToken } = station;
+  const pasture = `fold-${ring.stamp.commit.slice(0, 7)}`;
+  const setup = [
+    "set -e",
+    "started=$(date +%s%3N)",
+    `if command -v ${FOLD_TOOL.bin} >/dev/null; then said=found; else npm install -g --no-audit --no-fund ${FOLD_TOOL.spec} >/dev/null; said=installed; fi`,
+    'echo "$said $(( $(date +%s%3N) - started )) ms" > .setup-said',
+    "",
+  ].join("\n");
+  const setupFile = join(ring.dir, "fold-setup.sh");
+  writeFileSync(setupFile, setup);
+  const setupHash = createHash("sha256").update(setup).digest("hex");
+  const names = ["cold", "warm"];
+  const ids = {};
+  const births = {};
+  const said = {};
+  const started = Date.now();
+
+  // The pasture, its `setup.sh`, and no cache yet.
+  const made = await ring.sheep(["pasture", "new", pasture, "--repo", FOLD_REPO.url, "--branch", FOLD_REPO.branch]);
+  if (made.code !== 0 || made.stdout !== `${pasture}\t${FOLD_REPO.url}\t${FOLD_REPO.branch}\n`) ring.fail(step, `sheep pasture new ${pasture} --repo ${FOLD_REPO.url} --branch ${FOLD_REPO.branch}`, made);
+  station.pastures.push(pasture);
+  const put = await ring.sheep(["pasture", "put", pasture, "setup.sh", setupFile]);
+  if (put.code !== 0) ring.fail(step, `sheep pasture put ${pasture} setup.sh ${setupFile}`, put);
+  const empty = await ring.sheep(["pasture", pasture, "--json"]);
+  if (empty.code !== 0 || JSON.parse(empty.stdout).cache !== null) ring.fail(step, `sheep pasture ${pasture} --json (before any birth)`, { ...empty, stderr: `${empty.stderr}\nexpected "cache": null before any sheep was born` });
+
+  // One at a time: the warm birth needs the cold one's cache committed, which it is by the end of the cold sheep's first turn.
+  for (const name of names) {
+    const minted = await ring.sheep(["new", "--pasture", pasture, "--name", name, "--detach"]);
+    const id = /^([0-9a-f-]{36})\n$/.exec(minted.stdout)?.[1];
+    if (minted.code !== 0 || !id || minted.stderr !== "") ring.fail(step, `sheep new --pasture ${pasture} --name ${name} --detach`, { ...minted, stderr: `${minted.stderr}\nexpected exit 0, the id alone on stdout, nothing on stderr` });
+    ids[name] = id;
+    station.minted.push(id);
+    const program = { steps: [{ tool: { name: "bash", args: { command: `${FOLD_TOOL.asked} && cat .setup-said` } } }, { text: `ran ${FOLD_TOOL.bin}` }] };
+    const posted = await fetch(`${home}/s/${encodeURIComponent(id)}/faux`, { method: "POST", headers: { authorization: `Bearer ${stationToken}`, "content-type": "application/json" }, body: JSON.stringify(program), signal: AbortSignal.timeout(30_000) });
+    if (posted.status !== 200) ring.fail(step, `POST /s/${id}/faux`, { stdout: await posted.text(), stderr: `status ${posted.status}`, code: 1 });
+    const asked = await ring.sheep(["attach", id, "--detach", "--", `run ${FOLD_TOOL.bin} and read .setup-said`]);
+    if (asked.code !== 0 || asked.stdout !== `${id}\n`) ring.fail(step, `sheep attach ${id} --detach -- "run ${FOLD_TOOL.bin} and read .setup-said"`, asked);
+    const waited = await ring.sheep(["wait", "--timeout", "600", id]);
+    if (waited.code !== 0 || waited.stdout !== `${id}\tran ${FOLD_TOOL.bin}\n`) ring.fail(step, `sheep wait --timeout 600 ${id}`, { ...waited, stderr: `${waited.stderr}\nexpected "${id}\\tran ${FOLD_TOOL.bin}"` });
+
+    // The birth's entry and the turn's tool result, from `sheep log --json`: the entry's `cache` is the check, not the model's word.
+    const logged = await ring.sheep(["log", id, "--json"]);
+    if (logged.code !== 0) ring.fail(step, `sheep log ${id} --json`, logged);
+    const entries = logged.stdout.trimEnd().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+    const birth = entries.find((entry) => entry.type === "custom" && entry.customType === "birth")?.data;
+    if (logged.stdout.includes("no container could be rented")) ring.fail(step, `sheep log ${id} --json`, { ...logged, stderr: `${logged.stderr}\n${name}'s commands found no container (the station's max_instances against containers still idle): the cache was not exercised` });
+    if (birth === undefined || birth.exit !== 0 || birth.setup?.exit !== 0 || birth.home !== "/home/sheep") {
+      ring.fail(step, `sheep log ${id} --json`, { ...logged, stderr: `${logged.stderr}\nexpected a birth entry whose clone and setup.sh exited 0 and whose ~ is /home/sheep; got ${JSON.stringify(birth === undefined ? null : { exit: birth.exit, error: birth.error, setup: birth.setup, home: birth.home })}` });
+    }
+    births[name] = birth.cache;
+    const results = entries.filter((entry) => entry.type === "message" && entry.message?.role === "toolResult").map((entry) => {
+      const content = entry.message.content;
+      return typeof content === "string" ? content : content.filter((part) => part.type === "text").map((part) => part.text).join("");
+    });
+    const result = results.at(-1) ?? "";
+    const word = /^(installed|found) (\d+) ms$/m.exec(result);
+    if (!FOLD_TOOL.answer.test(result) || word === null) ring.fail(step, `sheep log ${id} --json (the tool result)`, { stdout: result, stderr: `expected ${FOLD_TOOL.asked}'s version on the first line and then setup's own word, installed or found, with its ms`, code: 1 });
+    said[name] = { word: word[1], ms: Number(word[2]), version: result.split("\n")[0] };
+  }
+
+  // Cold and kept, then warm with the same cache, put back in so many ms and unchanged by setup; setup's own word agreeing.
+  const { cold, warm } = births;
+  if (cold?.found !== "cold" || cold.kept !== true || cold.refused !== undefined || !(cold.bytes > 0) || !(cold.files > 0)) ring.fail(step, `sheep log ${ids.cold} --json (the birth's cache)`, { stdout: JSON.stringify(cold ?? null), stderr: "expected found: cold, kept: true, and the bytes and files of what setup left in /cache", code: 1 });
+  if (said.cold.word !== "installed") ring.fail(step, `sheep log ${ids.cold} --json (setup's word)`, { stdout: JSON.stringify(said.cold), stderr: "expected the cold setup to have installed the tool", code: 1 });
+  if (warm?.found !== "warm" || warm.kept !== undefined || warm.refused !== undefined || warm.bytes !== cold.bytes || warm.files !== cold.files || typeof warm.ms !== "number") {
+    ring.fail(step, `sheep log ${ids.warm} --json (the birth's cache)`, { stdout: JSON.stringify(warm ?? null), stderr: `expected found: warm, the cold one's ${cold.bytes} bytes and ${cold.files} files put back, its ms, and neither kept nor refused (setup changed nothing)`, code: 1 });
+  }
+  if (said.warm.word !== "found") ring.fail(step, `sheep log ${ids.warm} --json (setup's word)`, { stdout: JSON.stringify(said.warm), stderr: "expected the warm setup to have found the tool on PATH, and not installed it", code: 1 });
+
+  // The pasture names the cache: for the `setup.sh` put, kept by the cold sheep, current; the text line beside the JSON.
+  const viewed = await ring.sheep(["pasture", pasture, "--json"]);
+  const cache = viewed.code === 0 ? JSON.parse(viewed.stdout).cache : undefined;
+  if (cache == null || cache.setup !== setupHash || cache.by !== ids.cold || cache.current !== true || cache.bytes !== cold.bytes || cache.files !== cold.files || typeof cache.keptAt !== "number") {
+    ring.fail(step, `sheep pasture ${pasture} --json`, { ...viewed, stderr: `${viewed.stderr}\nexpected "cache" for setup.sh ${setupHash.slice(0, 7)}, by ${ids.cold}, current, ${cold.bytes} bytes and ${cold.files} files` });
+  }
+  const text = await ring.sheep(["pasture", pasture]);
+  const line = text.stdout.split("\n")[4] ?? "";
+  if (text.code !== 0 || !line.startsWith("cache: ") || !line.includes(`, ${cold.files} files, for setup.sh ${setupHash.slice(0, 7)}, kept `) || !line.endsWith(` by ${ids.cold}`)) {
+    ring.fail(step, `sheep pasture ${pasture}`, { ...text, stderr: `${text.stderr}\nexpected the fifth line to be the cache's: its size, ${cold.files} files, for setup.sh ${setupHash.slice(0, 7)}, kept by ${ids.cold}` });
+  }
+  const seconds = ((Date.now() - started) / 1000).toFixed(0);
+  ring.ok(step, `sheep pasture new ${pasture} --repo ${FOLD_REPO.url}; sheep pasture put ${pasture} setup.sh (${FOLD_TOOL.spec}, guarded); sheep new --pasture ${pasture} --detach (cold, then warm); sheep attach --detach; sheep wait`, `${seconds}s; ${FOLD_TOOL.asked} answered ${said.cold.version} and ${said.warm.version}`);
+  ring.ok(step, `sheep log ${ids.cold} --json; sheep log ${ids.warm} --json (the birth entries)`, `cold: kept, ${cold.bytes} bytes, ${cold.files} files, setup ${said.cold.word} in ${said.cold.ms} ms; warm: put back in ${warm.ms} ms, setup ${said.warm.word} in ${said.warm.ms} ms`);
+  // The two setups side by side: what a fresh container paid before its first command, cold and warm.
+  console.log(`  ${step} setups side by side: cold ${(said.cold.ms / 1000).toFixed(1)} s (${said.cold.word}) | warm ${((warm.ms + said.warm.ms) / 1000).toFixed(1)} s (put back ${(warm.ms / 1000).toFixed(1)} s, then ${said.warm.word} in ${said.warm.ms} ms); ${cold.bytes} bytes, ${cold.files} files`);
+  ring.ok(step, `sheep pasture ${pasture} --json; sheep pasture ${pasture}`, `${line}; current, for setup.sh ${setupHash.slice(0, 7)}`);
+  ring.unchecked.push(`fold journey 3 ${step}: the save's ms and the cache's chunk count are lines of the station's log ("[pen] cache kept for setup.sh …, N chunks (M sent) in K ms"), which no verb reads`);
+
+  // The step runs after n1, so it ends its own two with n1's check, each then ended as well as minted; neither listed after.
+  for (const name of names) {
+    const removed = await ring.sheep(["rm", ids[name]]);
+    if (removed.code !== 0 || removed.stdout !== `${ids[name]}\tended\n` || removed.stderr !== "") ring.fail(step, `sheep rm ${ids[name]}`, { ...removed, stderr: `${removed.stderr}\nexpected exit 0, exactly "${ids[name]}\\tended" on stdout, nothing on stderr` });
+    station.ended.push(ids[name]);
+  }
+  const afterRm = JSON.parse((await ring.sheep(["ls", "--json"])).stdout);
+  const stillListed = afterRm.filter((row) => row.id === ids.cold || row.id === ids.warm).map((row) => row.id);
+  if (stillListed.length > 0) ring.fail(step, "sheep ls --json (after rm)", { stdout: JSON.stringify(afterRm), stderr: `expected neither of f1's sheep listed; still there: ${stillListed.join(", ")}`, code: 1 });
+  ring.ok(step, `sheep rm ${ids.cold}; sheep rm ${ids.warm}; sheep ls --json`, "each ended with its one line; neither listed after");
 }
 
 async function main() {

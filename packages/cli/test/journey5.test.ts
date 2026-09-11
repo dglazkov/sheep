@@ -17,6 +17,12 @@
  * leaving `sheep ls --json` as it was; no value in any output, the
  * transcript, or the export. Step 1, stdin a terminal, is
  * `earmark.test.ts`'s, where `script` lends a terminal.
+ *
+ * Fold phase 2: a fifth case reads the cache's line on a pasture this home
+ * has: `sheep pasture <p>` prints `cache: none` after `created:`, and
+ * `--json` has `"cache": null`, since this home has no container and so no
+ * setup ever kept one. The cache kept, warm, and for an older `setup.sh`
+ * are the cell's proof in workerd and the walk's on a home with Docker.
  */
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -373,7 +379,7 @@ describe.skipIf(typeof home === "string")("journey 5: a dog and its flock, throu
     const herd = JSON.parse((await run(["pasture", "meadow", "--json"])).stdout) as { herd: Row[] };
     expect(herd.herd.find((row) => row.id === earmarked)).toMatchObject({ secrets: ["PROBE"] });
     const herdText = await run(["pasture", "meadow"]);
-    for (const line of herdText.stdout.replace(/\n$/, "").split("\n").slice(4)) expect(line.split("\t")).toHaveLength(5);
+    for (const line of herdText.stdout.replace(/\n$/, "").split("\n").slice(5)) expect(line.split("\t")).toHaveLength(5);
 
     // The earmarked sheep's first prompt births it into the pasture; its transcript and its export hold no value.
     await script(`/s/${earmarked}/faux`, { steps: [{ text: "grazing" }] });
@@ -428,5 +434,27 @@ describe.skipIf(typeof home === "string")("journey 5: a dog and its flock, throu
 
     // No value in anything any command of this case printed.
     for (const value of values) for (const text of said) expect(text.includes(value), `an output holds ${value}`).toBe(false);
+  });
+
+  it("fold phase 2: `sheep pasture <p>` has the cache's line after `created:`, `cache: none` on a home with no container, and `--json` has `\"cache\": null`", { timeout: 60_000 }, async () => {
+    if (typeof home === "string") throw new Error(home);
+    expect(await sheep("pasture", "new", "fold", "--repo", "https://github.com/octocat/Hello-World", "--branch", "master")).toEqual({ code: 0, stdout: "fold\thttps://github.com/octocat/Hello-World\tmaster\n", stderr: "" });
+    // A `setup.sh` in the tree, so the line is for a pasture that would keep a cache; none was ever kept here.
+    const put = await runSheep(home, ["pasture", "put", "fold", "setup.sh"], { stdin: "command -v cowsay >/dev/null || npm install -g cowsay\n" });
+    expect(put.code).toBe(0);
+    const view = await sheep("pasture", "fold");
+    expect(view.code).toBe(0);
+    expect(view.stderr).toBe("");
+    const lines = view.stdout.replace(/\n$/, "").split("\n");
+    expect(lines.slice(0, 3)).toEqual(["name: fold", "repo: https://github.com/octocat/Hello-World", "branch: master"]);
+    expect(lines[3]).toMatch(/^created: \d{4}-\d{2}-\d{2}T.*Z$/);
+    expect(lines[4]).toBe("cache: none");
+    expect(lines).toHaveLength(5);
+    const json = await sheep("pasture", "fold", "--json");
+    expect(json.code).toBe(0);
+    const parsed = JSON.parse(json.stdout) as { name: string; cache: unknown; herd: unknown[] };
+    expect(parsed).toMatchObject({ name: "fold", herd: [] });
+    expect(parsed.cache).toBeNull();
+    expect(json.stdout).toContain('"cache":null');
   });
 });

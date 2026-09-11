@@ -6,10 +6,12 @@
  * table's paragraph.
  *
  * Three verbs, as the design has them. `pasture`, or `pasture herd`,
- * prints the pasture's name, repository, branch, and birth date, then one
- * line per sheep born into it: id, name, state, born, task, tab
- * separated, from the directory's `herd` in the directory's order, this
- * sheep's own line marked with a leading `*`. It is the view `sheep
+ * prints the pasture's name, repository, branch, and birth date, the
+ * cache's line (fold phase 2: what `/cache` the pasture keeps for its
+ * `setup.sh`, from the object's row), then one line per sheep born into
+ * it: id, name, state, born, task, tab separated, from the directory's
+ * `herd` in the directory's order, this sheep's own line marked with a
+ * leading `*`. It is the view `sheep
  * pasture <name>` prints, in the one format, and a test compares the two
  * outputs; a sheep that never wrote anything down is in it with what it
  * was asked. `pasture put <path> [file]` writes a workspace file, or
@@ -26,7 +28,8 @@ import type { ManifestEntry } from "@sheep/pen/protocol";
 import { type Command, defineCommand } from "just-bash/browser";
 import { posix } from "node:path";
 import type { SessionSummary } from "../directory.ts";
-import { DEFAULT_BRANCH, type PastureMeta, treePath } from "../pasture.ts";
+import { type CacheSummary, DEFAULT_BRANCH, type PastureMeta, treePath } from "../pasture.ts";
+import { cacheSize } from "../pen/cache.ts";
 import { PASTURE_ROOT, type PastureCall, type PastureSource } from "../workspace/mount.ts";
 
 /** The program's name: the one name a pastured cell's shell has that just-bash's registry does not. */
@@ -52,6 +55,8 @@ export interface PastureProgram {
   object: PastureObject;
   /** The directory's `herd(pasture)`: the rows and their order, the same query the dog's verb prints. */
   herd(): Promise<SessionSummary[]>;
+  /** Fold phase 2: the object's `cacheSummary()`, the row the dog's route reads, never a chunk. */
+  cache(): Promise<CacheSummary | null>;
 }
 
 /** One line per sheep of the herd: id, name, state, born, task; the format `sheep pasture <name>` prints. */
@@ -59,9 +64,21 @@ export function herdLine(session: SessionSummary): string {
   return `${session.id}\t${session.name ?? ""}\t${session.state}\t${new Date(session.createdAt).toISOString()}\t${session.task ?? ""}`;
 }
 
-/** The whole view: the meta's four lines, then the herd; `mark` is the id whose line gets the leading `*`, or none. */
-export function herdView(name: string, meta: PastureMeta | undefined, herd: readonly SessionSummary[], mark?: string): string {
-  const head = `name: ${name}\nrepo: ${meta?.repo ?? "(none)"}\nbranch: ${meta?.branch ?? DEFAULT_BRANCH}\ncreated: ${new Date(meta?.createdAt ?? 0).toISOString()}\n`;
+/**
+ * The cache's line (fold phase 2), the one `sheep pasture <name>` prints
+ * after `created:`: the cache for the tree's `setup.sh` now, `none`, or an
+ * older script's, which no fresh container is given.
+ */
+export function cacheLine(cache: CacheSummary | null): string {
+  if (cache === null) return "cache: none";
+  if (!cache.current) return `cache: none for this setup.sh (an older one's, ${cacheSize(cache.bytes)}, goes at the next save)`;
+  const kept = new Date(cache.keptAt).toISOString().replace(/\.\d{3}Z$/, "Z");
+  return `cache: ${cacheSize(cache.bytes)}, ${cache.files} files, for setup.sh ${cache.setup.slice(0, 7)}, kept ${kept} by ${cache.by}`;
+}
+
+/** The whole view: the meta's four lines and the cache's, then the herd; `mark` is the id whose line gets the leading `*`, or none. */
+export function herdView(name: string, meta: PastureMeta | undefined, cache: CacheSummary | null, herd: readonly SessionSummary[], mark?: string): string {
+  const head = `name: ${name}\nrepo: ${meta?.repo ?? "(none)"}\nbranch: ${meta?.branch ?? DEFAULT_BRANCH}\ncreated: ${new Date(meta?.createdAt ?? 0).toISOString()}\n${cacheLine(cache)}\n`;
   return head + herd.map((session) => `${session.id === mark ? "*" : ""}${herdLine(session)}\n`).join("");
 }
 
@@ -104,8 +121,8 @@ export function pastureCommand(program: PastureProgram, call: PastureCall): Comm
     const [verb, ...words] = args;
     if (verb === undefined || verb === "herd") {
       if (words.length > 0) return failed(USAGE, 2);
-      const [meta, herd] = await Promise.all([call.meta(), program.herd()]);
-      return done(herdView(program.name, meta, herd, program.sessionId));
+      const [meta, cache, herd] = await Promise.all([call.meta(), program.cache(), program.herd()]);
+      return done(herdView(program.name, meta, cache, herd, program.sessionId));
     }
     if (verb === "put") {
       const [argument, file, extra] = words;

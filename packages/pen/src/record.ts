@@ -13,19 +13,30 @@
  * entry as its last byte arrives. A file larger than a chunk is carried
  * across chunks; each side holds the one file it is on and the one chunk,
  * never the record.
+ *
+ * Fold phase 2: a file with two names is written once. When the disk says
+ * two entries are one file (`DiskEntry.file`, a hard link; npm makes them
+ * for an install's largest binaries), the first name in path order carries
+ * the bytes and each later name is a `link` entry whose bytes are the first
+ * name's path; the reader makes a hard link, or a copy on a disk that has
+ * none. A disk that cannot say writes every name whole, as before, and the
+ * same tree is still the same record: the inode is never in it.
  */
 import type { Disk } from "./agent.ts";
 import type { EntryKind } from "./protocol.ts";
 
+/** A record's entry kinds: the disk's three, and `link`, a later name of a file an earlier entry wrote (fold phase 2). */
+export type RecordKind = EntryKind | "link";
+
 /** One entry's line, before its bytes. */
 export interface RecordHeader {
   path: string;
-  kind: EntryKind;
+  kind: RecordKind;
   mode: number;
   size: number;
 }
 
-/** What a record held: its file entries, and its bytes with the headers, which is what the cap measures and the object stores. */
+/** What a record held: its file entries (a link is a file's name, and counts), and its bytes with the headers, which is what the cap measures and the object stores. */
 export interface RecordCount {
   files: number;
   bytes: number;
@@ -59,10 +70,21 @@ export async function writeRecord(disk: Disk, sink: (bytes: Uint8Array) => Promi
   let files = 0;
   let bytes = 0;
   const over = () => options.max !== undefined && bytes > options.max;
+  /** The first name, in path order, of each file the disk says has more than one. */
+  const firstNames = new Map<string, string>();
   for (const entry of entries) {
     let body: Uint8Array;
     let mode: number;
-    if (entry.kind === "directory") {
+    let kind: RecordKind = entry.kind;
+    const first = entry.kind === "file" && entry.file !== undefined ? firstNames.get(entry.file) : undefined;
+    if (entry.kind === "file" && entry.file !== undefined && first === undefined) firstNames.set(entry.file, entry.path);
+    if (first !== undefined) {
+      // A later name of a file already in the record: its first name's path, not its bytes again.
+      kind = "link";
+      body = encoder.encode(first);
+      mode = entry.mode & 0o7777;
+      files++;
+    } else if (entry.kind === "directory") {
       body = new Uint8Array(0);
       mode = entry.mode & 0o7777;
     } else if (entry.kind === "symlink") {
@@ -73,7 +95,7 @@ export async function writeRecord(disk: Disk, sink: (bytes: Uint8Array) => Promi
       mode = entry.mode & 0o7777;
       files++;
     }
-    const line = headerLine({ path: entry.path, kind: entry.kind, mode, size: body.byteLength });
+    const line = headerLine({ path: entry.path, kind, mode, size: body.byteLength });
     bytes += line.byteLength + body.byteLength;
     if (over()) return { files, bytes, over: true };
     await sink(line);
@@ -147,7 +169,7 @@ function parseHeader(bytes: Uint8Array): RecordHeader {
   const header = parsed as Partial<RecordHeader>;
   if (typeof parsed !== "object" || parsed === null) throw new RecordError("a record's header is not an object");
   if (!safePath(header.path)) throw new RecordError(`a record names a path it may not: ${JSON.stringify(header.path)}`);
-  if (header.kind !== "file" && header.kind !== "directory" && header.kind !== "symlink") throw new RecordError(`a record's entry ${header.path} has no kind`);
+  if (header.kind !== "file" && header.kind !== "directory" && header.kind !== "symlink" && header.kind !== "link") throw new RecordError(`a record's entry ${header.path} has no kind`);
   if (typeof header.mode !== "number" || !Number.isInteger(header.mode) || header.mode < 0 || header.mode > 0o7777) throw new RecordError(`a record's entry ${header.path} has no mode`);
   if (typeof header.size !== "number" || !Number.isInteger(header.size) || header.size < 0) throw new RecordError(`a record's entry ${header.path} has no size`);
   if (header.kind === "directory" && header.size !== 0) throw new RecordError(`a record's directory ${header.path} has bytes`);
@@ -170,6 +192,8 @@ export class RecordReader {
   private body: Uint8Array = new Uint8Array(0);
   private filled = 0;
   private readonly directories: Array<{ path: string; mode: number }> = [];
+  /** The files this record has written so far, which a `link` may name. */
+  private readonly written = new Set<string>();
   private files = 0;
   private bytes = 0;
 
@@ -224,8 +248,17 @@ export class RecordReader {
       this.directories.push({ path: header.path, mode: header.mode });
     } else if (header.kind === "symlink") {
       await this.disk.symlink(decoder.decode(body), header.path);
+    } else if (header.kind === "link") {
+      // A second name for a file this record already wrote, and for nothing else: a link cannot reach outside the record.
+      const existing = decoder.decode(body);
+      if (!this.written.has(existing)) throw new RecordError(`a record's link ${header.path} names a file it has not written: ${JSON.stringify(existing)}`);
+      if (this.disk.link !== undefined) await this.disk.link(existing, header.path);
+      else await this.disk.write(header.path, await this.disk.read(existing), { mode: header.mode });
+      this.written.add(header.path);
+      this.files++;
     } else {
       await this.disk.write(header.path, body, { mode: header.mode });
+      this.written.add(header.path);
       this.files++;
     }
   }

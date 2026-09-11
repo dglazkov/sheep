@@ -277,6 +277,32 @@ no pasture has no setup, so `GIT_TOKEN` is the one secret it can carry.
 `sheep ls` names each sheep's secrets in its last column (`"secrets"` in
 `--json`), never a value, and `sheep rm` ends them with the sheep.
 
+On a home with a container, what a sheep's container leaves behind outlives
+it in two places. A sheep's `~` is `/home/sheep`, `HOME` in the container
+and in the cell's shell, kept as rows beside the workspace and synced
+around every command under the same per-file cap, so a tool's login or
+config (`git config --global`, `npm config set`, `~/.config/<tool>`) is
+there in the next container. Not kept: `~/.cache`, `~/.npm`, and the
+cache rule's names at any depth (`node_modules`, `.venv`, `dist`, `build`,
+`__pycache__`). `ls /workspace` and `git status` never show `~`; `sheep
+rm` ends it with the sheep.
+
+A pasture's `setup.sh` runs once in each fresh container, before its
+first command, and `/cache` is the pasture's: npm's global prefix in the
+image, `/cache/bin` first on `PATH`. After a setup that exits 0 the
+pasture keeps what setup left there, for the hash of that `setup.sh`, and
+puts it back into every fresh container of its sheep before setup runs.
+Guard the install, `command -v <tool> >/dev/null || npm install -g
+<spec>`, and a warm setup is the put-back and a `command -v`. A changed
+`setup.sh` finds no cache for it and runs cold once. What a turn installs
+lands in `/cache` too and goes with the container, and a setup whose
+environment held a sheep's own secret gets the cache put back and never
+keeps one. `sheep pasture <name>` has a `cache:` line after `created:`
+(its size and files, the `setup.sh` it is for, when and by which sheep it
+was kept, or `none`), and a birth's entry in `sheep log` says whether
+setup found it warm. Other ecosystems take `/cache` by their own prefix
+flags.
+
 #### A home with a container: pen
 
 The second leg gave each cell a container it rents for the length of a

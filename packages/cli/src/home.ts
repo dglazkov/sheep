@@ -29,9 +29,25 @@ export interface PastureMeta {
   createdAt: number;
 }
 
-/** `GET /p/<name>`: the meta and the herd, the directory's rows for the sheep born there. */
+/**
+ * Fold phase 1: what `GET /p/<name>` says of the pasture's cache, from its
+ * row alone: its size and files, the hash of the `setup.sh` whose run left
+ * it, when it was kept and by which sheep, and whether that `setup.sh` is
+ * the tree's now. `null` when nothing was ever kept.
+ */
+export interface PastureCache {
+  bytes: number;
+  files: number;
+  setup: string;
+  keptAt: number;
+  by: string;
+  current: boolean;
+}
+
+/** `GET /p/<name>`: the meta, the herd, the directory's rows for the sheep born there, and the cache (fold phase 1). */
 export interface PastureView extends PastureMeta {
   herd: SessionSummary[];
+  cache: PastureCache | null;
 }
 
 /** One row of a pasture's tree, as the home's manifest names it. */

@@ -113,8 +113,8 @@ describe("pasture phase 2: the program, and the herd", () => {
     // A herd of one, before any prompt: the row with no task.
     await inCell(typo.id, async (cell) => {
       const view = await bash(cell, "pasture");
-      expect(view).toMatch(/^name: docs\nrepo: \(none\)\nbranch: main\ncreated: \d{4}-\d{2}-\d{2}T.*Z\n/);
-      expect(view.replace(/\n$/, "").split("\n").slice(4)).toEqual([`*${typo.id}\ttypo\tidle\t${new Date(typo.createdAt).toISOString()}\t`]);
+      expect(view).toMatch(/^name: docs\nrepo: \(none\)\nbranch: main\ncreated: \d{4}-\d{2}-\d{2}T.*Z\ncache: none\n/);
+      expect(view.replace(/\n$/, "").split("\n").slice(5)).toEqual([`*${typo.id}\ttypo\tidle\t${new Date(typo.createdAt).toISOString()}\t`]);
     });
     // Journey 1 step 4's births, each with a task: the first line of the first prompt, as the cell reports it.
     await prompt(typo.id, "Fix the typo in README.md on a branch, commit, push.\nThe second line is not the task.");
@@ -133,19 +133,19 @@ describe("pasture phase 2: the program, and the herd", () => {
     await inCell(typo.id, async (cell) => {
       const view = await bash(cell, "pasture");
       const rows = view.replace(/\n$/, "").split("\n");
-      expect(rows.slice(0, 4)).toEqual(["name: docs", "repo: (none)", "branch: main", `created: ${new Date(meta!.createdAt).toISOString()}`]);
+      expect(rows.slice(0, 5)).toEqual(["name: docs", "repo: (none)", "branch: main", `created: ${new Date(meta!.createdAt).toISOString()}`, "cache: none"]);
       // The directory's rows in the directory's order, in the one format; this sheep's marked.
-      expect(rows.slice(4)).toEqual([herdLine(herd[0]!), `*${herdLine(herd[1]!)}`]);
-      expect(rows[4]).toBe(`${links.id}\tlinks\tidle\t${new Date(links.createdAt).toISOString()}\tFix the links in docs/, on a branch; commit and push.`);
-      expect(rows[5]).toBe(`*${typo.id}\ttypo\tidle\t${new Date(typo.createdAt).toISOString()}\tFix the typo in README.md on a branch, commit, push.`);
-      expect(view).toBe(herdView("docs", meta, herd, typo.id));
+      expect(rows.slice(5)).toEqual([herdLine(herd[0]!), `*${herdLine(herd[1]!)}`]);
+      expect(rows[5]).toBe(`${links.id}\tlinks\tidle\t${new Date(links.createdAt).toISOString()}\tFix the links in docs/, on a branch; commit and push.`);
+      expect(rows[6]).toBe(`*${typo.id}\ttypo\tidle\t${new Date(typo.createdAt).toISOString()}\tFix the typo in README.md on a branch, commit, push.`);
+      expect(view).toBe(herdView("docs", meta, null, herd, typo.id));
       // `herd` is the same view; the shell's own tools take the output on.
       expect(await bash(cell, "pasture herd")).toBe(view);
       expect((await bash(cell, "pasture | grep -c links")).trim()).toBe("1");
-      expect((await bash(cell, "pasture | tail -n +5 | cut -f2 | sort")).trim()).toBe("links\ntypo");
+      expect((await bash(cell, "pasture | tail -n +6 | cut -f2 | sort")).trim()).toBe("links\ntypo");
     });
     await inCell(links.id, async (cell) => {
-      const rows = (await bash(cell, "pasture")).replace(/\n$/, "").split("\n").slice(4);
+      const rows = (await bash(cell, "pasture")).replace(/\n$/, "").split("\n").slice(5);
       expect(rows).toEqual([`*${herdLine(herd[0]!)}`, herdLine(herd[1]!)]);
     });
     // A pastured sheep's prompt names the three verbs in one sentence; a pastureless one's shell line is the literal from before the project.

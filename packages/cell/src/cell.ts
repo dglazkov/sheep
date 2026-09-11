@@ -245,7 +245,7 @@ export class SessionCell extends DurableObject<Env> {
         : {
             // The cache's store too (fold phase 1): what this cell's setups keep, signed with its id.
             pasture: pastureSourceFor(object, sheep, this.sessionId),
-            pastureProgram: { name: pasture.name, sessionId: this.sessionId, object, herd: () => directory.herd(pasture.name) },
+            pastureProgram: { name: pasture.name, sessionId: this.sessionId, object, herd: () => directory.herd(pasture.name), cache: () => object.cacheSummary() },
           }),
     });
     const models = createCellModels(this.env, { onProviderCall: () => this.transition(), program: () => this.fauxProgram() });

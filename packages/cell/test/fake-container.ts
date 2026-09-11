@@ -36,6 +36,13 @@
  * run the agent's own record over them. A script's step reaches `/cache`
  * as the third argument of `act`. A fresh fake has both empty, as a fresh
  * container's are.
+ *
+ * Fold phase 2: the memory disk says a size and an mtime for each entry,
+ * the mtime a counter that moves on every write of an entry's content, so
+ * the agent's walk after a put-back can tell a `/cache` setup left alone
+ * from one it touched, as `lstat` does on a real disk. It never says two
+ * entries are one file, so a record over it has no links. `writes` counts
+ * the writes a disk took, which is how a test sees a scratch left alone.
  */
 import { type Disk, type DiskEntry, type Fetcher, type FetchRequest, type FetchResponse, type Runner, type RunOutcome, type RunRequest, serveAgent } from "@sheep/pen/agent";
 import {
@@ -60,6 +67,8 @@ export type MemoryEntry =
 /** A disk in a `Map`, every kind of entry first-class. Parents are created on write, as `node:fs` does for the agent. */
 export interface MemoryDisk extends Disk {
   readonly entries: Map<string, MemoryEntry>;
+  /** How many times `write` was called on this disk. */
+  readonly writes: number;
   /** Writes a file, creating parents. A string is UTF-8. */
   putFile(path: string, content: string | Uint8Array, mode?: number): void;
   putDirectory(path: string, mode?: number): void;
@@ -75,32 +84,53 @@ async function webCryptoSha256(bytes: Uint8Array): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+/** The memory disks' one clock: every content write anywhere takes the next tick, so no two writes share an mtime. */
+let tick = 0;
+
 export function memoryDisk(): MemoryDisk {
   const entries = new Map<string, MemoryEntry>();
+  /** Each path's mtime, beside the entries so an entry compares as it did before fold phase 2. */
+  const mtimes = new Map<string, number>();
+  let writes = 0;
   const ensureParents = (path: string) => {
     const parts = path.split("/");
     for (let depth = 1; depth < parts.length; depth++) {
       const dir = parts.slice(0, depth).join("/");
-      if (entries.get(dir)?.kind !== "directory") entries.set(dir, { kind: "directory", mode: 0o755 });
+      if (entries.get(dir)?.kind !== "directory") {
+        entries.set(dir, { kind: "directory", mode: 0o755 });
+        mtimes.set(dir, ++tick);
+      }
     }
   };
   const removeTree = (path: string) => {
     entries.delete(path);
-    for (const key of [...entries.keys()]) if (key.startsWith(`${path}/`)) entries.delete(key);
+    mtimes.delete(path);
+    for (const key of [...entries.keys()]) {
+      if (key.startsWith(`${path}/`)) {
+        entries.delete(key);
+        mtimes.delete(key);
+      }
+    }
   };
   const disk: MemoryDisk = {
     entries,
+    get writes() {
+      return writes;
+    },
     putFile(path, content, mode = 0o644) {
       ensureParents(path);
       entries.set(path, { kind: "file", bytes: typeof content === "string" ? encoder.encode(content) : content, mode });
+      mtimes.set(path, ++tick);
     },
     putDirectory(path, mode = 0o755) {
       ensureParents(path);
       entries.set(path, { kind: "directory", mode });
+      mtimes.set(path, ++tick);
     },
     putSymlink(path, target) {
       ensureParents(path);
       entries.set(path, { kind: "symlink", target, mode: 0o777 });
+      mtimes.set(path, ++tick);
     },
     delete: removeTree,
     async read(path) {
@@ -109,6 +139,7 @@ export function memoryDisk(): MemoryDisk {
       return entry.bytes;
     },
     async write(path, bytes, options) {
+      writes++;
       const existing = entries.get(path);
       disk.putFile(path, bytes, options?.mode ?? (existing?.kind === "file" ? existing.mode : 0o644));
     },
@@ -135,7 +166,12 @@ export function memoryDisk(): MemoryDisk {
       entry.mode = mode;
     },
     async list() {
-      const listed: DiskEntry[] = [...entries].map(([path, entry]) => ({ path, kind: entry.kind as EntryKind, mode: entry.mode }));
+      // A size and an mtime when the disk knows one; an entry a test set straight into `entries` has no mtime, and says none.
+      const listed: DiskEntry[] = [...entries].map(([path, entry]) => {
+        const size = entry.kind === "file" ? entry.bytes.byteLength : entry.kind === "symlink" ? encoder.encode(entry.target).byteLength : 0;
+        const mtime = mtimes.get(path);
+        return { path, kind: entry.kind as EntryKind, mode: entry.mode, size, ...(mtime === undefined ? {} : { mtime }) };
+      });
       return listed.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
     },
     async remove(path) {

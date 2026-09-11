@@ -13,9 +13,16 @@
  * cut off, a restore racing a commit, and a sheep with no pasture or no
  * `setup.sh` sent nothing. The record itself is proved first, over the
  * fake's memory disk.
+ *
+ * Fold phase 2's second pass: the memory disk never says two entries are
+ * one file, so its records have no links, and a disk that does say so gets
+ * a record with the later name a `link`; a warm container whose setup left
+ * `/cache` alone answers the description with the record put back and
+ * writes nothing to its scratch, and one whose setup touched a file writes
+ * the record again, the same record, and nothing moves.
  */
 import { BACKGROUND_CONTEXT, createBashTool } from "@earendil-works/pi-agent-core";
-import { Chunker, RecordReader, writeRecord } from "@sheep/pen/agent";
+import { Chunker, type Disk, RecordReader, writeRecord } from "@sheep/pen/agent";
 import { CACHE_CHUNK_BYTES, type CacheRef, type CellFrame, type ContainerFrame, type Frame } from "@sheep/pen/protocol";
 import { env, runInDurableObject, SELF } from "cloudflare:test";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -115,7 +122,7 @@ interface SetupSeen {
  * container `current()` says runs the line. `engine` makes the install a record of two chunks; `earmark` has setup write
  * an npmrc with the environment's PROBE into `/cache`, which is the leak the rule is for.
  */
-function toolScript(current: () => FakeContainer | Omit<FakeContainer, "socket">, seen: SetupSeen[], options: { engine?: Uint8Array; earmark?: boolean; empty?: boolean } = {}): ScriptFor {
+function toolScript(current: () => FakeContainer | Omit<FakeContainer, "socket">, seen: SetupSeen[], options: { engine?: Uint8Array; earmark?: boolean; empty?: boolean; touch?: boolean } = {}): ScriptFor {
   return (request) => {
     const command = request.command.trim();
     if (command === birthCommand(REPO, "main")) {
@@ -134,6 +141,11 @@ function toolScript(current: () => FakeContainer | Omit<FakeContainer, "socket">
               // `empty`: a setup that uses no prefix at all, and leaves `/cache` as it found it.
               if (found === undefined && !options.empty) installTool(cache, { version, ...(options.engine === undefined ? {} : { engine: options.engine }) });
               if (options.earmark) cache.putFile("etc/npmrc", `//registry.npmjs.org/:_authToken=${request.env.PROBE ?? ""}\n`, 0o600);
+              // `touch`: a setup that finds the tool and rewrites one of its files with the bytes it had, as `touch` would leave it.
+              if (options.touch && found !== undefined) {
+                const manifest = cache.entries.get("lib/node_modules/tool/package.json");
+                if (manifest?.kind === "file") cache.putFile("lib/node_modules/tool/package.json", manifest.bytes, manifest.mode);
+              }
             },
           },
         ],
@@ -205,7 +217,7 @@ interface Sheep {
 }
 
 /** A sheep minted by the Directory's `create`, as `earmark.test.ts` mints, with its starter set before anything boots it. */
-async function mintedInto(name: string, pastureName: string, options: { secrets?: Record<string, string>; engine?: Uint8Array; earmark?: boolean } = {}): Promise<Sheep> {
+async function mintedInto(name: string, pastureName: string, options: { secrets?: Record<string, string>; engine?: Uint8Array; earmark?: boolean; touch?: boolean } = {}): Promise<Sheep> {
   const { id } = await env.DIRECTORY.getByName("home").create(name, pastureName, options.secrets);
   // The mint's one rule: the Directory, and nothing in the cell.
   expect(await tablesOf(id)).toEqual([]);
@@ -400,7 +412,7 @@ function entriesOf(disk: MemoryDisk): string[] {
 }
 
 /** A disk as a record's chunks, as the agent's description cuts them. */
-async function recordOf(disk: MemoryDisk): Promise<{ chunks: Uint8Array[]; files: number; bytes: number }> {
+async function recordOf(disk: Disk): Promise<{ chunks: Uint8Array[]; files: number; bytes: number }> {
   const chunks: Uint8Array[] = [];
   const chunker = new Chunker(CACHE_CHUNK_BYTES, async (chunk) => {
     chunks.push(chunk);
@@ -438,6 +450,8 @@ describe("fold phase 1: the record", () => {
     // The first line is the first entry by path, and says no mtime and no owner.
     const firstLine = decoder.decode(record.chunks[0]!.subarray(0, record.chunks[0]!.indexOf(10)));
     expect(JSON.parse(firstLine)).toEqual({ path: "bin", kind: "directory", mode: 0o755, size: 0 });
+    // The memory disk never says two entries are one file (fold phase 2), so nothing in its record is a link.
+    expect(new TextDecoder("latin1").decode(joined(record.chunks))).not.toContain('"kind":"link"');
 
     const onto = memoryDisk();
     const reader = new RecordReader(onto);
@@ -488,6 +502,54 @@ describe("fold phase 1: the record", () => {
     b.putFile("etc/npmrc", "fund=false\n", 0o644);
     expect((await recordOf(b)).chunks.map(hashBytes)).not.toEqual(first.chunks.map(hashBytes));
   });
+
+  it("fold phase 2: a file the disk says has two names is written once, the later name a link; read back as a link, or as a copy on a disk with none", async () => {
+    const tree = memoryDisk();
+    installTool(tree);
+    tree.putFile("lib/node_modules/tool/vendor/engine.bin", ENGINE, 0o755);
+    tree.putFile("lib/node_modules/engine/bin/engine", ENGINE, 0o755);
+    /** The same tree on a disk that says the two engines are one file, as `lstat`'s inode says on a real one. */
+    const sharing = (disk: MemoryDisk): Disk => ({
+      ...disk,
+      async list() {
+        return (await disk.list()).map((entry) => (entry.path.endsWith("engine.bin") || entry.path.endsWith("bin/engine") ? { ...entry, file: "7:4242" } : entry));
+      },
+    });
+    const once = await recordOf(sharing(tree));
+    const twice = await recordOf(tree);
+    // The bytes once: the linked record is short of the plain one by one engine, less the link's own path.
+    expect(twice.bytes - once.bytes).toBeGreaterThan(ENGINE.byteLength - 100);
+    expect(once.files).toBe(twice.files);
+    // The first name in path order carries the bytes; the later one is a link to it, by path.
+    const text = new TextDecoder("latin1").decode(joined(once.chunks));
+    expect(text).toContain(`${JSON.stringify({ path: "lib/node_modules/tool/vendor/engine.bin", kind: "link", mode: 0o755, size: "lib/node_modules/engine/bin/engine".length })}\nlib/node_modules/engine/bin/engine`);
+    // The same tree is the same record, whatever identity the disk gives the file.
+    const renamed = (disk: MemoryDisk): Disk => ({ ...disk, async list() { return (await disk.list()).map((entry) => (entry.path.endsWith("engine.bin") || entry.path.endsWith("bin/engine") ? { ...entry, file: "9:1" } : entry)); } });
+    expect((await recordOf(renamed(tree))).chunks.map(hashBytes)).toEqual(once.chunks.map(hashBytes));
+
+    // Read onto a disk that can link: the later name is made a link to the earlier.
+    const linked: Array<[string, string]> = [];
+    const target = memoryDisk();
+    const reader = new RecordReader({
+      ...target,
+      async link(existing, path) {
+        linked.push([existing, path]);
+        target.putFile(path, (target.entries.get(existing) as { bytes: Uint8Array }).bytes, target.entries.get(existing)!.mode);
+      },
+    });
+    for (const chunk of once.chunks) await reader.push(chunk);
+    expect(await reader.end()).toEqual({ files: once.files, bytes: once.bytes });
+    expect(linked).toEqual([["lib/node_modules/engine/bin/engine", "lib/node_modules/tool/vendor/engine.bin"]]);
+    // Read onto the memory disk, which has no link: a copy, byte for byte and mode for mode, and the tree as it was.
+    const copied = memoryDisk();
+    const plain = new RecordReader(copied);
+    for (const chunk of once.chunks) await plain.push(chunk);
+    await plain.end();
+    expect(entriesOf(copied)).toEqual(entriesOf(tree));
+    // A link to a name the record has not written is not a record: it could reach outside it.
+    const stray = new RecordReader(memoryDisk());
+    await expect(stray.push(encode(`${JSON.stringify({ path: "bin/x", kind: "link", mode: 0o644, size: 11 })}\n../../etc/x`))).rejects.toThrow("names a file it has not written");
+  });
 });
 
 describe("fold phase 1: journey 1 in the cell's terms", () => {
@@ -521,6 +583,7 @@ describe("fold phase 1: journey 1 in the cell's terms", () => {
     // The scratch let go of the chunks once the cell said `synced`.
     await sleep(25);
     expect(firstFake.scratch.entries.size).toBe(0);
+    expect(firstFake.scratch.writes).toBeGreaterThan(0);
     await inCell(first.id, async (cell) => {
       expect(await bash(cell, "tool --version")).toBe("tool 1.2.3\n");
     });
@@ -545,9 +608,12 @@ describe("fold phase 1: journey 1 in the cell's terms", () => {
     const order = framesOf(secondFake.transcript).map((entry) => `${entry.from}:${entry.frame.type}`);
     expect(order.slice(0, 7)).toEqual(["cell:manifest", "container:need", "cell:blob", "container:need", "cell:blob", "container:checkout", "cell:run"]);
     expect(ofType(secondFake.transcript, "need", "container")[1]!.hashes).toEqual(kept.chunks);
-    // Setup changed nothing: the same record, and nothing moved but the description and `synced`.
+    // Setup changed nothing: the same record, and nothing moved but the description and `synced`. Fold phase 2: the agent learned
+    // that from its walk of `/cache` against the put-back's, and wrote no record to its scratch to learn it.
     const warmSave = descriptions(secondFake.transcript)[0]!;
     expect(warmSave.hash).toBe(kept.hash);
+    expect(warmSave).toMatchObject({ chunks: kept.chunks, files: kept.files, bytes: kept.bytes });
+    expect(secondFake.scratch.writes).toBe(0);
     expect(ofType(secondFake.transcript, "need", "cell").filter((need) => need.id === warmSave.id)).toEqual([]);
     // The one blob the container sent is the clone's README, from the clone's sync-out: no chunk left it.
     expect(ofType(secondFake.transcript, "blob", "container").map((blob) => blob.hash)).toEqual([hashBytes(encode("# tools\n"))]);
@@ -568,6 +634,7 @@ describe("fold phase 1: journey 1 in the cell's terms", () => {
     expect(first.seen.map((one) => one.found)).toEqual(["installed", "1.2.3"]);
     expect(first.stub.fakes[1]!.runs.map((request) => request.command)).toEqual([SETUP_COMMAND, "tool --version"]);
     expect(ofType(first.stub.fakes[1]!.transcript, "manifest", "cell")[0]!.cache).toEqual({ hash: kept.hash, chunks: kept.chunks });
+    expect(first.stub.fakes[1]!.scratch.writes).toBe(0);
     const lines = logs();
     expect(lines.filter((line) => line.startsWith("[pen] cache warm, ")).length).toBe(2);
     expect(lines).toContain(`[pen] cache cold, none for ${setupName(key)}`);
@@ -689,6 +756,31 @@ describe("fold phase 1: journey 1 in the cell's terms", () => {
     expect((await routeCache("earmarked-cold")).cache).toBeNull();
     expect(await chunkHashes("earmarked-cold")).toEqual([]);
     await inCell(cold.id, async (cell) => (await cell.runtime()).lease!.idle());
+  });
+});
+
+describe("fold phase 2: a warm container's description", () => {
+  it("a warm setup that touched one file writes the record again, the same record, and nothing moves; the committed cache is the cold one's", { timeout: 60_000 }, async () => {
+    const object = await pasture("touched", { repo: REPO });
+    await object.put(SETUP_PATH, encode(SETUP_SCRIPT));
+    const key = hashBytes(encode(SETUP_SCRIPT));
+    const cold = await mintedInto("cold", "touched");
+    await births(cold.id);
+    const kept = (await object.cacheFor(key))!;
+    expect(cold.stub.fakes[0]!.scratch.writes).toBeGreaterThan(0);
+
+    const toucher = await mintedInto("toucher", "touched", { touch: true });
+    const [warm] = await births(toucher.id);
+    expect(toucher.seen.map((one) => one.found)).toEqual(["1.2.3"]);
+    const fake = toucher.stub.fakes[0]!;
+    // The walk after setup found one mtime moved, so the agent wrote the record to its scratch; its bytes are the bytes put back.
+    expect(fake.scratch.writes).toBeGreaterThan(0);
+    const described = descriptions(fake.transcript)[0]!;
+    expect(described).toMatchObject({ hash: kept.hash, chunks: kept.chunks, files: kept.files, bytes: kept.bytes });
+    // The cell had it already: no chunk asked for, nothing committed, the entry warm and neither kept nor refused.
+    expect(ofType(fake.transcript, "need", "cell").filter((need) => need.id === described.id)).toEqual([]);
+    expect(warm!.cache).toEqual({ found: "warm", bytes: kept.bytes, files: kept.files, ms: expect.any(Number) });
+    expect((await object.cacheFor(key))!.keptAt).toBe(kept.keptAt);
   });
 });
 

@@ -20,11 +20,29 @@
  * reads off them which address was dialled, in which order, what `host`
  * the server saw, and that the agent's memory of a port dies with the
  * server it remembered.
+ *
+ * Fold phase 2 adds the two disks the image gives the agent, `~` and
+ * `/cache`, and proves them where they run: real directories written by a
+ * real `bash` with `HOME` and npm's prefix pointed at them, as the image
+ * points them. `~` comes in from a manifest and goes back out under the
+ * home rule; `/cache`, an executable, a symlink, a binary larger than a
+ * chunk, and a `0555` directory among it, is described as a record and
+ * put back into a second agent's empty disks one chunk per `need`, where
+ * the tool runs from `PATH`; and a put-back cut off empties a real
+ * `/cache`, read-only directory and all.
+ *
+ * Fold phase 2's second pass, after the walk: the agent dials with `ws`
+ * and its upgrade offers no `Sec-WebSocket-Extensions`, so nothing it is
+ * sent is deflated; a hard-linked pair under `/cache` is one file's bytes in
+ * the record and one inode with two names after the put-back; and a
+ * description asked for over an untouched put-back answers with the record
+ * put back and writes nothing to the scratch, while one file touched brings
+ * the whole description back.
  */
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createServer, type Server } from "node:http";
-import { chmod, lstat, mkdir, mkdtemp, readFile, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -63,8 +81,8 @@ function inbox(socket: WebSocket): () => Promise<Frame | Uint8Array> {
 describe("pen-agent, the process", () => {
   it("connects with the token, checks out a manifest, reports an edit, and exits when the socket closes", async () => {
     const server = new WebSocketServer({ port: 0 });
-    const connection = new Promise<{ socket: WebSocket; url: string }>((resolve) => {
-      server.once("connection", (socket, request) => resolve({ socket, url: request.url ?? "" }));
+    const connection = new Promise<{ socket: WebSocket; url: string; extensions: string | undefined }>((resolve) => {
+      server.once("connection", (socket, request) => resolve({ socket, url: request.url ?? "", extensions: request.headers["sec-websocket-extensions"] }));
     });
     const port = (server.address() as { port: number }).port;
     const workspace = await mkdtemp(join(tmpdir(), "pen-"));
@@ -80,11 +98,13 @@ describe("pen-agent, the process", () => {
     });
     child.stderr!.on("data", (chunk: Buffer) => stderr.push(chunk.toString()));
 
-    const { socket, url } = await connection;
+    const { socket, url, extensions } = await connection;
     const next = inbox(socket);
     const address = new URL(url, "ws://127.0.0.1");
     expect(address.pathname).toBe("/pen");
     expect(address.searchParams.get(TOKEN_PARAM)).toBe("minted-for-this-container");
+    // Fold phase 2: the upgrade offers no extension, so the cell has nothing to deflate with (Node's own WebSocket always offers one).
+    expect(extensions).toBeUndefined();
 
     socket.send(encodeFrame({ type: "ping", id: "1" }));
     expect(await next()).toEqual({ type: "pong", id: "1" });
@@ -401,6 +421,212 @@ describe("pen-agent, the process", () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     for (const one of [four, shadow, late]) await close(one);
     await rm(workspace, { recursive: true, force: true });
+  });
+
+  it("fold phase 2: syncs `~` both ways, and describes `/cache` and puts it back as a record, over real disks that real bash wrote", { timeout: 60_000 }, async () => {
+    const server = new WebSocketServer({ port: 0 });
+    const port = (server.address() as { port: number }).port;
+    const made: string[] = [];
+    const dir = async (prefix: string) => {
+      const path = await mkdtemp(join(tmpdir(), prefix));
+      made.push(path);
+      return path;
+    };
+    const stderr: string[] = [];
+    /** One container: the agent over its own workspace, `~`, and `/cache`, with `HOME`, npm's prefix, and `PATH` as the image sets them. */
+    /** The one scratch the agent made under the `TMPDIR` a container was given, and what is in it. */
+    const scratchOf = async (tmp: string): Promise<string[]> => {
+      const made = await readdir(tmp);
+      expect(made).toHaveLength(1);
+      return readdir(join(tmp, made[0]!));
+    };
+    const container = async (): Promise<{ socket: WebSocket; next: () => Promise<Frame | Uint8Array>; child: ChildProcess; home: string; cache: string; tmp: string }> => {
+      const [workspace, home, cache, tmp] = [await dir("pen-ws-"), await dir("pen-home-"), await dir("pen-cache-"), await dir("pen-tmp-")];
+      const connection = new Promise<WebSocket>((resolve) => server.once("connection", (socket) => resolve(socket)));
+      const child = spawn(process.execPath, [entry], {
+        env: {
+          ...process.env,
+          [CELL_URL_ENV]: `ws://127.0.0.1:${port}/pen`,
+          [TOKEN_ENV]: "minted",
+          PEN_WORKSPACE: workspace,
+          PEN_HOME: home,
+          PEN_CACHE: cache,
+          HOME: home,
+          TMPDIR: tmp,
+          NPM_CONFIG_PREFIX: cache,
+          PATH: `${cache}/bin:${process.env.PATH ?? ""}`,
+        },
+        stdio: ["ignore", "ignore", "pipe"],
+      });
+      child.stderr!.on("data", (chunk: Buffer) => stderr.push(chunk.toString()));
+      const socket = await connection;
+      return { socket, next: inbox(socket), child, home, cache, tmp };
+    };
+    const blob = (socket: WebSocket, bytes: Uint8Array) => {
+      socket.send(encodeFrame({ type: "blob", hash: sha256(bytes), size: bytes.byteLength }));
+      socket.send(bytes);
+    };
+
+    // The first container: `~` arrives from the rows with a `.gitconfig` in it.
+    const first = await container();
+    const gitconfig = encoder.encode("[user]\n\tname = Walker\n");
+    const homeManifest: ManifestEntry[] = [{ path: ".gitconfig", kind: "file", mode: 0o644, hash: sha256(gitconfig) }];
+    first.socket.send(encodeFrame({ type: "manifest", id: "in-1", entries: [], home: homeManifest }));
+    expect(await first.next()).toEqual({ type: "need", id: "in-1", hashes: [sha256(gitconfig)] });
+    blob(first.socket, gitconfig);
+    expect(await first.next()).toEqual({ type: "checkout", id: "in-1" });
+    expect(await readFile(join(first.home, ".gitconfig"), "utf8")).toBe("[user]\n\tname = Walker\n");
+
+    // A real bash, as setup would be: a tool's state under `~`, what the home rule keeps in the container, and an install under
+    // npm's prefix: an executable, a symlink onto `bin`, a binary larger than a chunk, and a `0555` directory with a file in it.
+    const state = encoder.encode("who = walker\n");
+    const install = [
+      "set -e",
+      "umask 022",
+      "mkdir -p ~/.config/tool ~/.cache ~/.npm",
+      "printf 'who = walker\\n' > ~/.config/tool/state",
+      "echo scratch > ~/.cache/junk && echo scratch > ~/.npm/junk",
+      'mkdir -p "$NPM_CONFIG_PREFIX/bin" "$NPM_CONFIG_PREFIX/lib/node_modules/tool/bin" "$NPM_CONFIG_PREFIX/share/ro/inner"',
+      "printf '#!/bin/sh\\necho tool 1.0\\n' > \"$NPM_CONFIG_PREFIX/lib/node_modules/tool/bin/tool.sh\"",
+      'chmod 755 "$NPM_CONFIG_PREFIX/lib/node_modules/tool/bin/tool.sh"',
+      'ln -s ../lib/node_modules/tool/bin/tool.sh "$NPM_CONFIG_PREFIX/bin/tool"',
+      'head -c 9437184 /dev/urandom > "$NPM_CONFIG_PREFIX/lib/node_modules/tool/bin/blob.bin"',
+      // A second name for the binary, as npm gives wrangler's `workerd`: earlier in path order, so it is the name that carries the bytes.
+      'mkdir -p "$NPM_CONFIG_PREFIX/lib/node_modules/other" && ln "$NPM_CONFIG_PREFIX/lib/node_modules/tool/bin/blob.bin" "$NPM_CONFIG_PREFIX/lib/node_modules/other/blob.bin"',
+      'printf data > "$NPM_CONFIG_PREFIX/share/ro/inner/file" && chmod 555 "$NPM_CONFIG_PREFIX/share/ro"',
+      "tool",
+    ].join("\n");
+    first.socket.send(encodeFrame({ type: "run", id: "setup", command: install, cwd: "/workspace", env: {} }));
+    expect(await first.next()).toEqual({ type: "stdout", id: "setup", data: "tool 1.0\n" });
+    expect(await first.next()).toEqual({ type: "exit", id: "setup", code: 0 });
+    // The sync-out walks `~` beside the checkout under the home rule: the tool's state comes back, `.cache` and `.npm` do not.
+    expect(await first.next()).toEqual({
+      type: "changed",
+      id: "setup",
+      entries: [],
+      deleted: [],
+      home: {
+        entries: [
+          { path: ".config", kind: "directory", mode: 0o755, hash: null, size: 0 },
+          { path: ".config/tool", kind: "directory", mode: 0o755, hash: null, size: 0 },
+          { path: ".config/tool/state", kind: "file", mode: 0o644, hash: sha256(state), size: state.byteLength },
+        ],
+        deleted: [],
+      },
+    });
+    first.socket.send(encodeFrame({ type: "need", id: "setup", hashes: [sha256(state)] }));
+    expect(await first.next()).toEqual({ type: "blob", hash: sha256(state), size: state.byteLength });
+    expect(await first.next()).toEqual(state);
+    first.socket.send(encodeFrame({ type: "synced", id: "setup", refused: [], home: [] }));
+
+    // Kept: `/cache` described as a record in chunks on the scratch, then each chunk asked for alone. The binary's two names are
+    // four file entries' worth of names and one file's worth of bytes: two chunks, where two copies would be three.
+    first.socket.send(encodeFrame({ type: "cache", id: "save" }));
+    const described = (await first.next()) as { type: string; id: string; hash: string; chunks: string[]; files: number; bytes: number };
+    expect(described).toMatchObject({ type: "cache", id: "save", files: 4 });
+    expect(described.chunks).toHaveLength(2);
+    expect(await scratchOf(first.tmp)).toHaveLength(2);
+    expect(described.hash).toBe(sha256(encoder.encode(described.chunks.join("\n"))));
+    expect(described.bytes).toBeGreaterThan(9437184);
+    expect(described.bytes).toBeLessThan(9437184 + 4096);
+    const chunks = new Map<string, Uint8Array>();
+    for (const hash of described.chunks) {
+      first.socket.send(encodeFrame({ type: "need", id: "save", hashes: [hash] }));
+      const announced = (await first.next()) as { type: string; hash: string; size: number };
+      expect(announced).toMatchObject({ type: "blob", hash });
+      const bytes = (await first.next()) as Uint8Array;
+      expect(bytes.byteLength).toBe(announced.size);
+      expect(sha256(bytes)).toBe(hash);
+      chunks.set(hash, bytes);
+    }
+    expect(chunks.get(described.chunks[0]!)!.byteLength).toBe(8 * 1024 * 1024);
+    // The later name is a `link` entry to the earlier one, by path; its bytes are that path.
+    const linkLine = `${JSON.stringify({ path: "lib/node_modules/tool/bin/blob.bin", kind: "link", mode: 0o644, size: "lib/node_modules/other/blob.bin".length })}\nlib/node_modules/other/blob.bin`;
+    expect(new TextDecoder("latin1").decode(chunks.get(described.chunks[1]!)!)).toContain(linkLine);
+    first.socket.send(encodeFrame({ type: "synced", id: "save", refused: [] }));
+    first.socket.send(encodeFrame({ type: "ping", id: "after-save" }));
+    expect(await first.next()).toEqual({ type: "pong", id: "after-save" });
+    const binary = await readFile(join(first.cache, "lib/node_modules/tool/bin/blob.bin"));
+    first.socket.close(1000, "the container is forgotten");
+    expect(await exited(first.child)).toBe(0);
+
+    // A fresh container: empty disks. `~` from the rows, and the cache put back before `checkout`, one chunk per `need`.
+    const fresh = await container();
+    const keptHome: ManifestEntry[] = [
+      { path: ".config", kind: "directory", mode: 0o755, hash: null },
+      { path: ".config/tool", kind: "directory", mode: 0o755, hash: null },
+      { path: ".config/tool/state", kind: "file", mode: 0o644, hash: sha256(state) },
+      ...homeManifest,
+    ];
+    const ref = { hash: described.hash, chunks: described.chunks };
+    fresh.socket.send(encodeFrame({ type: "manifest", id: "in-2", entries: [], home: keptHome, cache: ref }));
+    expect(await fresh.next()).toEqual({ type: "need", id: "in-2", hashes: [sha256(state), sha256(gitconfig)] });
+    blob(fresh.socket, state);
+    blob(fresh.socket, gitconfig);
+    for (const hash of described.chunks) {
+      expect(await fresh.next()).toEqual({ type: "need", id: "in-2", hashes: [hash] });
+      blob(fresh.socket, chunks.get(hash)!);
+    }
+    expect(await fresh.next()).toEqual({ type: "checkout", id: "in-2" });
+    expect(await readFile(join(fresh.home, ".config/tool/state"), "utf8")).toBe("who = walker\n");
+    await expect(lstat(join(fresh.home, ".cache"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readlink(join(fresh.cache, "bin/tool"))).toBe("../lib/node_modules/tool/bin/tool.sh");
+    expect((await lstat(join(fresh.cache, "lib/node_modules/tool/bin/tool.sh"))).mode & 0o7777).toBe(0o755);
+    expect((await lstat(join(fresh.cache, "share/ro"))).mode & 0o7777).toBe(0o555);
+    expect(await readFile(join(fresh.cache, "share/ro/inner/file"), "utf8")).toBe("data");
+    expect(sha256(await readFile(join(fresh.cache, "lib/node_modules/tool/bin/blob.bin")))).toBe(sha256(binary));
+    // One file with two names, as it was: the same inode, two links.
+    const [one, two] = [await lstat(join(fresh.cache, "lib/node_modules/other/blob.bin")), await lstat(join(fresh.cache, "lib/node_modules/tool/bin/blob.bin"))];
+    expect(one.ino).toBe(two.ino);
+    expect(one.nlink).toBe(2);
+
+    // Setup left `/cache` as the put-back wrote it: the description is the record that was put back, and the scratch stays empty.
+    fresh.socket.send(encodeFrame({ type: "cache", id: "warm-save" }));
+    expect(await fresh.next()).toEqual({ type: "cache", id: "warm-save", hash: described.hash, chunks: described.chunks, files: 4, bytes: described.bytes });
+    expect(await scratchOf(fresh.tmp)).toEqual([]);
+    fresh.socket.send(encodeFrame({ type: "synced", id: "warm-save", refused: [] }));
+
+    // The tool runs from `PATH` in the fresh container, and `~` reads as it was left; nothing changed, so nothing comes back.
+    fresh.socket.send(encodeFrame({ type: "run", id: "warm", command: "tool && cat ~/.config/tool/state", cwd: "/workspace", env: {} }));
+    expect(await fresh.next()).toEqual({ type: "stdout", id: "warm", data: "tool 1.0\n" });
+    const rest = await fresh.next();
+    if ((rest as { type: string }).type === "stdout") {
+      expect(rest).toEqual({ type: "stdout", id: "warm", data: "who = walker\n" });
+      expect(await fresh.next()).toEqual({ type: "exit", id: "warm", code: 0 });
+    } else expect(rest).toEqual({ type: "exit", id: "warm", code: 0 });
+    expect(await fresh.next()).toEqual({ type: "changed", id: "warm", entries: [], deleted: [], home: { entries: [], deleted: [] } });
+    fresh.socket.send(encodeFrame({ type: "need", id: "warm", hashes: [] }));
+    fresh.socket.send(encodeFrame({ type: "synced", id: "warm", refused: [], home: [] }));
+
+    // One file touched, its bytes the same: the walk no longer matches, so the record is written again, and it is the same record.
+    fresh.socket.send(encodeFrame({ type: "run", id: "touch", command: 'touch "$NPM_CONFIG_PREFIX/share/ro/inner/file"', cwd: "/workspace", env: {} }));
+    expect(await fresh.next()).toEqual({ type: "exit", id: "touch", code: 0 });
+    expect(await fresh.next()).toEqual({ type: "changed", id: "touch", entries: [], deleted: [], home: { entries: [], deleted: [] } });
+    fresh.socket.send(encodeFrame({ type: "need", id: "touch", hashes: [] }));
+    fresh.socket.send(encodeFrame({ type: "synced", id: "touch", refused: [], home: [] }));
+    fresh.socket.send(encodeFrame({ type: "cache", id: "touched" }));
+    expect(await fresh.next()).toEqual({ type: "cache", id: "touched", hash: described.hash, chunks: described.chunks, files: 4, bytes: described.bytes });
+    expect(await scratchOf(fresh.tmp)).toHaveLength(2);
+    fresh.socket.send(encodeFrame({ type: "synced", id: "touched", refused: [] }));
+
+    // A put-back whose chunk the cell no longer has: `/cache` emptied on a real disk, its `0555` directory and all, and the
+    // sync-in ends whole, cold.
+    fresh.socket.send(encodeFrame({ type: "manifest", id: "in-3", entries: [], home: keptHome, cache: ref }));
+    expect(await fresh.next()).toEqual({ type: "need", id: "in-3", hashes: [] });
+    expect(await fresh.next()).toEqual({ type: "need", id: "in-3", hashes: [described.chunks[0]] });
+    fresh.socket.send(encodeFrame({ type: "error", code: "refused", of: "need", id: "in-3", message: "the chunk is gone" }));
+    expect(await fresh.next()).toEqual({ type: "checkout", id: "in-3" });
+    expect(await readdir(fresh.cache)).toEqual([]);
+
+    fresh.socket.close(1000, "cell done");
+    expect(await exited(fresh.child)).toBe(0);
+    expect(stderr.join("")).toBe("");
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    // The first container's `/cache` still has its `0555` directory; the owner may write it again before it goes.
+    for (const path of made) {
+      spawnSync("chmod", ["-R", "u+w", path]);
+      await rm(path, { recursive: true, force: true });
+    }
   });
 
   it("refuses to start without its environment", async () => {
