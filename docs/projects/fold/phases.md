@@ -102,7 +102,7 @@ none.
 - **2026-09-11 — On a container home `ls /` lists `home tmp workspace`;** `/home` is a readable row, not a root, so nothing is written beside `sheep`.
 - **2026-09-11 — A row the cell writes under a kept name** (pi's `write ~/.cache/x`) goes into the container and never comes back, as a `node_modules` row does in the workspace.
 - **2026-09-11 — Mutations:** the home rule off fails five cases, the sync-out skipping `~` eight, the shell's `~` at `/workspace` four; the conductor reran the first and the third. Put back.
-- **2026-09-11 — Open: until fold phase 2 the prompt says `~` is kept while the image's agent has no `~` disk and `HOME` is `/root`.** A release from `main` in between is not for the station; fold phase 2 closes it.
+- **2026-09-11 — Until fold phase 2 the prompt said `~` is kept while the image's agent had no `~` disk and `HOME` was `/root`,** so a release from `main` in between was not for the station. Paid by fold phase 2.
 - **2026-09-11 — Open: `flock.test.ts`'s wire-turn case failed once in the full run** (`idle` for `running`, 9.7 s) and passed on the rerun and three runs alone; it does not touch `~`.
 
 ## Phase 1: The pasture's cache
