@@ -21,17 +21,17 @@ bug, not a detail.
 
 ---
 
-**Where we are: mint phase 0 CLOSED, mint phase 1 PART-DONE, 10 Sep
-2026; nothing waits on work.** A dog can name a sheep before it has
-anything to say: `sheep new --detach` mints one row and prints the id
-in a fifth of a second on the local home, the sheep idle with no task
-and no container until something is asked of it, and a sheep born into
-a pasture with a repository is cloned and set up at its first prompt.
-Journeys 1 and 2 walked on the local home with Docker and a real model,
-journey 3 steps 1 and 2 with them. Journey 3 step 3 waits on the
-shepherd: `pnpm hermetic --ring account --yes <sha>` on the release CI
-builds from this push, the account ring's new step `m1`, a station
-deployed and deleted on their account. Two open debts under the phases.
+**Where we are: mint is done, 11 Sep 2026. Both phases CLOSED.** A dog
+can name a sheep before it has anything to say: `sheep new --detach`
+mints one row and prints the id, the sheep idle with no task and no
+container until something is asked of it, and a sheep born into a
+pasture with a repository is cloned and set up at its first prompt.
+Planned and built in one night from the shepherd's issue #3. Phase 0
+proved the mechanism in workerd; phase 1 added the refusal, the docs,
+journey 5 in the home ring, and the account ring's step, walked
+journeys 1 and 2 on the local home with Docker and a real model, and
+closed on the account ring the shepherd typed, `ok m1` on the station.
+Two open debts under the phases; nothing waits on work.
 
 The order is dependency order. Phase 0 is the mechanism, which the
 verb's promise needs. Phase 1 is the verb's docs, the refusal, and the
@@ -124,7 +124,7 @@ in `sheep log`; journey 1 with a real model. **⚑** journey 3 step 3:
 deployed and deleted on the shepherd's account, a few container minutes
 and one deploy.
 
-**Status: PART-DONE.** 2026-09-10. Journeys 1 and 2 walked on the local home with Docker and a real model, journey 3 steps 1 and 2 with them; `pnpm test` exits 0 across all three rings with journey 5 carrying journey 1's steps; the account ring's step is written and waits on the shepherd to type it.
+**Status: CLOSED.** 2026-09-11. Journeys 1, 2, and 3 walked: 1 and 2 on the local home with Docker and a real model, 3 steps 1 and 2 with them, step 3 by the account ring the shepherd typed, `ok m1` on the station; `pnpm test` exits 0 across all three rings with journey 5 carrying journey 1's steps.
 
 **Findings:**
 
@@ -135,4 +135,4 @@ and one deploy.
 - **2026-09-10 — The guide had four words of room; the mint bullet cost 63,** cut from redundancies elsewhere; 1495 by the test's count.
 - **2026-09-10 — `m1` posts one text step before its mint,** since after a3 the home's program is a3's container one; e2 posts its own after.
 - **2026-09-10 — Open: the walk's first pastured sheep was born into no container:** wrangler answered "No such image available" for the image it had just built; a restart of the home rebuilt it. Cause not found; the home ring's `wrangler dev`s ran beside it.
-- **2026-09-10 — Open: journey 3 step 3 waits on the shepherd:** `pnpm hermetic --ring account --yes <sha>` on the release CI builds from this push; a station deployed and deleted on their account, a few container minutes and one deploy.
+- **2026-09-11 — The account ring, typed by the shepherd: `ok m1` in 0.5 s to the id alone,** listed idle with no task, the first prompt through `attach --detach` with the id after the send, `wait` printing the reply; seven sheep ended by n1, the delete listing none.
