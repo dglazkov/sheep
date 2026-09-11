@@ -247,6 +247,7 @@ sheep new [--name <name>] [-- <prompt>]   # a new session, pi's terminal attache
 sheep -c [-- <prompt>]                    # attach to the newest session
 sheep attach <id> [-- <prompt>]           # attach to a session; works from any machine with the config
 sheep ls                                  # sessions at the home
+sheep rm <id>                             # end a session: turn aborted, container and browser released, rows gone; the pasture stays
 sheep export <id> [file]                  # a pi SQLite session file
 sheep --home <url> ...                    # a different home for one command
 ```

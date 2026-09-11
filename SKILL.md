@@ -1,6 +1,6 @@
 ---
 name: sheep
-description: Herd coding agents with the sheep command — mint pi sessions in cells at a home, prompt them, wait on them, read their transcripts, and give a herd a shared pasture. Use when asked to run sheep, to delegate work to sheep, to set up sheep, or when a task is big enough to split across several agents working at once.
+description: Herd coding agents with the sheep command — mint pi sessions in cells at a home, prompt them, wait on them, read their transcripts, end them when they are done, and give a herd a shared pasture. Use when asked to run sheep, to delegate work to sheep, to set up sheep, or when a task is big enough to split across several agents working at once.
 ---
 
 # sheep
