@@ -118850,11 +118850,19 @@ function herdLine(session) {
   return `${session.id}	${session.name ?? ""}	${session.state}	${new Date(session.createdAt).toISOString()}	${session.task ?? ""}`;
 }
 __name(herdLine, "herdLine");
-function herdView(name, meta, herd, mark) {
+function cacheLine(cache) {
+  if (cache === null) return "cache: none";
+  if (!cache.current) return `cache: none for this setup.sh (an older one's, ${cacheSize(cache.bytes)}, goes at the next save)`;
+  const kept2 = new Date(cache.keptAt).toISOString().replace(/\.\d{3}Z$/, "Z");
+  return `cache: ${cacheSize(cache.bytes)}, ${cache.files} files, for setup.sh ${cache.setup.slice(0, 7)}, kept ${kept2} by ${cache.by}`;
+}
+__name(cacheLine, "cacheLine");
+function herdView(name, meta, cache, herd, mark) {
   const head = `name: ${name}
 repo: ${meta?.repo ?? "(none)"}
 branch: ${meta?.branch ?? DEFAULT_BRANCH}
 created: ${new Date(meta?.createdAt ?? 0).toISOString()}
+${cacheLine(cache)}
 `;
   return head + herd.map((session) => `${session.id === mark ? "*" : ""}${herdLine(session)}
 `).join("");
@@ -118884,8 +118892,8 @@ function pastureCommand(program, call) {
     const [verb, ...words] = args;
     if (verb === void 0 || verb === "herd") {
       if (words.length > 0) return failed2(USAGE2, 2);
-      const [meta, herd] = await Promise.all([call.meta(), program.herd()]);
-      return done2(herdView(program.name, meta, herd, program.sessionId));
+      const [meta, cache, herd] = await Promise.all([call.meta(), program.cache(), program.herd()]);
+      return done2(herdView(program.name, meta, cache, herd, program.sessionId));
     }
     if (verb === "put") {
       const [argument, file, extra] = words;
@@ -124759,7 +124767,7 @@ var SessionCell = class extends DurableObject4 {
       ...pasture === void 0 || object === void 0 ? {} : {
         // The cache's store too (fold phase 1): what this cell's setups keep, signed with its id.
         pasture: pastureSourceFor(object, sheep, this.sessionId),
-        pastureProgram: { name: pasture.name, sessionId: this.sessionId, object, herd: /* @__PURE__ */ __name(() => directory.herd(pasture.name), "herd") }
+        pastureProgram: { name: pasture.name, sessionId: this.sessionId, object, herd: /* @__PURE__ */ __name(() => directory.herd(pasture.name), "herd"), cache: /* @__PURE__ */ __name(() => object.cacheSummary(), "cache") }
       }
     });
     const models = createCellModels(this.env, { onProviderCall: /* @__PURE__ */ __name(() => this.transition(), "onProviderCall"), program: /* @__PURE__ */ __name(() => this.fauxProgram(), "program") });
@@ -125295,13 +125303,13 @@ __name(admitted, "admitted");
 var CHECKOUT_BUILD = { commit: "0.0.0-checkout", builtAt: null };
 function homeImage() {
   if (false) return null;
-  return true ? "docker.io/dglazkov2/sheep-pen@sha256:99c4d6931fe63afe2b08c72d4ad327c7b047ba186f44c8f7cdff24e86572533c" : null;
+  return true ? "docker.io/dglazkov2/sheep-pen@sha256:625034a2288ad1e784f784260005cb249db72bbc318ab7bdec5f802aa3be62b2" : null;
 }
 __name(homeImage, "homeImage");
 function homeBuild() {
   if (false) return CHECKOUT_BUILD;
   try {
-    const parsed = JSON.parse('{"commit":"3427589","builtAt":"2026-09-11T21:48:06Z"}');
+    const parsed = JSON.parse('{"commit":"7705ed7","builtAt":"2026-09-11T22:23:53Z"}');
     if (typeof parsed.commit === "string" && parsed.commit !== "") return { commit: parsed.commit, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
   } catch {
   }
