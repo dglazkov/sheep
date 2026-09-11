@@ -81,8 +81,11 @@ that should push with a token minted for it.
    with the sheep's token, handed over by the broker and never in the
    model's view.
 2. A sibling born into the same pasture with no secret is refused the
-   push in the broker's sentence, which names the sheep, the pasture,
-   and the home, and no value.
+   push: the broker refuses the credential in a sentence that names the
+   sheep, the pasture, and the home, and no value, and the helper gives
+   git nothing, so git says it could not read a username and no branch
+   reaches the repository. The sentence is the cell's log line, as every
+   broker refusal has been since pen; the sheep reads git's.
 3. With `GIT_TOKEN` set on the pasture as well, the earmarked sheep's
    push still uses its own; the sibling's uses the pasture's.
 4. A sheep born into no pasture with `--secret GIT_TOKEN` pushes with its
@@ -140,7 +143,7 @@ model answers, and where the token is real.
    station against the scratch repository, with the shepherd's
    playground token as one sheep's `GIT_TOKEN` and on no pasture; the
    earmarked sheep's branch is seen on GitHub, the sibling's push is
-   refused, both sheep are among those n1 ends, and the branch is
+   refused and its branch is not, both sheep are among those n1 ends, and the branch is
    deleted afterwards. **⚑** it deploys a station on the shepherd's
    account and uses the shepherd's token.
 

@@ -122,7 +122,8 @@ ring's new step, `s1`, beside a8 and skipped as a8 is without
 `GIT_TOKEN`; one sheep minted with `--secret GIT_TOKEN`, the token on
 stdin, and one without; each scripted by the faux provider to commit
 and push a branch; the earmarked sheep's branch seen on GitHub
-anonymously, the sibling's push refused in the broker's sentence; the
+anonymously, the sibling's push refused (git's line in its log, its
+branch absent); the
 token absent from every transcript, export, and `ps` sample the step
 takes; both sheep added to those n1 ends, the branch deleted after.
 
