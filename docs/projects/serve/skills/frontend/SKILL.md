@@ -18,6 +18,15 @@ cd app && npm install
 Any template works. `node_modules`, `dist`, and `build` stay in the
 container and never come back to the workspace, which is what you want.
 
+That cuts both ways: because `node_modules` never syncs, a container you
+have not installed into does not have it, and on a home whose containers
+the platform can replace you may meet a fresh one. If a served look comes
+back `the server exited 127 before answering` with `vite: not found`
+under it, the install is what is missing — put it on the look's own line,
+`look --serve 'npm --prefix app install && npm --prefix app run dev --
+--port $PORT --strictPort' /`, so it happens in the same container that
+runs the server.
+
 Every bash line of yours starts in the workspace root: a `cd` holds for
 that line and no longer, so keep it on the line that needs it. The
 examples below are written from the root, with the app in `app/`.

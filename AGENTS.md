@@ -14,7 +14,11 @@ directories share nothing but the command. [Project station](docs/projects/stati
 gave the dog a home in the cloud, `sheep home deploy` from the package in
 one path, and the local home a container when Docker answers. [Project eyes](docs/projects/eyes/design.md) gave a sheep eyes: `look
 <path>` in its shell renders what it wrote through the platform's
-Chromium, prints the page's report, and leaves the picture for `read`. Setup and usage are in [README.md](README.md).
+Chromium, prints the page's report, and leaves the picture for `read`.
+[Project serve](docs/projects/serve/design.md) joined the eyes to the
+container: `look --serve '<command>'` runs a dev server for the length of
+one look and stops it, the page reached over two frames on the socket the
+container already opened, so nothing connects into the container. Setup and usage are in [README.md](README.md).
 Read a project's `phases.md` for where its work stands and what the next
 phase is; [docs/projects/README.md](docs/projects/README.md) lists them.
 `/conduct <project>` is how a phase is run: briefed to a subagent, proved

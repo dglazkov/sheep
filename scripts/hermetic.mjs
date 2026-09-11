@@ -1321,6 +1321,8 @@ class Ring {
 
     // Serve phase 2, s1: the served look on blog's local home, which needs the container --docker gives it. Without one the step is
     // a skip line and is named at the end, the way journey 6 and e1 are; the container it rents here is cold, d4 having emptied it.
+    // No `settleStation` before this one, unlike s2's: nothing deploys to this home, Docker starts its container and nothing else
+    // stops it, and there is no rollout on a local home to be caught by. s1 has never failed the way s2 did, and could not.
     if (this.noEyes || !this.docker) {
       const why = this.noEyes
         ? "not walked inside the machine ring's container, which has no eyes to look with and no Docker socket to rent a container of its own"
@@ -1474,8 +1476,13 @@ class Ring {
    * own homework, but from the container: nothing listening on either
    * loopback, and the pid the server wrote to `/tmp/served.marker` gone
    * from `/proc`. Returns the turn's and the look's seconds.
+   *
+   * `settled`, when the caller has one, is what it did to make sure the
+   * platform was not about to replace the container under the look
+   * (`settleStation`); it is said on the step's line so a reader can see
+   * whether the look was taken into a rollout or after one.
    */
-  async servedWalk({ step, home, token, where }) {
+  async servedWalk({ step, home, token, where, settled }) {
     const post = async (program) => {
       const posted = await fetch(`${home}/faux`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(program), signal: AbortSignal.timeout(30_000) });
       if (posted.status !== 200) this.fail(step, `POST ${home}/faux`, { stdout: await posted.text(), stderr: `status ${posted.status}; expected 200 from the faux provider's route`, code: 1 });
@@ -1528,7 +1535,7 @@ class Ring {
     this.ok(
       step,
       `POST /faux; sheep new -- "…"; sheep log ${id} (in blog, on ${where})`,
-      `turn ${turn}s with the served look ${closing[3]}s (the container's start included), ${closing[5]}s of it waiting for the port; server: ${server.trim().split("\n").length} lines, the start line, the poll's HEAD, and every request the page made (/, /style.css, /app.js, /rows.json); errors: none; console: the page's log; tree: heading "Served", button "ping", port, forward, kill, "1" after the click; wrote look.png 1024x768, served by \`node server.mjs\` on ${SERVE_PORT}; Read image file [image/png]; after the look ${probed[2]}, and the server's pid ${pidLine[1]} gone from /proc in the same container (pid 1 ${inside[1]})`,
+      `${settled === undefined ? "" : `${settled}; `}turn ${turn}s with the served look ${closing[3]}s (the container's start included), ${closing[5]}s of it waiting for the port; server: ${server.trim().split("\n").length} lines, the start line, the poll's HEAD, and every request the page made (/, /style.css, /app.js, /rows.json); errors: none; console: the page's log; tree: heading "Served", button "ping", port, forward, kill, "1" after the click; wrote look.png 1024x768, served by \`node server.mjs\` on ${SERVE_PORT}; Read image file [image/png]; after the look ${probed[2]}, and the server's pid ${pidLine[1]} gone from /proc in the same container (pid 1 ${inside[1]})`,
     );
     return { id, turn, look: closing[3], ready: closing[5] };
   }
@@ -2272,6 +2279,21 @@ function accountApi(token) {
       const found = (await call("GET", `/accounts/${accountId}/containers/applications`)).result.find((application) => application.name === name);
       return found === undefined ? undefined : { id: found.id, name: found.name, image: found.configuration?.image };
     },
+    /**
+     * The application's rollouts, read as `deploy` reads them (`AccountApi.rollouts`
+     * in `packages/cli/src/deploy.ts`): each one's status and the image it targets.
+     * The list may come bare or under `rollouts`, so both shapes are taken.
+     */
+    async rollouts(accountId, applicationId) {
+      const result = (await call("GET", `/accounts/${accountId}/containers/applications/${applicationId}/rollouts`)).result;
+      const rows = Array.isArray(result) ? result : Array.isArray(result?.rollouts) ? result.rollouts : [];
+      return rows.map((row) => ({
+        id: typeof row.id === "string" ? row.id : null,
+        status: typeof row.status === "string" ? row.status : "unknown",
+        targetImage: typeof row.target_configuration?.image === "string" ? row.target_configuration.image : null,
+        steps: (Array.isArray(row.steps) ? row.steps : []).map((step) => ({ status: typeof step.status === "string" ? step.status : "unknown", percentage: step.step_size?.percentage ?? null })),
+      }));
+    },
   };
 }
 
@@ -2568,6 +2590,95 @@ async function checkImage(target, stamp, label = "image") {
   if (typeof stamp?.image === "string" && stamp.image !== target.image) throw new Error(`the manifest's sheep.image is ${stamp.image}; the config names ${target.image}`);
 }
 
+/** The settle wait's budget and cadence: the rollout's own (`ROLLOUT_WAIT_MS` in `deploy.ts`), polled every five seconds with a line every thirty. */
+const SETTLE_WAIT_MS = 300_000;
+const SETTLE_POLL_MS = 5_000;
+const SETTLE_SAY_MS = 30_000;
+/** A rollout's statuses that mean it will not complete; `deploy.ts`'s `ROLLOUT_FAILED`. */
+const SETTLE_FAILED = new Set(["failed", "reverted", "rolled_back"]);
+
+/**
+ * Serve phase 2, s2: the station settled after the redeploy, before a
+ * served look is taken on it.
+ *
+ * The platform runs a rollout after `wrangler deploy` returns, and
+ * `sheep home deploy` comes back as soon as its last step is under way
+ * with a healthy instance — `rollout: at step 2 of 2 …; the platform
+ * finishes it`. Until that step finishes the platform is still replacing
+ * instances, and a container it starts meanwhile is one it may replace;
+ * replacing one is a SIGTERM to the container's PID 1: the pen agent
+ * closes the socket (`1000: SIGTERM`,
+ * `packages/pen/src/node.ts`) and any run open on it ends as "the
+ * container went away during the run". An ordinary tier-2 line is
+ * milliseconds wide and rarely meets that; a served look holds its
+ * container open across a browser render, seconds wide, and meets it
+ * often. That is what failed `s2` on 10 Sep 2026, and what failed the
+ * first two served looks on `sheep-2` minutes after its upgrade while
+ * three taken later on the same station passed.
+ *
+ * So this is not a retry of the look, and nothing here reads the look's
+ * outcome: a served look that fails after this wait fails the ring, for
+ * whatever reason it gives. It is the ring waiting on the one thing it
+ * already knows is in flight, asked of the platform rather than guessed
+ * from a clock — the rollout whose target is the image the station now
+ * runs, completed, and the application configured with that image. Once
+ * both hold there is no replacement left to come, and a container
+ * started after them starts on the final image.
+ *
+ * A rollout that fails, or a budget that runs out with one still going,
+ * fails the step: taking the look anyway would be taking it into the
+ * very window this exists to leave.
+ *
+ * The three durations are arguments so that `test/settle.test.ts` can
+ * run the whole wait in milliseconds; the ring passes none of them.
+ */
+export async function settleStation(ring, api, station, { step, pollMs = SETTLE_POLL_MS, budgetMs = SETTLE_WAIT_MS, sayMs = SETTLE_SAY_MS, say = (line) => console.log(line) }) {
+  const { account, name, image } = station;
+  const started = Date.now();
+  const seconds = () => Math.round((Date.now() - started) / 1000);
+  const where = `GET /accounts/${account.id.slice(0, 6)}…/containers/applications[/<id>/rollouts]`;
+  let lastSaid = started;
+  let rounds = 0;
+  let last = "the account holds no container application of that name";
+  for (;;) {
+    let application;
+    let rollout;
+    try {
+      application = await api.application(account.id, name);
+      if (application !== undefined) {
+        const rollouts = await api.rollouts(account.id, application.id);
+        rollout = rollouts.find((candidate) => candidate.targetImage === image);
+      }
+    } catch (error) {
+      // A bad answer from the account API is another round, as `deploy`'s own reads make it; the budget below is what ends the wait.
+      last = `the account API did not answer: ${error instanceof Error ? error.message : String(error)}`;
+      application = undefined;
+    }
+    if (application !== undefined) {
+      if (rollout !== undefined && SETTLE_FAILED.has(rollout.status)) {
+        ring.fail(step, where, { stdout: JSON.stringify(rollout), stderr: `the rollout of ${image} to ${name} ${rollout.status}; the station never took the image this ring deployed, so a served look on it would be looking at the older one`, code: 1 });
+      }
+      // Settled: the rollout to this image is done — or the platform made none — and the application is configured with it.
+      if ((rollout === undefined || rollout.status === "completed") && application.image === image) {
+        const how = rollout === undefined ? "no rollout to wait for" : `the rollout ${rollout.id ?? "?"} to ${image} completed`;
+        const line = rounds === 0 ? `the station was settled before this step: ${how}, and the application is configured with ${image}` : `the station settled after ${seconds()}s: ${how}, and the application is configured with ${image}`;
+        if (rounds > 0) say(`  ${line}`);
+        return { seconds: seconds(), waited: rounds > 0, rounds, line };
+      }
+      last = `the rollout to ${image} is ${rollout === undefined ? "not listed" : `${rollout.status} (steps ${rollout.steps.map((one) => one.status).join(", ") || "none listed"})`}, and the application is configured with ${application.image ?? "nothing"}`;
+    }
+    if (Date.now() - started >= budgetMs) {
+      ring.fail(step, where, { stdout: last, stderr: `the station ${name} had not settled after ${seconds()}s; a served look taken while the platform is still replacing container instances is taken into the window that stops one (1000: SIGTERM)`, code: 1 });
+    }
+    if (Date.now() - lastSaid >= sayMs) {
+      lastSaid = Date.now();
+      say(`  waiting for the station to settle (${seconds()}s): ${last}`);
+    }
+    rounds++;
+    await new Promise((resolveSleep) => setTimeout(resolveSleep, pollMs));
+  }
+}
+
 /**
  * The station's walk: the steps a1 to a8, one line each, from blog;
  * `station.deployed` is set the moment the deploy is attempted. The ring
@@ -2761,7 +2872,10 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
 
     // Serve phase 2, s2: the same served look on the station, where the container is the platform's and the browser is warm from e2;
     // one more sheep for a6's count. Journey 3's third criterion is the package ring's line; this one is journey 3 on the account.
-    const served = await ring.servedWalk({ step: "s2", home, token: config.token, where: `the station ${name}` });
+    // The station is settled first: the redeploy above left a rollout the platform was still finishing, and a served look holds a
+    // container open long enough to be replaced by it (`settleStation`). Usually a1 to e2 have outlasted it and this returns at once.
+    const settled = await settleStation(ring, api, station, { step: "s2" });
+    const served = await ring.servedWalk({ step: "s2", home, token: config.token, where: `the station ${name}`, settled: settled.line });
     station.minted.push(served.id);
 
     // Step 4: pi becomes a kennel first (the package ring's k2.2; without it `sheep home local` falls back to ~/.sheep), then

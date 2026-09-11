@@ -22,16 +22,17 @@ that starts one, the failures included.
 
 ---
 
-**Where we are: serve phases 0 and 1 closed, serve phase 2 PART-DONE,
-10 Sep 2026.** A sheep on a home with a container can look at its dev
-server, the package ring walks a served look in a real container under
-`--docker` and names it as unchecked without one, and the words say so.
-Journeys 1 and 2 are walked on the local home with a real model, and
-journey 3 step 1 on `sheep-2` before any upgrade. What is left is the
-account, and it waits on the shepherd: `sheep home deploy` to upgrade the
-station, journey 1 steps 1 to 3 on it, and `pnpm hermetic --ring account`.
-Those are serve phase 2's ⚑ steps and the Open finding under it names
-them. Nothing else in this project waits on anything.
+**Where we are: serve is done, 10 Sep 2026. All three phases closed.** A
+sheep on a home with a container can look at its dev server: `look
+--serve '<command>' [--port <n>] [<path>]` runs the command, renders the
+page its port serves, and stops it. All four journeys are walked — 1 and
+2 on the local home with a real model, 3 on the shepherd's account with
+`sheep-2` upgraded and the account ring green, 4 in workerd against the
+fake. The walks changed the design three times: the forward reaches
+either loopback, the closing line reads one clock, and the account ring
+waits for the platform's rollout before it looks. Four open debts are
+listed under the phases; none blocks anything, and the next project is
+the shepherd's to name.
 
 **Deliberately open.** Postponed on purpose: a server kept for a turn
 on a lane of its own; the websocket forwarded; the platform's port
@@ -164,6 +165,10 @@ shepherd's account, and the container and browser minutes both spend.
 - **2026-09-10 — A red CI is a ring that cannot run at all.** `dadd7b6` failed on eyes' console assertion, so no pen image was pushed and `--ring package --docker` died at step 2 building `FROM …sheep-pen:dadd7b6`. Fixed in `601b4df`; the ring is green on the release that followed.
 - **2026-09-10 — `pnpm release --force` leaves the local `refs/heads/release` behind origin's, and the ring takes the local one silently.** The ring ran against a candidate whose image was never published and failed at step 2 for the second time, for a different reason than the first.
 - **2026-09-10 — The skill's own line is what the sheep typed.** Journey 2's sheep read `/pasture/skills/frontend/SKILL.md` before its first look and ran `look --serve 'npx vite --port $PORT --strictPort' /`, which works only because serve phase 1's walk made the forward reach either loopback.
-- **2026-09-10 — Open: the account half waits on the shepherd.** `sheep home deploy` (journey 3 step 2, with journey 1 steps 1 to 3 on the station) and `pnpm hermetic --ring account --yes <ref>` (journey 3 step 3) are ⚑ steps this conductor is not permitted to run.
+- **2026-09-10 — `sheep home deploy` returns while the rollout is still running, and says so.** `rollout: at step 2 of 2 …; the platform finishes it` is a deploy that waited as far as it waits. Measured on the ring's own station, the rest took 105 s.
+- **2026-09-10 — A served look is the widest thing asked of a container, so it meets a rollout first.** Replacing an instance is a SIGTERM to the agent, and a run open on that socket ends as "the container went away". Three looks failed inside that window on `sheep-2`; three taken later passed.
+- **2026-09-10 — The cell's idle handling does not stop a served look.** `PenLease` renews the container's clock every `PEN_IDLE`/2 while the socket is live and `rentServer` calls `idle()` only in its `finally`. The SIGTERM was the platform's, not the lease's; checked before the ring was blamed.
+- **2026-09-10 — The ring waits on the platform's own signal, not a clock and not a retry.** `s2` waits for the rollout targeting the station's image to read `completed` and the application to be configured with it, `deploy.ts`'s own two conditions; a look that fails after it still fails the ring.
+- **2026-09-10 — On the platform a fresh container has no `node_modules`, so the install belongs on the look's own line.** The station's sheep met `vite: not found` and worked it out; the skill now says so, since the cache rule that keeps `node_modules` in the container is what makes this possible at all.
 
-**Status: PART-DONE** 2026-09-10. Built and proved locally: the package ring walks a served look in a real container under `--docker` (`ok s1`, the kill read from `/proc` inside it) and names it unchecked without one, both exit 0; `pnpm test` exits 0 across all three inner rings; `README.md`, `SKILL.md` and the agent guide say a sheep can look at its dev server. Journey 2 is walked whole on the local home with a real model, all three criteria; journey 3 step 1 is walked on `sheep-2`. Journey 3 steps 2 and 3 wait on the shepherd, as the Open finding says.
+**Status: CLOSED.** 2026-09-10. `pnpm test` exits 0 across all three inner rings; `pnpm hermetic --ring package --docker` exits 0 with `ok s1`, the kill read from `/proc` inside the container, and without `--docker` `skip s1` is named as unchecked; `pnpm hermetic --ring account --yes 159c8e4` exits 0 with `ok s2`, the station settled after 105 s and deleted at the end. Journey 2 is walked whole on the local home with a real model, journey 3 whole on the account — step 1 on `sheep-2` before the upgrade, step 2 after it with journey 1 steps 1 to 3 and their timings, step 3 by the ring. Verified by the conductor; the `s2` wait falsified by three mutations, one of which first passed and made its test stronger.
