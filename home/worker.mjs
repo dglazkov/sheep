@@ -30628,6 +30628,7 @@ function hashBytes(bytes) {
 __name(hashBytes, "hashBytes");
 var WORKSPACE_ROOT = "/workspace";
 var TEMP_ROOT = "/tmp";
+var HOME_ROOT = "/home/sheep";
 var CHUNK_BYTES = 1024 * 1024;
 var MAX_FILE_BYTES = 8 * CHUNK_BYTES;
 var FsError = class extends Error {
@@ -30686,16 +30687,17 @@ function isUnder(path4, root2) {
   return path4 === root2 || path4.startsWith(`${root2}/`);
 }
 __name(isUnder, "isUnder");
-function isWritable(path4) {
-  return isUnder(path4, WORKSPACE_ROOT) || isUnder(path4, TEMP_ROOT);
+function isWritable(path4, roots = CELL_ROOTS) {
+  return roots.some((root2) => isUnder(path4, root2));
 }
 __name(isWritable, "isWritable");
-function isReadable(path4) {
-  return path4 === "/" || isWritable(path4);
+function isReadable(path4, roots = CELL_ROOTS) {
+  return path4 === "/" || isWritable(path4, roots) || roots.some((root2) => root2.startsWith(`${path4}/`));
 }
 __name(isReadable, "isReadable");
 var MAX_SYMLINK_DEPTH = 32;
 var CELL_ROOTS = [WORKSPACE_ROOT, TEMP_ROOT];
+var CELL_ROOTS_WITH_HOME = [...CELL_ROOTS, HOME_ROOT];
 var FilesTable = class {
   /**
    * `roots` are the directories the table creates on `init` and the only
@@ -30712,6 +30714,14 @@ var FilesTable = class {
   roots;
   static {
     __name(this, "FilesTable");
+  }
+  /** Whether the table has this root: `~` is one only on a home with a container (fold phase 0). */
+  hasRoot(root2) {
+    return this.roots.includes(root2);
+  }
+  /** The fence for reading, with this table's roots. */
+  isReadable(path4) {
+    return isReadable(path4, this.roots);
   }
   /** Creates the table and the roots, and brings an older table up to date. Idempotent; run on every construction. */
   init() {
@@ -30732,7 +30742,9 @@ var FilesTable = class {
     )`);
     this.migrateHashes();
     for (const root2 of ["/", ...this.roots]) {
-      if (this.get(root2) === void 0) this.insertDirectory(root2, 493);
+      for (const directory of [...ancestorsOf(root2), root2]) {
+        if (this.get(directory) === void 0) this.insertDirectory(directory, 493);
+      }
     }
   }
   /**
@@ -31037,6 +31049,12 @@ var FilesTable = class {
     );
   }
 };
+function ancestorsOf(path4) {
+  const out = [];
+  for (let parent = parentOf(path4); parent !== "/" && parent !== "."; parent = parentOf(parent)) out.unshift(parent);
+  return out;
+}
+__name(ancestorsOf, "ancestorsOf");
 function toFileRow(row) {
   return {
     path: row.path,
@@ -117103,6 +117121,10 @@ import { posix as posix9 } from "node:path";
 // ../pen/src/protocol.ts
 var CELL_URL_ENV = "PEN_CELL_URL";
 var TOKEN_ENV = "PEN_TOKEN";
+function homePath(path4) {
+  return `~/${path4}`;
+}
+__name(homePath, "homePath");
 var PASTURE_FILE_MODE = 292;
 var PASTURE_DIR_MODE = 365;
 function encodeFrame2(frame) {
@@ -117131,6 +117153,7 @@ async function messageBytes(data) {
   return void 0;
 }
 __name(messageBytes, "messageBytes");
+var HOME_IGNORES = [".cache", ".npm"];
 
 // src/pen/checkout.ts
 import { posix as posix4 } from "node:path";
@@ -117420,18 +117443,23 @@ var Checkout = class {
     const source2 = this.pasture;
     return this.start((id2, resolve2, reject) => {
       const entries = this.files.manifest();
+      const home = this.files.hasRoot(HOME_ROOT) ? this.files.manifest(HOME_ROOT) : void 0;
       const byHash = /* @__PURE__ */ new Map();
-      for (const entry of entries) if (entry.hash !== null && !byHash.has(entry.hash)) byHash.set(entry.hash, entry);
+      const offer = /* @__PURE__ */ __name((root2, list4) => {
+        for (const entry of list4) if (entry.hash !== null && !byHash.has(entry.hash)) byHash.set(entry.hash, { entry, absolute: `${root2}/${entry.path}` });
+      }, "offer");
+      offer(WORKSPACE_ROOT, entries);
+      if (home !== void 0) offer(HOME_ROOT, home);
       const pastureHashes = new Set(pasture?.flatMap((entry) => entry.hash === null ? [] : [entry.hash]) ?? []);
       const pending = {
         id: id2,
         frame: /* @__PURE__ */ __name(async (frame) => {
           if (frame.type === "need" && frame.id === id2) {
             for (const hash of frame.hashes) {
-              const entry = byHash.get(hash);
+              const row = byHash.get(hash);
               let bytes;
-              if (entry !== void 0) {
-                bytes = entry.kind === "symlink" ? encoder6.encode(this.files.readlink(`${WORKSPACE_ROOT}/${entry.path}`)) : this.files.readFile(`${WORKSPACE_ROOT}/${entry.path}`);
+              if (row !== void 0) {
+                bytes = row.entry.kind === "symlink" ? encoder6.encode(this.files.readlink(row.absolute)) : this.files.readFile(row.absolute);
               } else if (source2 !== void 0 && pastureHashes.has(hash)) {
                 bytes = await source2.readByHash(hash);
                 if (bytes === void 0) throw new CheckoutProtocolError(`the pasture no longer has ${hash}; it changed during the sync-in`);
@@ -117455,7 +117483,7 @@ var Checkout = class {
         reject
       };
       this.pending = pending;
-      this.send(pasture === void 0 ? { type: "manifest", id: id2, entries } : { type: "manifest", id: id2, entries, pasture });
+      this.send({ type: "manifest", id: id2, entries, ...pasture === void 0 ? {} : { pasture }, ...home === void 0 ? {} : { home } });
     });
   }
   /**
@@ -117467,17 +117495,20 @@ var Checkout = class {
     return this.start((_ignored, resolve2, reject) => {
       let awaited = /* @__PURE__ */ new Map();
       let refused = [];
+      let homeRefused = [];
       let changed = null;
       const finish = /* @__PURE__ */ __name(() => {
-        this.send({ type: "synced", id: changed.id, refused });
+        const frame = changed;
+        this.send(frame.home === void 0 ? { type: "synced", id: frame.id, refused } : { type: "synced", id: frame.id, refused, home: homeRefused });
         this.pending = null;
-        resolve2(refused);
+        resolve2([...refused, ...homeRefused.map((entry) => ({ path: homePath(entry.path), size: entry.size }))]);
       }, "finish");
       const onChanged = /* @__PURE__ */ __name((frame) => {
         changed = frame;
         const outcome = this.applyChanged(frame);
         awaited = outcome.awaited;
         refused = outcome.refused;
+        homeRefused = outcome.homeRefused;
         this.send({ type: "need", id: frame.id, hashes: [...awaited.keys()] });
         if (awaited.size === 0) finish();
       }, "onChanged");
@@ -117507,10 +117538,10 @@ var Checkout = class {
           }
           const hash = hashBytes(bytes);
           if (hash !== expecting.hash) throw new CheckoutProtocolError(`blob ${expecting.hash} hashes to ${hash}; nothing written`);
-          const entries = awaited.get(hash);
-          if (entries === void 0) throw new CheckoutProtocolError(`blob ${hash} was not asked for`);
+          const landings = awaited.get(hash);
+          if (landings === void 0) throw new CheckoutProtocolError(`blob ${hash} was not asked for`);
           awaited.delete(hash);
-          for (const entry of entries) this.writeWhole(entry, bytes);
+          for (const { absolute, entry } of landings) this.writeWhole(absolute, entry, bytes);
           if (awaited.size === 0) finish();
         }, "bytes"),
         reject
@@ -117526,17 +117557,26 @@ var Checkout = class {
   /**
    * What `changed` says before any bytes move: deletions, directories, and
    * mode-only changes land now, each whole; files that fit are asked for;
-   * files over the cap are refused by name.
+   * files over the cap are refused by name. The workspace first, then `~`
+   * when the frame has it and the table has the root; a `home` sent to a
+   * table without one is a protocol error, since nothing here asked for it.
    */
   applyChanged(frame) {
+    if (frame.home !== void 0 && !this.files.hasRoot(HOME_ROOT)) throw new CheckoutProtocolError(`the container reported ~ under ${frame.id}, and this cell has no ${HOME_ROOT}`);
     const awaited = /* @__PURE__ */ new Map();
+    const refused = this.applyRoot(WORKSPACE_ROOT, frame.entries, frame.deleted, awaited);
+    const homeRefused = frame.home === void 0 ? [] : this.applyRoot(HOME_ROOT, frame.home.entries, frame.home.deleted, awaited);
+    return { awaited, refused, homeRefused };
+  }
+  /** One root's half of `applyChanged`: its rows under `root`, and what it refused, by the path relative to the root. */
+  applyRoot(root2, changedEntries, deleted, awaited) {
     const refused = [];
-    for (const path4 of [...frame.deleted].sort()) {
-      this.files.rm(`${WORKSPACE_ROOT}/${path4}`, { recursive: true, force: true });
+    for (const path4 of [...deleted].sort()) {
+      this.files.rm(`${root2}/${path4}`, { recursive: true, force: true });
     }
-    const entries = [...frame.entries].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+    const entries = [...changedEntries].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
     for (const entry of entries) {
-      const absolute = `${WORKSPACE_ROOT}/${entry.path}`;
+      const absolute = `${root2}/${entry.path}`;
       const existing = this.files.get(absolute);
       if (entry.kind === "directory") {
         if (existing !== void 0 && existing.kind !== "directory") this.files.rm(absolute, { recursive: true, force: true });
@@ -117554,14 +117594,13 @@ var Checkout = class {
         continue;
       }
       const list4 = awaited.get(entry.hash);
-      if (list4 === void 0) awaited.set(entry.hash, [entry]);
-      else list4.push(entry);
+      if (list4 === void 0) awaited.set(entry.hash, [{ absolute, entry }]);
+      else list4.push({ absolute, entry });
     }
-    return { awaited, refused };
+    return refused;
   }
-  /** One row, whole. Synchronous by construction; keep it so. */
-  writeWhole(entry, bytes) {
-    const absolute = `${WORKSPACE_ROOT}/${entry.path}`;
+  /** One row, whole, at `absolute`. Synchronous by construction; keep it so. */
+  writeWhole(absolute, entry, bytes) {
     const existing = this.files.get(absolute);
     if (entry.kind === "symlink") {
       if (existing !== void 0) this.files.rm(absolute, { recursive: true, force: true });
@@ -118523,6 +118562,7 @@ function pastureCommand(program, call) {
 __name(pastureCommand, "pastureCommand");
 
 // src/env/programs.ts
+var HOME_SAID = `~ (${HOME_ROOT})`;
 var NO_CONTAINER = { container: false };
 function hasContainer(home) {
   return home.container && home.budgetSpent !== true;
@@ -118684,7 +118724,7 @@ function shellSystemPromptLine(home) {
   }
   const absent = PROGRAMS.filter((program) => !program.container).map((program) => program.name);
   const isolate = home.isolate === true ? `One exception: ${ISOLATE_TAKES}, runs in a fresh isolate instead of the container while no container is up; ${ISOLATE_DESCRIBED}; while a container is up, or when the line has more in it, node runs in the container. ` : "";
-  return opening + `A container is rented beside the session for the programs the shell lacks: ${list3(containerPrograms())}, and anything else in its image. A command line runs whole in one place: in the shell when every program in it is a text tool, otherwise in the container over a checkout of the same workspace. Output streams back, and the files a command changed sync back to the workspace, except node_modules, build output, and anything in .gitignore, which stay in the container and go when it does. ` + isolate + (absent.length === 0 ? "" : `There is no ${list3(absent)} in either. `) + `Say so plainly when asked for something neither can do, rather than pretending it ran.`;
+  return opening + `A container is rented beside the session for the programs the shell lacks: ${list3(containerPrograms())}, and anything else in its image. A command line runs whole in one place: in the shell when every program in it is a text tool, otherwise in the container over a checkout of the same workspace. Output streams back, and the files a command changed sync back to the workspace, except node_modules, build output, and anything in .gitignore, which stay in the container and go when it does; ${HOME_SAID} is kept the same way, except ${HOME_IGNORES.map((name) => homePath(name)).join(" and ")}. ` + isolate + (absent.length === 0 ? "" : `There is no ${list3(absent)} in either. `) + `Say so plainly when asked for something neither can do, rather than pretending it ran.`;
 }
 __name(shellSystemPromptLine, "shellSystemPromptLine");
 var SHELL_NOTICE = shellNotice(NO_CONTAINER);
@@ -118912,6 +118952,8 @@ var CellExecutionEnv = class _CellExecutionEnv {
   /** What this cell's just-bash has beyond the registry — the custom commands its shell is made with — for the router to count as tier 0; `undefined` when there are none. */
   custom;
   shellEnv;
+  /** Where `~` resolves, for the shell's `HOME` and for pi's file tools: `/home/sheep` on a home with a container (fold phase 0), `/workspace` on one with none. */
+  homeDir;
   container;
   containerUp;
   isolate;
@@ -118922,7 +118964,8 @@ var CellExecutionEnv = class _CellExecutionEnv {
   runs = 0;
   constructor(sql2, options = {}) {
     this.cwd = options.cwd ?? WORKSPACE_ROOT;
-    this.files = new FilesTable(sql2, options.now);
+    this.homeDir = options.container === void 0 ? WORKSPACE_ROOT : HOME_ROOT;
+    this.files = new FilesTable(sql2, options.now, options.container === void 0 ? CELL_ROOTS : CELL_ROOTS_WITH_HOME);
     this.files.init();
     this.fs = new CellFs(this.files);
     this.pasture = options.pasture;
@@ -118936,7 +118979,7 @@ var CellExecutionEnv = class _CellExecutionEnv {
     this.killTimeoutMs = options.killTimeoutMs;
     this.serveReadyMs = options.serveReadyMs ?? SERVE_READY_MS;
     this.shellEnv = {
-      HOME: WORKSPACE_ROOT,
+      HOME: this.homeDir,
       PATH: "/usr/local/bin:/usr/bin:/bin",
       TMPDIR: TEMP_ROOT,
       SHEEP: "1",
@@ -118969,8 +119012,8 @@ var CellExecutionEnv = class _CellExecutionEnv {
   }
   resolvePath(path4) {
     let normalized = path4;
-    if (normalized === "~") normalized = WORKSPACE_ROOT;
-    else if (normalized.startsWith("~/")) normalized = posix9.join(WORKSPACE_ROOT, normalized.slice(2));
+    if (normalized === "~") normalized = this.homeDir;
+    else if (normalized.startsWith("~/")) normalized = posix9.join(this.homeDir, normalized.slice(2));
     else if (normalized.startsWith("file://")) normalized = decodeURIComponent(normalized.slice("file://".length));
     return normalizePath(posix9.isAbsolute(normalized) ? normalized : posix9.resolve(this.cwd, normalized));
   }
@@ -118990,8 +119033,9 @@ var CellExecutionEnv = class _CellExecutionEnv {
         return err(toFileError(error, resolved));
       }
     }
-    if (!isReadable(resolved)) {
-      return err(new FileError("permission_denied", `outside ${WORKSPACE_ROOT} and ${TEMP_ROOT}`, resolved));
+    if (!this.files.isReadable(resolved)) {
+      const roots = this.files.hasRoot(HOME_ROOT) ? `${WORKSPACE_ROOT}, ${TEMP_ROOT}, and ${HOME_ROOT}` : `${WORKSPACE_ROOT} and ${TEMP_ROOT}`;
+      return err(new FileError("permission_denied", `outside ${roots}`, resolved));
     }
     try {
       return ok(read(resolved));
@@ -124732,13 +124776,13 @@ __name(admitted, "admitted");
 var CHECKOUT_BUILD = { commit: "0.0.0-checkout", builtAt: null };
 function homeImage() {
   if (false) return null;
-  return true ? "docker.io/dglazkov2/sheep-pen@sha256:bbdcc67dec5492ac341fce220e06b98cd9d1d07afc1ea9d5da1924f9a32f9127" : null;
+  return true ? "docker.io/dglazkov2/sheep-pen@sha256:accd7f27ee6080c0192478e1d705d69341b748428ee11f06801e7690df3831e6" : null;
 }
 __name(homeImage, "homeImage");
 function homeBuild() {
   if (false) return CHECKOUT_BUILD;
   try {
-    const parsed = JSON.parse('{"commit":"120148d","builtAt":"2026-09-11T18:23:43Z"}');
+    const parsed = JSON.parse('{"commit":"d4d4708","builtAt":"2026-09-11T18:55:56Z"}');
     if (typeof parsed.commit === "string" && parsed.commit !== "") return { commit: parsed.commit, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
   } catch {
   }
