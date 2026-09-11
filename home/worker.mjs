@@ -31332,6 +31332,21 @@ function noContainerForRepository(name) {
   return `pasture ${name} has a repository, and this home has no container to clone it with; a pasture with no repository would work here`;
 }
 __name(noContainerForRepository, "noContainerForRepository");
+var PASTURELESS_SECRET = SETUP_EXCLUDED_SECRET;
+function mintSecrets(given, pasture) {
+  if (given === void 0 || given === null) return { secrets: {} };
+  if (typeof given !== "object" || Array.isArray(given)) return { refused: `a sheep's secrets are an object of name to value, as {"NAME": "value"}` };
+  const entries = Object.entries(given);
+  for (const [name, value3] of entries) {
+    if (!isSecretName(name)) return { refused: `a secret's name is an environment variable's, not ${JSON.stringify(name)}` };
+    if (typeof value3 !== "string" || value3 === "" || /[\r\n]/.test(value3)) return { refused: `the value of the secret ${name} is not a non-empty string of one line` };
+    if (pasture === null && name !== PASTURELESS_SECRET) {
+      return { refused: `a sheep born into no pasture has no setup, so ${PASTURELESS_SECRET} is the only secret it can carry, not ${name}` };
+    }
+  }
+  return { secrets: Object.fromEntries(entries) };
+}
+__name(mintSecrets, "mintSecrets");
 var TASK_LENGTH = 120;
 function taskOf(prompt) {
   const line = prompt.split(/\r?\n/).map((candidate) => candidate.trim()).find((candidate) => candidate.length > 0) ?? "";
@@ -31355,6 +31370,7 @@ var Directory = class extends DurableObject2 {
     ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS pastures (name TEXT PRIMARY KEY, created_at INTEGER NOT NULL)");
     ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
     ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS containers (session_id TEXT PRIMARY KEY, started_at INTEGER NOT NULL)");
+    ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS session_secrets (session_id TEXT NOT NULL, name TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (session_id, name))");
   }
   /** A container started for a session. A start the Directory never saw stop is closed now, so a lost stop cannot count forever. */
   containerOpened(id2, at) {
@@ -31397,13 +31413,41 @@ var Directory = class extends DurableObject2 {
    * A session, born into a pasture or into none. The refusal is the directory's, before any cell exists: `refusal`
    * says why, and the Worker asks it before this; a name the directory does not know is refused here too, since that
    * needs no hop. Whether this home has a container is `PEN_CONTAINER` being bound, the same test the cell makes.
+   *
+   * With `secrets` (earmark phase 0): the sheep's row and its secret rows in one transaction, with no await between, so
+   * no reader sees one without the other. Secrets the Worker would refuse are refused here too, in the same sentence.
    */
-  create(name, pasture = null) {
+  create(name, pasture = null, secrets = {}) {
     if (pasture !== null && !this.hasPasture(pasture)) throw new Error(unknownPasture(pasture));
+    const checked = mintSecrets(secrets, pasture);
+    if ("refused" in checked) throw new Error(checked.refused);
     const createdAt = Date.now();
     const id2 = uuidv7(createdAt);
-    this.ctx.storage.sql.exec("INSERT INTO sessions (id, name, created_at, state, pasture) VALUES (?, ?, ?, 'idle', ?)", id2, name, createdAt, pasture);
-    return { id: id2, name, createdAt, state: "idle", pasture, task: null };
+    const sql2 = this.ctx.storage.sql;
+    this.ctx.storage.transactionSync(() => {
+      sql2.exec("INSERT INTO sessions (id, name, created_at, state, pasture) VALUES (?, ?, ?, 'idle', ?)", id2, name, createdAt, pasture);
+      for (const [key, value3] of Object.entries(checked.secrets)) sql2.exec("INSERT INTO session_secrets (session_id, name, value) VALUES (?, ?, ?)", id2, key, value3);
+    });
+    return { id: id2, name, createdAt, state: "idle", pasture, task: null, secrets: Object.keys(checked.secrets).sort() };
+  }
+  /**
+   * A sheep's own secrets, name to value, read now (earmark phase 0): for the cell alone, over RPC, at the moment setup
+   * runs or the broker answers. No route calls this; `GET /sessions` carries the names and never a value.
+   */
+  secrets(id2) {
+    return Object.fromEntries(
+      this.ctx.storage.sql.exec("SELECT name, value FROM session_secrets WHERE session_id = ? ORDER BY name", id2).toArray().map((row) => [row.name, row.value])
+    );
+  }
+  /** Every sheep's secret names, sorted, by id: what the summaries carry. */
+  secretNames() {
+    const names2 = /* @__PURE__ */ new Map();
+    for (const row of this.ctx.storage.sql.exec("SELECT session_id, name FROM session_secrets ORDER BY session_id, name").toArray()) {
+      const list4 = names2.get(row.session_id);
+      if (list4 === void 0) names2.set(row.session_id, [row.name]);
+      else list4.push(row.name);
+    }
+    return names2;
   }
   /** Why a birth into `pasture` would be refused here, or `undefined` when it would not. */
   async refusal(pasture) {
@@ -31413,11 +31457,13 @@ var Directory = class extends DurableObject2 {
     return void 0;
   }
   list() {
-    return this.ctx.storage.sql.exec("SELECT * FROM sessions ORDER BY created_at DESC").toArray().map(toSummary);
+    const names2 = this.secretNames();
+    return this.ctx.storage.sql.exec("SELECT * FROM sessions ORDER BY created_at DESC").toArray().map((row) => toSummary(row, names2));
   }
   /** The herd: every sheep born into a pasture, newest first as `list` is, with what each was asked. */
   herd(pasture) {
-    return this.ctx.storage.sql.exec("SELECT * FROM sessions WHERE pasture = ? ORDER BY created_at DESC", pasture).toArray().map(toSummary);
+    const names2 = this.secretNames();
+    return this.ctx.storage.sql.exec("SELECT * FROM sessions WHERE pasture = ? ORDER BY created_at DESC", pasture).toArray().map((row) => toSummary(row, names2));
   }
   /** The cell's report of what its sheep was asked: the first line of the first prompt, trimmed. The first report is kept; a later one changes nothing. */
   setTask(id2, task) {
@@ -31454,11 +31500,14 @@ var Directory = class extends DurableObject2 {
    * sheep; the container's own `onStop`, arriving later, finds nothing to
    * close and adds nothing. The pastures table is untouched: the pasture
    * is the shepherd's, and its herd is a query over sessions. `false` when
-   * there was no row, which changes nothing either.
+   * there was no row, which changes nothing either. The sheep's own secrets
+   * go with the row (earmark phase 0), in the same call, so ending the sheep
+   * ends them; the pasture's are its object's and untouched.
    */
   remove(id2, at = Date.now()) {
     this.containerClosed(id2, at);
     const had = this.ctx.storage.sql.exec("SELECT 1 FROM sessions WHERE id = ?", id2).toArray().length > 0;
+    this.ctx.storage.sql.exec("DELETE FROM session_secrets WHERE session_id = ?", id2);
     this.ctx.storage.sql.exec("DELETE FROM sessions WHERE id = ?", id2);
     return had;
   }
@@ -31472,8 +31521,8 @@ var Directory = class extends DurableObject2 {
     return row === void 0 ? void 0 : JSON.parse(row.value);
   }
 };
-function toSummary(row) {
-  return { id: row.id, name: row.name, createdAt: row.created_at, state: toLaneState(row.state), pasture: row.pasture ?? null, task: row.task ?? null };
+function toSummary(row, names2) {
+  return { id: row.id, name: row.name, createdAt: row.created_at, state: toLaneState(row.state), pasture: row.pasture ?? null, task: row.task ?? null, secrets: names2.get(row.id) ?? [] };
 }
 __name(toSummary, "toSummary");
 function toLaneState(value3) {
@@ -119760,6 +119809,7 @@ var DEFAULT_GIT_HOST = "github.com";
 var GIT_USERNAME = "x-access-token";
 var CREDENTIAL_TTL_MS = 6e4;
 var PASTURE_GIT_TOKEN = "GIT_TOKEN";
+var FROM_THIS_SHEEP = "this sheep";
 function hostOf(scope) {
   try {
     return new URL(scope).host;
@@ -119788,28 +119838,52 @@ __name(mintFrom, "mintFrom");
 function homeOffer(home) {
   const token = home.gitToken;
   if (token === void 0 || token === "") return void 0;
-  return { token, host: (home.gitHost ?? "").trim() || DEFAULT_GIT_HOST };
+  return { token, host: homeHost(home) };
 }
 __name(homeOffer, "homeOffer");
-function homeMinter(home, now = Date.now) {
-  return (request) => mintFrom(request, homeOffer(home), (host) => `the home has no PEN_GIT_TOKEN, so nothing can be minted for ${host}`, now);
+function homeHost(home) {
+  return (home.gitHost ?? "").trim() || DEFAULT_GIT_HOST;
 }
-__name(homeMinter, "homeMinter");
-function pastureMinter(name, pasture, home, now = Date.now) {
+__name(homeHost, "homeHost");
+async function sheepToken(sheep) {
+  if (sheep === void 0) return void 0;
+  const token = (await sheep.secrets())[PASTURE_GIT_TOKEN];
+  return token === void 0 || token === "" ? void 0 : token;
+}
+__name(sheepToken, "sheepToken");
+function pastureMinter(name, pasture, home, now = Date.now, sheep) {
   return async (request) => {
     const meta = await pasture.meta();
     const repoHost = meta?.repo == null ? void 0 : hostOf(meta.repo);
-    const own = await pasture.secret(PASTURE_GIT_TOKEN);
     let offer;
-    if (own !== void 0 && own !== "") offer = { from: `pasture ${name}`, token: own, host: repoHost ?? ((home.gitHost ?? "").trim() || DEFAULT_GIT_HOST) };
+    const mine = await sheepToken(sheep);
+    if (mine !== void 0) offer = { from: FROM_THIS_SHEEP, token: mine, host: repoHost ?? homeHost(home) };
     else {
-      const fallback = homeOffer(home);
-      offer = fallback === void 0 ? void 0 : { ...fallback, from: "the home", host: repoHost ?? fallback.host };
+      const own = await pasture.secret(PASTURE_GIT_TOKEN);
+      if (own !== void 0 && own !== "") offer = { from: `pasture ${name}`, token: own, host: repoHost ?? homeHost(home) };
+      else {
+        const fallback = homeOffer(home);
+        offer = fallback === void 0 ? void 0 : { ...fallback, from: "the home", host: repoHost ?? fallback.host };
+      }
     }
-    return mintFrom(request, offer, (host) => `pasture ${name} has no ${PASTURE_GIT_TOKEN} and the home has no PEN_GIT_TOKEN, so nothing can be minted for ${host}`, now);
+    const looked = sheep === void 0 ? `pasture ${name} has no ${PASTURE_GIT_TOKEN} and` : `${FROM_THIS_SHEEP} has no ${PASTURE_GIT_TOKEN}, pasture ${name} has none, and`;
+    return mintFrom(request, offer, (host) => `${looked} the home has no PEN_GIT_TOKEN, so nothing can be minted for ${host}`, now);
   };
 }
 __name(pastureMinter, "pastureMinter");
+function sheepMinter(sheep, home, now = Date.now) {
+  return async (request) => {
+    const mine = await sheepToken(sheep);
+    let offer;
+    if (mine !== void 0) offer = { from: FROM_THIS_SHEEP, token: mine, host: homeHost(home) };
+    else {
+      const fallback = homeOffer(home);
+      offer = fallback === void 0 ? void 0 : { ...fallback, from: "the home" };
+    }
+    return mintFrom(request, offer, (host) => `${FROM_THIS_SHEEP} has no ${PASTURE_GIT_TOKEN} and the home has no PEN_GIT_TOKEN, so nothing can be minted for ${host}`, now);
+  };
+}
+__name(sheepMinter, "sheepMinter");
 var CredentialBroker = class {
   static {
     __name(this, "CredentialBroker");
@@ -124048,6 +124122,17 @@ function promptText(entry) {
   return content.flatMap((part) => part.type === "text" && typeof part.text === "string" ? [part.text] : []).join("\n");
 }
 __name(promptText, "promptText");
+function laidOver(pasture, sheep) {
+  return {
+    async secrets() {
+      const [herds, own] = await Promise.all([pasture.secrets(), sheep.secrets()]);
+      const { [PASTURE_GIT_TOKEN]: _pastureToken, ...shared } = herds;
+      const { [PASTURE_GIT_TOKEN]: _sheepToken, ...mine } = own;
+      return { ...shared, ...mine };
+    }
+  };
+}
+__name(laidOver, "laidOver");
 function seconds(value3, fallback) {
   const parsed = value3 === void 0 || value3.trim() === "" ? Number.NaN : Number(value3);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -124096,7 +124181,8 @@ var SessionCell = class extends DurableObject4 {
     const pastureName = (await directory.get(this.sessionId))?.pasture ?? null;
     const object = pastureName === null ? void 0 : this.env.PASTURE.getByName(pastureName);
     const pasture = pastureName === null || object === void 0 ? void 0 : { name: pastureName, source: object };
-    const lease = this.leaseFor(pasture === void 0 || object === void 0 ? void 0 : { name: pasture.name, object });
+    const sheep = { secrets: /* @__PURE__ */ __name(() => directory.secrets(this.sessionId), "secrets") };
+    const lease = this.leaseFor(pasture === void 0 || object === void 0 ? void 0 : { name: pasture.name, object }, sheep);
     this.#lease = lease;
     const loader = this.env.LOADER;
     const env = new CellExecutionEnv(this.ctx.storage.sql, {
@@ -124105,9 +124191,15 @@ var SessionCell = class extends DurableObject4 {
       // The eyes (eyes phase 1), over the env's own files table and this cell's SQLite for the session row; `eyesFor` decides
       // whether this home has any, and a home without the binding gets none and no `look`.
       eyes: /* @__PURE__ */ __name((files) => eyesFor(this.env, files, this.ctx.storage.sql), "eyes"),
-      // The mount and the program, both over the one stub: what the program puts, the mount's next call reads.
+      // The mount and the program, both over the one stub: what the program puts, the mount's next call reads. Setup's
+      // secrets are the pasture's with the sheep's laid over them (earmark phase 0), both read when setup runs.
       ...pasture === void 0 || object === void 0 ? {} : {
-        pasture: object,
+        pasture: {
+          snapshot: /* @__PURE__ */ __name(() => object.snapshot(), "snapshot"),
+          readByHash: /* @__PURE__ */ __name((hash) => object.readByHash(hash), "readByHash"),
+          read: /* @__PURE__ */ __name((path4) => object.read(path4), "read"),
+          ...laidOver(object, sheep)
+        },
         pastureProgram: { name: pasture.name, sessionId: this.sessionId, object, herd: /* @__PURE__ */ __name(() => directory.herd(pasture.name), "herd") }
       }
     });
@@ -124288,7 +124380,7 @@ var SessionCell = class extends DurableObject4 {
    * Tier 2 for this cell, when the home has it: a lease over the starter.
    * A home with none has no tier 2, and the shell does not route.
    */
-  leaseFor(pasture) {
+  leaseFor(pasture, sheep) {
     const starter = this.starterFor();
     if (starter === void 0) return void 0;
     const directory = this.env.DIRECTORY.getByName("home");
@@ -124304,7 +124396,7 @@ var SessionCell = class extends DurableObject4 {
         return env.PEN_GIT_HOST;
       }
     };
-    const broker = new CredentialBroker(pasture === void 0 ? homeMinter(home) : pastureMinter(pasture.name, pasture.object, home), log);
+    const broker = new CredentialBroker(pasture === void 0 ? sheepMinter(sheep, home) : pastureMinter(pasture.name, pasture.object, home, Date.now, sheep), log);
     return new PenLease({
       sessionId: this.sessionId,
       cellUrl: origin === void 0 || origin === "" ? void 0 : `${origin.replace(/\/$/, "")}/s/${encodeURIComponent(this.sessionId)}/pen`,
@@ -124640,13 +124732,13 @@ __name(admitted, "admitted");
 var CHECKOUT_BUILD = { commit: "0.0.0-checkout", builtAt: null };
 function homeImage() {
   if (false) return null;
-  return true ? "docker.io/dglazkov2/sheep-pen@sha256:4b43eec66a687574c2125865eeef07d85b4233d5f5d12a77837cb75feaa1fb13" : null;
+  return true ? "docker.io/dglazkov2/sheep-pen@sha256:a2d6ec4d06e186d9f66f91bfa35b4f5d8a181db0a66e541450fec40df322f66d" : null;
 }
 __name(homeImage, "homeImage");
 function homeBuild() {
   if (false) return CHECKOUT_BUILD;
   try {
-    const parsed = JSON.parse('{"commit":"9cdf535","builtAt":"2026-09-11T15:37:06Z"}');
+    const parsed = JSON.parse('{"commit":"5647f90","builtAt":"2026-09-11T15:56:55Z"}');
     if (typeof parsed.commit === "string" && parsed.commit !== "") return { commit: parsed.commit, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
   } catch {
   }
@@ -124727,9 +124819,11 @@ var index_default = {
       const name = typeof body.name === "string" && body.name.length > 0 ? body.name : null;
       const pasture = typeof body.pasture === "string" && body.pasture.length > 0 ? body.pasture : null;
       if (pasture !== null && !isPastureName(pasture)) return new Response(badPastureName(pasture), { status: 400 });
+      const secrets = mintSecrets(body.secrets, pasture);
+      if ("refused" in secrets) return new Response(secrets.refused, { status: 400 });
       const refusal = pasture === null ? void 0 : await directory.refusal(pasture);
       if (refusal !== void 0) return new Response(refusal, { status: 409 });
-      return Response.json(await directory.create(name, pasture), { status: 201 });
+      return Response.json(await directory.create(name, pasture, secrets.secrets), { status: 201 });
     }
     if (url.pathname === "/sessions" && request.method === "GET") {
       const pasture = url.searchParams.get("pasture");
