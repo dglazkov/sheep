@@ -24,15 +24,16 @@ cell's rows has found the bug, not a detail.
 ---
 
 **Where we are: 11 Sep 2026. Fold phases 0 and 1 CLOSED; phase 2
-PART-DONE.** A sheep's `~` is `/home/sheep`, rows synced both ways around
+PART-DONE; phase 3 NOT STARTED.** A sheep's `~` is `/home/sheep`, rows synced both ways around
 every run; a pasture's `/cache` is chunks of one record in its object,
 keyed by `setup.sh`, put back before setup and kept whole after it. The
 image carries both, the dog's `sheep pasture` names the cache, and the
 walk on the local home with Docker and a real model has wrangler warm in
 1.85 s against a 9.8 s cold install. Nothing waits on work. One thing
-waits on the shepherd: fold phase 2's ⚑ account ring, `pnpm hermetic
---ring account --yes <sha>` on a release whose image CI pushed, which
-closes journey 3 step 3 and the project.
+waits on work: fold phase 3, fewer bytes on the wire and three chunks in
+flight, after the ring found the station putting 239 MB back in 31.3 s
+against a 38.9 s cold install. Its walk and journey 3 step 3's second
+run, one ⚑ step, close the project.
 
 The order is dependency order. Phase 0 is `~`, which gives the agent and
 the checkout their third root and the cell's shell its `HOME`. Phase 1
@@ -231,17 +232,56 @@ rm -f`. **⚑** journey 3 step 3: `pnpm hermetic --ring account --yes
 deleted on the shepherd's account, a few container minutes and one
 deploy; no token beyond the Cloudflare one.
 
-**Status: PART-DONE.** 2026-09-11. Journeys 1 and 2 are walked whole on the local home with Docker and a real model, and journey 3 steps 1 and 2 with them: the image carries `~` and `/cache`, the dog's `sheep pasture` names the cache, the guide and README say both, and `pnpm test` exits 0 across all three rings. Journey 3 step 3, the account ring's `f1`, is written and waits on the shepherd, the project's one ⚑ step.
+**Status: PART-DONE.** 2026-09-11. Journeys 1 and 2 are walked whole on the local home with Docker and a real model, and journey 3 steps 1 and 2 with them: the image carries `~` and `/cache`, the dog's `sheep pasture` names the cache, the guide and README say both, and `pnpm test` exits 0 across all three rings. Journey 3 step 3 was walked on the account, `ok f1` on release 76809e8, and its acceptance is not met: the station's put-back is 31.3 s against a 38.9 s cold install. Fold phase 3 is the answer, and the step is walked again after it.
 
 **Findings:**
 
-- **2026-09-11 — The image carries the fold:** `HOME=/home/sheep`, `NPM_CONFIG_PREFIX=/cache`, `/cache/bin` first on `PATH`, and `COREPACK_HOME=/opt/corepack`, without which every container's first `pnpm` is a download.
-- **2026-09-11 — After the design change a warm setup is 1.85 s against a 9.8 s cold install,** where it was 10.4 against 10.2: the put-back 1.82 s against 8.94, the record 239 MB in 29 chunks against 406 in 49.
-- **2026-09-11 — The conductor walked it too:** wrangler cold in 10.6 s kept 239 MB, a second sheep put it back in 1824 ms, and `~` held across a `docker rm -f`.
-- **2026-09-11 — An untouched warm cache is never re-described:** a fresh container with one command in its turn left the row's `by` and `keptAt` where the cold sheep put them.
-- **2026-09-11 — `ws` is pen's second runtime dependency,** pinned at 8.21.0; the agent's upgrade offers no `Sec-WebSocket-Extensions`, read off the server's headers.
-- **2026-09-11 — The scratch is made before the dial:** `mkdtemp` between the dial and `serveAgent` could drop a manifest, and hung the process test once.
-- **2026-09-11 — Open: two tier-2 commands in one turn collide on the checkout's one sync** (pen phase 1's rule); here the collision re-saved an identical record, moving the row's `by`. Pen's to fix.
+- **2026-09-11 — The image carries the fold:** `HOME=/home/sheep`, `NPM_CONFIG_PREFIX=/cache`, `/cache/bin` first on `PATH`, and `COREPACK_HOME=/opt/corepack` for pnpm.
+- **2026-09-11 — After the design change a warm setup is 1.85 s on the laptop against a 9.8 s cold install,** where it was 10.4 against 10.2: the put-back 1.82 s against 8.94, the record 239 MB in 29 chunks against 406 in 49.
+- **2026-09-11 — The conductor walked it too:** wrangler cold in 10.6 s kept 239 MB, a second sheep put it back in 1824 ms, `~` held across a `docker rm -f`.
+- **2026-09-11 — `ws` is pen's second dependency (8.21.0), offering no `Sec-WebSocket-Extensions`,** and an untouched warm cache is never re-described: a fresh container left the row's `by` and `keptAt` alone.
+- **2026-09-11 — The scratch is made before the dial:** `mkdtemp` between it and `serveAgent` could drop a manifest, and hung the process test once.
+- **2026-09-11 — Open: two tier-2 commands in one turn collide on the checkout's one sync** (pen phase 1's rule); the collision re-saved an identical record, moving the row's `by`. Pen's to fix.
 - **2026-09-11 — Open: the agent peaks at 512 MiB on a cold save,** holding one whole file; wrangler fits the instance's 1 GiB and a larger binary would not.
-- **2026-09-11 — Open: whether a station's edge deflates is unmeasured;** the agent no longer offers it, so the fix holds wherever it runs.
-- **2026-09-11 — Open ⚑: journey 3 step 3 waits on the shepherd:** `pnpm hermetic --ring account --yes <sha>`, which deploys and deletes a station on his account.
+- **2026-09-11 — The account ring is green on release 76809e8, `ok f1` among its steps:** the station kept wrangler's 239 MB cold, put it back for a second sheep, and named it; 11 sheep minted and ended, the station deleted.
+- **2026-09-11 — Open: on the station the put-back is 31.3 s against a 38.9 s cold install,** 239 MB at about 7.6 MB/s where the laptop takes 1.8 s. Journey 3 calls that a finding against the design, not a pass; fold phase 3 answers it.
+
+## Phase 3: Fewer bytes, and three in flight
+
+**Closes:** journey 3 step 3's acceptance, walked again on the account;
+journeys 1 and 2 stay as fold phase 2 walked them.
+
+**Work:** `packages/pen/src/record.ts`, `agent.ts`: each chunk gzipped
+where it is made and inflated where it lands, with `CompressionStream`
+and `DecompressionStream`, which workerd and Node both have, so the fake
+runs the agent's own code; **the chunk's hash stays over its plain
+bytes**, so a zlib that packs differently changes no identity and an
+unchanged install still hashes the same. `protocol.ts`: what a chunk's
+`blob` carries is the deflated form and `size` is its length; a `need`
+for the cache may name up to three chunks, answered in the order asked.
+`packages/cell/src/pen/cache.ts`, `checkout.ts`: the window of three in
+both directions, the cell holding at most three; the put-back's time
+split into the whole and the part spent in `cacheChunk`.
+`packages/cell/src/pasture.ts`: the stored (deflated) length beside the
+record's own, so `cacheSummary` still reports the tree's bytes.
+`packages/cell/src/birth.ts`: the entry's `cache` gains `chunks`,
+`stored`, and `read`, and `sheep log --json` carries them.
+`scripts/hermetic.mjs`: `f1` prints them beside the two setups' seconds.
+Tests: `fold-cache.test.ts` for the round trip through a deflated chunk,
+a plain-bytes hash that a different packing does not move, a `need` of
+three answered in order, and never a fourth blob before the next `need`;
+`agent.test.ts` for the real container's round trip.
+
+**Not this phase:** No change to what is kept or when; no new verb.
+
+**Proof:** `pnpm test` exits 0 across all three inner rings; the three
+typechecks exit 0. Falsified by two mutations: a hash taken over the
+deflated bytes (an unchanged install becomes a new record), and a fourth
+chunk sent before its `need`. Then the walk on the local home with
+Docker and a real model, wrangler as before, the put-back's seconds and
+the record's stored bytes recorded beside fold phase 2's. **⚑** journey
+3 step 3 again: `pnpm hermetic --ring account --yes <sha>` on a release
+whose image CI pushed, a station deployed and deleted on the shepherd's
+account, a few container minutes and one deploy.
+
+**Status: NOT STARTED.**

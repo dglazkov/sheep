@@ -160,13 +160,12 @@ answers for a script that did not make it.
 
 **Put back.** The first sync-in into a fresh container carries the
 cache when the pasture has one for the tree's `setup.sh`: its hash and
-its chunks' hashes. The agent asks for each chunk, one `need` at a time,
+its chunks' hashes. The agent asks for chunks, up to three in a `need`,
 writes the record's entries under `/cache` as they arrive, and says
 `checkout` when the workspace, `~`, the tree, and the cache are all on
-its disk. One at a time is the rule: a Durable Object has 128 MB, a
-WebSocket's `send` has no backpressure, and the cell reads each chunk
-from the pasture's object and passes it on, so it never holds more than
-one. A later sync-in on the same socket carries no cache: the container
+its disk. Three is the rule: a Durable Object has 128 MB, a WebSocket's
+`send` has no backpressure, and the cell reads each chunk from the
+pasture's object and passes it on, so it never holds more than three. A later sync-in on the same socket carries no cache: the container
 has it. A chunk the object no longer has is a cache that moved under
 the restore; the agent empties `/cache`, setup runs cold, and the log
 says so.
@@ -184,7 +183,7 @@ given and writes nothing. This is the warm path, every fresh container
 after the first, and it costs a stat walk; fold phase 2's walk found the
 re-description it replaces at 1.4 s and at the warm container's highest
 memory, to learn that nothing had changed. Otherwise the cell asks for the
-chunks the object lacks, one `need` at a time, puts each to the object,
+chunks the object lacks, up to three in a `need`, puts each to the object,
 and commits: the chunk list, the key, the counts, the time, and the sheep,
 in one transaction. The object keeps the committed cache and the one
 before it; a commit deletes the chunks of any older one and of any save
@@ -228,6 +227,32 @@ platform's own. The agent dials with `ws`, pinned exactly, its second
 runtime dependency, with `perMessageDeflate` off. The change is pen's
 socket, so every sync gains it; the workspace's syncs were never large
 enough to show it.
+
+**The chunks are deflated, and three are in flight.** The account ring
+put wrangler's cache back into a station in 31.3 s against a cold install
+of 38.9 (fold phase 2's ring run): 239 MB at about 7.6 MB/s, where the
+same code on a laptop's own Docker takes 1.8 s. A station's link is the
+case the laptop could not show, so the bytes have to be fewer and the
+link has to be kept busy.
+
+A chunk is deflated where it is made and inflated where it lands: the
+agent gzips each chunk as it writes the record and the cell stores what
+it is given, so the cell never compresses or decompresses and spends no
+CPU on it. wrangler's record is about 72 MB deflated, nine chunks instead
+of twenty-nine. **A chunk's hash is over its plain bytes**, never the
+deflated form, so the identity of a record does not depend on a zlib
+version and an unchanged install still hashes the same; what travels and
+what the object holds is the deflated form, and the receiver inflates
+before it checks the hash.
+
+A `need` for the cache may name up to three chunks, and they are sent in
+the order asked, so the link carries the next while the agent writes the
+last. Three is the number because the memory it bounds is the cell's: 24
+MB of a Durable Object's 128, where one chunk was 8. Whether the 7.6 MB/s
+was the link or the hop from the cell to the pasture's object is not yet
+known, so the birth's entry carries what the next ring needs to tell them
+apart: the chunk count, the bytes that travelled, and how much of the
+put-back was the cell reading from the object.
 
 **The cap.** A cache over 1 GiB is not kept: the station's instance has
 4 GB of disk and 1 GiB of memory, and the record, the chunks, and the
@@ -306,11 +331,3 @@ a test on a machine without them).
 - **Prefixes for other ecosystems.** npm's is the image's; pip, pnpm,
   and cargo take `/cache` by their own flags, and the brief can say so.
 - **`~` on a home with no container.** Nothing there keeps state.
-- **Compressing the chunks.** gzip takes wrangler's record to about a
-  third, and on the laptop a put-back's saving is what decompressing
-  costs, while each save pays seconds to compress (fold phase 2's walk).
-  A station whose link is slow is the case that would buy it; the account
-  ring's step measures that.
-- **More than one chunk in flight.** With the socket not deflating, a
-  chunk costs about 50 ms on the laptop; a window of two or three would
-  save half a second against the rule that bounds the cell's memory.

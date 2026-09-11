@@ -144,13 +144,18 @@ model answers.
    as step 1's; one sheep born cold, a second born warm, both birth
    entries read from `sheep log --json` with their counts and seconds,
    the two setups' seconds recorded side by side, `sheep pasture --json`
-   naming the cache; the step ends both sheep. **⚑** it deploys a
-   station on the shepherd's account.
+   naming the cache; the step ends both sheep. The put-back's chunk
+   count, the bytes that travelled, and the share of it the cell spent
+   reading from the pasture's object are printed with them, so a slow
+   put-back names its own cause. **⚑** it deploys a station on the
+   shepherd's account.
 
 Acceptance criteria:
 
-- The warm setup is the seconds the restore takes plus the `command -v`,
-  recorded beside the cold one's; a warm setup within a few seconds of
-  the cold one is a finding against the design, not a pass.
+- The warm setup is the seconds the put-back takes plus the `command -v`,
+  recorded beside the cold one's. On the station, where the link is the
+  slow thing, a warm setup is a pass when it is a small part of the cold
+  install; within a few seconds of it, as fold phase 2's ring run found
+  (31.3 s against 38.9), is a finding against the design, not a pass.
 - The walk's numbers are findings: the cache's size and chunk count,
   the restore's seconds on the laptop and on the station, the save's.
