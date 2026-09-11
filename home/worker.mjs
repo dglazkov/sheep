@@ -31320,6 +31320,10 @@ var Pasture = class extends DurableObject {
 var SETUP_EXCLUDED_SECRET = "GIT_TOKEN";
 
 // src/directory.ts
+function unknownSession(id2) {
+  return `no session ${id2} at this home; \`sheep ls\` lists the ones there are`;
+}
+__name(unknownSession, "unknownSession");
 function unknownPasture(name) {
   return `no pasture named ${name} at this home; \`sheep pasture ls\` lists the ones there are`;
 }
@@ -31435,9 +31439,28 @@ var Directory = class extends DurableObject2 {
   get(id2) {
     return this.list().find((session) => session.id === id2);
   }
-  /** A cell's report of its lane, at each transition it drives or observes. */
+  /**
+   * A cell's report of its lane, at each transition it drives or observes.
+   * An `UPDATE`, never an upsert: a report that arrives after `remove` must
+   * update nothing rather than resurrect the row (lamb phase 5, end phase 0).
+   */
   setState(id2, state2) {
     this.ctx.storage.sql.exec("UPDATE sessions SET state = ? WHERE id = ?", state2, id2);
+  }
+  /**
+   * The removal (end phase 0): the session's row goes, and its container
+   * row is closed now, so a container the platform is still stopping has
+   * its minutes counted and `containerMinutes` stops growing for this
+   * sheep; the container's own `onStop`, arriving later, finds nothing to
+   * close and adds nothing. The pastures table is untouched: the pasture
+   * is the shepherd's, and its herd is a query over sessions. `false` when
+   * there was no row, which changes nothing either.
+   */
+  remove(id2, at = Date.now()) {
+    this.containerClosed(id2, at);
+    const had = this.ctx.storage.sql.exec("SELECT 1 FROM sessions WHERE id = ?", id2).toArray().length > 0;
+    this.ctx.storage.sql.exec("DELETE FROM sessions WHERE id = ?", id2);
+    return had;
   }
   /** Test-only, with the faux provider: the program every cell without one of its own answers from. */
   setFauxProgram(program) {
@@ -50985,6 +51008,24 @@ var EyesSession = class {
   async release(browser) {
     await browser.disconnect();
   }
+  /**
+   * The end of the session (end phase 0): when the row holds an id, connect
+   * by it and close the browser, so the platform takes it back now rather
+   * than when its keep-alive runs out; then the row goes. A connect that
+   * fails is a browser already gone — idled out, or taken back — and there
+   * is nothing to close; the row goes just the same. Never a launch: a
+   * cell that never looked, or whose row is already gone, does nothing here.
+   */
+  async close() {
+    const kept2 = this.id();
+    if (kept2 === void 0) return;
+    try {
+      const browser = await puppeteer_cloudflare_default.connect(this.binding, kept2);
+      await browser.close();
+    } catch {
+    }
+    this.sql.exec("DELETE FROM eyes_session WHERE key = ?", KEY);
+  }
   remember(browser) {
     this.sql.exec("INSERT INTO eyes_session (key, session_id) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET session_id = excluded.session_id", KEY, browser.sessionId());
     return browser;
@@ -51005,6 +51046,10 @@ function hasEyes(env) {
   return env.BROWSER !== void 0;
 }
 __name(hasEyes, "hasEyes");
+function sessionFor(env, sql2) {
+  return env.BROWSER === void 0 ? void 0 : new EyesSession(env.BROWSER, sql2);
+}
+__name(sessionFor, "sessionFor");
 var Eyes = class {
   constructor(binding, files, sql2) {
     this.files = files;
@@ -121279,6 +121324,21 @@ var PenContainer = class extends Container {
     if (running) this.renewActivityTimeout();
     return { running };
   }
+  /**
+   * Ends the container now (end phase 0), whether or not a lease is live.
+   * A destroy of nothing is nothing: a container that is not running is
+   * not started to be destroyed, and the platform is not asked to destroy
+   * what it does not have, since its own `destroy()` may throw for that.
+   * `onStop` reports the minutes, as it does for an idle-out.
+   */
+  async destroy() {
+    if (!this.running) {
+      console.info(`[pen ${this.sessionId}] destroy asked of no running container; nothing to do`);
+      return;
+    }
+    console.info(`[pen ${this.sessionId}] destroying the container`);
+    await super.destroy();
+  }
   onStart() {
     console.info(`[pen ${this.sessionId}] container started`);
     this.env.DIRECTORY.getByName("home").containerOpened(this.sessionId, Date.now()).catch((error) => console.error(`[pen ${this.sessionId}] could not report the start:`, error instanceof Error ? error.message : error));
@@ -121401,6 +121461,18 @@ var PenLease = class {
   }
   /** Gives the container up: the socket is closed, the starter told to destroy it, and the next rent starts anew. */
   discard(reason) {
+    this.close(reason);
+    this.log(`discarding the container: ${reason}`);
+    void this.options.starter.destroy().catch((error) => this.log(`destroy failed: ${messageOf4(error)}`));
+  }
+  /**
+   * Lets go of the container without destroying it (end phase 0): the
+   * socket is closed, the keep-alive stopped, and a rent still waiting for
+   * a container to dial in is refused, so nothing is left holding the
+   * door. The cell's end calls this and then asks the starter for the
+   * destroy itself, once, whether or not a lease was ever live.
+   */
+  close(reason) {
     const socket = this.live;
     this.live = void 0;
     this.stopKeepAlive();
@@ -121410,8 +121482,7 @@ var PenLease = class {
       } catch {
       }
     }
-    this.log(`discarding the container: ${reason}`);
-    void this.options.starter.destroy().catch((error) => this.log(`destroy failed: ${messageOf4(error)}`));
+    this.fail(new Error(`no container will be rented: ${reason}`));
   }
   async budgetSpent() {
     return this.options.ledger === void 0 ? false : this.options.ledger.spent();
@@ -123906,6 +123977,8 @@ var WebSocketByteConnection = class {
     this.socket.close(1e3, "server closed");
   }
 };
+var ENDED_CLOSE_CODE = 1001;
+var ENDED_REASON = "ended";
 var WebSocketListener = class {
   static {
     __name(this, "WebSocketListener");
@@ -123915,10 +123988,17 @@ var WebSocketListener = class {
   async start(accept) {
     this.#accept = accept;
   }
-  async close() {
-    for (const [socket, handler] of this.#handlers) {
+  /**
+   * Closes every socket it holds, with a code and a reason. pi's `Server.stop()`
+   * calls it bare and the sockets say `server closing`; the cell's end (end
+   * phase 0) calls it with `ENDED_REASON`, so a terminal on the far side reads
+   * why its connection went.
+   */
+  async close(code = 1001, reason = "server closing") {
+    for (const [socket, { handler, connection }] of this.#handlers) {
+      connection.closed = true;
       handler.onClose();
-      socket.close(1001, "server closing");
+      socket.close(code, reason);
     }
     this.#handlers.clear();
     this.#accept = void 0;
@@ -123932,7 +124012,7 @@ var WebSocketListener = class {
     if (accept === void 0) throw new Error("Listener has not started");
     const connection = new WebSocketByteConnection(socket);
     const handler = accept(connection);
-    this.#handlers.set(socket, handler);
+    this.#handlers.set(socket, { handler, connection });
     let tail = Promise.resolve();
     socket.addEventListener("message", (event) => {
       const data = event.data;
@@ -123960,6 +124040,7 @@ var WebSocketListener = class {
 
 // src/cell.ts
 var HEARTBEAT_MS = 5e3;
+var END_SETTLE_MARGIN_MS = 2e3;
 function promptText(entry) {
   const content = entry.message.content;
   if (typeof content === "string") return content;
@@ -123984,6 +124065,13 @@ var SessionCell = class extends DurableObject4 {
    * holds (pasture phase 3).
    */
   #lease;
+  /**
+   * Whoever starts this cell's container, made once (end phase 0): the
+   * lease rents through it, and the end asks it for the destroy whether or
+   * not a lease is live, so an ended sheep's container goes even when the
+   * incarnation that rented it was evicted.
+   */
+  #starter;
   test = { step: 0, killAt: -1, effects: {} };
   get sessionId() {
     const name = this.ctx.id.name;
@@ -124176,12 +124264,14 @@ var SessionCell = class extends DurableObject4 {
     await this.settleAlarm(runtime);
   }
   /**
-   * Tier 2 for this cell, when the home has it: the `PEN_CONTAINER`
-   * binding when bound, else a starter the test set before the first boot.
-   * Configuration, never the platform: nothing here asks where it runs. A
-   * home with none has no tier 2, and the shell does not route.
+   * Whoever starts this cell's container, when the home has one: the
+   * `PEN_CONTAINER` binding when bound, else a starter the test set before
+   * the first boot; `undefined` on a home with neither. Made once and kept,
+   * so the lease and the end (end phase 0) ask the same one. Configuration,
+   * never the platform: nothing here asks where it runs.
    */
-  leaseFor(pasture) {
+  starterFor() {
+    if (this.#starter !== void 0) return this.#starter;
     const binding = this.env.PEN_CONTAINER;
     const starter = this.test.starter ?? (binding !== void 0 ? (() => {
       const stub = binding.getByName(this.sessionId);
@@ -124191,6 +124281,15 @@ var SessionCell = class extends DurableObject4 {
         destroy: /* @__PURE__ */ __name(() => stub.destroy(), "destroy")
       };
     })() : void 0);
+    this.#starter = starter;
+    return starter;
+  }
+  /**
+   * Tier 2 for this cell, when the home has it: a lease over the starter.
+   * A home with none has no tier 2, and the shell does not route.
+   */
+  leaseFor(pasture) {
+    const starter = this.starterFor();
     if (starter === void 0) return void 0;
     const directory = this.env.DIRECTORY.getByName("home");
     const origin = this.env.PEN_CELL_ORIGIN;
@@ -124340,6 +124439,99 @@ var SessionCell = class extends DurableObject4 {
     const result = await runtime.lane.abort(BACKGROUND_CONTEXT);
     return { aborted: result.ok };
   }
+  /**
+   * The cell's end (end phase 0): everything minting and working gave this
+   * sheep, released in the order that costs least if the end is cut short.
+   * Each step goes on if the one before failed, so an end interrupted by an
+   * eviction can be asked again and finishes; a step that failed makes the
+   * whole end fail after the rest ran, so the Worker keeps the row and the
+   * dog asks again. Idempotent: a second end finds nothing at every step.
+   *
+   * 1. The open turn is aborted, as `abort()` aborts it: pi cancels the
+   *    tool, the env's kill path ends the command in the container and
+   *    records it on the container's ledger, and the end waits for the lane
+   *    to settle, bounded by the kill timeout plus a margin. A runtime that
+   *    is not live has no turn running anywhere: the platform evicted it,
+   *    and the alarm that would resume it goes in step 5 before it fires.
+   * 2. The terminals are disconnected: every WebSocket the listener holds
+   *    is closed with `ended`, the drives are cancelled and the watch
+   *    unsubscribed, as `evict()` does, and the runtime and the door are
+   *    forgotten so nothing dials into an ended cell.
+   * 3. The container is destroyed, through the starter, whether or not a
+   *    lease is live and whether or not a container was ever started. The
+   *    lease, if live, lets go first so its socket closes and its
+   *    keep-alive stops.
+   * 4. The browser is closed, by its kept id, never launched.
+   * 5. The storage is emptied: the alarm, then every table and key.
+   */
+  async end() {
+    const id2 = this.sessionId;
+    const log = /* @__PURE__ */ __name((line) => console.info(`[cell ${id2}] end: ${line}`), "log");
+    const failures = [];
+    const attempt = /* @__PURE__ */ __name(async (step, run) => {
+      try {
+        await run();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        log(`${step} failed: ${message}`);
+        failures.push(`${step}: ${message}`);
+      }
+    }, "attempt");
+    const booted = this.#runtime;
+    const runtime = booted === void 0 ? void 0 : await booted.catch(() => void 0);
+    let aborted = false;
+    if (runtime !== void 0) {
+      await attempt("abort", async () => {
+        const result = await runtime.lane.abort(BACKGROUND_CONTEXT);
+        aborted = result.ok;
+        if (!aborted) return;
+        const bound = seconds(this.env.PEN_KILL_TIMEOUT, 10) * 1e3 + END_SETTLE_MARGIN_MS;
+        const deadline = Date.now() + bound;
+        while ((await runtime.lane.inspectExecution(BACKGROUND_CONTEXT)).current !== null) {
+          if (Date.now() >= deadline) {
+            log(`the aborted turn did not settle within ${bound} ms; going on`);
+            return;
+          }
+          await new Promise((resolve2) => setTimeout(resolve2, 50));
+        }
+        log("the open turn was aborted and settled");
+      });
+    }
+    this.#runtime = void 0;
+    this.#lease = void 0;
+    if (runtime !== void 0) {
+      await attempt("disconnect", async () => {
+        for (const cancel of runtime.drives) cancel();
+        runtime.drives.clear();
+        runtime.watch.unsubscribe();
+        const terminals = runtime.listener.connectionCount;
+        await runtime.listener.close(ENDED_CLOSE_CODE, ENDED_REASON);
+        log(`${terminals} terminal${terminals === 1 ? "" : "s"} disconnected`);
+        await runtime.server.close().catch((error) => log(`the protocol server did not close cleanly: ${error instanceof Error ? error.message : String(error)}`));
+      });
+    }
+    await attempt("destroy", async () => {
+      runtime?.lease?.close(ENDED_REASON);
+      const starter = this.starterFor();
+      if (starter === void 0) return;
+      await starter.destroy();
+      log("the container was destroyed");
+    });
+    await attempt("close the browser", async () => {
+      const session = runtime?.env.eyes?.session ?? sessionFor(this.env, this.ctx.storage.sql);
+      if (session === void 0) return;
+      const kept2 = session.id();
+      await session.close();
+      if (kept2 !== void 0) log(`the browser session ${kept2} was closed`);
+    });
+    await attempt("empty the storage", async () => {
+      await this.ctx.storage.deleteAlarm();
+      await this.ctx.storage.deleteAll();
+      log("the storage was emptied");
+    });
+    if (failures.length > 0) throw new Error(`the end of ${id2} did not finish: ${failures.join("; ")}`);
+    return { ended: true, aborted };
+  }
   /** Waits until the lane has no operation, or `timeoutMs` passes. */
   async waitForIdle(timeoutMs) {
     const deadline = Date.now() + timeoutMs;
@@ -124408,6 +124600,7 @@ var SessionCell = class extends DurableObject4 {
         return Response.json(await this.prompt(body.text));
       }
       if (route === "POST /abort") return Response.json(await this.abort());
+      if (route === "DELETE /") return Response.json(await this.end());
       if (route === "GET /export") return Response.json(await this.exportRows());
       if (route === "POST /faux" && this.env.SHEEP_PROVIDER === "faux") {
         const program = await request.json();
@@ -124447,13 +124640,13 @@ __name(admitted, "admitted");
 var CHECKOUT_BUILD = { commit: "0.0.0-checkout", builtAt: null };
 function homeImage() {
   if (false) return null;
-  return true ? "docker.io/dglazkov2/sheep-pen@sha256:424c563021cca4b916802be079e1ccb6764846d04894f52161fbcb517b486c08" : null;
+  return true ? "docker.io/dglazkov2/sheep-pen@sha256:62afd36ed8643dc48ac4ff0d4bb3288dc461c9509959706dbc512b4b695ab0ed" : null;
 }
 __name(homeImage, "homeImage");
 function homeBuild() {
   if (false) return CHECKOUT_BUILD;
   try {
-    const parsed = JSON.parse('{"commit":"701582b","builtAt":"2026-09-11T03:01:36Z"}');
+    const parsed = JSON.parse('{"commit":"0b405ab","builtAt":"2026-09-11T04:20:18Z"}');
     if (typeof parsed.commit === "string" && parsed.commit !== "") return { commit: parsed.commit, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
   } catch {
   }
@@ -124522,7 +124715,7 @@ var index_default = {
     const door = PEN_DOOR.exec(url.pathname);
     if (door && request.method === "GET") {
       const id2 = decodeURIComponent(door[1]);
-      if (await directory.get(id2) === void 0) return new Response("unknown session", { status: 404 });
+      if (await directory.get(id2) === void 0) return new Response(unknownSession(id2), { status: 404 });
       const inner = new URL(request.url);
       inner.pathname = "/pen";
       return env.SESSION_CELL.getByName(id2).fetch(new Request(inner, request));
@@ -124571,10 +124764,17 @@ var index_default = {
     const match2 = /^\/s\/([^/]+)(\/.*)?$/.exec(url.pathname);
     if (match2) {
       const id2 = decodeURIComponent(match2[1]);
-      if (await directory.get(id2) === void 0) return new Response("unknown session", { status: 404 });
+      if (await directory.get(id2) === void 0) return new Response(unknownSession(id2), { status: 404 });
       const inner = new URL(request.url);
       inner.pathname = match2[2] ?? "/";
-      return env.SESSION_CELL.getByName(id2).fetch(new Request(inner, request));
+      const cell = env.SESSION_CELL.getByName(id2);
+      if (request.method === "DELETE" && inner.pathname === "/") {
+        const ended = await cell.fetch(new Request(inner, request));
+        if (!ended.ok) return ended;
+        await directory.remove(id2);
+        return ended;
+      }
+      return cell.fetch(new Request(inner, request));
     }
     return new Response("not found", { status: 404 });
   }
