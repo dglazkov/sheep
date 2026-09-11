@@ -87,7 +87,8 @@ async function promptOf(id: string, prompt: string): Promise<string> {
 /** The design's sentence, as a literal: what `write`, `edit`, `sed -i`, and a redirect all say. */
 const SENTENCE = "the pasture is read-only; `pasture put <path>` writes to it";
 
-// The prompt the cell built at commit 1b4a42d, for each shape of home, as literals: a word changed here fails.
+// The prompt the cell built at commit 1b4a42d, for each shape of home, as literals: a word changed here fails. The two with a
+// container gained fold phase 0's clause on `~` in the sentence on what syncs back; the ones without are as they were.
 const OPENING =
   "You are a coding agent working in a session that lives in a cell, not on a machine.\n" +
   "Working directory: /workspace\n" +
@@ -115,7 +116,7 @@ const PROMPT_CONTAINER =
   TOOLS +
   "A container is rented beside the session for the programs the shell lacks: python, python3, node, npm, pnpm, npx, pip, pip3, git, and anything else in its image. " +
   "A command line runs whole in one place: in the shell when every program in it is a text tool, otherwise in the container over a checkout of the same workspace. " +
-  "Output streams back, and the files a command changed sync back to the workspace, except node_modules, build output, and anything in .gitignore, which stay in the container and go when it does. " +
+  "Output streams back, and the files a command changed sync back to the workspace, except node_modules, build output, and anything in .gitignore, which stay in the container and go when it does; ~ (/home/sheep) is kept the same way, except ~/.cache and ~/.npm. " +
   "There is no cargo in either. Say so plainly when asked for something neither can do, rather than pretending it ran." +
   CLOSING;
 const PROMPT_CONTAINER_WITH_ISOLATE =
@@ -123,7 +124,7 @@ const PROMPT_CONTAINER_WITH_ISOLATE =
   TOOLS +
   "A container is rented beside the session for the programs the shell lacks: python, python3, node, npm, pnpm, npx, pip, pip3, git, and anything else in its image. " +
   "A command line runs whole in one place: in the shell when every program in it is a text tool, otherwise in the container over a checkout of the same workspace. " +
-  "Output streams back, and the files a command changed sync back to the workspace, except node_modules, build output, and anything in .gitignore, which stay in the container and go when it does. " +
+  "Output streams back, and the files a command changed sync back to the workspace, except node_modules, build output, and anything in .gitignore, which stay in the container and go when it does; ~ (/home/sheep) is kept the same way, except ~/.cache and ~/.npm. " +
   `One exception: a line of exactly \`node <file> [args…]\`, the file a workspace script ending in .mjs, .js, or .cjs, runs in a fresh isolate instead of the container while no container is up; ${ISOLATE_DESCRIBED}; while a container is up, or when the line has more in it, node runs in the container. ` +
   "There is no cargo in either. Say so plainly when asked for something neither can do, rather than pretending it ran." +
   CLOSING;

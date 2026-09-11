@@ -26,6 +26,16 @@
  * is a run, and a sync happens before and after one — and the guard is
  * what says so out loud rather than letting a look's body be written to
  * a row, whichever of the two announced first.
+ *
+ * Fold phase 0: on a table that has `~` as a root (a home with a
+ * container), the manifest carries a third root, `home`, the rows under
+ * `/home/sheep` with paths relative to it, from the same table; the `need`
+ * is answered for it from those rows; and its `changed` is written the way
+ * the workspace's is, one row at a time, whole, under `/home/sheep`. A file
+ * over the cap there is refused by name in `synced.home`, and the sync-out
+ * resolves with it named `~/` in front, which is how the tool result says
+ * it. A table without the root sends no `home` and writes none, so a
+ * transcript is what it was.
  */
 import {
   type CellFrame,
@@ -33,6 +43,7 @@ import {
   type ContainerFrame,
   decodeFrame,
   encodeFrame,
+  homePath,
   type ManifestEntry,
   messageBytes,
   PASTURE_DIR_MODE,
@@ -40,7 +51,7 @@ import {
   type Refused,
 } from "@sheep/pen/protocol";
 import { posix } from "node:path";
-import { FilesTable, hashBytes, MAX_FILE_BYTES, WORKSPACE_ROOT } from "../workspace/files.ts";
+import { FilesTable, HOME_ROOT, hashBytes, MAX_FILE_BYTES, WORKSPACE_ROOT } from "../workspace/files.ts";
 import type { PastureSource } from "../workspace/mount.ts";
 import { type BinaryGuard, binaryGuard } from "./forward.ts";
 
@@ -79,6 +90,12 @@ export class CheckoutProtocolError extends Error {
     super(message);
     this.name = "CheckoutProtocolError";
   }
+}
+
+/** An entry of a `changed`, with the row it lands in: under `/workspace`, or under `/home/sheep` for `~`'s. */
+interface Landing {
+  absolute: string;
+  entry: ChangedEntry;
 }
 
 /** One sync in flight: what it does with each frame, and how it ends. A frame's handling may wait, as a `need` for the pasture's bytes does. */
@@ -145,20 +162,24 @@ export class Checkout {
     const source = this.pasture;
     return this.start<ManifestEntry[] | undefined>((id, resolve, reject) => {
       const entries = this.files.manifest();
-      const byHash = new Map<string, ManifestEntry>();
-      for (const entry of entries) if (entry.hash !== null && !byHash.has(entry.hash)) byHash.set(entry.hash, entry);
+      // The third root, from the same rows, when the table has it: `~` on a home with a container.
+      const home = this.files.hasRoot(HOME_ROOT) ? this.files.manifest(HOME_ROOT) : undefined;
+      const byHash = new Map<string, { entry: ManifestEntry; absolute: string }>();
+      const offer = (root: string, list: ManifestEntry[]) => {
+        for (const entry of list) if (entry.hash !== null && !byHash.has(entry.hash)) byHash.set(entry.hash, { entry, absolute: `${root}/${entry.path}` });
+      };
+      offer(WORKSPACE_ROOT, entries);
+      if (home !== undefined) offer(HOME_ROOT, home);
       const pastureHashes = new Set(pasture?.flatMap((entry) => (entry.hash === null ? [] : [entry.hash])) ?? []);
       const pending: Pending = {
         id,
         frame: async (frame) => {
           if (frame.type === "need" && frame.id === id) {
             for (const hash of frame.hashes) {
-              const entry = byHash.get(hash);
+              const row = byHash.get(hash);
               let bytes: Uint8Array | undefined;
-              if (entry !== undefined) {
-                bytes = entry.kind === "symlink"
-                  ? encoder.encode(this.files.readlink(`${WORKSPACE_ROOT}/${entry.path}`))
-                  : this.files.readFile(`${WORKSPACE_ROOT}/${entry.path}`);
+              if (row !== undefined) {
+                bytes = row.entry.kind === "symlink" ? encoder.encode(this.files.readlink(row.absolute)) : this.files.readFile(row.absolute);
               } else if (source !== undefined && pastureHashes.has(hash)) {
                 // The second root's bytes, from the object by hash; a file changed since the snapshot is a hash it no longer has.
                 bytes = await source.readByHash(hash);
@@ -183,7 +204,7 @@ export class Checkout {
         reject,
       };
       this.pending = pending;
-      this.send(pasture === undefined ? { type: "manifest", id, entries } : { type: "manifest", id, entries, pasture });
+      this.send({ type: "manifest", id, entries, ...(pasture === undefined ? {} : { pasture }), ...(home === undefined ? {} : { home }) });
     });
   }
 
@@ -194,19 +215,23 @@ export class Checkout {
    */
   syncOut(id?: string): Promise<Refused[]> {
     return this.start<Refused[]>((_ignored, resolve, reject) => {
-      let awaited = new Map<string, ChangedEntry[]>();
+      let awaited = new Map<string, Landing[]>();
       let refused: Refused[] = [];
+      let homeRefused: Refused[] = [];
       let changed: Extract<ContainerFrame, { type: "changed" }> | null = null;
       const finish = () => {
-        this.send({ type: "synced", id: changed!.id, refused });
+        const frame = changed!;
+        // `home` answers a `changed` that had it, and only then, so a transcript without `~` is what it was.
+        this.send(frame.home === undefined ? { type: "synced", id: frame.id, refused } : { type: "synced", id: frame.id, refused, home: homeRefused });
         this.pending = null;
-        resolve(refused);
+        resolve([...refused, ...homeRefused.map((entry) => ({ path: homePath(entry.path), size: entry.size }))]);
       };
       const onChanged = (frame: Extract<ContainerFrame, { type: "changed" }>) => {
         changed = frame;
         const outcome = this.applyChanged(frame);
         awaited = outcome.awaited;
         refused = outcome.refused;
+        homeRefused = outcome.homeRefused;
         this.send({ type: "need", id: frame.id, hashes: [...awaited.keys()] });
         if (awaited.size === 0) finish();
       };
@@ -236,11 +261,11 @@ export class Checkout {
           }
           const hash = hashBytes(bytes);
           if (hash !== expecting.hash) throw new CheckoutProtocolError(`blob ${expecting.hash} hashes to ${hash}; nothing written`);
-          const entries = awaited.get(hash);
-          if (entries === undefined) throw new CheckoutProtocolError(`blob ${hash} was not asked for`);
+          const landings = awaited.get(hash);
+          if (landings === undefined) throw new CheckoutProtocolError(`blob ${hash} was not asked for`);
           awaited.delete(hash);
           // One row at a time, whole: nothing asynchronous from here to the end of the loop.
-          for (const entry of entries) this.writeWhole(entry, bytes);
+          for (const { absolute, entry } of landings) this.writeWhole(absolute, entry, bytes);
           if (awaited.size === 0) finish();
         },
         reject,
@@ -257,17 +282,27 @@ export class Checkout {
   /**
    * What `changed` says before any bytes move: deletions, directories, and
    * mode-only changes land now, each whole; files that fit are asked for;
-   * files over the cap are refused by name.
+   * files over the cap are refused by name. The workspace first, then `~`
+   * when the frame has it and the table has the root; a `home` sent to a
+   * table without one is a protocol error, since nothing here asked for it.
    */
-  private applyChanged(frame: Extract<ContainerFrame, { type: "changed" }>): { awaited: Map<string, ChangedEntry[]>; refused: Refused[] } {
-    const awaited = new Map<string, ChangedEntry[]>();
+  private applyChanged(frame: Extract<ContainerFrame, { type: "changed" }>): { awaited: Map<string, Landing[]>; refused: Refused[]; homeRefused: Refused[] } {
+    if (frame.home !== undefined && !this.files.hasRoot(HOME_ROOT)) throw new CheckoutProtocolError(`the container reported ~ under ${frame.id}, and this cell has no ${HOME_ROOT}`);
+    const awaited = new Map<string, Landing[]>();
+    const refused = this.applyRoot(WORKSPACE_ROOT, frame.entries, frame.deleted, awaited);
+    const homeRefused = frame.home === undefined ? [] : this.applyRoot(HOME_ROOT, frame.home.entries, frame.home.deleted, awaited);
+    return { awaited, refused, homeRefused };
+  }
+
+  /** One root's half of `applyChanged`: its rows under `root`, and what it refused, by the path relative to the root. */
+  private applyRoot(root: string, changedEntries: ChangedEntry[], deleted: string[], awaited: Map<string, Landing[]>): Refused[] {
     const refused: Refused[] = [];
-    for (const path of [...frame.deleted].sort()) {
-      this.files.rm(`${WORKSPACE_ROOT}/${path}`, { recursive: true, force: true });
+    for (const path of [...deleted].sort()) {
+      this.files.rm(`${root}/${path}`, { recursive: true, force: true });
     }
-    const entries = [...frame.entries].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+    const entries = [...changedEntries].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
     for (const entry of entries) {
-      const absolute = `${WORKSPACE_ROOT}/${entry.path}`;
+      const absolute = `${root}/${entry.path}`;
       const existing = this.files.get(absolute);
       if (entry.kind === "directory") {
         if (existing !== undefined && existing.kind !== "directory") this.files.rm(absolute, { recursive: true, force: true });
@@ -285,15 +320,14 @@ export class Checkout {
         continue;
       }
       const list = awaited.get(entry.hash);
-      if (list === undefined) awaited.set(entry.hash, [entry]);
-      else list.push(entry);
+      if (list === undefined) awaited.set(entry.hash, [{ absolute, entry }]);
+      else list.push({ absolute, entry });
     }
-    return { awaited, refused };
+    return refused;
   }
 
-  /** One row, whole. Synchronous by construction; keep it so. */
-  private writeWhole(entry: ChangedEntry, bytes: Uint8Array): void {
-    const absolute = `${WORKSPACE_ROOT}/${entry.path}`;
+  /** One row, whole, at `absolute`. Synchronous by construction; keep it so. */
+  private writeWhole(absolute: string, entry: ChangedEntry, bytes: Uint8Array): void {
     const existing = this.files.get(absolute);
     if (entry.kind === "symlink") {
       if (existing !== undefined) this.files.rm(absolute, { recursive: true, force: true });

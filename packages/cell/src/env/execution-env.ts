@@ -37,6 +37,13 @@
  * `runInContainer` whose run is not awaited to its end but looked at while
  * it runs and killed after, which is the whole of what a served look is on
  * this side.
+ * Fold phase 0: on a home with a container, a sheep's `~` is `/home/sheep`,
+ * a root of this env's files table, and the shell's `HOME` and the `~` of
+ * pi's file tools both resolve there, so a file a tool left under `~` in the
+ * container reads the same here with none involved. The checkout carries it
+ * as the manifest's third root. On a home with none, nothing moves: `HOME`
+ * is `/workspace`, `~` resolves there, and `/home/sheep` is outside the
+ * fence. Which of the two a home is, is decided once, at construction.
  */
 import type { Context } from "@earendil-works/pi-agent-core";
 import {
@@ -63,7 +70,7 @@ import { Forward, type ForwardResponse } from "../pen/forward.ts";
 import { type Isolate, IsolateEnded } from "../pen/isolate.ts";
 import { ContainerRun, KillUnanswered, type RunEnd, RunInterrupted } from "../pen/run.ts";
 import { CellFs } from "../workspace/cell-fs.ts";
-import { type FileRow, FilesTable, FsError, isReadable, MAX_FILE_BYTES, normalizePath, TEMP_ROOT, WORKSPACE_ROOT } from "../workspace/files.ts";
+import { CELL_ROOTS, CELL_ROOTS_WITH_HOME, type FileRow, FilesTable, FsError, HOME_ROOT, MAX_FILE_BYTES, normalizePath, TEMP_ROOT, WORKSPACE_ROOT } from "../workspace/files.ts";
 import { annotateReadOnly, isPasturePath, PASTURE_ROOT, PastureCall, type PastureRow, type PastureSource, readOnly } from "../workspace/mount.ts";
 import { LOOK_PROGRAMS, lookCommand, type Served } from "./look-command.ts";
 import { PASTURE_PROGRAMS, type PastureProgram, pastureCommand } from "./pasture-command.ts";
@@ -297,6 +304,8 @@ export class CellExecutionEnv implements ExecutionEnv {
   /** What this cell's just-bash has beyond the registry — the custom commands its shell is made with — for the router to count as tier 0; `undefined` when there are none. */
   private readonly custom: ReadonlySet<string> | undefined;
   private readonly shellEnv: Record<string, string>;
+  /** Where `~` resolves, for the shell's `HOME` and for pi's file tools: `/home/sheep` on a home with a container (fold phase 0), `/workspace` on one with none. */
+  readonly homeDir: string;
   private readonly container: ContainerLease | undefined;
   private readonly containerUp: (() => boolean) | undefined;
   private readonly isolate: Isolate | undefined;
@@ -308,7 +317,9 @@ export class CellExecutionEnv implements ExecutionEnv {
 
   constructor(sql: SqlStorage, options: CellExecutionEnvOptions = {}) {
     this.cwd = options.cwd ?? WORKSPACE_ROOT;
-    this.files = new FilesTable(sql, options.now);
+    // Decided once: a home with a container keeps a sheep's `~` as rows under its own root; a home with none has no such root.
+    this.homeDir = options.container === undefined ? WORKSPACE_ROOT : HOME_ROOT;
+    this.files = new FilesTable(sql, options.now, options.container === undefined ? CELL_ROOTS : CELL_ROOTS_WITH_HOME);
     this.files.init();
     this.fs = new CellFs(this.files);
     this.pasture = options.pasture;
@@ -322,7 +333,7 @@ export class CellExecutionEnv implements ExecutionEnv {
     this.killTimeoutMs = options.killTimeoutMs;
     this.serveReadyMs = options.serveReadyMs ?? SERVE_READY_MS;
     this.shellEnv = {
-      HOME: WORKSPACE_ROOT,
+      HOME: this.homeDir,
       PATH: "/usr/local/bin:/usr/bin:/bin",
       TMPDIR: TEMP_ROOT,
       SHEEP: "1",
@@ -359,8 +370,8 @@ export class CellExecutionEnv implements ExecutionEnv {
 
   private resolvePath(path: string): string {
     let normalized = path;
-    if (normalized === "~") normalized = WORKSPACE_ROOT;
-    else if (normalized.startsWith("~/")) normalized = posix.join(WORKSPACE_ROOT, normalized.slice(2));
+    if (normalized === "~") normalized = this.homeDir;
+    else if (normalized.startsWith("~/")) normalized = posix.join(this.homeDir, normalized.slice(2));
     else if (normalized.startsWith("file://")) normalized = decodeURIComponent(normalized.slice("file://".length));
     return normalizePath(posix.isAbsolute(normalized) ? normalized : posix.resolve(this.cwd, normalized));
   }
@@ -386,8 +397,9 @@ export class CellExecutionEnv implements ExecutionEnv {
         return err(toFileError(error, resolved));
       }
     }
-    if (!isReadable(resolved)) {
-      return err(new FileError("permission_denied", `outside ${WORKSPACE_ROOT} and ${TEMP_ROOT}`, resolved));
+    if (!this.files.isReadable(resolved)) {
+      const roots = this.files.hasRoot(HOME_ROOT) ? `${WORKSPACE_ROOT}, ${TEMP_ROOT}, and ${HOME_ROOT}` : `${WORKSPACE_ROOT} and ${TEMP_ROOT}`;
+      return err(new FileError("permission_denied", `outside ${roots}`, resolved));
     }
     try {
       return ok(read(resolved));
@@ -889,6 +901,7 @@ export class CellExecutionEnv implements ExecutionEnv {
         if (error instanceof CheckoutInterrupted) return unavailable(interruptedDuringSyncOut(end), error);
         return { full, outcome: { error: new ExecutionError("unknown", `the sync-out failed: ${messageOf(error)}`) } };
       }
+      // A file under `~` is named `~/` in front, as the checkout resolves it.
       for (const entry of refused) {
         const line = `pen: ${entry.path} (${entry.size} bytes) is over the per-file limit and was not synced\n`;
         full += line;

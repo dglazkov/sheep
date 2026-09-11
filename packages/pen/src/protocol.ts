@@ -56,6 +56,16 @@
  * what the manifest no longer names. Its blobs travel the same way as the
  * workspace's, by hash, in the one `need`.
  *
+ * Fold phase 0: a `manifest` may carry a third root, `home`, a sheep's `~`
+ * with paths relative to `/home/sheep`, and unlike the pasture's it syncs
+ * both ways. A sync-in writes it under the home rule (`HOME_IGNORES` at
+ * the root of `~`, `BUILT_IN_IGNORES` at any depth) and deletes what the
+ * manifest does not name and the rule does not keep; the sync-out after a
+ * manifest that carried it walks it beside the checkout and reports it as
+ * `changed.home`; the cell's `synced` names what it refused there in
+ * `home`. Its blobs share the one `need` in both directions. Absent from
+ * the manifest, `~` is left as it is and never reported.
+ *
  * This file must run anywhere: it is imported by the cell (workerd) and
  * by the agent (node). No `node:*`, no globals beyond JSON.
  */
@@ -126,6 +136,17 @@ export interface Refused {
   size: number;
 }
 
+/** Fold phase 0: what changed under `~` since the last sync, paths relative to `~`; the workspace's `changed` has the same two lists. */
+export interface HomeChanged {
+  entries: ChangedEntry[];
+  deleted: string[];
+}
+
+/** How a path under `~` is named to a person or a model: `~/` in front of the path relative to it. */
+export function homePath(path: string): string {
+  return `~/${path}`;
+}
+
 /**
  * One request the browser made during a look, for a server listening on
  * `port` inside the container. `url` is the path and query alone — the
@@ -192,8 +213,10 @@ export type CellFrame =
    * The whole workspace, sorted by path. Anything not in it is deleted from the checkout, except what the cache rule keeps.
    * `pasture`, when present, is the second root (pasture phase 3): the pasture's tree, paths relative to `/pasture`, written
    * read-only under `/pasture` beside the checkout; anything under `/pasture` it does not name is removed. Absent, `/pasture` is left as it is.
+   * `home`, when present, is the third root (fold phase 0): a sheep's `~`, paths relative to `/home/sheep`, written under the home
+   * rule and synced back after every run. Absent, `~` is left as it is and no sync-out reports it.
    */
-  | { type: "manifest"; id: string; entries: ManifestEntry[]; pasture?: ManifestEntry[] }
+  | { type: "manifest"; id: string; entries: ManifestEntry[]; pasture?: ManifestEntry[]; home?: ManifestEntry[] }
   | BlobFrame
   | NeedFrame
   | FetchFrame
@@ -203,8 +226,8 @@ export type CellFrame =
   | { type: "kill"; id: string; reason: string }
   /** Asks the container to describe what changed since the last sync, as `changed` under this id. */
   | { type: "sync"; id: string }
-  /** The diff the container sent under this id has been written to the rows, except the files named. */
-  | { type: "synced"; id: string; refused: Refused[] }
+  /** The diff the container sent under this id has been written to the rows, except the files named; `home` names those under `~`, relative to it, when the diff had `home`. */
+  | { type: "synced"; id: string; refused: Refused[]; home?: Refused[] }
   /** The home's answer to the container's `credential` under this id. Handed to the program that asked; kept nowhere. */
   | ({ type: "credential"; id: string } & CredentialAnswer)
   /** The cell could not act on a frame; `of` names the frame's type and `id` the frame, when it had one. A `credential` gets `refused`. */
@@ -223,8 +246,8 @@ export type ContainerFrame =
   | { type: "exit"; id: string; code: number }
   /** The run was ended early, by `kill` or by the agent's own backstop timer; no exit code exists. `changed` follows. */
   | { type: "killed"; id: string; reason: string }
-  /** What changed since the last sync: new and changed entries, and paths no longer there. */
-  | { type: "changed"; id: string; entries: ChangedEntry[]; deleted: string[] }
+  /** What changed since the last sync: new and changed entries, and paths no longer there; `home` the same for `~`, when the last manifest carried it. */
+  | { type: "changed"; id: string; entries: ChangedEntry[]; deleted: string[]; home?: HomeChanged }
   | BlobFrame
   | ResponseFrame
   /** A program in the container asked the helper for a credential; the cell answers `credential` or `error` under this id. */
@@ -276,3 +299,11 @@ export async function messageBytes(data: unknown): Promise<Uint8Array | undefine
  * any depth, before the checkout's own `.gitignore` is read.
  */
 export const BUILT_IN_IGNORES = ["node_modules", ".venv", "dist", "build", "__pycache__"] as const;
+
+/**
+ * Fold phase 0, the home rule's own half: names that stay in the container
+ * at the root of `~`, beside `BUILT_IN_IGNORES`, which apply there at any
+ * depth. There is no `.gitignore` under `~` to read: `~` is not a
+ * repository.
+ */
+export const HOME_IGNORES = [".cache", ".npm"] as const;

@@ -1,8 +1,8 @@
 ---
-status: planned
+status: partial
 since: 2026-09-11
 see: fold
-note: "written 11 Sep 2026, the morning earmark closed, from the shepherd's issues #2 (a tool the pasture needs, installed once and not on every fresh container) and #6 (a home directory that survives the container), which the shepherd ranked together. A container is forgotten after its idle period, and with it npm's global prefix and `~`. Three phases: a sheep's `~` as a third root of rows in the cell, synced like the workspace; the pasture's `/cache` as chunks of one record in the pasture's object, put back before setup and kept after it, keyed by `setup.sh`; then the image, the verbs, the docs, and the walk. Nothing built."
+note: "written 11 Sep 2026, the morning earmark closed, from the shepherd's issues #2 (a tool the pasture needs, installed once and not on every fresh container) and #6 (a home directory that survives the container), which the shepherd ranked together. A container is forgotten after its idle period, and with it npm's global prefix and `~`. Three phases: a sheep's `~` as a third root of rows in the cell, synced like the workspace; the pasture's `/cache` as chunks of one record in the pasture's object, put back before setup and kept after it, keyed by `setup.sh`; then the image, the verbs, the docs, and the walk. Fold phase 0 closed the same day: `~` as `/home/sheep`, a third manifest root synced both ways under the home rule, the cell's shell resolving `~` there on a home with a container, proved in workerd against the fake container and falsified by three mutations; the image does not carry it until fold phase 2."
 ---
 
 # Fold — the journeys

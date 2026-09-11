@@ -23,9 +23,11 @@ cell's rows has found the bug, not a detail.
 
 ---
 
-**Where we are: planned, 11 Sep 2026. All three phases NOT STARTED.**
-Next is fold phase 0, a sheep's `~` as a third root of rows, proved in
-workerd against the fake container. Nothing waits on a person until
+**Where we are: 11 Sep 2026. Fold phase 0 CLOSED; phases 1 and 2 NOT
+STARTED.** A sheep's `~` is `/home/sheep`, a third root of rows synced
+both ways around every run, proved in workerd against the fake
+container; the image does not carry it yet. Next is fold phase 1, the
+pasture's cache, proved the same way. Nothing waits on a person until
 fold phase 2's account ring, one ⚑ step.
 
 The order is dependency order. Phase 0 is `~`, which gives the agent and
@@ -86,7 +88,18 @@ applied (`~/.cache` syncs back); the sync-out skipping `~`; the cell's
 shell resolving `~` to `/workspace` on a home with a container. **⚑**
 none.
 
-**Status: NOT STARTED.**
+**Status: CLOSED.** 2026-09-11. Journey 2 steps 1 to 7 hold in the cell's terms against the fake container: a tool's state under `~` comes back in a fresh container, the cell's shell reads the same rows, the home rule keeps caches out, the end empties it, and a home with no container is unchanged; `pnpm test` exits 0 across all three rings; falsified by all three mutations.
+
+**Findings:**
+
+- **2026-09-11 — `~` is the pasture's root made two-way:** a third manifest root, per-root knowledge in the agent, one `need` by hash. Only `synced` gained a field, so a refusal under `~` comes back per root and is named `~/` in the tool result alone.
+- **2026-09-11 — `/home/sheep` is a root only when the env has a container,** decided at construction from `options.container`, not the budget, which is momentary. A no-container cell has no `/home` row, its old fence sentence, and journey 6's literals unmoved.
+- **2026-09-11 — The kill walk with `~` in the manifest covers 262 positions,** a row under `~` rewritten across two chunks among them; every row was its before or its after at each.
+- **2026-09-11 — On a container home `ls /` lists `home tmp workspace`;** `/home` is a readable row, not a root, so nothing is written beside `sheep`.
+- **2026-09-11 — A row the cell writes under a kept name** (pi's `write ~/.cache/x`) goes into the container and never comes back, as a `node_modules` row does in the workspace.
+- **2026-09-11 — Mutations:** the home rule off fails five cases, the sync-out skipping `~` eight, the shell's `~` at `/workspace` four; the conductor reran the first and the third. Put back.
+- **2026-09-11 — Open: until fold phase 2 the prompt says `~` is kept while the image's agent has no `~` disk and `HOME` is `/root`.** A release from `main` in between is not for the station; fold phase 2 closes it.
+- **2026-09-11 — Open: `flock.test.ts`'s wire-turn case failed once in the full run** (`idle` for `running`, 9.7 s) and passed on the rerun and three runs alone; it does not touch `~`.
 
 ## Phase 1: The pasture's cache
 

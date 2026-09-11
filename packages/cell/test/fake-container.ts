@@ -24,6 +24,12 @@
  * until a `run` names it and stops when that run ends, and both are
  * recorded, so a served look's every step — the server started, the page
  * rendered, the server killed — runs in workerd against the protocol.
+ *
+ * Fold phase 0 gives it a third disk in memory, a sheep's `~`, handed to
+ * the agent as its `home`, so what a test syncs `~` against is the agent's
+ * own code under the home rule. A script's step reaches it as the second
+ * argument of `act`, as a command in the container reaches `/home/sheep`
+ * beside `/workspace`.
  */
 import { type Disk, type DiskEntry, type Fetcher, type FetchRequest, type FetchResponse, type Runner, type RunOutcome, type RunRequest, serveAgent } from "@sheep/pen/agent";
 import {
@@ -134,11 +140,12 @@ export function memoryDisk(): MemoryDisk {
   return disk;
 }
 
-/** One step of a scripted run: wait, then act on the disk, then print. An `act` may be asynchronous, as a program asking the helper is. */
+/** One step of a scripted run: wait, then act on the disks, then print. An `act` may be asynchronous, as a program asking the helper is. */
 export interface ScriptStep {
   /** Milliseconds before this step, so a run takes time and its output streams. */
   wait?: number;
-  act?: (disk: MemoryDisk) => void | Promise<void>;
+  /** `disk` is the checkout, `/workspace`; `home` is `~`, `/home/sheep` (fold phase 0). */
+  act?: (disk: MemoryDisk, home: MemoryDisk) => void | Promise<void>;
   stdout?: string;
   stderr?: string;
 }
@@ -161,7 +168,8 @@ function notFound(request: RunRequest): Script {
  * SIGKILL ends a process between writes; a `deaf` runner ignores it, as a
  * stuck container would, which is what pen phase 3's kill deadline is for.
  */
-export function scriptRunner(disk: MemoryDisk, scriptFor: ScriptFor, options: { deaf?: boolean; runs?: RunRequest[] } = {}): Runner {
+export function scriptRunner(disk: MemoryDisk, scriptFor: ScriptFor, options: { deaf?: boolean; runs?: RunRequest[]; home?: MemoryDisk } = {}): Runner {
+  const home = options.home ?? memoryDisk();
   return {
     run(request, output) {
       options.runs?.push(request);
@@ -186,7 +194,7 @@ export function scriptRunner(disk: MemoryDisk, scriptFor: ScriptFor, options: { 
             wake = null;
           }
           if (killed !== null) return { killed };
-          await step.act?.(disk);
+          await step.act?.(disk, home);
           if (step.stdout !== undefined) output.stdout(step.stdout);
           if (step.stderr !== undefined) output.stderr(step.stderr);
         }
@@ -243,6 +251,8 @@ export interface FakeContainer {
   disk: MemoryDisk;
   /** Pasture phase 3: the second disk, `/pasture`, written read-only from a manifest's second root and never walked by a sync-out. */
   pasture: MemoryDisk;
+  /** Fold phase 0: the third disk, `~`, written from a manifest's third root under the home rule and walked by every sync-out after it. */
+  home: MemoryDisk;
   /** Every frame the agent received or sent, in order, as it saw them. */
   transcript: TranscriptEntry[];
   /** Pasture phase 4: every `run` the runner was handed, in order, with the environment each carried; a test counts setup's and reads the secrets off it. */
@@ -265,6 +275,8 @@ export interface FakeContainerOptions {
   disk?: MemoryDisk;
   /** The pasture's disk; a fresh one when absent. */
   pasture?: MemoryDisk;
+  /** `~`'s disk; a fresh one when absent, which is what a fresh container's `/home/sheep` is. */
+  home?: MemoryDisk;
   /** Die right after the n-th transcript entry, sent or received. */
   stopAfter?: number;
   /** What a `run` does. Without one, every program is one the image lacks. */
@@ -292,6 +304,7 @@ export function startFakeContainer(options: FakeContainerOptions = {}): FakeCont
 export function serveFakeOn(agentEnd: WebSocket, options: FakeContainerOptions = {}): Omit<FakeContainer, "socket"> {
   const disk = options.disk ?? memoryDisk();
   const pasture = options.pasture ?? memoryDisk();
+  const home = options.home ?? memoryDisk();
   const transcript: TranscriptEntry[] = [];
   const runs: RunRequest[] = [];
   /** What has been stood behind each port, and whether it is listening now. */
@@ -322,7 +335,7 @@ export function serveFakeOn(agentEnd: WebSocket, options: FakeContainerOptions =
    * and the end of the run — an exit, a kill, a timeout — stops it. That
    * is the one rule this project has, proved from the outside.
    */
-  const scripted = scriptRunner(disk, options.script ?? (() => undefined), { deaf: options.deaf ?? false, runs });
+  const scripted = scriptRunner(disk, options.script ?? (() => undefined), { deaf: options.deaf ?? false, runs, home });
   const runner: Runner = {
     run(request, output) {
       const held = [...stood].filter(([, server]) => server.origin.starts !== undefined && request.command.includes(server.origin.starts));
@@ -397,10 +410,11 @@ export function serveFakeOn(agentEnd: WebSocket, options: FakeContainerOptions =
     },
   };
   agentEnd.addEventListener("close", (event) => stop(event.reason));
-  const served = serveAgent(wrapped, disk, runner, fetcher, { pasture });
+  const served = serveAgent(wrapped, disk, runner, fetcher, { pasture, home });
   return {
     disk,
     pasture,
+    home,
     transcript,
     runs,
     servers,

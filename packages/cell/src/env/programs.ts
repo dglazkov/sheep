@@ -25,7 +25,12 @@
  * the image, when there is one.
  */
 import { type CommandNode, getCommandNames, parse, type ScriptNode, type SimpleCommandNode, type WordNode } from "just-bash/browser";
+import { HOME_IGNORES, homePath } from "@sheep/pen/protocol";
+import { HOME_ROOT } from "../workspace/files.ts";
 import { LOOK_PROGRAM } from "./look-command.ts";
+
+/** How the prompt names a sheep's `~` on a home with a container (fold phase 0). */
+const HOME_SAID = `~ (${HOME_ROOT})`;
 
 /**
  * What a home has: whether a container can be rented for a command, and,
@@ -248,7 +253,8 @@ export function shellSystemPromptLine(home: Home): string {
     opening +
     `A container is rented beside the session for the programs the shell lacks: ${list(containerPrograms())}, and anything else in its image. ` +
     `A command line runs whole in one place: in the shell when every program in it is a text tool, otherwise in the container over a checkout of the same workspace. ` +
-    `Output streams back, and the files a command changed sync back to the workspace, except node_modules, build output, and anything in .gitignore, which stay in the container and go when it does. ` +
+    // Fold phase 0: the one clause on `~`, in the sentence on what syncs back; the home rule's two names are the ones it speaks.
+    `Output streams back, and the files a command changed sync back to the workspace, except node_modules, build output, and anything in .gitignore, which stay in the container and go when it does; ${HOME_SAID} is kept the same way, except ${HOME_IGNORES.map((name) => homePath(name)).join(" and ")}. ` +
     isolate +
     (absent.length === 0 ? "" : `There is no ${list(absent)} in either. `) +
     `Say so plainly when asked for something neither can do, rather than pretending it ran.`

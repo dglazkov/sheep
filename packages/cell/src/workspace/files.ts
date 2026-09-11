@@ -32,6 +32,13 @@ export function hashBytes(bytes: Uint8Array): string {
 export const WORKSPACE_ROOT = "/workspace";
 export const TEMP_ROOT = "/tmp";
 /**
+ * Fold phase 0: a sheep's `~`, a root of the cell's table on a home with a
+ * container, beside `/workspace` and `/tmp`, and `HOME` in the cell's shell
+ * and in the container. On a home with none it is not a root: the table has
+ * no row there and the fence refuses it, as before.
+ */
+export const HOME_ROOT = "/home/sheep";
+/**
  * A Durable Object value is capped at 2 MB, so a file is stored in chunks
  * of one MiB: the first in the file's row, the rest in `file_chunks`.
  * The per-file limit is the workspace's own, so a clone that would not fit
@@ -97,13 +104,14 @@ function isUnder(path: string, root: string): boolean {
   return path === root || path.startsWith(`${root}/`);
 }
 
-/** Whether the fence allows writing here. Reads are allowed at `/` too. */
-export function isWritable(path: string): boolean {
-  return isUnder(path, WORKSPACE_ROOT) || isUnder(path, TEMP_ROOT);
+/** Whether the fence allows writing here: under one of `roots`, the table's. Reads are allowed at `/` too. */
+export function isWritable(path: string, roots: readonly string[] = CELL_ROOTS): boolean {
+  return roots.some((root) => isUnder(path, root));
 }
 
-export function isReadable(path: string): boolean {
-  return path === "/" || isWritable(path);
+/** Whether the fence allows reading here: `/`, anything under a root, and the directories above a root, so `/home` lists `sheep`. */
+export function isReadable(path: string, roots: readonly string[] = CELL_ROOTS): boolean {
+  return path === "/" || isWritable(path, roots) || roots.some((root) => root.startsWith(`${path}/`));
 }
 
 type Row = {
@@ -120,6 +128,8 @@ const MAX_SYMLINK_DEPTH = 32;
 
 /** The roots a cell's table has: the workspace and the scratch space. A pasture's table has one root of its own. */
 export const CELL_ROOTS: readonly string[] = [WORKSPACE_ROOT, TEMP_ROOT];
+/** Fold phase 0: the roots a cell's table has on a home with a container: `~` as well. */
+export const CELL_ROOTS_WITH_HOME: readonly string[] = [...CELL_ROOTS, HOME_ROOT];
 
 export class FilesTable {
   /**
@@ -130,8 +140,18 @@ export class FilesTable {
   constructor(
     private readonly sql: SqlStorage,
     private readonly now: () => number = Date.now,
-    private readonly roots: readonly string[] = CELL_ROOTS,
+    readonly roots: readonly string[] = CELL_ROOTS,
   ) {}
+
+  /** Whether the table has this root: `~` is one only on a home with a container (fold phase 0). */
+  hasRoot(root: string): boolean {
+    return this.roots.includes(root);
+  }
+
+  /** The fence for reading, with this table's roots. */
+  isReadable(path: string): boolean {
+    return isReadable(path, this.roots);
+  }
 
   /** Creates the table and the roots, and brings an older table up to date. Idempotent; run on every construction. */
   init(): void {
@@ -151,8 +171,11 @@ export class FilesTable {
       PRIMARY KEY (path, idx)
     )`);
     this.migrateHashes();
+    // A root and every directory above it: `/home/sheep` has `/home` over it, which is a row so `ls /` lists it, and not a root.
     for (const root of ["/", ...this.roots]) {
-      if (this.get(root) === undefined) this.insertDirectory(root, 0o755);
+      for (const directory of [...ancestorsOf(root), root]) {
+        if (this.get(directory) === undefined) this.insertDirectory(directory, 0o755);
+      }
     }
   }
 
@@ -495,6 +518,13 @@ export class FilesTable {
       mode,
     );
   }
+}
+
+/** The directories above a path, outermost first, `/` excluded: `/home` for `/home/sheep`, none for `/workspace`. */
+function ancestorsOf(path: string): string[] {
+  const out: string[] = [];
+  for (let parent = parentOf(path); parent !== "/" && parent !== "."; parent = parentOf(parent)) out.unshift(parent);
+  return out;
 }
 
 function toFileRow(row: Row): FileRow {

@@ -36,6 +36,17 @@
  * names removed. The sync-out walks the checkout's disk alone, so nothing
  * written under `/pasture` is ever reported: the two disks are two trees,
  * as `/workspace` and `/pasture` are in the image.
+ *
+ * Fold phase 0 gives it a third disk, a sheep's `~`, rooted at
+ * `/home/sheep`, and this one syncs both ways. A `manifest` that carries
+ * `home` is applied to it after the workspace, under the home rule: what
+ * the manifest names is written, and what it does not name is deleted
+ * unless the rule keeps it. The sync-out after such a manifest walks `~`
+ * beside the checkout, under the same rule, and reports it as
+ * `changed.home`; `synced.home` says what the cell refused there. What the
+ * agent knows is kept per root, so the two trees are compared each with
+ * its own last sync; a manifest without `home` leaves `~` as it is, and
+ * the agent forgets it until one carries it again.
  */
 import ignore from "ignore";
 import {
@@ -50,6 +61,9 @@ import {
   type EntryKind,
   FETCH_FAILED_STATUS,
   type FetchFrame,
+  HOME_IGNORES,
+  type HomeChanged,
+  homePath,
   type ManifestEntry,
   messageBytes,
   PASTURE_DIR_MODE,
@@ -192,6 +206,17 @@ export function cacheRule(gitignore: string | undefined): (path: string, kind: E
   return (path, kind) => rules.ignores(kind === "directory" ? `${path}/` : path);
 }
 
+/**
+ * The home rule (fold phase 0): what stays in the container under `~`.
+ * `HOME_IGNORES` at the root of `~` only, anchored as a leading slash
+ * anchors a `.gitignore` line, and `BUILT_IN_IGNORES` at any depth. No
+ * file is read: `~` is not a repository.
+ */
+export function homeRule(): (path: string, kind: EntryKind) => boolean {
+  const rules = ignore().add([...HOME_IGNORES.map((name) => `/${name}`), ...BUILT_IN_IGNORES]);
+  return (path, kind) => rules.ignores(kind === "directory" ? `${path}/` : path);
+}
+
 /** The entries of a disk with their hashes and sizes, as a sync compares them. */
 async function hashed(disk: Disk, entries: DiskEntry[]): Promise<Map<string, Scanned>> {
   const state = new Map<string, Scanned>();
@@ -207,6 +232,32 @@ async function hashed(disk: Disk, entries: DiskEntry[]): Promise<Map<string, Sca
     }
   }
   return state;
+}
+
+/**
+ * What a sync-out reports for one root: every entry the walk found that is
+ * not what the agent knows of it, and every known path no longer on disk
+ * at all. A path the rule now hides but that is still there is neither.
+ */
+function diffed(state: Map<string, Scanned>, present: Set<string>, known: Map<string, Known>): { entries: ChangedEntry[]; deleted: string[] } {
+  const entries: ChangedEntry[] = [];
+  for (const [path, now] of state) {
+    const was = known.get(path);
+    if (was !== undefined && was.kind === now.kind && was.mode === now.mode && was.hash === now.hash) continue;
+    entries.push({ path, kind: now.kind, mode: now.mode, hash: now.hash, size: now.size });
+  }
+  const deleted = [...known.keys()].filter((path) => !present.has(path)).sort();
+  return { entries, deleted };
+}
+
+/** After a sync-out, what the agent knows of one root: what the cell took, and nothing it refused or that was deleted. */
+function accepted(known: Map<string, Known>, entries: ChangedEntry[], deleted: string[], refused: Refused[]): void {
+  const refusedPaths = new Set(refused.map((entry) => entry.path));
+  for (const entry of entries) {
+    if (refusedPaths.has(entry.path)) continue;
+    known.set(entry.path, { kind: entry.kind, mode: entry.mode, hash: entry.hash });
+  }
+  for (const path of deleted) known.delete(path);
 }
 
 class ProtocolError extends Error {
@@ -246,16 +297,18 @@ export const CREDENTIAL_TIMEOUT_MS = 10_000;
 export interface ServeAgentOptions {
   /** Pasture phase 3: the disk rooted at `/pasture`, written read-only from a manifest's second root. Absent, a manifest's `pasture` is ignored. */
   pasture?: Disk;
+  /** Fold phase 0: the disk rooted at `/home/sheep`, a sheep's `~`, synced both ways from a manifest's third root. Absent, a manifest's `home` is ignored and no sync-out reports `~`. */
+  home?: Disk;
 }
 
 /** Wires the agent to a socket. Frames are handled in the order they arrive, one at a time; a run's work, and a fetch's, are not on that chain. */
 export function serveAgent(socket: AgentSocket, disk: Disk, runner: Runner, fetcher: Fetcher, options: ServeAgentOptions = {}): ServedAgent {
-  const agent = new Agent(socket, disk, runner, fetcher, options.pasture);
+  const agent = new Agent(socket, disk, runner, fetcher, options.pasture, options.home);
   return { closed: agent.closed, syncOut: (id) => agent.syncOut(id), askCredential: (request, options) => agent.askCredential(request, options) };
 }
 
-/** A sync-in's second root: the pasture's manifest and what its disk had before. */
-interface PastureCheckout {
+/** A sync-in's second or third root: that root's manifest and what its disk had before. */
+interface RootCheckout {
   entries: ManifestEntry[];
   have: Map<string, Scanned>;
 }
@@ -264,6 +317,7 @@ class Agent {
   private readonly socket: AgentSocket;
   private readonly disk: Disk;
   private readonly pasture: Disk | undefined;
+  private readonly home: Disk | undefined;
   private readonly runner: Runner;
   private readonly fetcher: Fetcher;
   readonly closed: Promise<void>;
@@ -271,16 +325,19 @@ class Agent {
   private tail = Promise.resolve();
   /** The run in progress, at most one. */
   private running: { id: string; handle: RunHandle } | null = null;
-  /** What is on disk as far as the last sync said. */
+  /** What is on the checkout's disk as far as the last sync said. */
   private known = new Map<string, Known>();
-  /** A sync-in in progress: the manifest and the blobs still to come; `pasture` when the manifest carried the second root. */
+  /** What is on `~`'s disk as far as the last sync said; `null` while no manifest has carried `home`, and then no sync-out walks it. */
+  private knownHome: Map<string, Known> | null = null;
+  /** A sync-in in progress: the manifest and the blobs still to come; `pasture` and `home` when the manifest carried those roots and this agent has their disks. */
   private checkout: {
     id: string;
     entries: ManifestEntry[];
     have: Map<string, Scanned>;
     needed: Set<string>;
     blobs: Map<string, Uint8Array>;
-    pasture: PastureCheckout | null;
+    pasture: RootCheckout | null;
+    home: RootCheckout | null;
   } | null = null;
   /**
    * The frame whose binary message is next, and whose it is: a `blob`'s
@@ -290,16 +347,24 @@ class Agent {
    * `handle` throws on any frame at all while this is set.
    */
   private expecting: { of: "blob"; hash: string; size: number } | { of: "fetch"; frame: FetchFrame } | null = null;
-  /** A sync-out in progress. */
-  private out: { id: string; entries: ChangedEntry[]; deleted: string[]; resolve: (refused: Refused[]) => void; reject: (error: Error) => void } | null = null;
+  /** A sync-out in progress; `home` when it reported `~`. */
+  private out: {
+    id: string;
+    entries: ChangedEntry[];
+    deleted: string[];
+    home: HomeChanged | undefined;
+    resolve: (refused: Refused[]) => void;
+    reject: (error: Error) => void;
+  } | null = null;
   /** Credential requests waiting on the cell, by id. */
   private credentials = new Map<string, { settle: (answer: CredentialAnswer | undefined) => void }>();
   private credentialCount = 0;
 
-  constructor(socket: AgentSocket, disk: Disk, runner: Runner, fetcher: Fetcher, pasture: Disk | undefined) {
+  constructor(socket: AgentSocket, disk: Disk, runner: Runner, fetcher: Fetcher, pasture: Disk | undefined, home: Disk | undefined) {
     this.socket = socket;
     this.disk = disk;
     this.pasture = pasture;
+    this.home = home;
     this.runner = runner;
     this.fetcher = fetcher;
     socket.addEventListener("message", (event) => {
@@ -367,7 +432,7 @@ class Agent {
         this.send(frame.id === undefined ? { type: "pong" } : { type: "pong", id: frame.id });
         return;
       case "manifest":
-        await this.receiveManifest(frame.id, frame.entries, frame.pasture);
+        await this.receiveManifest(frame.id, frame.entries, frame.pasture, frame.home);
         return;
       case "blob":
         if (this.checkout === null || !this.checkout.needed.has(frame.hash)) {
@@ -390,7 +455,7 @@ class Agent {
         });
         return;
       case "synced":
-        this.finishSyncOut(frame.id, frame.refused);
+        this.finishSyncOut(frame.id, frame.refused, frame.home ?? []);
         return;
       case "run":
         // Not awaited: the run has its own lane, so `ping` and `kill` are answered while it runs.
@@ -543,6 +608,12 @@ class Agent {
     return hashed(pasture, await pasture.list());
   }
 
+  /** `~`'s disk under the home rule, hashed, and every path that is there, as `scan` has the checkout's. */
+  private async scanHome(home: Disk): Promise<{ state: Map<string, Scanned>; present: Set<string> }> {
+    const { kept, present } = await this.listHome(home);
+    return { state: await hashed(home, kept), present };
+  }
+
   /** The disk under the cache rule, unhashed: what the rule keeps out of `list()`, and every path that is there. */
   private async listKept(): Promise<{ kept: DiskEntry[]; present: Set<string> }> {
     const listed = await this.disk.list();
@@ -552,7 +623,14 @@ class Agent {
     return { kept: listed.filter((entry) => !cached(entry.path, entry.kind)), present };
   }
 
-  private async receiveManifest(id: string, entries: ManifestEntry[], pastureEntries: ManifestEntry[] | undefined): Promise<void> {
+  /** `~`'s disk under the home rule, unhashed. The rule is fixed: there is no file under `~` that changes it. */
+  private async listHome(home: Disk): Promise<{ kept: DiskEntry[]; present: Set<string> }> {
+    const listed = await home.list();
+    const cached = homeRule();
+    return { kept: listed.filter((entry) => !cached(entry.path, entry.kind)), present: new Set(listed.map((entry) => entry.path)) };
+  }
+
+  private async receiveManifest(id: string, entries: ManifestEntry[], pastureEntries: ManifestEntry[] | undefined, homeEntries: ManifestEntry[] | undefined): Promise<void> {
     const { state } = await this.scan();
     const needed = new Set<string>();
     const missing = (manifest: ManifestEntry[], have: Map<string, Scanned>) => {
@@ -565,12 +643,18 @@ class Agent {
     };
     missing(entries, state);
     // The second root, when the manifest carries it and this agent has a pasture disk: its blobs join the one `need`.
-    let pasture: PastureCheckout | null = null;
+    let pasture: RootCheckout | null = null;
     if (pastureEntries !== undefined && this.pasture !== undefined) {
       pasture = { entries: pastureEntries, have: await this.scanPasture(this.pasture) };
       missing(pastureEntries, pasture.have);
     }
-    this.checkout = { id, entries, have: state, needed, blobs: new Map(), pasture };
+    // The third root, `~`, the same way: compared under the home rule, so what the rule keeps is never asked for or replaced.
+    let home: RootCheckout | null = null;
+    if (homeEntries !== undefined && this.home !== undefined) {
+      home = { entries: homeEntries, have: (await this.scanHome(this.home)).state };
+      missing(homeEntries, home.have);
+    }
+    this.checkout = { id, entries, have: state, needed, blobs: new Map(), pasture, home };
     this.send({ type: "need", id, hashes: [...needed] });
     if (needed.size === 0) await this.applyCheckout();
   }
@@ -582,7 +666,7 @@ class Agent {
    * as they are), what it does not name is removed, and every directory,
    * the root included, is set `0555`, deepest first.
    */
-  private async applyPasture(disk: Disk, checkout: PastureCheckout, blobs: Map<string, Uint8Array>): Promise<void> {
+  private async applyPasture(disk: Disk, checkout: RootCheckout, blobs: Map<string, Uint8Array>): Promise<void> {
     const { entries, have } = checkout;
     await disk.mkdir("", 0o755);
     for (const [path, was] of have) if (was.kind === "directory") await disk.chmod(path, 0o755);
@@ -619,46 +703,71 @@ class Agent {
     await disk.chmod("", PASTURE_DIR_MODE);
   }
 
-  /** Every blob is here: write the manifest to disk, then delete what it does not name and the rule does not keep. */
+  /**
+   * One root's manifest onto its disk, with the modes the manifest says:
+   * the checkout's and `~`'s. `have` is what the disk held under that
+   * root's rule before; `named` is how a path is spoken in an error.
+   * Returns what the agent now knows of the root. Deleting what the
+   * manifest does not name is the caller's, since each root's rule is its
+   * own.
+   */
+  private async writeRoot(disk: Disk, entries: ManifestEntry[], have: Map<string, Scanned>, blobs: Map<string, Uint8Array>, named: (path: string) => string): Promise<Map<string, Known>> {
+    const known = new Map<string, Known>();
+    for (const entry of entries) {
+      const had = have.get(entry.path);
+      known.set(entry.path, { kind: entry.kind, mode: entry.kind === "symlink" ? SYMLINK_MODE : entry.mode, hash: entry.hash });
+      if (entry.kind === "directory") {
+        if (had?.kind === "directory") {
+          if (had.mode !== entry.mode) await disk.chmod(entry.path, entry.mode);
+          continue;
+        }
+        if (had !== undefined) await disk.remove(entry.path);
+        await disk.mkdir(entry.path, entry.mode);
+        continue;
+      }
+      if (had !== undefined && had.kind === entry.kind && had.hash === entry.hash) {
+        if (entry.kind === "file" && had.mode !== entry.mode) await disk.chmod(entry.path, entry.mode);
+        continue;
+      }
+      const bytes = entry.hash === null ? undefined : blobs.get(entry.hash);
+      if (bytes === undefined) throw new ProtocolError("malformed", "manifest", `no blob for ${named(entry.path)}`);
+      if (had !== undefined && had.kind !== entry.kind) await disk.remove(entry.path);
+      if (entry.kind === "symlink") await disk.symlink(decoder.decode(bytes), entry.path);
+      else await disk.write(entry.path, bytes, { mode: entry.mode });
+    }
+    return known;
+  }
+
+  /** What a root's rule does not keep and its manifest does not name goes, a directory whole. `kept` is sorted by path. */
+  private static async removeUnnamed(disk: Disk, kept: DiskEntry[], known: Map<string, Known>): Promise<void> {
+    let removed: string | null = null;
+    for (const { path } of kept) {
+      if (known.has(path)) continue;
+      if (removed !== null && path.startsWith(`${removed}/`)) continue;
+      await disk.remove(path);
+      removed = path;
+    }
+  }
+
+  /** Every blob is here: write the manifest to disk, then delete what it does not name and the rule does not keep; the same for `~` when it came. */
   private async applyCheckout(): Promise<void> {
     const checkout = this.checkout;
     if (checkout === null) return;
     this.checkout = null;
     // The second root first, so a workspace command that follows finds `/pasture` in place; its failure ends the sync like any other.
     if (checkout.pasture !== null && this.pasture !== undefined) await this.applyPasture(this.pasture, checkout.pasture, checkout.blobs);
-    const known = new Map<string, Known>();
-    for (const entry of checkout.entries) {
-      const have = checkout.have.get(entry.path);
-      known.set(entry.path, { kind: entry.kind, mode: entry.kind === "symlink" ? SYMLINK_MODE : entry.mode, hash: entry.hash });
-      if (entry.kind === "directory") {
-        if (have?.kind === "directory") {
-          if (have.mode !== entry.mode) await this.disk.chmod(entry.path, entry.mode);
-          continue;
-        }
-        if (have !== undefined) await this.disk.remove(entry.path);
-        await this.disk.mkdir(entry.path, entry.mode);
-        continue;
-      }
-      if (have !== undefined && have.kind === entry.kind && have.hash === entry.hash) {
-        if (entry.kind === "file" && have.mode !== entry.mode) await this.disk.chmod(entry.path, entry.mode);
-        continue;
-      }
-      const bytes = entry.hash === null ? undefined : checkout.blobs.get(entry.hash);
-      if (bytes === undefined) throw new ProtocolError("malformed", "manifest", `no blob for ${entry.path}`);
-      if (have !== undefined && have.kind !== entry.kind) await this.disk.remove(entry.path);
-      if (entry.kind === "symlink") await this.disk.symlink(decoder.decode(bytes), entry.path);
-      else await this.disk.write(entry.path, bytes, { mode: entry.mode });
-    }
+    const known = await this.writeRoot(this.disk, checkout.entries, checkout.have, checkout.blobs, (path) => path);
     // The rule is read again: the manifest may have brought a new `.gitignore`.
-    const { kept } = await this.listKept();
-    let removed: string | null = null;
-    for (const { path } of kept) {
-      if (known.has(path)) continue;
-      if (removed !== null && path.startsWith(`${removed}/`)) continue;
-      await this.disk.remove(path);
-      removed = path;
-    }
+    await Agent.removeUnnamed(this.disk, (await this.listKept()).kept, known);
     this.known = known;
+    // The third root, under the home rule; a manifest without it leaves `~` as it is, and the agent forgets it until one carries it.
+    if (checkout.home !== null && this.home !== undefined) {
+      const knownHome = await this.writeRoot(this.home, checkout.home.entries, checkout.home.have, checkout.blobs, homePath);
+      await Agent.removeUnnamed(this.home, (await this.listHome(this.home)).kept, knownHome);
+      this.knownHome = knownHome;
+    } else {
+      this.knownHome = null;
+    }
     this.send({ type: "checkout", id: checkout.id });
   }
 
@@ -669,16 +778,16 @@ class Agent {
           if (this.isClosed) throw new Error("the socket is closed");
           if (this.out !== null) throw new Error(`a sync-out (${this.out.id}) is already in progress`);
           const { state, present } = await this.scan();
-          const entries: ChangedEntry[] = [];
-          for (const [path, now] of state) {
-            const was = this.known.get(path);
-            if (was !== undefined && was.kind === now.kind && was.mode === now.mode && was.hash === now.hash) continue;
-            entries.push({ path, kind: now.kind, mode: now.mode, hash: now.hash, size: now.size });
+          const { entries, deleted } = diffed(state, present, this.known);
+          // `~` beside the checkout, when the last manifest carried it: walked under its own rule, compared with its own last sync.
+          let home: HomeChanged | undefined;
+          if (this.home !== undefined && this.knownHome !== null) {
+            const scanned = await this.scanHome(this.home);
+            home = diffed(scanned.state, scanned.present, this.knownHome);
           }
-          const deleted = [...this.known.keys()].filter((path) => !present.has(path)).sort();
           if (this.isClosed) throw new Error("the socket closed");
-          this.out = { id, entries, deleted, resolve, reject };
-          this.send({ type: "changed", id, entries, deleted });
+          this.out = { id, entries, deleted, home, resolve, reject };
+          this.send(home === undefined ? { type: "changed", id, entries, deleted } : { type: "changed", id, entries, deleted, home });
         })
         .catch((error: unknown) => {
           this.out = null;
@@ -690,29 +799,32 @@ class Agent {
   private async answerNeed(id: string, hashes: string[]): Promise<void> {
     const out = this.out;
     if (out === null || out.id !== id) throw new ProtocolError("malformed", "need", `no sync-out ${id} is in progress`);
-    const byHash = new Map<string, ChangedEntry>();
-    for (const entry of out.entries) if (entry.hash !== null && !byHash.has(entry.hash)) byHash.set(entry.hash, entry);
+    // One `need` for both roots: a hash is read from whichever root offered it first, the checkout before `~`.
+    const byHash = new Map<string, { disk: Disk; entry: ChangedEntry; named: string }>();
+    const offer = (disk: Disk, entries: ChangedEntry[], named: (path: string) => string) => {
+      for (const entry of entries) if (entry.hash !== null && !byHash.has(entry.hash)) byHash.set(entry.hash, { disk, entry, named: named(entry.path) });
+    };
+    offer(this.disk, out.entries, (path) => path);
+    if (out.home !== undefined && this.home !== undefined) offer(this.home, out.home.entries, homePath);
     for (const hash of hashes) {
-      const entry = byHash.get(hash);
-      if (entry === undefined) throw new ProtocolError("malformed", "need", `the sync-out ${id} did not offer ${hash}`);
-      const bytes = entry.kind === "symlink" ? encoder.encode(await this.disk.readlink(entry.path)) : await this.disk.read(entry.path);
-      const now = await this.disk.digest(bytes);
-      if (now !== hash) throw new ProtocolError("mismatch", "need", `${entry.path} changed while syncing: ${now}`);
+      const offered = byHash.get(hash);
+      if (offered === undefined) throw new ProtocolError("malformed", "need", `the sync-out ${id} did not offer ${hash}`);
+      const { disk, entry } = offered;
+      const bytes = entry.kind === "symlink" ? encoder.encode(await disk.readlink(entry.path)) : await disk.read(entry.path);
+      const now = await disk.digest(bytes);
+      if (now !== hash) throw new ProtocolError("mismatch", "need", `${offered.named} changed while syncing: ${now}`);
       this.send({ type: "blob", hash, size: bytes.byteLength });
       this.sendBytes(bytes);
     }
   }
 
-  private finishSyncOut(id: string, refused: Refused[]): void {
+  private finishSyncOut(id: string, refused: Refused[], homeRefused: Refused[]): void {
     const out = this.out;
     if (out === null || out.id !== id) throw new ProtocolError("malformed", "synced", `no sync-out ${id} is in progress`);
     this.out = null;
-    const refusedPaths = new Set(refused.map((entry) => entry.path));
-    for (const entry of out.entries) {
-      if (refusedPaths.has(entry.path)) continue;
-      this.known.set(entry.path, { kind: entry.kind, mode: entry.mode, hash: entry.hash });
-    }
-    for (const path of out.deleted) this.known.delete(path);
-    out.resolve(refused);
+    accepted(this.known, out.entries, out.deleted, refused);
+    if (out.home !== undefined && this.knownHome !== null) accepted(this.knownHome, out.home.entries, out.home.deleted, homeRefused);
+    // What the cell refused, as the tool result names it: `~`'s with `~/` in front.
+    out.resolve(out.home === undefined ? refused : [...refused, ...homeRefused.map((entry) => ({ path: homePath(entry.path), size: entry.size }))]);
   }
 }

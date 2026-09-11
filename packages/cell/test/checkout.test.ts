@@ -3,12 +3,17 @@
  * fake container, and the rows stay whole at every point the container
  * could die. Every expected value is the test's own arithmetic over a
  * generated fixture; nothing is a snapshot of what the code produced.
+ *
+ * Fold phase 0: the round trip and the kill walk carry a sheep's `~` as
+ * the manifest's third root, rows under `/home/sheep` beside the workspace's,
+ * among them a file over a chunk that the container rewrites, so a row
+ * under `~` is shown whole at every point too. Snapshots name them `~/…`.
  */
 import type { ManifestEntry } from "@sheep/pen/protocol";
 import { env, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { Checkout, CheckoutInterrupted } from "../src/pen/checkout.ts";
-import { CHUNK_BYTES, FilesTable, MAX_FILE_BYTES, WORKSPACE_ROOT } from "../src/workspace/files.ts";
+import { CELL_ROOTS_WITH_HOME, CHUNK_BYTES, FilesTable, HOME_ROOT, MAX_FILE_BYTES, WORKSPACE_ROOT } from "../src/workspace/files.ts";
 import { type FakeContainer, type MemoryDisk, memoryDisk, startFakeContainer, type TranscriptEntry } from "./fake-container.ts";
 
 // ---------------------------------------------------------------------------
@@ -67,6 +72,9 @@ function patternOf(seed: number, length: number): Uint8Array {
 /** The two big files, made once: the walk runs the script a few hundred times. */
 const BIG_AFTER = patternOf(11, CHUNK_BYTES * 2 + 1);
 const HUGE = patternOf(3, MAX_FILE_BYTES + 1);
+/** `~`'s big file, before and after the container rewrites it: over a chunk both times, so its row is chunked. */
+const HOME_BIG_BEFORE = patternOf(13, CHUNK_BYTES + 777);
+const HOME_BIG_AFTER = patternOf(17, CHUNK_BYTES * 2 + 3);
 
 function addDirectories(tree: Tree, path: string): void {
   const parts = path.split("/");
@@ -150,6 +158,41 @@ function applyScript(tree: Tree, disk: MemoryDisk): void {
   disk.putSymlink("docs/latest", "file01.md");
 }
 
+/** A sheep's `~` as a tool would leave it: a git identity, a login kept `0600`, a chunked state file, and a link. */
+function generateHome(): Tree {
+  const tree: Tree = new Map();
+  putFile(tree, ".gitconfig", encoder.encode("[user]\n\tname = Sheep\n\temail = sheep@example.invalid\n"));
+  putFile(tree, ".config/gh/hosts.yml", encoder.encode("github.com:\n    user: sheep\n"), 0o600);
+  putFile(tree, ".config/tool/state.bin", HOME_BIG_BEFORE);
+  putFile(tree, ".local/share/tool/history", encoder.encode("one\ntwo\n"));
+  tree.set(".config/current", { kind: "symlink", target: "gh" });
+  return tree;
+}
+
+/** The container's edits under `~`: one changed, one rewritten over two chunks, one deleted, one added, and what the home rule keeps. */
+function applyHomeScript(tree: Tree, disk: MemoryDisk): void {
+  const gitconfig = encoder.encode("[user]\n\tname = Sheep\n\temail = sheep@example.invalid\n[init]\n\tdefaultBranch = main\n");
+  tree.set(".gitconfig", { kind: "file", bytes: gitconfig, mode: 0o644 });
+  disk.putFile(".gitconfig", gitconfig);
+  tree.set(".config/tool/state.bin", { kind: "file", bytes: HOME_BIG_AFTER, mode: 0o644 });
+  disk.putFile(".config/tool/state.bin", HOME_BIG_AFTER);
+  tree.delete(".local/share/tool/history");
+  disk.delete(".local/share/tool/history");
+  putFile(tree, ".config/npm/npmrc", encoder.encode("fund=false\n"));
+  disk.putFile(".config/npm/npmrc", encoder.encode("fund=false\n"));
+  // The home rule: `.cache` and `.npm` at the root of `~`, and a `node_modules` at any depth.
+  disk.putFile(".cache/tool/blob", encoder.encode("cached\n"));
+  disk.putFile(".npm/_cacache/index", encoder.encode("cached\n"));
+  disk.putFile(".config/tool/node_modules/dep/index.js", encoder.encode("module.exports = 2;\n"));
+}
+
+const HOME_CACHED = [".cache", ".cache/tool", ".cache/tool/blob", ".npm", ".npm/_cacache", ".npm/_cacache/index", ".config/tool/node_modules", ".config/tool/node_modules/dep", ".config/tool/node_modules/dep/index.js"];
+
+/** A snapshot's paths under `~`, named as the tool result names them. */
+function underHome(snapshot: Snapshot): Snapshot {
+  return new Map([...snapshot].map(([path, item]) => [`~/${path}`, item]));
+}
+
 // ---------------------------------------------------------------------------
 // Reading the rows and the disk in one shape.
 
@@ -171,10 +214,10 @@ function snapshotTree(tree: Tree): Snapshot {
   return out;
 }
 
-function snapshotRows(files: FilesTable): Snapshot {
+function snapshotRows(files: FilesTable, root: string = WORKSPACE_ROOT): Snapshot {
   const out: Snapshot = new Map();
-  for (const entry of files.manifest()) {
-    const absolute = `${WORKSPACE_ROOT}/${entry.path}`;
+  for (const entry of files.manifest(root)) {
+    const absolute = `${root}/${entry.path}`;
     if (entry.kind === "file") out.set(entry.path, { kind: "file", mode: entry.mode, bytes: files.readFile(absolute) });
     else if (entry.kind === "directory") out.set(entry.path, { kind: "directory", mode: entry.mode });
     else out.set(entry.path, { kind: "symlink", mode: entry.mode, target: files.readlink(absolute) });
@@ -219,10 +262,10 @@ async function sha256(bytes: Uint8Array): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-function seedRows(files: FilesTable, tree: Tree): void {
+function seedRows(files: FilesTable, tree: Tree, root: string = WORKSPACE_ROOT): void {
   for (const path of [...tree.keys()].sort()) {
     const entry = tree.get(path)!;
-    const absolute = `${WORKSPACE_ROOT}/${path}`;
+    const absolute = `${root}/${path}`;
     if (entry.kind === "directory") files.mkdir(absolute, { recursive: true, mode: entry.mode });
     else if (entry.kind === "file") files.writeFile(absolute, entry.bytes, { createParents: true, mode: entry.mode });
     else files.symlink(entry.target, absolute);
@@ -234,8 +277,11 @@ function seedRows(files: FilesTable, tree: Tree): void {
 
 interface Run {
   transcript: TranscriptEntry[];
+  /** The workspace's rows, and `~`'s named `~/…`. */
   rows: Snapshot;
   disk: Snapshot;
+  /** The fake's `~`. */
+  homeDisk: Snapshot;
   syncIn: PromiseSettledResult<ManifestEntry[] | undefined>;
   syncOut: PromiseSettledResult<unknown>;
   agentSyncOut: PromiseSettledResult<unknown>;
@@ -260,14 +306,17 @@ function settle<T>(promise: Promise<T>, what: string): Promise<PromiseSettledRes
  * so a name reused across the kill walk is a fresh set of rows each time
  * without a few hundred Durable Objects' worth of storage staying behind.
  */
-async function runScript(name: string, original: Tree, stopAfter?: number): Promise<Run> {
+async function runScript(name: string, original: Tree, originalHome: Tree, stopAfter?: number): Promise<Run> {
   return runInDurableObject(env.SESSION_CELL.getByName(`checkout:${name}`), async (_instance, state) => {
     state.storage.sql.exec("DROP TABLE IF EXISTS files");
     state.storage.sql.exec("DROP TABLE IF EXISTS file_chunks");
-    const files = new FilesTable(state.storage.sql);
+    // A home with a container: the table has `~` as a root, so the manifest carries it.
+    const files = new FilesTable(state.storage.sql, Date.now, CELL_ROOTS_WITH_HOME);
     files.init();
     seedRows(files, original);
+    seedRows(files, originalHome, HOME_ROOT);
     const tree: Tree = new Map(original);
+    const home: Tree = new Map(originalHome);
     const container: FakeContainer = startFakeContainer({ stopAfter });
     const checkout = new Checkout(container.socket, files);
 
@@ -276,6 +325,7 @@ async function runScript(name: string, original: Tree, stopAfter?: number): Prom
     const syncInMs = performance.now() - startedIn;
 
     applyScript(tree, container.disk);
+    applyHomeScript(home, container.home);
 
     const startedOut = performance.now();
     const cellSide = settle(checkout.syncOut("run-1"), "syncOut");
@@ -286,8 +336,9 @@ async function runScript(name: string, original: Tree, stopAfter?: number): Prom
     container.stop();
     return {
       transcript: container.transcript,
-      rows: snapshotRows(files),
+      rows: new Map([...snapshotRows(files), ...underHome(snapshotRows(files, HOME_ROOT))]),
       disk: snapshotDisk(container.disk),
+      homeDisk: snapshotDisk(container.home),
       syncIn,
       syncOut,
       agentSyncOut,
@@ -303,14 +354,22 @@ function expectedAfter(original: Tree): Tree {
   return tree;
 }
 
+/** What `~`'s rows must hold after it: the home script, minus what the home rule keeps. */
+function expectedHomeAfter(original: Tree): Tree {
+  const tree: Tree = new Map(original);
+  applyHomeScript(tree, memoryDisk());
+  return tree;
+}
+
 const CACHED = ["node_modules", "node_modules/pkg", "node_modules/pkg/index.js", "dist", "dist/out.js", "debug.log", "huge.bin"];
 
 // ---------------------------------------------------------------------------
 
 describe("the checkout: a hundred files through the fake container", () => {
   const original = generateWorkspace();
-  const before = snapshotTree(original);
-  const after = snapshotTree(expectedAfter(original));
+  const originalHome = generateHome();
+  const before = new Map([...snapshotTree(original), ...underHome(snapshotTree(originalHome))]);
+  const after = new Map([...snapshotTree(expectedAfter(original)), ...underHome(snapshotTree(expectedHomeAfter(originalHome)))]);
 
   it("the fixture is what the phase asks for", () => {
     const files = [...original.values()].filter((entry) => entry.kind === "file");
@@ -323,7 +382,7 @@ describe("the checkout: a hundred files through the fake container", () => {
   });
 
   it("syncs in, the fake edits, syncs out: the rows equal the test's own arithmetic, and the cap is refused by name", async () => {
-    const run = await runScript("full", original);
+    const run = await runScript("full", original, originalHome);
     expect(run.syncIn).toEqual({ status: "fulfilled", value: undefined });
 
     // After sync-in the fake's disk was the rows; the script then changed it. Undo the script's view: compare what sync-out left.
@@ -337,6 +396,16 @@ describe("the checkout: a hundred files through the fake container", () => {
     for (const path of CACHED) expect(run.rows.has(path)).toBe(false);
     // The disk still has what the rule keeps and what was refused.
     for (const path of CACHED) expect(run.disk.has(path)).toBe(true);
+    // `~` the same way: its rows are the home script's arithmetic, with the chunked file rewritten whole, and what the home rule keeps stayed on the fake's `~`.
+    expect(run.rows.get("~/.config/tool/state.bin")?.bytes?.byteLength).toBe(HOME_BIG_AFTER.byteLength);
+    expect(run.rows.get("~/.config/gh/hosts.yml")?.mode).toBe(0o600);
+    for (const path of HOME_CACHED) expect(run.rows.has(`~/${path}`)).toBe(false);
+    for (const path of HOME_CACHED) expect(run.homeDisk.has(path)).toBe(true);
+    // The manifest carried the third root, and the `changed` answered with it.
+    const manifest = run.transcript.find((entry) => "frame" in entry && entry.frame.type === "manifest");
+    expect(manifest !== undefined && "frame" in manifest && manifest.frame.type === "manifest" ? manifest.frame.home?.map((entry) => entry.path) : null).toEqual([...originalHome.keys()].sort());
+    const changed = run.transcript.find((entry) => "frame" in entry && entry.frame.type === "changed");
+    expect(changed !== undefined && "frame" in changed && changed.frame.type === "changed" ? changed.frame.home?.deleted : null).toEqual([".local/share/tool/history"]);
 
     // The transcript is the dance as designed: manifest, need, blobs down, checkout; changed, need, blobs up, synced.
     const types = run.transcript.map((entry) => ("frame" in entry ? `${entry.from}:${entry.frame.type}` : `${entry.from}:bytes`));
@@ -380,13 +449,15 @@ describe("the checkout: a hundred files through the fake container", () => {
       expect(disk.has("node_modules/left/index.js")).toBe(true);
       expect(disk.has("dist/kept.js")).toBe(true);
       for (const path of ["node_modules", "node_modules/left", "node_modules/left/index.js", "dist", "dist/kept.js"]) disk.delete(path);
-      expect(differences(disk, before)).toEqual([]);
+      // A table without `~` as a root sends no third root: the disk is the workspace alone.
+      expect(differences(disk, snapshotTree(original))).toEqual([]);
 
       // Nothing changed: the second manifest costs one frame each way and one `checkout`.
       const frames = container.transcript.length;
       await checkout.syncIn();
       const second = container.transcript.slice(frames);
       expect(second.map((entry) => ("frame" in entry ? `${entry.from}:${entry.frame.type}` : "bytes"))).toEqual(["cell:manifest", "container:need", "container:checkout"]);
+      expect("frame" in second[0]! && second[0].frame.type === "manifest" ? Object.keys(second[0].frame) : null).toEqual(["type", "id", "entries"]);
       expect("frame" in second[1]! && second[1].frame.type === "need" ? second[1].frame.hashes : null).toEqual([]);
 
       // A deletion and an edit in the rows reach the disk; a mode change too.
@@ -426,7 +497,7 @@ describe("the checkout: a hundred files through the fake container", () => {
   });
 
   it("the kill walk: at every frame of the round trip, the rows are whole and the transcript is the same prefix", async () => {
-    const full = await runScript("walk-full", original);
+    const full = await runScript("walk-full", original, originalHome);
     expect(full.syncOut.status).toBe("fulfilled");
     const positions = full.transcript.length;
     const started = performance.now();
@@ -434,7 +505,7 @@ describe("the checkout: a hundred files through the fake container", () => {
     let interruptedOut = 0;
     for (let position = 1; position <= positions; position++) {
       if (position % 50 === 0) console.log(`kill walk: position ${position} of ${positions} at ${((performance.now() - started) / 1000).toFixed(1)} s`);
-      const run = await runScript("walk", original, position);
+      const run = await runScript("walk", original, originalHome, position);
       // (c) the transcript up to the kill is the full run's prefix.
       expect(run.transcript.length, `position ${position}`).toBe(position);
       expect(run.transcript).toEqual(full.transcript.slice(0, position));
