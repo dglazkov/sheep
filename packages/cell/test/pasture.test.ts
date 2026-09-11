@@ -199,6 +199,8 @@ describe("pasture phase 0: the object, and the verbs", () => {
       const sql = state.storage.sql;
       sql.exec("DROP TABLE sessions");
       sql.exec("DROP TABLE IF EXISTS pastures");
+      // Earmark phase 0's table is not there either, as on a home deployed before it.
+      sql.exec("DROP TABLE IF EXISTS session_secrets");
       // The table as pen left it: lamb's three columns and lamb phase 5's state.
       sql.exec("CREATE TABLE sessions (id TEXT PRIMARY KEY, name TEXT, created_at INTEGER NOT NULL, state TEXT)");
       sql.exec("INSERT INTO sessions (id, name, created_at, state) VALUES ('old-1', 'docs', 1000, 'idle')");
@@ -212,9 +214,12 @@ describe("pasture phase 0: the object, and the verbs", () => {
       const columnsAfter = sql.exec<{ name: string }>("PRAGMA table_info(sessions)").toArray().map((column) => column.name);
       expect(columnsAfter).toEqual(["id", "name", "created_at", "state", "pasture", "task"]);
       expect(directory.list()).toEqual([
-        { id: "old-2", name: null, createdAt: 2000, state: "running", pasture: null, task: null },
-        { id: "old-1", name: "docs", createdAt: 1000, state: "idle", pasture: null, task: null },
+        { id: "old-2", name: null, createdAt: 2000, state: "running", pasture: null, task: null, secrets: [] },
+        { id: "old-1", name: "docs", createdAt: 1000, state: "idle", pasture: null, task: null, secrets: [] },
       ]);
+      // The constructor made the secrets table with IF NOT EXISTS, so the old rows carry none and a mint can write some.
+      expect(sql.exec<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session_secrets'").toArray().length).toBe(1);
+      expect(directory.secrets("old-1")).toEqual({});
       expect(directory.pastures()).toEqual([]);
       // Again is a no-op.
       new Directory(state, env);

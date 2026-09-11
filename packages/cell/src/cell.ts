@@ -31,10 +31,10 @@ import type { SqliteSessionRepo } from "@earendil-works/pi-session-backend-sqlit
 import { DurableObject } from "cloudflare:workers";
 import { BIRTH_ENTRY, BIRTH_TAIL_BYTES, BIRTH_TAIL_LINES, BIRTH_TIMEOUT_S, type BirthData, type BirthRecord, birthCommand, birthProjector } from "./birth.ts";
 import { type LaneState, taskOf } from "./directory.ts";
-import { CellExecutionEnv, type ContainerLineResult } from "./env/execution-env.ts";
+import { CellExecutionEnv, type ContainerLineResult, type SetupSecrets } from "./env/execution-env.ts";
 import { eyesFor, sessionFor } from "./eyes/eyes.ts";
 import { type CellModels, createCellModels, type FauxProgram, isFauxProgram } from "./models.ts";
-import { CredentialBroker, homeMinter, pastureMinter, type PastureSecrets } from "./pen/broker.ts";
+import { CredentialBroker, PASTURE_GIT_TOKEN, pastureMinter, type PastureSecrets, type SheepSecrets, sheepMinter } from "./pen/broker.ts";
 import { DEFAULT_IDLE } from "./pen/container.ts";
 import { DEFAULT_CPU_MS, Isolate } from "./pen/isolate.ts";
 import { type ContainerStarter, parseDuration, PenLease } from "./pen/lease.ts";
@@ -126,6 +126,23 @@ function promptText(entry: MessageEntry): string {
   return content.flatMap((part: { type?: unknown; text?: unknown }) => (part.type === "text" && typeof part.text === "string" ? [part.text] : [])).join("\n");
 }
 
+/**
+ * Setup's environment for one sheep (earmark phase 0): the pasture's
+ * secrets, then the sheep's own laid over them by name, `GIT_TOKEN` out of
+ * both, each read at the moment setup runs and kept nowhere. The env asks
+ * `secrets()` at each setup run and is unchanged; this is what it asks.
+ */
+export function laidOver(pasture: SetupSecrets, sheep: SheepSecrets): SetupSecrets {
+  return {
+    async secrets() {
+      const [herds, own] = await Promise.all([pasture.secrets(), sheep.secrets()]);
+      const { [PASTURE_GIT_TOKEN]: _pastureToken, ...shared } = herds;
+      const { [PASTURE_GIT_TOKEN]: _sheepToken, ...mine } = own;
+      return { ...shared, ...mine };
+    },
+  };
+}
+
 function seconds(value: string | undefined, fallback: number): number {
   const parsed = value === undefined || value.trim() === "" ? Number.NaN : Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -177,7 +194,9 @@ export class SessionCell extends DurableObject<Env> {
     // the checkout sends its tree as the second root, and the broker reads its `GIT_TOKEN` through it.
     const object = pastureName === null ? undefined : this.env.PASTURE.getByName(pastureName);
     const pasture: CellPasture | undefined = pastureName === null || object === undefined ? undefined : { name: pastureName, source: object };
-    const lease = this.leaseFor(pasture === undefined || object === undefined ? undefined : { name: pasture.name, object });
+    // The sheep's own secrets (earmark phase 0), from the Directory, at the moment of each use: setup's run and the broker.
+    const sheep: SheepSecrets = { secrets: () => directory.secrets(this.sessionId) };
+    const lease = this.leaseFor(pasture === undefined || object === undefined ? undefined : { name: pasture.name, object }, sheep);
     this.#lease = lease;
     // Tier 1 belongs to any home with the loader, container or not; `lease.socket` is whether a container is up.
     const loader = this.env.LOADER;
@@ -187,11 +206,17 @@ export class SessionCell extends DurableObject<Env> {
       // The eyes (eyes phase 1), over the env's own files table and this cell's SQLite for the session row; `eyesFor` decides
       // whether this home has any, and a home without the binding gets none and no `look`.
       eyes: (files) => eyesFor(this.env, files, this.ctx.storage.sql),
-      // The mount and the program, both over the one stub: what the program puts, the mount's next call reads.
+      // The mount and the program, both over the one stub: what the program puts, the mount's next call reads. Setup's
+      // secrets are the pasture's with the sheep's laid over them (earmark phase 0), both read when setup runs.
       ...(pasture === undefined || object === undefined
         ? {}
         : {
-            pasture: object,
+            pasture: {
+              snapshot: () => object.snapshot(),
+              readByHash: (hash: string) => object.readByHash(hash),
+              read: (path: string) => object.read(path),
+              ...laidOver(object, sheep),
+            },
             pastureProgram: { name: pasture.name, sessionId: this.sessionId, object, herd: () => directory.herd(pasture.name) },
           }),
     });
@@ -400,7 +425,7 @@ export class SessionCell extends DurableObject<Env> {
    * Tier 2 for this cell, when the home has it: a lease over the starter.
    * A home with none has no tier 2, and the shell does not route.
    */
-  private leaseFor(pasture: { name: string; object: PastureSecrets } | undefined): PenLease | undefined {
+  private leaseFor(pasture: { name: string; object: PastureSecrets } | undefined, sheep: SheepSecrets): PenLease | undefined {
     const starter = this.starterFor();
     if (starter === undefined) return undefined;
     const directory = this.env.DIRECTORY.getByName("home");
@@ -408,7 +433,8 @@ export class SessionCell extends DurableObject<Env> {
     const idleSeconds = parseDuration(this.env.PEN_IDLE, DEFAULT_IDLE);
     const log = (line: string) => console.info(`[cell ${this.sessionId}] pen: ${line}`);
     // The broker answers the container's credential requests from the home's secrets, read at each request; the cell keeps none.
-    // For a sheep in a pasture, the pasture's `GIT_TOKEN` is read first, over RPC, at each request too (pasture phase 3).
+    // For a sheep in a pasture, the pasture's `GIT_TOKEN` is read before the home's, over RPC, at each request too (pasture
+    // phase 3); the sheep's own, from the Directory, is read before either (earmark phase 0).
     const env = this.env;
     const home = {
       get gitToken() {
@@ -418,7 +444,7 @@ export class SessionCell extends DurableObject<Env> {
         return env.PEN_GIT_HOST;
       },
     };
-    const broker = new CredentialBroker(pasture === undefined ? homeMinter(home) : pastureMinter(pasture.name, pasture.object, home), log);
+    const broker = new CredentialBroker(pasture === undefined ? sheepMinter(sheep, home) : pastureMinter(pasture.name, pasture.object, home, Date.now, sheep), log);
     return new PenLease({
       sessionId: this.sessionId,
       cellUrl: origin === undefined || origin === "" ? undefined : `${origin.replace(/\/$/, "")}/s/${encodeURIComponent(this.sessionId)}/pen`,

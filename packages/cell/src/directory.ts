@@ -16,11 +16,17 @@
  * line of its first prompt; the cell reports it from pasture phase 2).
  * The herd of a pasture is a query here, and the refusal of a birth that
  * cannot happen is here too, before any cell exists.
+ *
+ * Earmark phase 0 adds a sheep's own secrets: `session_secrets`, a name and
+ * a value per row beside the sheep's row, written by `create` at the mint
+ * and deleted by `remove` at the end. Their names are on every summary;
+ * their values leave this object over RPC only, to the cell (`secrets`),
+ * and no route returns one.
  */
 import { uuidv7 } from "@earendil-works/pi-ai";
 import { DurableObject } from "cloudflare:workers";
 import type { FauxProgram } from "./models.ts";
-import { badPastureName, isPastureName } from "./pasture.ts";
+import { badPastureName, isPastureName, isSecretName, SETUP_EXCLUDED_SECRET } from "./pasture.ts";
 
 /** What a cell last told the Directory its lane was doing. A cell that never reported is `idle`. */
 export type LaneState = "idle" | "running" | "waiting";
@@ -34,6 +40,8 @@ export interface SessionSummary {
   pasture: string | null;
   /** The first line of the first prompt, trimmed, as the cell reported it; `null` until it does. */
   task: string | null;
+  /** The names of the secrets this sheep was minted with, sorted; never a value (earmark phase 0). */
+  secrets: string[];
 }
 
 export interface PastureSummary {
@@ -54,6 +62,30 @@ export function unknownPasture(name: string): string {
 /** The directory's refusal of a birth into a pasture with a repository, on a home that cannot clone it. */
 export function noContainerForRepository(name: string): string {
   return `pasture ${name} has a repository, and this home has no container to clone it with; a pasture with no repository would work here`;
+}
+
+/** The one secret a sheep born into no pasture can carry: it has no setup, so only the broker's `GIT_TOKEN` reaches anything. */
+export const PASTURELESS_SECRET = SETUP_EXCLUDED_SECRET;
+
+/**
+ * A mint's `secrets` (earmark phase 0), checked before any row: an object of
+ * name to value, each name an environment variable's, each value a
+ * non-empty string of one line, and, for a sheep born into no pasture, no
+ * name but `GIT_TOKEN`. Absent or `null` is none. The refusal is one
+ * sentence that names a name at most, never a value.
+ */
+export function mintSecrets(given: unknown, pasture: string | null): { secrets: Record<string, string> } | { refused: string } {
+  if (given === undefined || given === null) return { secrets: {} };
+  if (typeof given !== "object" || Array.isArray(given)) return { refused: 'a sheep\'s secrets are an object of name to value, as {"NAME": "value"}' };
+  const entries = Object.entries(given as Record<string, unknown>);
+  for (const [name, value] of entries) {
+    if (!isSecretName(name)) return { refused: `a secret's name is an environment variable's, not ${JSON.stringify(name)}` };
+    if (typeof value !== "string" || value === "" || /[\r\n]/.test(value)) return { refused: `the value of the secret ${name} is not a non-empty string of one line` };
+    if (pasture === null && name !== PASTURELESS_SECRET) {
+      return { refused: `a sheep born into no pasture has no setup, so ${PASTURELESS_SECRET} is the only secret it can carry, not ${name}` };
+    }
+  }
+  return { secrets: Object.fromEntries(entries as Array<[string, string]>) };
 }
 
 /** How much of a prompt the `task` column keeps. */
@@ -91,6 +123,8 @@ export class Directory extends DurableObject<Env> {
     ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
     // The containers running now, one per session at most; the ones that stopped are summed into meta.
     ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS containers (session_id TEXT PRIMARY KEY, started_at INTEGER NOT NULL)");
+    // A sheep's own secrets (earmark phase 0). A home deployed before it gains the table here, on its next boot.
+    ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS session_secrets (session_id TEXT NOT NULL, name TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (session_id, name))");
   }
 
   /** A container started for a session. A start the Directory never saw stop is closed now, so a lost stop cannot count forever. */
@@ -143,13 +177,46 @@ export class Directory extends DurableObject<Env> {
    * A session, born into a pasture or into none. The refusal is the directory's, before any cell exists: `refusal`
    * says why, and the Worker asks it before this; a name the directory does not know is refused here too, since that
    * needs no hop. Whether this home has a container is `PEN_CONTAINER` being bound, the same test the cell makes.
+   *
+   * With `secrets` (earmark phase 0): the sheep's row and its secret rows in one transaction, with no await between, so
+   * no reader sees one without the other. Secrets the Worker would refuse are refused here too, in the same sentence.
    */
-  create(name: string | null, pasture: string | null = null): SessionSummary {
+  create(name: string | null, pasture: string | null = null, secrets: Record<string, string> = {}): SessionSummary {
     if (pasture !== null && !this.hasPasture(pasture)) throw new Error(unknownPasture(pasture));
+    const checked = mintSecrets(secrets, pasture);
+    if ("refused" in checked) throw new Error(checked.refused);
     const createdAt = Date.now();
     const id = uuidv7(createdAt);
-    this.ctx.storage.sql.exec("INSERT INTO sessions (id, name, created_at, state, pasture) VALUES (?, ?, ?, 'idle', ?)", id, name, createdAt, pasture);
-    return { id, name, createdAt, state: "idle", pasture, task: null };
+    const sql = this.ctx.storage.sql;
+    this.ctx.storage.transactionSync(() => {
+      sql.exec("INSERT INTO sessions (id, name, created_at, state, pasture) VALUES (?, ?, ?, 'idle', ?)", id, name, createdAt, pasture);
+      for (const [key, value] of Object.entries(checked.secrets)) sql.exec("INSERT INTO session_secrets (session_id, name, value) VALUES (?, ?, ?)", id, key, value);
+    });
+    return { id, name, createdAt, state: "idle", pasture, task: null, secrets: Object.keys(checked.secrets).sort() };
+  }
+
+  /**
+   * A sheep's own secrets, name to value, read now (earmark phase 0): for the cell alone, over RPC, at the moment setup
+   * runs or the broker answers. No route calls this; `GET /sessions` carries the names and never a value.
+   */
+  secrets(id: string): Record<string, string> {
+    return Object.fromEntries(
+      this.ctx.storage.sql
+        .exec<{ name: string; value: string }>("SELECT name, value FROM session_secrets WHERE session_id = ? ORDER BY name", id)
+        .toArray()
+        .map((row) => [row.name, row.value]),
+    );
+  }
+
+  /** Every sheep's secret names, sorted, by id: what the summaries carry. */
+  private secretNames(): Map<string, string[]> {
+    const names = new Map<string, string[]>();
+    for (const row of this.ctx.storage.sql.exec<{ session_id: string; name: string }>("SELECT session_id, name FROM session_secrets ORDER BY session_id, name").toArray()) {
+      const list = names.get(row.session_id);
+      if (list === undefined) names.set(row.session_id, [row.name]);
+      else list.push(row.name);
+    }
+    return names;
   }
 
   /** Why a birth into `pasture` would be refused here, or `undefined` when it would not. */
@@ -161,18 +228,20 @@ export class Directory extends DurableObject<Env> {
   }
 
   list(): SessionSummary[] {
+    const names = this.secretNames();
     return this.ctx.storage.sql
       .exec<SessionRow>("SELECT * FROM sessions ORDER BY created_at DESC")
       .toArray()
-      .map(toSummary);
+      .map((row) => toSummary(row, names));
   }
 
   /** The herd: every sheep born into a pasture, newest first as `list` is, with what each was asked. */
   herd(pasture: string): SessionSummary[] {
+    const names = this.secretNames();
     return this.ctx.storage.sql
       .exec<SessionRow>("SELECT * FROM sessions WHERE pasture = ? ORDER BY created_at DESC", pasture)
       .toArray()
-      .map(toSummary);
+      .map((row) => toSummary(row, names));
   }
 
   /** The cell's report of what its sheep was asked: the first line of the first prompt, trimmed. The first report is kept; a later one changes nothing. */
@@ -219,11 +288,14 @@ export class Directory extends DurableObject<Env> {
    * sheep; the container's own `onStop`, arriving later, finds nothing to
    * close and adds nothing. The pastures table is untouched: the pasture
    * is the shepherd's, and its herd is a query over sessions. `false` when
-   * there was no row, which changes nothing either.
+   * there was no row, which changes nothing either. The sheep's own secrets
+   * go with the row (earmark phase 0), in the same call, so ending the sheep
+   * ends them; the pasture's are its object's and untouched.
    */
   remove(id: string, at: number = Date.now()): boolean {
     this.containerClosed(id, at);
     const had = this.ctx.storage.sql.exec("SELECT 1 FROM sessions WHERE id = ?", id).toArray().length > 0;
+    this.ctx.storage.sql.exec("DELETE FROM session_secrets WHERE session_id = ?", id);
     this.ctx.storage.sql.exec("DELETE FROM sessions WHERE id = ?", id);
     return had;
   }
@@ -242,8 +314,8 @@ export class Directory extends DurableObject<Env> {
 
 type SessionRow = { id: string; name: string | null; created_at: number; state: string | null; pasture: string | null; task: string | null };
 
-function toSummary(row: SessionRow): SessionSummary {
-  return { id: row.id, name: row.name, createdAt: row.created_at, state: toLaneState(row.state), pasture: row.pasture ?? null, task: row.task ?? null };
+function toSummary(row: SessionRow, names: ReadonlyMap<string, string[]>): SessionSummary {
+  return { id: row.id, name: row.name, createdAt: row.created_at, state: toLaneState(row.state), pasture: row.pasture ?? null, task: row.task ?? null, secrets: names.get(row.id) ?? [] };
 }
 
 function toLaneState(value: string | null): LaneState {

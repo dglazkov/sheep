@@ -29,9 +29,9 @@ the moment of use and keep nothing. Setup's `run` frame carries the
 pasture's secrets, all but `GIT_TOKEN`, read from the pasture's object
 when setup runs (`CellExecutionEnv.warm`, pasture phase 4). The broker
 hands over the pasture's `GIT_TOKEN`, read at each credential request,
-with the home's `PEN_GIT_TOKEN` behind it (`pastureMinter`, pasture
-phase 3). An earmark is a third source in front of each, read the same
-way. What the project decides is where the value lives.
+with the home's `PEN_GIT_TOKEN` behind it (`pastureMinter`,
+pasture phase 3). An earmark is a third source in front of each, read
+the same way. What the project decides is where the value lives.
 
 ## The names
 

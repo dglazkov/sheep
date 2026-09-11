@@ -25,6 +25,13 @@
  * repository's when the pasture has one. The frame, the hand-over, and
  * the minute are pen's, unchanged. This is the function a GitHub App's
  * mint will replace.
+ *
+ * Earmark phase 0 puts the sheep in front: its own `GIT_TOKEN`, from the
+ * Directory at the moment of the request, then the pasture's, then the
+ * home's for a sheep in a pasture (`pastureMinter`); its own, then the
+ * home's, for a sheep in none (`sheepMinter`). The host rule is unchanged,
+ * the log line says `from this sheep`, and the refusal names every place
+ * it looked.
  */
 import { type CellFrame, type ContainerFrame, type CredentialAnswer, type CredentialRequest, decodeFrame, encodeFrame } from "@sheep/pen/protocol";
 import type { PastureMeta } from "../pasture.ts";
@@ -34,8 +41,10 @@ export const DEFAULT_GIT_HOST = "github.com";
 export const GIT_USERNAME = "x-access-token";
 /** How long a handed-over value is said to be good for: this push, not the next day. */
 export const CREDENTIAL_TTL_MS = 60_000;
-/** The pasture secret the broker looks for; every other name is setup's (pasture phase 4). */
+/** The secret the broker looks for, the sheep's or the pasture's; every other name is setup's (pasture phase 4, earmark phase 0). */
 export const PASTURE_GIT_TOKEN = "GIT_TOKEN";
+/** Where the log line says a sheep's own token came from. */
+export const FROM_THIS_SHEEP = "this sheep";
 
 /** The home's secrets, as the Worker's environment holds them. Read at each request, never copied. */
 export interface HomeSecrets {
@@ -47,6 +56,11 @@ export interface HomeSecrets {
 export interface PastureSecrets {
   meta(): Promise<PastureMeta | undefined>;
   secret(name: string): Promise<string | undefined>;
+}
+
+/** What the minter asks of the Directory for this sheep, at each request (earmark phase 0): the sheep's own secrets, name to value. */
+export interface SheepSecrets {
+  secrets(): Promise<Record<string, string>>;
 }
 
 /** A hand-over says where the value came from, for the log line and nothing else. */
@@ -92,7 +106,7 @@ function mintFrom(request: CredentialRequest, offer: Offer | undefined, nothing:
 function homeOffer(home: HomeSecrets): Offer | undefined {
   const token = home.gitToken;
   if (token === undefined || token === "") return undefined;
-  return { token, host: (home.gitHost ?? "").trim() || DEFAULT_GIT_HOST };
+  return { token, host: homeHost(home) };
 }
 
 /**
@@ -103,25 +117,62 @@ export function homeMinter(home: HomeSecrets, now: () => number = Date.now): Min
   return (request) => mintFrom(request, homeOffer(home), (host) => `the home has no PEN_GIT_TOKEN, so nothing can be minted for ${host}`, now);
 }
 
+/** The home's host: `PEN_GIT_HOST`, or GitHub's. */
+function homeHost(home: HomeSecrets): string {
+  return (home.gitHost ?? "").trim() || DEFAULT_GIT_HOST;
+}
+
+/** The sheep's own `GIT_TOKEN`, read from the Directory now; nothing when there is no sheep to ask or it has none. */
+async function sheepToken(sheep: SheepSecrets | undefined): Promise<string | undefined> {
+  if (sheep === undefined) return undefined;
+  const token = (await sheep.secrets())[PASTURE_GIT_TOKEN];
+  return token === undefined || token === "" ? undefined : token;
+}
+
 /**
- * The pasture as a minter, the home behind it: the pasture's `GIT_TOKEN`
- * first, the home's `PEN_GIT_TOKEN` after, both read at the request and
- * kept nowhere; the host is the repository's when the pasture has one,
- * else `PEN_GIT_HOST`. The refusal names the pasture, the variables, and
- * the hosts, never a value.
+ * The pasture as a minter, the sheep in front of it and the home behind:
+ * the sheep's own `GIT_TOKEN` first when there is a sheep to ask (earmark
+ * phase 0), the pasture's after, the home's `PEN_GIT_TOKEN` last, each read
+ * at the request and kept nowhere; the host is the repository's when the
+ * pasture has one, else `PEN_GIT_HOST`. The refusal names every place it
+ * looked, the variables, and the hosts, never a value.
  */
-export function pastureMinter(name: string, pasture: PastureSecrets, home: HomeSecrets, now: () => number = Date.now): Mint {
+export function pastureMinter(name: string, pasture: PastureSecrets, home: HomeSecrets, now: () => number = Date.now, sheep?: SheepSecrets): Mint {
   return async (request) => {
     const meta = await pasture.meta();
     const repoHost = meta?.repo == null ? undefined : hostOf(meta.repo);
-    const own = await pasture.secret(PASTURE_GIT_TOKEN);
     let offer: Offer | undefined;
-    if (own !== undefined && own !== "") offer = { from: `pasture ${name}`, token: own, host: repoHost ?? ((home.gitHost ?? "").trim() || DEFAULT_GIT_HOST) };
+    const mine = await sheepToken(sheep);
+    if (mine !== undefined) offer = { from: FROM_THIS_SHEEP, token: mine, host: repoHost ?? homeHost(home) };
+    else {
+      const own = await pasture.secret(PASTURE_GIT_TOKEN);
+      if (own !== undefined && own !== "") offer = { from: `pasture ${name}`, token: own, host: repoHost ?? homeHost(home) };
+      else {
+        const fallback = homeOffer(home);
+        offer = fallback === undefined ? undefined : { ...fallback, from: "the home", host: repoHost ?? fallback.host };
+      }
+    }
+    const looked = sheep === undefined ? `pasture ${name} has no ${PASTURE_GIT_TOKEN} and` : `${FROM_THIS_SHEEP} has no ${PASTURE_GIT_TOKEN}, pasture ${name} has none, and`;
+    return mintFrom(request, offer, (host) => `${looked} the home has no PEN_GIT_TOKEN, so nothing can be minted for ${host}`, now);
+  };
+}
+
+/**
+ * A sheep in no pasture as a minter (earmark phase 0): its own `GIT_TOKEN`
+ * from the Directory first, the home's `PEN_GIT_TOKEN` after, both read at
+ * the request; the host is `PEN_GIT_HOST`, as a pastureless sheep's always
+ * was. The refusal names both places it looked, never a value.
+ */
+export function sheepMinter(sheep: SheepSecrets, home: HomeSecrets, now: () => number = Date.now): Mint {
+  return async (request) => {
+    const mine = await sheepToken(sheep);
+    let offer: Offer | undefined;
+    if (mine !== undefined) offer = { from: FROM_THIS_SHEEP, token: mine, host: homeHost(home) };
     else {
       const fallback = homeOffer(home);
-      offer = fallback === undefined ? undefined : { ...fallback, from: "the home", host: repoHost ?? fallback.host };
+      offer = fallback === undefined ? undefined : { ...fallback, from: "the home" };
     }
-    return mintFrom(request, offer, (host) => `pasture ${name} has no ${PASTURE_GIT_TOKEN} and the home has no PEN_GIT_TOKEN, so nothing can be minted for ${host}`, now);
+    return mintFrom(request, offer, (host) => `${FROM_THIS_SHEEP} has no ${PASTURE_GIT_TOKEN} and the home has no PEN_GIT_TOKEN, so nothing can be minted for ${host}`, now);
   };
 }
 

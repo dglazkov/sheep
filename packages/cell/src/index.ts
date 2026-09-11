@@ -19,8 +19,11 @@
  * Eyes phase 1: `GET /home` carries `eyes`, whether the Worker has the
  * browser binding, asked of the one place that decides (`hasEyes`), so
  * `sheep home` can print it beside the container.
+ * Earmark phase 0: `POST /sessions` takes `secrets`, name to value, and
+ * refuses a bad one before any row; the answer, like `GET /sessions`,
+ * carries the names and never a value.
  */
-import { type Budget, unknownPasture, unknownSession } from "./directory.ts";
+import { type Budget, mintSecrets, unknownPasture, unknownSession } from "./directory.ts";
 import { hasEyes } from "./eyes/eyes.ts";
 import { type FauxProgram, isFauxProgram } from "./models.ts";
 import { badPastureName, isPastureName, isSecretName } from "./pasture.ts";
@@ -166,16 +169,21 @@ export default {
     if (refused) return refused;
 
     if (url.pathname === "/sessions" && request.method === "POST") {
-      const body = ((await request.json().catch(() => ({}))) ?? {}) as { name?: unknown; pasture?: unknown };
+      const body = ((await request.json().catch(() => ({}))) ?? {}) as { name?: unknown; pasture?: unknown; secrets?: unknown };
       const name = typeof body.name === "string" && body.name.length > 0 ? body.name : null;
       const pasture = typeof body.pasture === "string" && body.pasture.length > 0 ? body.pasture : null;
       if (pasture !== null && !isPastureName(pasture)) return new Response(badPastureName(pasture), { status: 400 });
+      // The sheep's own secrets (earmark phase 0), refused before any row and before any hop: a sentence and a 400, as the
+      // pasture's secret routes refuse, naming a name at most and never a value.
+      const secrets = mintSecrets(body.secrets, pasture);
+      if ("refused" in secrets) return new Response(secrets.refused, { status: 400 });
       // The Directory's refusal, before any cell exists; its sentence is the whole body.
       const refusal = pasture === null ? undefined : await directory.refusal(pasture);
       if (refusal !== undefined) return new Response(refusal, { status: 409 });
       // The mint (mint phase 0): the row, and nothing else. No cell is addressed: it boots on the first thing that asks
-      // it, as after an eviction, and a sheep born into a pasture with a repository is born inside that first boot.
-      return Response.json(await directory.create(name, pasture), { status: 201 });
+      // it, as after an eviction, and a sheep born into a pasture with a repository is born inside that first boot. The
+      // secrets are rows beside it, written in the same call (earmark phase 0).
+      return Response.json(await directory.create(name, pasture, secrets.secrets), { status: 201 });
     }
     if (url.pathname === "/sessions" && request.method === "GET") {
       const pasture = url.searchParams.get("pasture");

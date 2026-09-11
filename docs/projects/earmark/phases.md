@@ -21,10 +21,11 @@ command's environment has found the bug, not a detail.
 
 ---
 
-**Where we are: planned, 11 Sep 2026. Both phases NOT STARTED.** Next
-is earmark phase 0, a sheep's secret as rows in the Directory and the
-lay-over, proved in workerd. Nothing waits on a person until earmark
-phase 1's account ring, one ⚑ step.
+**Where we are: 11 Sep 2026. Phase 0 CLOSED; phase 1 NOT STARTED.** A
+sheep's secret is rows in the Directory beside its row, laid over its
+pasture's in setup and in the broker, removed with the row; proved in
+workerd. Next is earmark phase 1, the verb and the walk. Nothing waits
+on a person until its account ring, one ⚑ step.
 
 The order is dependency order. Phase 0 is the mechanism, which the
 verb's promise needs. Phase 1 is the verb, the names in `ls`, the docs,
@@ -85,9 +86,18 @@ and the rings guard green; `pnpm --filter @sheep/cell typecheck` exits
 the pasture's value laid over the sheep's, and `remove` leaving the
 secrets. **⚑** none.
 
-**Status: NOT STARTED.**
+**Status: CLOSED.** 2026-09-11. Journey 1 steps 1 to 6 and journey 2 steps 1 to 4 hold in the cell's terms, and journey 3 step 4 as the home's refusal: the mint writes the sheep's row and its secrets and nothing else, setup reads the sheep's over the pasture's, the broker asks the sheep first, the end removes them; `pnpm test` exits 0 across all three rings; falsified by both mutations.
 
 **Findings:**
+
+- **2026-09-11 — A sheep's secrets are `session_secrets` rows,** written with the sheep's row in one `transactionSync` and deleted by `remove` in the same call; after a mint with secrets the cell's `sqlite_master` is empty, as mint's rule wants.
+- **2026-09-11 — The lay-over is one function, `laidOver` in `cell.ts`:** both sources read when setup runs, `GIT_TOKEN` out of each, the sheep's over the pasture's; `execution-env.ts` unchanged, as the design said.
+- **2026-09-11 — The broker asks the sheep, the pasture, then the home** (`pastureMinter`'s new argument), or the sheep then the home (`sheepMinter`); a pastureless sheep's hand-over from the home now logs `from the home`, where it logged no source.
+- **2026-09-11 — `mintSecrets` is the one validator:** the Worker answers its sentence as a 400 before any row, and `Directory.create` throws the same, so a caller that skips the route is refused alike.
+- **2026-09-11 — The cells log into the test's isolate,** so a console spy sees their lines; the test asserts no value in any log line, and proves the spy sees `birth:` and `setup exit 0`.
+- **2026-09-11 — Journey 2 step 2's refusal is proved at the minter, not through a cell:** the pool always binds `PEN_GIT_TOKEN`, so a cell's sibling always has the home's; the refusal through a cell is s1's, on the station.
+- **2026-09-11 — A host mismatch's refusal still says "the home has no credential for X"** when the token was the sheep's: pen's wording, unchanged; the docs do not quote it as naming the sheep.
+- **2026-09-11 — Mutations:** the pasture's laid over the sheep's fails both lay-over cases at setup's frame; a `remove` leaving the secrets fails both end cases at the Directory's `SELECT`. Put back.
 
 ## Phase 1: The verb and the walk
 

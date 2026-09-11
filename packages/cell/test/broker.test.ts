@@ -10,13 +10,24 @@
  * answer, no row, no transcript entry, and no table of the export. And
  * `.git` is rows: a clone survives the fake's death and a new fake gets
  * it back on sync-in.
+ *
+ * Earmark phase 0: the sheep in front. A pastured sheep's minter asks the
+ * sheep, then the pasture, then the home; a pastureless one's the sheep,
+ * then the home; the log line says which, and the refusal names every
+ * place it looked. Through the cell: the birth's clone is handed the
+ * sheep's own token, a sibling the home's and then the pasture's, and a
+ * sheep in no pasture its own over the home's, each value in the one
+ * answer frame and nowhere else.
  */
 import { BACKGROUND_CONTEXT, createBashTool, getOrThrow } from "@earendil-works/pi-agent-core";
 import { env, runInDurableObject, SELF } from "cloudflare:test";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { birthCommand } from "../src/birth.ts";
 import type { SessionCell } from "../src/cell.ts";
+import type { SessionSummary } from "../src/directory.ts";
+import { SETUP_COMMAND, SETUP_PATH } from "../src/env/execution-env.ts";
 import type { FauxProgram } from "../src/models.ts";
-import { CREDENTIAL_TTL_MS, CredentialBroker, DEFAULT_GIT_HOST, GIT_USERNAME, homeMinter, hostOf } from "../src/pen/broker.ts";
+import { CREDENTIAL_TTL_MS, CredentialBroker, DEFAULT_GIT_HOST, GIT_USERNAME, homeMinter, hostOf, PASTURE_GIT_TOKEN, pastureMinter, sheepMinter } from "../src/pen/broker.ts";
 import { authorEnv, DEFAULT_AUTHOR } from "../src/pen/container.ts";
 import type { ContainerStarter } from "../src/pen/lease.ts";
 import { WORKSPACE_ROOT } from "../src/workspace/files.ts";
@@ -382,5 +393,241 @@ describe("pen journey 2 against the fake, through the lease and the door", () =>
       expect(asked[1]).toEqual({ scope: "https://gitlab.com", answer: undefined });
       runtime.lease!.idle();
     });
+  });
+});
+
+describe("earmark phase 0: the sheep as the broker's first source", () => {
+  const SHEEP = "sheep-token-1a7e3c9f5b2d4086-its-own";
+  const PASTURE = "pasture-token-8d2f6b1e4a9c4053-the-herds";
+  const HOME = "home-token-3c9a5e7b1d2f4061-the-homes";
+  const now = 1_700_000_000_000;
+  const meta = { name: "docs", repo: "https://gitlab.example/org/repo", branch: "main", createdAt: 1 };
+  /** A sheep's secrets as the Directory answers them, counting each ask so a test sees they are read at every request. */
+  const sheep = (token: string | undefined) => {
+    const source = {
+      asked: 0,
+      secrets: async (): Promise<Record<string, string>> => {
+        source.asked++;
+        return token === undefined ? { NPM_TOKEN: "not-the-credential" } : { [PASTURE_GIT_TOKEN]: token, NPM_TOKEN: "not-the-credential" };
+      },
+    };
+    return source;
+  };
+  const pasture = (token: string | undefined, repo: string | null = meta.repo) => ({ meta: async () => ({ ...meta, repo }), secret: async (name: string) => (name === PASTURE_GIT_TOKEN ? token : undefined) });
+  const handed = (value: string, from: string) => ({ answer: { username: GIT_USERNAME, value, expires: now + CREDENTIAL_TTL_MS }, from });
+  const scope = "https://gitlab.example/org/repo";
+
+  it("a pastured sheep's minter: its own GIT_TOKEN, then the pasture's, then the home's, each read at the request; the host is the repository's; the refusal names all three places and no value", async () => {
+    const all = sheep(SHEEP);
+    const mint = pastureMinter("docs", pasture(PASTURE), { gitToken: HOME }, () => now, all);
+    expect(await mint({ kind: "git", scope })).toEqual(handed(SHEEP, "this sheep"));
+    expect(await mint({ kind: "git", scope })).toEqual(handed(SHEEP, "this sheep"));
+    expect(all.asked).toBe(2);
+    // The host rule is unchanged: the repository's, so the sheep's token is not handed to another host.
+    expect(await mint({ kind: "git", scope: "https://github.com/org/repo" })).toEqual({ refused: "the home has no credential for github.com; its token is for gitlab.example" });
+    expect(await pastureMinter("docs", pasture(PASTURE), { gitToken: HOME }, () => now, sheep(undefined))({ kind: "git", scope })).toEqual(handed(PASTURE, "pasture docs"));
+    expect(await pastureMinter("docs", pasture(undefined), { gitToken: HOME }, () => now, sheep(undefined))({ kind: "git", scope })).toEqual(handed(HOME, "the home"));
+    expect(await pastureMinter("docs", pasture(""), {}, () => now, sheep(undefined))({ kind: "git", scope })).toEqual({
+      refused: "this sheep has no GIT_TOKEN, pasture docs has none, and the home has no PEN_GIT_TOKEN, so nothing can be minted for gitlab.example",
+    });
+    // With the pasture's and the home's there too, the sheep's is still first; with none of the sheep's, the pasture's over the home's.
+    expect(await pastureMinter("docs", pasture(PASTURE), { gitToken: HOME }, () => now, sheep(SHEEP))({ kind: "git", scope })).toMatchObject({ answer: { value: SHEEP } });
+    expect(await pastureMinter("docs", pasture(undefined), {}, () => now, sheep(SHEEP))({ kind: "git", scope })).toEqual(handed(SHEEP, "this sheep"));
+    // A pasture with no repository: the home's host, the sheep's token.
+    const noRepo = pastureMinter("notes", pasture(PASTURE, null), { gitToken: HOME, gitHost: "git.example.com" }, () => now, sheep(SHEEP));
+    expect(await noRepo({ kind: "git", scope: "https://git.example.com/x" })).toEqual(handed(SHEEP, "this sheep"));
+    // A Directory that cannot be read is a refusal that names the failure, through the broker.
+    const away = pastureMinter("docs", pasture(PASTURE), { gitToken: HOME }, () => now, { secrets: async () => { throw new Error("the directory is away"); } });
+    await expect(away({ kind: "git", scope })).rejects.toThrow("the directory is away");
+  });
+
+  it("a pastureless sheep's minter: its own GIT_TOKEN, then the home's, for PEN_GIT_HOST; the refusal names both places", async () => {
+    const own = sheep(SHEEP);
+    const mint = sheepMinter(own, { gitToken: HOME }, () => now);
+    expect(await mint({ kind: "git", scope: "https://github.com/org/repo" })).toEqual(handed(SHEEP, "this sheep"));
+    expect(own.asked).toBe(1);
+    expect(await mint({ kind: "git", scope: "https://gitlab.example/org/repo" })).toEqual({ refused: `the home has no credential for gitlab.example; its token is for ${DEFAULT_GIT_HOST}` });
+    expect(await sheepMinter(sheep(SHEEP), { gitToken: HOME, gitHost: "git.example.com" }, () => now)({ kind: "git", scope: "https://git.example.com/r" })).toEqual(handed(SHEEP, "this sheep"));
+    expect(await sheepMinter(sheep(undefined), { gitToken: HOME }, () => now)({ kind: "git", scope: "https://github.com/org/repo" })).toEqual(handed(HOME, "the home"));
+    expect(await sheepMinter(sheep(undefined), {}, () => now)({ kind: "git", scope: "https://github.com/org/repo" })).toEqual({
+      refused: "this sheep has no GIT_TOKEN and the home has no PEN_GIT_TOKEN, so nothing can be minted for github.com",
+    });
+    expect(await sheepMinter(sheep(SHEEP), {}, () => now)({ kind: "ssh" as "git", scope: "ssh://github.com" })).toEqual({ refused: "the home mints no ssh credential" });
+  });
+
+  it("the log line says from this sheep, from pasture <p>, or from the home, and the refusal's line names every place; never a value", async () => {
+    const lines: string[] = [];
+    const pair = new WebSocketPair();
+    const [cellEnd, containerEnd] = [pair[0], pair[1]];
+    cellEnd.accept();
+    containerEnd.accept();
+    const received: string[] = [];
+    containerEnd.addEventListener("message", (event) => {
+      received.push(String(event.data));
+    });
+    const brokers = [
+      pastureMinter("docs", pasture(PASTURE), { gitToken: HOME }, () => now, sheep(SHEEP)),
+      pastureMinter("docs", pasture(PASTURE), { gitToken: HOME }, () => now, sheep(undefined)),
+      pastureMinter("docs", pasture(undefined), { gitToken: HOME }, () => now, sheep(undefined)),
+      pastureMinter("docs", pasture(undefined), {}, () => now, sheep(undefined)),
+      sheepMinter(sheep(SHEEP), { gitToken: HOME }, () => now),
+      sheepMinter(sheep(undefined), {}, () => now),
+    ];
+    const scopes = [scope, scope, scope, scope, "https://github.com/org/repo", "https://github.com/org/repo"];
+    for (const [index, mint] of brokers.entries()) {
+      const detach = new CredentialBroker(mint, (line) => lines.push(line)).attach(cellEnd);
+      containerEnd.send(JSON.stringify({ type: "credential", id: `cred-${index + 1}`, kind: "git", scope: scopes[index] }));
+      await until(() => received.length === index + 1);
+      detach();
+    }
+    expect(received.map((frame) => JSON.parse(frame) as { type: string; value?: string }).map((frame) => frame.value ?? frame.type)).toEqual([SHEEP, PASTURE, HOME, "error", SHEEP, "error"]);
+    expect(lines).toEqual([
+      "credential cred-1 for gitlab.example handed over from this sheep, good for 60 s",
+      "credential cred-2 for gitlab.example handed over from pasture docs, good for 60 s",
+      "credential cred-3 for gitlab.example handed over from the home, good for 60 s",
+      "credential cred-4 for gitlab.example refused: this sheep has no GIT_TOKEN, pasture docs has none, and the home has no PEN_GIT_TOKEN, so nothing can be minted for gitlab.example",
+      "credential cred-5 for github.com handed over from this sheep, good for 60 s",
+      "credential cred-6 for github.com refused: this sheep has no GIT_TOKEN and the home has no PEN_GIT_TOKEN, so nothing can be minted for github.com",
+    ]);
+    for (const line of lines) for (const value of [SHEEP, PASTURE, HOME, "not-the-credential"]) expect(line).not.toContain(value);
+  });
+});
+
+describe("earmark phase 0: journey 2 through the cell", () => {
+  const SHEEP_TOKEN = "sheep-git-5b8d2f1a7c3e4096-minted-for-one";
+  const PASTURE_TOKEN = "pasture-git-2e7c4a9f1d3b4058-set-later";
+  const LONER_TOKEN = "loner-git-9f1c6e3a8b2d4075-no-pasture";
+  const VALUES = [SHEEP_TOKEN, PASTURE_TOKEN, LONER_TOKEN, TOKEN];
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** The clone asks the helper as git does, then a push asks again; each answer is kept by the test, the fake's credential frame the only way it came. */
+  function keyringScript(stubRef: { stub?: Stub }, answers: unknown[]): ScriptFor {
+    const ask = async () => {
+      answers.push(await stubRef.stub!.fakes.at(-1)!.askCredential({ kind: "git", scope: "https://github.com" }));
+    };
+    return (request) => {
+      const command = request.command.trim();
+      if (command === birthCommand(REPO, "main")) {
+        return {
+          steps: [
+            { stderr: "Cloning into '.'...\n" },
+            { act: ask },
+            { act: (disk) => disk.putFile(".git/HEAD", "ref: refs/heads/main\n") },
+          ],
+          exit: 0,
+        };
+      }
+      if (command === SETUP_COMMAND) return { steps: [{ stdout: "set up\n" }], exit: 0 };
+      if (command === "git push -u origin fix-typo") return { steps: [{ act: ask }, { stderr: `To ${REPO}\n * [new branch]      fix-typo -> fix-typo\n` }], exit: 0 };
+      return undefined;
+    };
+  }
+
+  async function mintedInto(name: string, pasture: string | null, secrets?: Record<string, string>) {
+    const answers: unknown[] = [];
+    const stubRef: { stub?: Stub } = {};
+    const summary: SessionSummary = await env.DIRECTORY.getByName("home").create(name, pasture, secrets);
+    const stub = stubStarter(summary.id, keyringScript(stubRef, answers));
+    stubRef.stub = stub;
+    await runInDurableObject(env.SESSION_CELL.getByName(summary.id), (cell: SessionCell) => {
+      cell.test.starter = stub.starter;
+    });
+    return { id: summary.id, summary, stub, answers };
+  }
+
+  it("steps 1, 3 and 4: the birth's clone is handed the sheep's own token; the sibling the home's, then the pasture's once it has one, while the earmarked sheep keeps its own; a pastureless sheep its own over the home's; the log says whose; no value in setup's environment, another frame, or a log line", { timeout: 60_000 }, async () => {
+    const spies = (["debug", "log", "info", "warn", "error"] as const).map((level) => vi.spyOn(console, level));
+    const logs = () => spies.flatMap((spy) => spy.mock.calls.map((args) => args.map(String).join(" ")));
+    expect((await api("/pastures", { method: "POST", body: JSON.stringify({ name: "keyring", repo: REPO, branch: "main" }) })).status).toBe(201);
+    const object = env.PASTURE.getByName("keyring");
+    await object.put(SETUP_PATH, new TextEncoder().encode("#!/bin/sh\ntrue\n"));
+    await object.setSecret("NPM_TOKEN", "npm-not-the-credential");
+
+    const own = await mintedInto("own", "keyring", { [PASTURE_GIT_TOKEN]: SHEEP_TOKEN });
+    const sibling = await mintedInto("sibling", "keyring");
+    expect(own.summary.secrets).toEqual([PASTURE_GIT_TOKEN]);
+
+    // Step 1: the first thing asked of each births it, and the clone asks the broker mid-run, as git does.
+    for (const { id } of [own, sibling]) expect((await api(`/s/${id}/`)).status).toBe(200);
+    expect(own.answers).toEqual([{ username: GIT_USERNAME, value: SHEEP_TOKEN, expires: expect.any(Number) }]);
+    expect(sibling.answers).toEqual([{ username: GIT_USERNAME, value: TOKEN, expires: expect.any(Number) }]);
+    // GIT_TOKEN is never setup's environment, the sheep's no more than the pasture's; the pasture's other secret is.
+    for (const { stub } of [own, sibling]) {
+      expect(stub.fakes[0]!.runs.map((run) => run.command)).toEqual([birthCommand(REPO, "main"), SETUP_COMMAND]);
+      expect(stub.fakes[0]!.runs[1]!.env).toMatchObject({ NPM_TOKEN: "npm-not-the-credential" });
+      expect(stub.fakes[0]!.runs[1]!.env).not.toHaveProperty(PASTURE_GIT_TOKEN);
+    }
+
+    // Step 3: the pasture gains a GIT_TOKEN. The earmarked sheep's push still uses its own; the sibling's the pasture's.
+    await object.setSecret(PASTURE_GIT_TOKEN, PASTURE_TOKEN);
+    for (const { id } of [own, sibling]) {
+      await inCell(id, async (cell) => {
+        expect((await bash(cell, "git push -u origin fix-typo")).text).toBe(`To ${REPO}\n * [new branch]      fix-typo -> fix-typo\n`);
+        (await cell.runtime()).lease!.idle();
+      });
+    }
+    expect(own.answers.at(-1)).toMatchObject({ value: SHEEP_TOKEN });
+    expect(sibling.answers.at(-1)).toMatchObject({ value: PASTURE_TOKEN });
+
+    // Step 4: a sheep in no pasture, minted through the route with GIT_TOKEN alone: its own over the home's, for PEN_GIT_HOST.
+    const minted = await api("/sessions", { method: "POST", body: JSON.stringify({ name: "loner", secrets: { [PASTURE_GIT_TOKEN]: LONER_TOKEN } }) });
+    expect(minted.status).toBe(201);
+    const loner = (await minted.json()) as SessionSummary;
+    expect(loner).toMatchObject({ pasture: null, secrets: [PASTURE_GIT_TOKEN] });
+    const lonerAnswers: unknown[] = [];
+    const lonerRef: { stub?: Stub } = {};
+    const lonerStub = stubStarter(loner.id, keyringScript(lonerRef, lonerAnswers));
+    lonerRef.stub = lonerStub;
+    await runInDurableObject(env.SESSION_CELL.getByName(loner.id), (cell: SessionCell) => {
+      cell.test.starter = lonerStub.starter;
+    });
+    await inCell(loner.id, async (cell) => {
+      expect((await bash(cell, "git push -u origin fix-typo")).text).toContain("[new branch]");
+      const fake = lonerStub.fakes.at(-1)!;
+      expect(await fake.askCredential({ kind: "git", scope: "https://gitlab.com/org/repo" })).toBeUndefined();
+      (await cell.runtime()).lease!.idle();
+    });
+    expect(lonerAnswers).toEqual([{ username: GIT_USERNAME, value: LONER_TOKEN, expires: expect.any(Number) }]);
+    await sleep(25);
+
+    // Each value in its own sheep's answer frames and nowhere else: no other frame of that sheep, no frame of another.
+    const expected: Array<[Stub, string[]]> = [
+      [own.stub, [SHEEP_TOKEN, SHEEP_TOKEN]],
+      [sibling.stub, [TOKEN, PASTURE_TOKEN]],
+      [lonerStub, [LONER_TOKEN]],
+    ];
+    for (const [stub, values] of expected) {
+      const all = stub.fakes.flatMap((fake) => fake.transcript);
+      const answers = all.filter((entry) => "frame" in entry && entry.from === "cell" && entry.frame.type === "credential");
+      expect(answers.map((entry) => ("frame" in entry ? (entry.frame as { value: string }).value : ""))).toEqual(values);
+      for (const entry of all) {
+        if (answers.includes(entry)) continue;
+        for (const value of VALUES) expect(JSON.stringify(entry)).not.toContain(value);
+      }
+    }
+    // The refusal the loner met named the host and no value.
+    const refusal = frames(lonerStub).find((entry) => entry.from === "cell" && entry.frame.type === "error")!;
+    expect(refusal.frame).toMatchObject({ code: "refused", of: "credential", message: `the home has no credential for gitlab.com; its token is for ${DEFAULT_GIT_HOST}` });
+
+    // No transcript entry, export table, or route answer has one, and `GET /sessions` has the name alone.
+    const listed = await (await api("/sessions")).text();
+    expect((JSON.parse(listed) as SessionSummary[]).find((row) => row.id === own.id)?.secrets).toEqual([PASTURE_GIT_TOKEN]);
+    for (const id of [own.id, sibling.id, loner.id]) {
+      const answers = [listed, await (await api(`/s/${id}/transcript`)).text(), await (await api(`/s/${id}/export`)).text(), await (await api(`/s/${id}/`)).text()];
+      for (const answer of answers) for (const value of VALUES) expect(answer).not.toContain(value);
+    }
+
+    // The log line says whose each was, and no line has a value.
+    const lines = logs();
+    const handedOver = (id: string, from: string) => lines.filter((line) => line.startsWith(`[cell ${id}] pen: credential `) && line.endsWith(`handed over from ${from}, good for 60 s`)).length;
+    expect(handedOver(own.id, "this sheep")).toBe(2);
+    expect(handedOver(sibling.id, "the home")).toBe(1);
+    expect(handedOver(sibling.id, "pasture keyring")).toBe(1);
+    expect(handedOver(loner.id, "this sheep")).toBe(1);
+    expect(lines.some((line) => line.startsWith(`[cell ${loner.id}] pen: credential `) && line.includes("for gitlab.com refused"))).toBe(true);
+    for (const line of lines) for (const value of VALUES) expect(line).not.toContain(value);
   });
 });

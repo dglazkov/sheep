@@ -1,8 +1,8 @@
 ---
-status: planned
+status: partial
 since: 2026-09-11
 see: earmark
-note: "written 11 Sep 2026, the morning mint closed, from the shepherd's issue #5 (a secret for one sheep, not for the whole pasture). A pasture's secrets are setup's environment for every sheep born into it, so a credential minted for one sheep has nowhere to go but a pasture of its own, and the brief and setup script are copied N times. Two phases: a sheep's secret as rows beside its row in the Directory, laid over the pasture's by name in setup's environment and in the broker; then the verb, the names in `sheep ls`, the docs, and the walk. Nothing built."
+note: "written 11 Sep 2026, the morning mint closed, from the shepherd's issue #5 (a secret for one sheep, not for the whole pasture). A pasture's secrets are setup's environment for every sheep born into it, so a credential minted for one sheep has nowhere to go but a pasture of its own, and the brief and setup script are copied N times. Two phases: a sheep's secret as rows beside its row in the Directory, laid over the pasture's by name in setup's environment and in the broker; then the verb, the names in `sheep ls`, the docs, and the walk. Earmark phase 0 closed the same morning: the rows, the lay-over in setup and the broker, and the end taking them, proved in workerd against the fake container, falsified by two mutations."
 ---
 
 # Earmark — the journeys

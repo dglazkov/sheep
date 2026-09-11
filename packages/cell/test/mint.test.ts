@@ -217,7 +217,7 @@ describe("mint phase 0: journey 1 in the cell's terms", () => {
     const took = Date.now() - started;
     expect(response.status).toBe(201);
     const summary = (await response.json()) as SessionSummary;
-    expect(summary).toEqual({ id: expect.stringMatching(/^[0-9a-f-]{36}$/), name: "named", createdAt: expect.any(Number), state: "idle", pasture: null, task: null });
+    expect(summary).toEqual({ id: expect.stringMatching(/^[0-9a-f-]{36}$/), name: "named", createdAt: expect.any(Number), state: "idle", pasture: null, task: null, secrets: [] });
     console.info(`mint phase 0: the mint took ${took} ms`);
     const { id } = summary;
     // The one rule: the mint touched the Directory and nothing else. `sqlite_master` is read before anything else is asked.
