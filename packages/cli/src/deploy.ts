@@ -81,7 +81,8 @@ export const PERMISSIONS = ["Workers Scripts (edit)", "Durable Objects (edit)", 
 export const PLAN = { id: "workers_paid", name: "Workers Paid", price: "5 USD a month" };
 const PRICING_PAGE = "https://developers.cloudflare.com/containers/pricing/";
 const TOKENS_PAGE = "https://dash.cloudflare.com/?to=/:account/api-tokens";
-const plansPage = (accountId: string) => `https://dash.cloudflare.com/${accountId}/workers/plans`;
+/** The account's Workers plans page: what the plan refusal and the stile's plan step name. */
+export const plansPage = (accountId: string) => `https://dash.cloudflare.com/${accountId}/workers/plans`;
 
 /** A Worker's name: lowercase letters, digits, and hyphens, neither end a hyphen, at most 63 characters. */
 const WORKER_NAME = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -109,6 +110,16 @@ export class Stop extends Refusal {
   ) {
     super(message);
   }
+}
+
+/** A stop as `cli.ts` prints it: the dog's line, then the shepherd's paragraph under it. The one printer for every stop. */
+export function stopText(stop: Stop): string {
+  return `sheep: ${stop.message}\nfor the shepherd: ${stop.shepherd}\n`;
+}
+
+/** A stop as `--json` carries it: the dog's line as `refused`, what it needs, and the shepherd's paragraph. */
+export function stopJson(stop: Stop): { refused: string; needs: Need[]; shepherd: string } {
+  return { refused: stop.message, needs: stop.needs, shepherd: stop.shepherd };
 }
 
 /**
@@ -546,6 +557,14 @@ export interface DeployOptions {
   subdomain?: string;
   /** `--faux`: `SHEEP_PROVIDER=faux` as a var, so the home answers from a program and spends no model; the ring's flag. */
   faux?: boolean;
+  /**
+   * The stile's (stile phase 1): the caller puts the model key itself, at
+   * its own step, the moment this deploy returns, through `putModelKey`
+   * below — so a Worker that holds no key yet is not a stop. Only the
+   * stile passes it; `sheep home deploy` never does, and a dog's deploy
+   * with no key kept and a home holding none is the stop it always was.
+   */
+  keyLater?: boolean;
   /** Where progress goes; never a secret. */
   say?: (text: string) => void;
 }
@@ -569,9 +588,10 @@ export interface DeployReport {
    * the put is idempotent and a rotated key is the shepherd running `sheep
    * setup` again; `left` when it keeps none and the Worker already holds
    * `SHEEP_ANTHROPIC_API_KEY`, which a second machine that joined is. A
-   * Worker with neither is a stop, before anything is deployed.
+   * Worker with neither is a stop, before anything is deployed. `later`
+   * is the stile's `keyLater`: its own `key` step puts one right after.
    */
-  key: "put" | "left";
+  key: "put" | "left" | "later";
   config: { path: string; wrangler: string };
   kennel: string;
   build: { home: BuildSide | null; cli: BuildSide };
@@ -802,6 +822,35 @@ export function validateName(name: string): void {
 /** The Worker secret the home's sheep call the model with: what a deploy puts, and what a machine keeping no key requires the Worker to hold already. */
 export const KEY_SECRET = "SHEEP_ANTHROPIC_API_KEY";
 
+/**
+ * One `wrangler secret put`, the value on stdin and never an argument.
+ * The one place a secret is put: `deploy` puts its three through here, and
+ * the stile's `key` step puts the model key through `putModelKey` below,
+ * which is this and the derived config again — so there is one
+ * implementation of the put and not a second one beside it.
+ */
+async function putSecret(options: { bin: string; config: string; cwd: string; secret: string; value: string; token: string; accountId: string }): Promise<void> {
+  const put = await wrangler(options.bin, ["secret", "put", options.secret, "--config", options.config, "--env", "pen"], { token: options.token, accountId: options.accountId, cwd: options.cwd, stdin: `${options.value}\n` });
+  if (put.code !== 0) throw new Error(`wrangler secret put ${options.secret} --config ${options.config} --env pen exited ${put.code}:\n${tail(put)}`);
+}
+
+/**
+ * The model key onto a Worker that is already live: the stile's `key`
+ * step (stile phase 1), which asks for the key after the station is
+ * deployed, as journey 1 does. It is deploy's fourth step for one secret
+ * and nothing else — the same derived config, the same wrangler, the same
+ * stdin — so the stile adds no second deploy path. A put is a
+ * config-only version and not a rollout, so a turn running on the home is
+ * undisturbed by it.
+ */
+export async function putModelKey(options: { name: string; key: string; token: string; accountId: string; say?: (text: string) => void }): Promise<void> {
+  const say = options.say ?? (() => {});
+  const stamp = readStamp();
+  const bin = wranglerBin(stamp, say);
+  const derived = writeDerivedConfig(options.name, stamp);
+  await putSecret({ bin, config: derived.path, cwd: dirname(derived.path), secret: KEY_SECRET, value: options.key, token: options.token, accountId: options.accountId });
+}
+
 /** The five steps of a deploy, in the order they happen, as the midway message names them. */
 const DEPLOY_STEPS = ["the account token and the model key", "the account read", "the Worker uploaded by wrangler", "the secrets put", "the config written and the container application healthy"];
 
@@ -856,8 +905,11 @@ export async function deploy(options: DeployOptions = {}): Promise<DeployReport>
 
   // 2'. The model key, when this machine keeps none: the Worker's secret names are asked of the account (a GET, before
   // anything is made), and the key's presence among them is required. Found, the redeploy leaves the key the home holds.
-  const keyState: DeployReport["key"] = key === undefined ? "left" : "put";
-  if (key === undefined) {
+  // With `keyLater` the caller is the stile, whose own `key` step puts the key through `putModelKey` the moment this
+  // deploy returns (stile phase 1): the Worker is not asked to hold one already, since on a first sitting it holds none.
+  const keyState: DeployReport["key"] = key !== undefined ? "put" : options.keyLater === true ? "later" : "left";
+  if (key === undefined && options.keyLater === true) say(`sheep: the model key is put on the home after this deploy, at the step that asks for it\n`);
+  else if (key === undefined) {
     const held = await api.secrets(account.id, name);
     if (!held.includes(KEY_SECRET)) throw STOPS.deployKey(name);
     say(`sheep: no model key is kept on this machine; the home keeps its own, and this deploy leaves it\n`);
@@ -891,10 +943,7 @@ export async function deploy(options: DeployOptions = {}): Promise<DeployReport>
     // The key is put when this machine keeps one, and left as it is when it does not: the home holds its own.
     const sheepToken = recorded !== undefined && typeof existing?.token === "string" && existing.token !== "" ? existing.token : randomBytes(24).toString("hex");
     const secrets: [string, string][] = [["SHEEP_TOKEN", sheepToken], ...(key === undefined ? [] : ([[KEY_SECRET, key]] as [string, string][])), ["PEN_CELL_ORIGIN", home]];
-    for (const [secret, value] of secrets) {
-      const put = await wrangler(bin, ["secret", "put", secret, "--config", derived.path, "--env", "pen"], { token, accountId: account.id, cwd, stdin: `${value}\n` });
-      if (put.code !== 0) throw new Error(`wrangler secret put ${secret} --config ${derived.path} --env pen exited ${put.code}:\n${tail(put)}`);
-    }
+    for (const [secret, value] of secrets) await putSecret({ bin, config: derived.path, cwd, secret, value, token, accountId: account.id });
     reached = 4;
 
     // 5. The config, without the local marker; then the container application waited for, the rollout, and only then the address and the stamp.

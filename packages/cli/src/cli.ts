@@ -1,6 +1,6 @@
 import { kennelDir, loadConfig, sheepDir, type SheepConfig } from "./config.js";
-import { credentialsLine, credentialsReport } from "./credentials.js";
-import { deleteStation, deploy, Refusal, Stop } from "./deploy.js";
+import { credentialsLine, credentialsReport, machineCredentialsPath } from "./credentials.js";
+import { deleteStation, deploy, Refusal, Stop, stopJson, stopText } from "./deploy.js";
 import { earmarks } from "./earmark.js";
 import { writeSessionFile } from "./export.js";
 import { runAbort, runEnd, runLog, runPrompt, runStatus, runWait, watchSetup } from "./herd.js";
@@ -10,6 +10,8 @@ import { type BuildSide, cliBuild, describeBuild, describeImage, eyesSentence, i
 import { PASTURE_NAME, runPasture } from "./pasture.js";
 import { runPiClient } from "./pi.js";
 import { formatSetup, INSTALL_SPEC, kennelTracked, readGuide, setup, trackedWarning } from "./setup.js";
+import { atTerminal, stile } from "./stile/screen.js";
+import { USAGE } from "./usage.js";
 
 /**
  * The build stamp, from the manifest beside the running code: the release
@@ -23,121 +25,6 @@ export function version(): string {
   return stamp === undefined ? "sheep 0.0.0-checkout" : `sheep ${stamp.commit} (${stamp.builtAt})`;
 }
 
-const USAGE = `sheep — pi, running in a cell
-
-usage:
-  sheep new [--name <name>] [--pasture <name>] [--secret <NAME>]... [--detach] [--wait] [-- <prompt>]
-                                            mint a session at the home, born into a pasture or into none; attach pi's
-                                            terminal, or send the prompt; with --detach alone, print the id and exit;
-                                            each --secret's value is a line of stdin, for this sheep alone
-  sheep -c | --continue [--detach] [--wait] [-- <prompt>]       the same, on the newest session
-  sheep attach <id> [--detach] [--wait] [-- <prompt>]           the same, on a named session; a second terminal on the same cell
-  sheep ls [--pasture <name>]               the home's sessions: id, name, created, lane state, pasture, secret names; one
-                                            per line, tab separated, the pasture empty for a pastureless sheep and the
-                                            names (comma separated, never a value) empty for none; with --pasture, that herd
-  sheep status <id>                         the lane now: open operation, last tool call, tokens so far, and last the
-                                            pasture's setup.sh, from the sheep's row: setup: none | running (1m 40s) |
-                                            ok (1m 52s) | failed (exit 1, 12.4 s). A sheep whose setup is running is
-                                            answered from the row alone when the cell cannot answer in two seconds
-  sheep wait [--timeout <seconds>] <id>...  block until every named session is idle; print each one's last assistant message
-  sheep abort <id>                          stop the open operation
-  sheep rm <id>                             end the session: its open turn aborted, its container and browser released, its
-                                            rows gone, the pasture kept; prints <id>\\tended, with no undo (export first)
-  sheep log [--since <entry id | ISO time>] [--last <n>] <id>   the transcript as text, oldest first, one block per entry,
-                                            and a [setup] block where each of this sheep's setup.sh runs happened, with
-                                            how it ended and the tail of what it printed (the last twenty are kept)
-  sheep export <id> [file]                  write the session as a pi SQLite file (default <id>.sqlite)
-  sheep config                              print the resolved home and this directory's kennel (never the token)
-  sheep setup [--no-install]                ready this directory: the command on PATH (installed with
-                                            npm install -g ${INSTALL_SPEC} when absent), the skill under
-                                            .agents/skills/sheep with the .claude/skills doorway, the kennel .sheep/
-                                            here with a .gitignore entry for it in a git work tree, the home reported;
-                                            idempotent, and it prints the next thing to run
-  sheep --agent-help                        the guide for an agent: what sheep is, the verbs, the home, what needs a person
-  sheep --version
-
-  sheep home local [--faux] [--no-container]
-                                            a home on this machine, under the kennel's local/, started if it was not;
-                                            writes the kennel's config when there is none; the report says whether a model
-                                            key is held (from ANTHROPIC_API_KEY), or that the faux provider answers instead.
-                                            With Docker on this machine the home rents a container beside every cell (git,
-                                            node, pnpm, python: sheep can clone, build, test, and push), the image pulled by
-                                            Docker; without Docker, or with --no-container, its sheep read, write, and edit.
-                                            The home has eyes: a sheep's \`look <path>\` renders a workspace page in a real
-                                            Chromium, and the first look on this machine fetches that Chrome
-  sheep home stop                           stop this kennel's local home
-  sheep home deploy [--name <worker>] [--subdomain <name>] [--json]
-                                            the station: this package's home on the shepherd's Cloudflare account, a
-                                            container beside every cell. Nothing without the account token and the model
-                                            key, kept on this machine: absent, it prints what it needs and
-                                            costs and exits 2. The name is the kennel's, minted at the first deploy and
-                                            recorded in the config; run again, it redeploys the same Worker from this
-                                            package and keeps its secrets
-  sheep home delete [--name <worker>] [--json]
-                                            end the station: lists what goes (the Worker at its address, its Durable
-                                            Objects, its container application, how many sessions and pastures are in
-                                            it, the config), then waits for the name typed at a terminal (one line of
-                                            stdin without one; anything else is exit 2 with nothing deleted); deletes
-                                            all of it and clears the config
-  sheep home join <address> [--json]        a second machine's way in: the station's token is one line of stdin, piped,
-                                            never an argument; the home is asked to answer as a sheep home and to take the
-                                            token, then this kennel's config names it; prints the address, both stamps,
-                                            and the image
-  sheep home                                which kennel, which home the config names, its station's name once minted,
-                                            which credentials are kept and where (never a value),
-                                            whether it answers, and its build stamp beside this command's, with one line
-                                            on stderr when they differ; the pen image its config named, when it says;
-                                            whether it has eyes (a station deployed before they existed says no until
-                                            \`sheep home deploy\` upgrades it)
-
-  sheep pasture new <name> [--repo <url> | --repo .] [--branch <branch>]
-                                            make a pasture: a shared tree, a repository or none, and the sheep born into it;
-                                            --repo . reads this checkout's origin and stores the URL, uploading nothing;
-                                            prints name, repository, branch
-  sheep pasture ls                          the home's pastures: name, created
-  sheep pasture <name>                      the meta, then the herd: id, name, state, born, task
-  sheep pasture ls <name> [path]            the tree, or a directory in it; one path per line, a directory with its slash
-  sheep pasture cat <name> <path>           a file of the tree, to stdout
-  sheep pasture put <name> <path> [file]    write a file, or stdin, to the tree at <path>; whole, last write wins
-  sheep pasture rm <name> <path>            remove a file, or a directory and what is under it
-  sheep pasture secret set <name> <KEY>     set a secret; the value is stdin, never an argument (GIT_TOKEN is the credential)
-  sheep pasture secret ls <name>            the secrets' names, one per line, never a value
-
-options:
-  --home <url>    which home; also SHEEP_HOME or the kennel's config ({"home": "...", "token": "..."})
-  --json          machine output, pi's shapes: entries are pi entries, status is pi's lane snapshot,
-                  a queued prompt is pi's queue response, a detached prompt is pi's operation response;
-                  a held turn's entries stream as they land, one per line, the last assistant entry last;
-                  ls rows carry "pasture": null | "<name>", "task": null | "<first line of the first prompt>", and
-                  "secrets": [<the sheep's secret names, sorted>];
-                  rm is {"id": …, "ended": true, "aborted": <whether a turn was stopped>};
-                  status is the snapshot with "setup" beside it, or {"id", "state", "setup", "snapshot": null} while a
-                  setup holds the cell; ls rows carry the same "setup"; log gives each setup block "type": "setup"
-  --pasture <name>  with new: the pasture to be born into; with ls: only that herd
-  --secret <NAME> with new, repeatable: a secret for this sheep alone, its value one line of stdin per name in the
-                  order given, never an argument; laid over its pasture's secret of the same name in setup, and as
-                  GIT_TOKEN over the pasture's and the home's when git asks; ended with the sheep. Refused at a terminal,
-                  without --detach or a prompt, and on attach and -c
-  --detach        with a prompt: send it and exit before the first token; the id is the first line of stdout.
-                  With new and no prompt: mint the session, print its id, and exit; the sheep is idle, costs
-                  nothing, and is born into its pasture at the first thing that asks it (a prompt, status, log)
-  --wait          with a prompt to a busy session: stream the queued turn when it starts
-  --faux          with home local: the scripted model that answers "ok", for a look at the plumbing without a key;
-                  with home deploy: the same provider set as the station's var, the account ring's flag
-  --no-container  with home local: no container even with Docker present; a running home that has one is restarted
-  --subdomain <name>  with home deploy: the workers.dev subdomain to register when the account has none
-  --no-install    with setup: report the command missing rather than installing it
-
-The kennel is .sheep/ at or above the working directory, found the way git finds .git, and ~/.sheep when there is
-none: this directory's config and its own local home. sheep setup makes one here; two directories share nothing
-but the command, and cd is how you switch.
-
-A command whose home is the local one starts it when the connection is refused, and says so on stderr.
-
-With a prompt after --, the reply streams and sheep exits when the turn ends. A prompt to a busy session is
-queued behind the running turn, as pi queues a prompt typed mid-turn; sheep prints "queued <id>" and exits 0.
-Without a prompt, sheep attaches pi's interactive terminal. wait exits 124 on timeout, with what had finished.
-`;
 
 interface Parsed {
   home?: string;
@@ -153,6 +40,8 @@ interface Parsed {
   faux: boolean;
   noInstall: boolean;
   noContainer: boolean;
+  /** `--explain` with setup at a terminal: the stile opens every step's words as it reaches it. */
+  explain: boolean;
   since?: string;
   last?: string;
   timeout?: string;
@@ -165,7 +54,7 @@ interface Parsed {
 
 function parse(argv: readonly string[]): Parsed {
   const args = [...argv];
-  const parsed: Parsed = { rest: [], secretNames: [], json: false, detach: false, wait: false, faux: false, noInstall: false, noContainer: false };
+  const parsed: Parsed = { rest: [], secretNames: [], json: false, detach: false, wait: false, faux: false, noInstall: false, noContainer: false, explain: false };
   const valued: Record<string, (value: string | undefined) => void> = {
     "--home": (value) => (parsed.home = value),
     "--name": (value) => (parsed.name = value),
@@ -193,6 +82,7 @@ function parse(argv: readonly string[]): Parsed {
     else if (arg === "--faux") parsed.faux = true;
     else if (arg === "--no-install") parsed.noInstall = true;
     else if (arg === "--no-container") parsed.noContainer = true;
+    else if (arg === "--explain") parsed.explain = true;
     else parsed.rest.push(arg);
   }
   return parsed;
@@ -224,6 +114,23 @@ export async function main(argv: readonly string[]): Promise<number> {
   const output = { json: parsed.json, out: (text: string) => void process.stdout.write(text), err: (text: string) => void process.stderr.write(text), end: endAfterFlush };
   if (command === "home") return await runHome(parsed, config, output);
   if (command === "setup") {
+    // The fork (stile phase 1): stdin and stdout a terminal, and no `--json`, is the shepherd's one sitting — the stile.
+    // Anything else is the dog's setup, exactly as stile phase 0 left it: the skill here, a kennel only where no home is
+    // reachable, the report, and nothing asked. One verb, two callers, which is `gh`'s rule: a tty gets the login, a pipe
+    // gets the report. Nothing the stile keeps is ever written to stdout, and it is never reached with `--json`.
+    if (!parsed.json && atTerminal()) {
+      try {
+        const report = await stile({ dir: process.cwd(), install: !parsed.noInstall, explain: parsed.explain, name: parsed.name, subdomain: parsed.subdomain, faux: parsed.faux });
+        process.stdout.write(`${report.next}\n`);
+        return 0;
+      } catch (error) {
+        if (error instanceof Stop) {
+          process.stderr.write(stopText(error));
+          return 2;
+        }
+        return fail(error instanceof Error ? error.message : String(error));
+      }
+    }
     const report = await setup({ dir: process.cwd(), install: !parsed.noInstall, say: output.err, home: parsed.home });
     process.stdout.write(parsed.json ? `${JSON.stringify(report)}\n` : formatSetup(report, process.cwd()));
     return 0;
@@ -375,7 +282,7 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
           ? "the faux provider answers every prompt with \"ok\"; no key is used"
           : report.key === "held"
             ? `held, in ${report.secrets}`
-            : `not held; export ANTHROPIC_API_KEY and run \`sheep home local\` again`;
+            : `not held; the rig reads what \`sheep setup\` kept in ${machineCredentialsPath()}, or ANTHROPIC_API_KEY in this environment`;
       const configLine =
         report.config.names !== undefined
           ? `${report.config.path} names ${report.config.names}; --home ${report.url} selects the local home for one command`
@@ -533,7 +440,7 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
         output.out(`${JSON.stringify({ home, kennel, name, local: true, running, pid: running ? status.record!.pid : null, port: status.record?.port ?? null, stamp: status.record?.stamp ?? null, startedAt: running ? status.record!.startedAt : null, container, eyes, build, image, credentials: credentialsReport() })}\n`);
         return 0;
       }
-      output.out(home === null ? "home: (none); run `sheep home local`\n" : `home: ${home} (local, ${running ? `running, pid ${status.record!.pid}` : "stopped"})\n`);
+      output.out(home === null ? "home: (none); run `sheep setup`\n" : `home: ${home} (local, ${running ? `running, pid ${status.record!.pid}` : "stopped"})\n`);
       output.out(`kennel: ${kennel}\n${nameLine}${credentialsLine()}\n${running ? `container: ${container ? "yes" : "no"}\n` : ""}${lines}`);
       return 0;
     }
@@ -544,7 +451,7 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
       output.out(`${JSON.stringify({ home, kennel, name, local: false, answers: answers === "sheep", eyes, build, image, credentials: credentialsReport() })}\n`);
       return 0;
     }
-    output.out(home === null ? "home: (none); run `sheep home local`, or pass --home <url>\n" : `home: ${home} (${answers === "sheep" ? "answers" : answers === "other" ? "answers, but not as a sheep home" : "does not answer"})\n`);
+    output.out(home === null ? "home: (none); run `sheep setup`, or pass --home <url>\n" : `home: ${home} (${answers === "sheep" ? "answers" : answers === "other" ? "answers, but not as a sheep home" : "does not answer"})\n`);
     output.out(`kennel: ${kennel}\n${nameLine}${credentialsLine()}\n${lines}`);
     return 0;
   } catch (error) {
@@ -552,8 +459,8 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
     // nothing was made, and under it the shepherd's paragraph, second person, naming the one command to type at their own
     // terminal. The dog relays that paragraph and does nothing else. `--json` is the same two parts and the `needs`.
     if (error instanceof Stop) {
-      if (parsed.json) output.out(`${JSON.stringify({ refused: error.message, needs: error.needs, shepherd: error.shepherd })}\n`);
-      else output.err(`sheep: ${error.message}\nfor the shepherd: ${error.shepherd}\n`);
+      if (parsed.json) output.out(`${JSON.stringify(stopJson(error))}\n`);
+      else output.err(stopText(error));
       return 2;
     }
     // A deploy or delete that failed after the account was touched is exit 1, so a dog can tell it from a refusal that made nothing.

@@ -98,6 +98,9 @@ importers:
       '@earendil-works/pi-session-backend-sqlite-node':
         specifier: link:../../vendor/pi/packages/session-backends/sqlite-node
         version: link:../../vendor/pi/packages/session-backends/sqlite-node
+      '@earendil-works/pi-tui':
+        specifier: link:../../vendor/pi/packages/tui
+        version: link:../../vendor/pi/packages/tui
     devDependencies:
       '@types/node':
         specifier: ^22.0.0
@@ -105,6 +108,9 @@ importers:
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
+      '@xterm/headless':
+        specifier: 5.5.0
+        version: 5.5.0
       typescript:
         specifier: ^5.9.0
         version: 5.9.3
@@ -973,6 +979,9 @@ packages:
 
   '@vitest/utils@4.1.11':
     resolution: {integrity: sha512-zTCVGpyFsGWBhllOyKlTw/vnr6D9qxsfSDyfbyZmTyjHw5N/VuvzHpHoQjm2ZJzn4RJgx5w4r7V0er69CmLgPQ==}
+
+  '@xterm/headless@5.5.0':
+    resolution: {integrity: sha512-5xXB7kdQlFBP82ViMJTwwEc3gKCLGKR/eoxQm4zge7GPBl86tCdI0IdPJjoKd8mUSFXz5V7i/25sfsEkP4j46g==}
 
   agent-base@7.1.4:
     resolution: {integrity: sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==}
@@ -2356,6 +2365,8 @@ snapshots:
       '@vitest/pretty-format': 4.1.11
       convert-source-map: 2.0.0
       tinyrainbow: 3.1.1
+
+  '@xterm/headless@5.5.0': {}
 
   agent-base@7.1.4: {}
 

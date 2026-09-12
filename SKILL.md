@@ -29,24 +29,21 @@ npx github:dglazkov/sheep#release setup
 ```
 
 It is idempotent, puts `sheep` on your PATH, installs this skill here,
-makes this directory's kennel (`.sheep/`, which holds its config and its
-own local home, and which setup adds to the `.gitignore` in a git work
-tree), and ends with the sentence to run next. Keep the `#release` on the
-spec.
+and prints a report whose `home:` line says whether a home is reachable
+from where you stand. Keep the `#release` on the spec.
 
 The kennel is found by walking up from where you stand, the way git finds
-`.git`, and is `~/.sheep` when there is none, so a dog in each of several
-directories herds its own sheep and shares nothing but the command.
+`.git`, and is `~/.sheep` when there is none, so a home the shepherd set
+up for the whole machine is the one you find in every directory.
 
 ## What a sheep can see
 
 On a home with eyes, a sheep can `look <path>` at a page in its workspace:
 a real Chromium renders it, and the sheep reads the picture and a report
 (errors, console, the accessibility tree). You read that report in `sheep
-log <id>`; there is no `sheep look`. The local home always has eyes, and
-its first look fetches a Chrome, which `sheep home local` says. A station
-deployed before this release has none until `sheep home deploy` upgrades
-it; `sheep home` prints `eyes: yes` or `no`.
+log <id>`; there is no `sheep look`. `sheep home` prints `eyes: yes` or
+`no`, and a home deployed before eyes existed has them once `sheep home
+deploy` upgrades it.
 
 With a container as well, a sheep can look at its own dev server: `look
 --serve '<command>' [<path>]` runs the command with `PORT` set, renders
@@ -58,13 +55,13 @@ sheep born there reads it.
 
 ## What needs a person
 
-- **A model key**: ask them to `export ANTHROPIC_API_KEY` in the shell
-  `sheep` runs in, never to paste it into the chat.
-- **An account for a deployed home**: a home on this machine needs none;
-  `sheep home deploy` needs `CLOUDFLARE_API_TOKEN` and `ANTHROPIC_API_KEY`
-  exported in the shell, and prints what to ask for when they are not;
-  `sheep home delete` lists what goes and how many sessions are in it, then
-  needs the station's name typed at their terminal (exit 2 without one);
-  `sheep home join <address>` needs its token piped on stdin, never pasted.
+- **A home, and the two values it needs**: the shepherd's one sitting,
+  `sheep setup` at their own terminal, which asks for their Cloudflare
+  account token and their Anthropic key once and keeps them. When a
+  command stops with a paragraph that begins `for the shepherd:`, give
+  them that paragraph as it is and do nothing else toward it. Never ask
+  for either value in the chat.
+- **Ending the station**: `sheep home delete` lists what goes and needs
+  the station's name typed at their terminal.
 - **A hand at a terminal**: `sheep attach <id>` with no prompt opens pi's
   interactive terminal, theirs to use, not yours.

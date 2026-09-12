@@ -24,25 +24,24 @@ tool, has built a facade.
 
 ---
 
-**Where we are: stile phase 0 is PART-DONE, 12 September 2026.** The next
-thing to do is **stile phase 1**, the stile itself: the flow, the screen
-over pi-tui, the words, the fence, and the rings driving it through a
-terminal they own. It can be built and proved in the inner rings without
-a person; closing it needs the shepherd, for the dog ring's cost, the walk
-at their own terminal, and the ⚑ account ring.
+**Where we are: stile phases 0 and 1 are PART-DONE, 12 September 2026.**
+The next thing to do is **stile phase 1**'s outer rings and walk, then
+**stile phase 2**, the join. The shepherd authorized the runs with the
+checkout's keys: the package ring with `t0` through CI's release, the dog
+ring, the ⚑ account ring with `t1`, and stile phase 0's upgrade of
+`sheep-2` with nothing in the environment.
 
-Stile phase 0's dog half is built and green against the fakes:
-`credentials.ts` and its precedence, `deploy` and `deleteStation` reading
-what the machine keeps, `Stop` in two parts with `--json`'s `needs`, the
-key left when the Worker holds one, the midway message, and the dog's
-setup making no kennel where a home is already reachable. `pnpm test` and
-`pnpm -r typecheck` are exit 0, and both named mutations falsified their
-tests. Two things wait, both Open findings under the phase: the by-hand
-walk against `sheep-2`, which needs the shepherd's own token, and the
-account ring's a1, which asserts the old refusal's wording and is stile
-phase 1's to rewrite. Two ⚑ steps in the project, both the account ring's:
-`t1` in stile phase 1 and `t2` in stile phase 2, each a station deployed
-and deleted on the shepherd's account.
+Both phases are green in the inner rings. Stile phase 0 is the dog's half:
+`credentials.ts`, deploy and delete reading what the machine keeps, `Stop`
+in two parts, the key left when the Worker holds one, the midway message,
+and setup making no kennel where a home is reachable; its walk has read
+`~/.sheep/credentials` from a scratch directory with nothing in the
+environment and found `sheep-2`, and the upgrade itself is left. Stile
+phase 1 is the stile: the flow, the screen over pi-tui, the words, the
+fence and its guard, the two halves of the README, and the ring steps,
+written and not yet run. Two ⚑ steps in the project, both the account
+ring's: `t1` in stile phase 1 and `t2` in stile phase 2, each a station
+deployed and deleted on the shepherd's account.
 
 The order is dependency order. Phase 0 is the mechanism under the flow,
 provable against the fakes with nothing on a screen, so the stile in
@@ -134,8 +133,8 @@ walk on this laptop, which needs the shepherd's own token, is Open below.
   hard-coded listing cannot fail.
 - **2026-09-12 — Open: the account ring's a1 fails until stile phase 1.**
   It asserts the refusal says `CLOUDFLARE_API_TOKEN is not set`, and the
-  stop says otherwise. Stile phase 1's Work rewrites `hermetic.mjs`; the
-  ring is not run until then.
+  stop says otherwise. Stile phase 1 rewrote the assertion to the stop's
+  two parts; it holds when the account ring runs it.
 - **2026-09-12 — Open: the by-hand half of the Proof waits on the
   shepherd.** `~/.sheep/credentials` from the checkout's two files, then
   `sheep home deploy` against `sheep-2` with nothing in the environment.
@@ -194,9 +193,33 @@ which is the one walk a person does, since the screen is for one. **⚑**
 deployed and deleted on the shepherd's account, a few container minutes
 and one more deploy per run.
 
-**Status: NOT STARTED.**
+**Status: PART-DONE, 12 September 2026.** The stile is built and green in
+the inner rings: `pnpm test`, `pnpm -r typecheck`, and `pnpm bundle` exit
+0, and both named mutations falsified their tests — hidden input echoed
+fails four stile cases on the buffer check, and a `?` that never closes
+fails journey 1's frame snapshot. The outer rings and the walk are Open.
 
 **Findings:**
+
+- **2026-09-12 — A first sitting deploys before it has a key.** `deploy()`
+  stops when neither machine nor Worker holds one, so the stile passes
+  `keyLater` and its `key` step puts the key through `putModelKey`, which
+  shares `putSecret` with deploy: one put, not two.
+- **2026-09-12 — The plan's yes exists only on an account not yet on
+  Workers Paid.** The account ring requires Paid up front, so `t1` counts
+  no yes; the package ring's `t0` counts the whole of it against a Free
+  fake account, and journey 1's criterion now says so.
+- **2026-09-12 — pi-tui inlines into `sheep.mjs` with nothing shipped
+  beside it.** No new external, no native module; the bundle is 896 KiB.
+  `ProcessTerminal`'s bracketed paste delivers a pasted token as one
+  escape sequence, which the key splitter must unwrap.
+- **2026-09-12 — BSD `script` refuses a socket on stdin, and on macOS a
+  pipe and a FIFO are both sockets.** `stile-tty.test.ts` feeds keys
+  through `cat < fifo |` into `script`.
+- **2026-09-12 — Open: the outer rings and the walk.** `t0` runs in the
+  package ring CI walks on this commit; the dog ring, the ⚑ account ring's
+  `t1`, `up` and `a1`, and journey 1 steps 1 to 5 at a real terminal wait
+  on their runs, authorized by the shepherd the same day.
 
 ---
 

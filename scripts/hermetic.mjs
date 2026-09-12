@@ -407,7 +407,7 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { createInterface } from "node:readline";
@@ -735,6 +735,9 @@ function run(command, args, options) {
   });
 }
 
+/** `run`, by a second name, for the functions whose own `run` is a stile's terminal. */
+const run0 = (command, args, options) => run(command, args, options);
+
 /** Every process's pid and arguments, one line each, from `ps`: no shell, so no argument of this ring's own carries what it looks for. */
 function psLines() {
   return spawnSync("ps", ["-Ao", "pid=,args="], { encoding: "utf8" }).stdout.split("\n").map((line) => line.trim()).filter(Boolean);
@@ -766,6 +769,32 @@ async function answers(url) {
     return false;
   }
 }
+
+/**
+ * The stile's terminal (stile phase 1): `packages/cli/test/screen.ts`, the
+ * command ring's own harness, imported from this checkout so every ring
+ * drives the stile through the same code — the command spawned with
+ * `SHEEP_TEST_TERMINAL`, its stdout fed into `@xterm/headless`, keys
+ * written one at a time, the buffer read back after each. With it the
+ * fakes the command ring drives (`fakes.ts`, `fake-wrangler.mjs`). Node
+ * runs the two `.ts` files by stripping their types. Undefined, with the
+ * reason, where the checkout is not here: inside the machine ring's
+ * container, whose context is this script and a bare repository.
+ */
+async function stileHarness() {
+  const dir = join(root, "packages", "cli", "test");
+  const files = { screen: join(dir, "screen.ts"), fakes: join(dir, "fakes.ts"), wrangler: join(dir, "fake-wrangler.mjs") };
+  const missing = Object.values(files).filter((file) => !existsSync(file));
+  if (missing.length > 0) return { why: `no checkout here to drive the stile from (${missing.map((file) => file.replace(root, "")).join(", ")} absent)` };
+  try {
+    return { screen: await import(pathToFileURL(files.screen).href), fakes: await import(pathToFileURL(files.fakes).href), fakeWrangler: files.wrangler };
+  } catch (error) {
+    return { why: `the stile's harness would not load from the checkout: ${error.message}` };
+  }
+}
+
+/** A sitting's rows, in the order the checklist draws them: every step settled, each with its ✓. */
+const STILE_STEPS = ["command", "where", "account", "plan", "station", "key", "next"];
 
 class Ring {
   /**
@@ -996,7 +1025,10 @@ class Ring {
     const version = `sheep ${this.stamp.commit} (${this.stamp.builtAt})`;
     const skillDir = join(this.blog, ".agents", "skills", "sheep");
     const doorway = join(this.blog, ".claude", "skills", "sheep");
-    const expected = { cli: { state: "installed", path: bin, version, spec }, skill: { state: "installed", path: skillDir, doorway: { path: doorway, state: "linked" } }, home: { state: "none", home: null }, checkout: null, next: "sheep home local" };
+    // The next sentence (stile phase 1): a dog with no home is sent to the guide, which sends the shepherd to `sheep setup`. The
+    // account ring installs the older release here first, built before that, whose sentence was the rig's; only it may say so.
+    const nextSentences = this.installingOlder === true ? ["sheep --agent-help", "sheep home local"] : ["sheep --agent-help"];
+    const expected = { cli: { state: "installed", path: bin, version, spec }, skill: { state: "installed", path: skillDir, doorway: { path: doorway, state: "linked" } }, home: { state: "none", home: null }, checkout: null, next: nextSentences[0] };
     const wrong = [];
     if (report.cli?.state !== expected.cli.state || !this.samePath(report.cli?.path, bin) || report.cli?.version !== version || report.cli?.spec !== spec) wrong.push("cli");
     if (report.skill?.state !== "installed" || !this.samePath(report.skill?.path, skillDir) || report.skill?.doorway?.state !== "linked" || !this.samePath(report.skill?.doorway?.path, doorway)) wrong.push("skill");
@@ -1012,7 +1044,7 @@ class Ring {
       wrong.push("kennel");
     }
     if (report.checkout !== null) wrong.push("checkout");
-    if (report.next !== expected.next) wrong.push("next");
+    if (!nextSentences.includes(report.next)) wrong.push("next");
     if (wrong.length > 0) this.fail("step 1", command, { ...result, stderr: `${result.stderr}\n${wrong.join(", ")} not as expected: ${JSON.stringify(expected)}` });
     // The skill on disk: this release's root SKILL.md copied under .agents, and .claude/skills/sheep a relative link to it.
     const shipped = readFileSync(join(pkg, "SKILL.md"), "utf8");
@@ -1133,6 +1165,125 @@ class Ring {
     }
     this.homes.set(dir, { url, pid: report.pid });
     return { url, report, token: config.token, port: report.port };
+  }
+
+  /**
+   * One sitting at the stile, as a shepherd has it (stile phase 1): the
+   * installed command's `sheep setup` through the harness's terminal, in a
+   * HOME and a directory of the step's own, with `env` and nothing else.
+   * `?` opened and closed on `where`, Enter for everywhere, the token typed
+   * a key at a time, the plan re-checked when the account is not on it
+   * (`onPlan` is the ring's hand on the dashboard), Enter for the new
+   * station, the key typed; the buffer read after every key for any eight
+   * characters of either value. Returns the frames, the count, and the leaks;
+   * the caller asserts what its account makes true.
+   */
+  async stileSitting(harness, { step, home, cwd, env, token, key, args = [], onPlan, deployMs = 120_000 }) {
+    const { driveStile, ENTER } = harness.screen;
+    const command = join(this.prefix, "bin", "sheep");
+    const typed = `sheep setup${args.length > 0 ? ` ${args.join(" ")}` : ""} (at a ${80}x${24} terminal the ring owns, in ${cwd.replace(this.dir, "<ring>")})`;
+    const run = driveStile({ command, args: ["setup", ...args], cwd, env: { ...env, HOME: home }, columns: 80, rows: 24, secrets: [token, key] });
+    const count = { typed: 0, yes: 0, defaults: 0, askedTwice: 0, variables: Object.keys(env).filter((name) => name === "CLOUDFLARE_API_TOKEN" || name === "ANTHROPIC_API_KEY") };
+    const frames = {};
+    const fail = (why) => this.fail(step, typed, { stdout: run.buffer(), stderr: why, code: 1 });
+    try {
+      frames.start = await run.waitFor("› where", { timeoutMs: 60_000 });
+      if (frames.start.split("\n").length > 24 || frames.start.split("\n").some((row) => [...row].length > 80)) fail("the banner and the checklist do not fit 80 by 24 with nothing open");
+      const rows = frames.start.split("\n").filter((row) => /^ {2}[✓› ] [a-z]+/.test(row)).map((row) => row.slice(4).split(" ")[0]);
+      if (JSON.stringify(rows) !== JSON.stringify(STILE_STEPS)) fail(`expected the checklist ${STILE_STEPS.join(", ")}; got ${rows.join(", ")}`);
+      await run.press("?");
+      frames.open = run.frame();
+      await run.press("?");
+      frames.closed = run.frame();
+      if (!frames.open.includes("what:") || !frames.open.includes("cost:") || frames.closed !== frames.start) fail("`?` did not open the step's words, or `?` again did not close them back to the first frame");
+      await run.press(ENTER);
+      count.defaults++;
+      await run.waitFor("Cloudflare API token:", { timeoutMs: 60_000 });
+      await run.type(token);
+      count.typed++;
+      await run.press(ENTER);
+      let after = await run.waitFor((text) => text.includes("› station") || text.includes("check again") || text.includes("not accepted"), { timeoutMs: 120_000 });
+      if (after.includes("not accepted")) fail("the account refused the token the ring typed");
+      if (after.includes("check again")) {
+        frames.plan = after;
+        if (onPlan === undefined) fail("the account is not on the Workers Paid plan, and the ring has no hand on it");
+        await onPlan();
+        await run.press(ENTER);
+        count.yes++;
+        after = await run.waitFor("› station", { timeoutMs: 120_000 });
+      }
+      frames.station = after;
+      await run.press(ENTER);
+      count.defaults++;
+      frames.key = await run.waitFor("Anthropic API key:", { timeoutMs: deployMs });
+      await run.type(key);
+      count.typed++;
+      await run.press(ENTER);
+      const exit = await Promise.race([run.exited, new Promise((resolveLate) => setTimeout(() => resolveLate(undefined), 120_000))]);
+      if (exit === undefined) fail("the sitting did not end within two minutes of the key");
+      frames.final = run.buffer();
+      if (/is not accepted|nothing was typed/.test(frames.final)) count.askedTwice++;
+      return { run, exit, count, frames, leaks: run.leaks(), typed };
+    } finally {
+      run.kill();
+    }
+  }
+
+  /**
+   * t0 (stile phase 1, journey 4 step 3): the released command's stile
+   * through the ring's terminal against the fakes the command ring drives,
+   * started from this checkout, before the walk. A HOME and a directory of
+   * its own under the ring, so the fresh world the walk asserts is
+   * untouched. The frames, the count, the credentials file, the config where
+   * `where` said, and the wrangler log, then one line.
+   */
+  async stileFakes(step = "t0") {
+    const harness = await stileHarness();
+    if (harness.why !== undefined) {
+      this.skip(step, `the stile against the fakes: ${harness.why}`, "stile journey 4");
+      return;
+    }
+    const { fakeAccount, fakeStation, fresh, TOKEN, KEY } = harness.fakes;
+    const home = join(this.dir, step);
+    const cwd = join(home, "work");
+    const logs = join(this.dir, `${step}-wrangler`);
+    for (const dir of [cwd, logs]) mkdirSync(dir, { recursive: true });
+    const log = join(logs, "wrangler.log");
+    const state = { ...fresh(), plan: "free" };
+    const account = await fakeAccount(state);
+    const station = await fakeStation([], { token: "t".repeat(48), sessions: [], pastures: [] });
+    try {
+      // The ring's environment, which strips every seam, and the three seams for this one command: the fakes, never an account.
+      const env = { ...this.env(), SHEEP_TEST_ACCOUNT_API: account.url, SHEEP_TEST_WRANGLER: harness.fakeWrangler, SHEEP_TEST_WRANGLER_LOG: log, SHEEP_TEST_STATION_URL: station.url };
+      const sitting = await this.stileSitting(harness, { step, home, cwd, env, token: TOKEN, key: KEY, onPlan: async () => void (state.plan = "workers_paid") });
+      const { exit, count, frames, leaks, typed, run } = sitting;
+      const fail = (why) => this.fail(step, typed, { stdout: frames.final ?? run.buffer(), stderr: `${exit?.stderr ?? ""}\n${why}`, code: exit?.code ?? 1 });
+      if (exit.code !== 0 || exit.stderr !== "") fail("expected exit 0 and nothing on stderr");
+      if (leaks.length > 0) fail(`a typed value was on the terminal or in the output: ${JSON.stringify(leaks)}`);
+      const version = `sheep ${this.stamp.commit}`;
+      if (!frames.start.includes(`  ✓ command   ${version}, on PATH\n`)) fail(`expected the command step to read "${version}, on PATH": the installed command is first on PATH`);
+      if (count.typed !== 2 || count.yes !== 1 || count.defaults !== 2 || count.askedTwice !== 0 || count.variables.length !== 0) fail(`expected the count two typed, one yes, two defaults, none asked twice, no variable; got ${JSON.stringify(count)}`);
+      const settled = STILE_STEPS.map((name) => new RegExp(`^ {2}✓ ${name}\\b`, "m").test(frames.final));
+      if (settled.includes(false)) fail(`expected every step settled; not: ${STILE_STEPS.filter((_, index) => !settled[index]).join(", ")}`);
+      for (const line of ["  ✓ station   https://sheep-2.fake.workers.dev", "              credentials: ~/.sheep/credentials", "              config: ~/.sheep/config"]) if (!frames.final.includes(`${line}\n`)) fail(`expected the line ${JSON.stringify(line)}`);
+      const credentials = join(home, ".sheep", "credentials");
+      const kept = existsSync(credentials) ? JSON.parse(readFileSync(credentials, "utf8")) : undefined;
+      if (kept?.cloudflare !== TOKEN || kept?.anthropic !== KEY || (statSync(credentials).mode & 0o777) !== 0o600) fail(`expected ${credentials} mode 600 holding the two values typed`);
+      const config = JSON.parse(readFileSync(join(home, ".sheep", "config"), "utf8"));
+      if (config.home !== "https://sheep-2.fake.workers.dev" || config.name !== "sheep-2") fail("expected ~/.sheep/config naming the station sheep-2: where said everywhere");
+      if (existsSync(join(cwd, ".sheep"))) fail("a kennel was made in the working directory, and where said everywhere");
+      const shipped = readFileSync(join(this.pkg, "SKILL.md"), "utf8");
+      if (!existsSync(join(home, ".agents", "skills", "sheep", "SKILL.md")) || readFileSync(join(home, ".agents", "skills", "sheep", "SKILL.md"), "utf8") !== shipped) fail("expected the release's skill under ~/.agents/skills/sheep");
+      const calls = readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+      const shape = calls.map((call) => call.args.slice(0, 3).join(" "));
+      if (shape[0]?.startsWith("deploy") !== true || JSON.stringify(shape.slice(1)) !== JSON.stringify(["secret put SHEEP_TOKEN", "secret put PEN_CELL_ORIGIN", "secret put SHEEP_ANTHROPIC_API_KEY"]) || calls[3].stdin !== `${KEY}\n` || calls.some((call) => call.env.tokenInArgs || call.args.some((arg) => arg.includes(KEY) || arg.includes(TOKEN)))) {
+        fail(`expected the deploy, its two secrets, and the key put after it on stdin, with no value in any argument; got ${JSON.stringify(shape)}`);
+      }
+      this.ok(step, typed, `the released ${version}'s stile against the fakes: seven steps settled, \`?\` opened and closed, the plan held until the fake account was put on Workers Paid; count: ${count.typed} typed, ${count.yes} yes, ${count.defaults} defaults, ${count.askedTwice} asked twice, no variable; no run of eight of either value on the terminal or in the output after any of ${run.keys()} keys; ~/.sheep/credentials mode 600; ~/.sheep/config names sheep-2; the key put after the deploy, on stdin`);
+    } finally {
+      await new Promise((resolveClose) => account.server.close(resolveClose));
+      await new Promise((resolveClose) => station.server.close(resolveClose));
+    }
   }
 
   async walk() {
@@ -1361,7 +1512,7 @@ class Ring {
     const shipped = readFileSync(join(this.pkg, "dist", "agent-guide.md"), "utf8");
     if (guide.code !== 0 || guide.stdout !== shipped || guide.stderr !== "") this.fail("step 5", "sheep --agent-help", { ...guide, stderr: `${guide.stderr}\nexpected ${join(this.pkg, "dist", "agent-guide.md")} on stdout and nothing on stderr` });
     if (this.sha !== undefined && shipped.trim() !== this.git("show", `${this.sha}:dist/agent-guide.md`)) this.fail("step 5", `git show ${this.sha}:dist/agent-guide.md`, { stdout: shipped, stderr: "the installed guide is not the ref's", code: 1 });
-    for (const said of ["sheep home local", "ANTHROPIC_API_KEY", "sheep wait", "A hand at a terminal"]) {
+    for (const said of ["sheep setup", "for the", "sheep wait", "A hand at a terminal"]) {
       if (!shipped.includes(said)) this.fail("step 5", "sheep --agent-help", { ...guide, stderr: `the guide does not say ${JSON.stringify(said)}`, code: 1 });
     }
     const setupAgain = await this.sheep(["setup", "--json"], { cwd: this.blog });
@@ -2134,7 +2285,7 @@ async function dogRing({ ref, repo, spec, commit, images, keep, yes, dryRun, bud
     `that any dog but Claude Code ${claudeVersion} would find its way: --agent ${DOG_AGENT} is the only value (pi is the second dog, deliberately open)`,
     `that a second image holds: ${image} alone (the machine ring walks node:22-slim and node:24-slim)`,
     `that a person typed the sentence and answered the dog: the prompt went in print mode with --allowedTools ${DOG_TOOLS} and --permission-prompts none, so nothing could ask and anything that would was denied and reported`,
-    "that the dog asked for the key: ANTHROPIC_API_KEY was in the container's environment from the start, so journey 1 step 2's ask was met ahead",
+    "that the dog's home is a station: the container has no account, so the ring set up the developer's rig in HOME before the dog (stile phase 1), with ANTHROPIC_API_KEY from the container's environment, and the dog found it through ~/.sheep",
     "that a user without root can do it: the container ran as root, the image's default; Claude Code refuses --dangerously-skip-permissions as root, so the dog's tools came by --allowedTools",
     "that the skill the dog read is the ref's: npx skills add clones main of github.com/dglazkov/sheep, as it does for a user; --skill sheep names the one the root SKILL.md is, which a bare `skills add` finds and stops at (the repository's .claude/skills are its own workflow, and never offered)",
     spec === undefined
@@ -2159,6 +2310,8 @@ class Transcript {
     this.print = print;
     this.result = undefined;
     this.tools = 0;
+    /** What the dog said and every command it ran, in order (stile phase 1): what the ring reads for the rig's verbs. */
+    this.said = [];
   }
 
   line(text) {
@@ -2180,9 +2333,12 @@ class Transcript {
       this.print(`  init: claude ${event.claude_code_version ?? "?"}, model ${event.model}, ${(event.tools ?? []).length} tools, permission mode ${event.permissionMode}, the sheep skill ${skills.some((skill) => skill.includes("sheep")) ? "listed" : "not listed"}`);
     } else if (type === "assistant") {
       for (const block of event.message?.content ?? []) {
-        if (block.type === "text" && block.text.trim()) this.print(`  dog: ${block.text.trim().split("\n").join("\n       ")}`);
-        else if (block.type === "tool_use") {
+        if (block.type === "text" && block.text.trim()) {
+          this.said.push(block.text);
+          this.print(`  dog: ${block.text.trim().split("\n").join("\n       ")}`);
+        } else if (block.type === "tool_use") {
           this.tools++;
+          this.said.push(JSON.stringify(block.input ?? {}));
           this.print(`  ${block.name}: ${Transcript.call(block)}`);
         }
       }
@@ -2269,6 +2425,28 @@ async function dogInside({ dryRun, redirect, expect, budget }) {
   }
   if (!key) fail("dog", "claude -p …", { stdout: "", stderr: "ANTHROPIC_API_KEY is not in the container's environment", code: 2 });
 
+  // Stile phase 1: the dog is journey 2's, and a home is never its to start. So before Claude Code runs, the ring does what the
+  // shepherd's sitting would have left: the command installed, and a home the machine's kennel names. The home is the
+  // developer's rig, since the container has no account: `sheep home local --no-container` in HOME, whose kennel is ~/.sheep,
+  // with the key from the container's environment. The dog's own `sheep setup` in ~/work then finds it and makes no kennel.
+  const installed = await run("npm", ["install", "-g", INSTALL_SPEC], { cwd: home, env });
+  if (installed.code !== 0) fail("rig", `npm install -g ${INSTALL_SPEC}`, installed);
+  const rig = await run("sheep", ["home", "local", "--no-container", "--json"], { cwd: home, env });
+  let rigReport;
+  try {
+    rigReport = JSON.parse(rig.stdout);
+  } catch {
+    fail("rig", "sheep home local --no-container --json (in ~)", rig);
+  }
+  const machineKennel = join(home, ".sheep");
+  const rigConfig = existsSync(join(machineKennel, "config")) ? JSON.parse(readFileSync(join(machineKennel, "config"), "utf8")) : {};
+  if (rig.code !== 0 || rigReport.key !== "held" || rigConfig.home !== rigReport.home || rigConfig.local !== true) {
+    fail("rig", "sheep home local --no-container --json (in ~)", { ...rig, stdout: rig.stdout.split(key ?? "\u0000").join("<ANTHROPIC_API_KEY>"), stderr: `${rig.stderr}\nexpected exit 0, the key held, and ~/.sheep/config naming the local home` });
+  }
+  if (existsSync(join(work, ".sheep"))) fail("rig", `ls -a ${tilde(work)}`, { stdout: readdirSync(work).join("\n"), stderr: "a kennel in the dog's directory before the dog", code: 1 });
+  ok("rig", `npm install -g ${INSTALL_SPEC}; sheep home local --no-container --json (in ~)`, `${rigReport.home} running, pid ${rigReport.pid}, the key held; ${tilde(join(machineKennel, "config"))} names it; no kennel in ${tilde(work)}`);
+
+
   const transcript = new Transcript(print);
   const started = Date.now();
   print("");
@@ -2326,7 +2504,15 @@ async function dogInside({ dryRun, redirect, expect, budget }) {
   }
   if (homed.code !== 0 || report.local !== true || report.running !== true || !/^http:\/\/127\.0\.0\.1:\d+$/.test(report.home) || typeof report.pid !== "number") fail("after", "sheep home --json", { ...homed, stderr: `${homed.stderr}\nexpected the local home running` });
   if (expect && !expect.startsWith(report.stamp?.commit ?? "")) fail("after", "sheep home --json", { ...homed, stderr: `the home's stamp is ${report.stamp?.commit}; expected a build of ${expect}` });
-  // The secrets are the kennel's, wherever the dog made one: the report names it, so nothing here guesses at ~/.sheep.
+  // The home is the one the ring started before the dog, found through ~/.sheep, and the dog made no kennel of its own.
+  if (report.home !== rigReport.home || report.kennel !== machineKennel) fail("after", "sheep home --json", { ...homed, stderr: `${homed.stderr}\nexpected the ring's home ${rigReport.home} under ${tilde(machineKennel)}; the dog's home is found, never started` });
+  if (existsSync(join(work, ".sheep"))) fail("after", `ls -a ${tilde(work)}`, { stdout: readdirSync(work).join("\n"), stderr: "the dog made a kennel where a home was reachable", code: 1 });
+  // Journey 4 step 3: the dog's transcript names no verb from the rig — neither what it said nor any command it ran.
+  const rigVerbs = ["home local", "home stop", "--faux", "--no-container"];
+  const named = rigVerbs.filter((verb) => transcript.said.some((said) => said.includes(verb)));
+  if (named.length > 0) fail("after", "the dog's transcript", { stdout: transcript.said.filter((said) => rigVerbs.some((verb) => said.includes(verb))).join("\n").slice(0, 2000), stderr: `the dog named the rig: ${named.join(", ")}`, code: 1 });
+  ok("after", "the dog's transcript", `${transcript.said.length} things said and run; none names ${rigVerbs.join(", ")}`);
+  // The secrets are the kennel's: the report names it, so nothing here guesses at ~/.sheep.
   const kennel = typeof report.kennel === "string" ? report.kennel : join(home, ".sheep");
   const devVars = join(kennel, "local", ".dev.vars");
   const names = existsSync(devVars) ? readFileSync(devVars, "utf8").split("\n").map((line) => line.split("=")[0].trim()).filter(Boolean) : [];
@@ -2585,7 +2771,9 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
       // The world and the install: the package ring's, of the older release; the newer is what the upgrade step installs over it.
       const newer = ring.use(older);
       ring.assertFresh();
+      ring.installingOlder = true;
       await ring.install();
+      ring.installingOlder = false;
       console.log(`installed: sheep ${ring.stamp.commit} (${ring.stamp.builtAt}), wrangler ${ring.stamp.wrangler}; the older, upgraded in the walk`);
       station.home = `https://${station.name}.${station.subdomain}.workers.dev`;
       await accountWalk(ring, api, station, { token, key: keyForDeploy, placeholder: key === undefined || key === "", before, spec, commit, newer });
@@ -2596,6 +2784,10 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
     if (failure && station.deployed) {
       console.log(`\nhermetic: the walk failed after the deploy; deleting ${station.name} first`);
       await deleteStation(ring, api, station, token);
+    }
+    if (failure && station.t1?.deployed) {
+      console.log(`\nhermetic: the walk failed with the stile's station up; deleting ${station.t1.name}`);
+      await deleteStileStation(ring, api, station, token);
     }
     if (failure && keep) console.error("hermetic: the walk failed; the local home is stopped even with --keep");
     if (failure) ring.keep = false;
@@ -2619,6 +2811,8 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
     `journey 4 step 1: the user's string, npm install -g ${INSTALL_SPEC}; the ring upgraded with ${spec ?? `git+file://${repo}#<the ref's sha>`} into the same prefix`,
     `journey 4 step 1: a month or a year of releases between the two; the upgrade was from ${older.stamp.commit} to the ring's ref, one release apart unless --older said otherwise`,
     "journey 4 step 2: the name typed at a terminal, and the refusal with none: the ring piped the name on stdin, and packages/cli/test/deploy.test.ts drives the refusal",
+    "stile journey 1: the plan's yes: the ring's preflight requires an account already on Workers Paid, so t1's count has no yes to give; the package ring's t0 counts it against the fake account",
+    "stile journey 1: a person's fingers at a real terminal: t1 typed through the harness's terminal (pipes, SHEEP_TEST_TERMINAL); packages/cli/test/stile-tty.test.ts proves the detection and the hidden prompt under a real pseudo-terminal",
   );
   ring.report(failure, "account");
   ring.cleanup();
@@ -2859,15 +3053,27 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     }
   };
   try {
-    // Step 1: with the token removed, the deploy refuses, makes nothing, and the account's listing is what it was.
+    // Step 1: with nothing kept and nothing in the environment, the deploy stops in two parts (stile phase 0's stop): the dog's
+    // line, saying nothing was made, and under it the shepherd's paragraph naming the one command to type at their terminal.
+    // It makes nothing, and the account's listing is what it was.
     const refused = await ring.sheep(["home", "deploy"]);
-    if (refused.code !== 2 || refused.stdout !== "" || !refused.stderr.includes("CLOUDFLARE_API_TOKEN is not set") || !refused.stderr.includes("Workers Paid plan")) {
-      ring.fail("a1", "sheep home deploy (no token in the environment)", { ...refused, stderr: `${refused.stderr}\nexpected exit 2, nothing on stdout, and the refusal naming CLOUDFLARE_API_TOKEN and the plan` });
+    const [dogLine, ...shepherdLines] = refused.stderr.split("\n");
+    const shepherd = shepherdLines.join("\n");
+    if (
+      refused.code !== 2 ||
+      refused.stdout !== "" ||
+      dogLine !== "sheep: sheep home deploy needs the account token, and nothing on this machine keeps one; nothing was made" ||
+      !shepherd.startsWith("for the shepherd: ") ||
+      !shepherd.includes("\n  sheep setup\n") ||
+      !shepherd.includes("Workers Paid plan") ||
+      /\bexport\s+[A-Z_]/.test(refused.stderr)
+    ) {
+      ring.fail("a1", "sheep home deploy (nothing kept, nothing in the environment)", { ...refused, stderr: `${refused.stderr}\nexpected exit 2, nothing on stdout, the dog's line saying nothing was made, then "for the shepherd: " naming \`sheep setup\` on its own line and the plan, and no export` });
     }
     if (existsSync(ring.configOf(ring.blog)) || existsSync(join(ring.kennel(ring.blog), "deploy"))) ring.fail("a1", `ls -a ${ring.kennel(ring.blog)}`, { stdout: readdirSync(ring.kennel(ring.blog)).join("\n"), stderr: "the refused deploy wrote into the kennel", code: 1 });
     const afterRefusal = await api.listing(account.id);
     if (JSON.stringify(afterRefusal) !== JSON.stringify(before)) ring.fail("a1", "the account's listing after the refused deploy", { stdout: JSON.stringify(afterRefusal), stderr: `expected ${JSON.stringify(before)}`, code: 1 });
-    ring.ok("a1", "sheep home deploy (no token)", `exit 2: "${refused.stderr.split("\n")[0].replace(/^sheep: /, "")}"; nothing in the kennel; the account's listing identical before and after (${before.workers.length} Workers, ${before.applications.length} applications)`);
+    ring.ok("a1", "sheep home deploy (nothing kept)", `exit 2: "${dogLine.replace(/^sheep: /, "")}", then the shepherd's paragraph naming \`sheep setup\`; nothing in the kennel; the account's listing identical before and after (${before.workers.length} Workers, ${before.applications.length} applications)`);
 
     // Step 2: the deploy of the older release, timed; the address answers; the two stamps are equal; the config names the station with no local marker.
     station.deployed = true;
@@ -2961,9 +3167,16 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     if (skewed.code !== 0 || skewed.stderr !== skewLine || !skewed.stdout.includes(`home build: ${older.stamp.commit} (${older.stamp.builtAt})\ncli build: ${stamp.commit} (${stamp.builtAt})\n`)) {
       ring.fail("up", "sheep home (in blog, the newer command against the older home)", { ...skewed, stderr: `${skewed.stderr}\nexpected exactly the skew line on stderr: ${JSON.stringify(skewLine)}` });
     }
-    // The redeploy from the newer package: the same Worker, the stamp moved, the newer image, a container healthy.
+    // The redeploy from the newer package: the same Worker, the stamp moved, the newer image, a container healthy. Stile phase 1:
+    // the upgrade is the dog's, so it runs with nothing in the environment, reading what the older release's setup would have
+    // kept — which the ring writes, `~/.sheep/credentials` mode 600 in the stile's shape, and never passes as an argument.
+    const keptPath = join(ring.home, ".sheep", "credentials");
+    writeFileSync(keptPath, `${JSON.stringify({ cloudflare: token, anthropic: key }, null, 2)}\n`, { mode: 0o600 });
+    chmodSync(keptPath, 0o600);
+    const upEnv = ring.env();
+    if (Object.keys(upEnv).some((name) => name.startsWith("CLOUDFLARE_") || name === "ANTHROPIC_API_KEY")) ring.fail("up", "the upgrade's environment", { stdout: Object.keys(upEnv).filter((name) => name.startsWith("CLOUDFLARE_") || name === "ANTHROPIC_API_KEY").join("\n"), stderr: "expected the environment stripped of every credential", code: 1 });
     const upDeployStarted = Date.now();
-    const upDeployed = await ring.sheep(["home", "deploy", "--faux", "--json"], { env: withToken });
+    const upDeployed = await ring.sheep(["home", "deploy", "--faux", "--json"], { env: upEnv });
     const upDeploySeconds = ((Date.now() - upDeployStarted) / 1000).toFixed(0);
     const upReport = parse("up", "sheep home deploy --faux --json (the newer package)", upDeployed);
     if (upDeployed.code !== 0 || upReport.name !== name || upReport.home !== home || upReport.state !== "redeployed" || upReport.answers !== true || JSON.stringify(upReport.build?.home) !== JSON.stringify(build) || JSON.stringify(upReport.build?.cli) !== JSON.stringify(build) || upReport.image !== station.image || !(upReport.containers?.healthy >= 1)) {
@@ -2971,6 +3184,8 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     }
     // The rollout (station phase 3): a new image is a rollout the platform runs after wrangler returns; deploy waits until it completed, or until
     // its last step is under way with a healthy instance (`rolling`), which the platform finishes on its own. Anything else fails the step.
+    // The key was put from what was kept, not left: the file is the only place the upgrade could have read it.
+    if (upReport.key !== "put") ring.fail("up", "sheep home deploy --faux --json (the newer package, nothing in the environment)", { ...upDeployed, stderr: `${upDeployed.stderr}\nexpected key "put" from ~/.sheep/credentials; got ${JSON.stringify(upReport.key)}` });
     const rolloutOk = upReport.rollout?.status === "completed" || upReport.rollout?.status === "rolling";
     if (!rolloutOk || upReport.rollout.from !== older.image) {
       ring.fail("up", "sheep home deploy --faux --json (the newer package)", { ...upDeployed, stderr: `${upDeployed.stderr}\nexpected rollout.status completed or rolling, from ${older.image}; got ${JSON.stringify(upReport.rollout)}` });
@@ -3000,7 +3215,7 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     if (upPastures.code !== 0 || !upPastures.stdout.split("\n").some((line) => line.startsWith("older\t"))) ring.fail("up", "sheep pasture ls (after the upgrade)", { ...upPastures, stderr: `${upPastures.stderr}\nexpected the pasture older, made on the older release, still listed` });
     const upLog = await ring.sheep(["log", olderSheep]);
     if (upLog.code !== 0 || !upLog.stdout.includes("hello") || !upLog.stdout.includes(FAUX_REPLY)) ring.fail("up", `sheep log ${olderSheep} (after the upgrade)`, { ...upLog, stderr: `${upLog.stderr}\nexpected the turn from the older release: "hello" and "${FAUX_REPLY}"` });
-    ring.ok("up", `npm install -g <newer spec>; sheep --version; sheep home; sheep home deploy --faux --json (in blog)`, `${upSeconds}s to install ${stamp.commit} over ${older.stamp.commit}; sheep home warned on stderr that the home ${older.stamp.commit} is older and named \`sheep home deploy\`; redeployed ${name} in ${upDeploySeconds}s, stamp ${older.stamp.commit} → ${build.commit} (${build.builtAt}), image ${station.image}, containers ${upReport.containers.healthy} healthy after ${upReport.containers.seconds}s, ${rolloutNote}, the stamp moved in ${upReport.stamp.seconds}s; the warning stopped`);
+    ring.ok("up", `npm install -g <newer spec>; sheep --version; sheep home; sheep home deploy --faux --json (in blog, nothing in the environment, the credentials kept)`, `${upSeconds}s to install ${stamp.commit} over ${older.stamp.commit}; sheep home warned on stderr that the home ${older.stamp.commit} is older and named \`sheep home deploy\`; redeployed ${name} in ${upDeploySeconds}s, stamp ${older.stamp.commit} → ${build.commit} (${build.builtAt}), image ${station.image}, containers ${upReport.containers.healthy} healthy after ${upReport.containers.seconds}s, ${rolloutNote}, the stamp moved in ${upReport.stamp.seconds}s; the warning stopped`);
     ring.ok("up", `sheep ls --json; sheep pasture ls; sheep log ${olderSheep} (after the upgrade)`, `${olderSheep} (older-sheep) and the pasture older still listed; the log still holds "hello" → "${FAUX_REPLY}": a redeploy of the same tags over the same names kept the rows`);
 
     // Step 3: the faux program through the address, then a sheep whose shell names git, node, and pnpm from the container.
@@ -3158,6 +3373,10 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     // last assistant entry, the ids the log's. After b1, for b1's reason. It ends its own sheep with n1's check.
     await journeyBell(ring, station);
 
+    // Stile phase 1, t1 (stile's journey 1 and journey 4 step 4): the ring plays the shepherd at the stile on a second, short
+    // station of its own, then the dog with nothing in its environment; the station is gone before a6 compares the listing.
+    await stileOnAccount(ring, api, station, { token, key });
+
     // Step 6: the delete, the name on stdin: the listing first (station phase 3), counted against what the walk minted and did not
     // end (end phase 1: none); then the account listed, the last lines.
     const { deleted, after, left } = await deleteStation(ring, api, station, token);
@@ -3194,6 +3413,96 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
   } finally {
     watch.stop();
   }
+}
+
+/* The shepherd's sitting on the account (stile phase 1). */
+
+/**
+ * t1 (stile phase 1, journey 1's first criterion and journey 4 step 4):
+ * the ring plays the shepherd. A second, short station, `<name>-t`, set up
+ * through the stile at a terminal the ring owns (the command ring's own
+ * harness, from this checkout) with the real token and the real key typed
+ * in, a key at a time, in a HOME of its own under the ring. Then the dog:
+ * with `CLOUDFLARE_API_TOKEN` and `ANTHROPIC_API_KEY` in no environment,
+ * `sheep new --detach`, `sheep home deploy` as the upgrade with nothing
+ * asked, and `sheep home delete` with the name on stdin. The line prints
+ * the count. The walk's `ps` watch is running through all of it, with the
+ * token and the key among its needles.
+ */
+async function stileOnAccount(ring, api, station, { token, key, step = "t1" }) {
+  const harness = await stileHarness();
+  if (harness.why !== undefined) {
+    ring.skip(step, `the shepherd's sitting on the account: ${harness.why}`, "stile journey 1");
+    return;
+  }
+  const name = `${station.name}-t`;
+  const home = join(ring.dir, step);
+  const cwd = join(home, "work");
+  mkdirSync(cwd, { recursive: true });
+  // wrangler is the machine's, under ~/.sheep/tools; the walk's HOME fetched it at a2, and this HOME reads the same one.
+  mkdirSync(join(home, ".sheep"), { recursive: true });
+  if (existsSync(join(ring.home, ".sheep", "tools"))) symlinkSync(join(ring.home, ".sheep", "tools"), join(home, ".sheep", "tools"));
+  const before = await api.listing(station.account.id);
+  if (before.workers.includes(name) || before.applications.some((application) => application.name === name)) ring.fail(step, `the account's listing before ${name}`, { stdout: JSON.stringify(before), stderr: `the account already holds ${name}; a ring that left it behind failed: delete it first`, code: 1 });
+  // Nothing of a credential in the environment: the ring's own strips every one, and this checks it rather than trusting it.
+  const env = { ...ring.env(), HOME: home };
+  const carried = Object.keys(env).filter((variable) => variable.startsWith("CLOUDFLARE_") || variable === "ANTHROPIC_API_KEY" || variable.startsWith("SHEEP_TEST_"));
+  if (carried.length > 0) ring.fail(step, "the shepherd's environment", { stdout: carried.join("\n"), stderr: "expected no credential and no seam in it", code: 1 });
+  station.t1 = { name, home, cwd, deployed: true };
+  const started = Date.now();
+  const sitting = await ring.stileSitting(harness, { step, home, cwd, env, token, key, args: ["--name", name, "--faux"], deployMs: 600_000 });
+  const seconds = ((Date.now() - started) / 1000).toFixed(0);
+  const { exit, count, frames, leaks, typed, run } = sitting;
+  const fail = (why) => ring.fail(step, typed, { stdout: (frames.final ?? run.buffer()).split(token).join("<token>").split(key).join("<key>"), stderr: `${exit?.stderr ?? ""}\n${why}`, code: exit?.code ?? 1 });
+  if (exit.code !== 0 || exit.stderr !== "") fail("expected exit 0 and nothing on stderr");
+  if (leaks.length > 0) fail(`a typed value was on the terminal or in the output: ${JSON.stringify(leaks)}`);
+  if (!frames.station.includes(`[new ${name}]`)) fail(`expected the station step to offer new ${name}`);
+  const address = `https://${name}.${station.subdomain}.workers.dev`;
+  if (!frames.final.includes(`  ✓ station   ${address}\n`)) fail(`expected the station step to become ${address}`);
+  // The count (journey 1's first criterion): two values typed and none asked twice, and no variable. The yes is the plan's
+  // re-check, and an account already on Workers Paid, as the ring's preflight requires, has none to give.
+  if (count.typed !== 2 || count.defaults !== 2 || count.askedTwice !== 0 || count.variables.length !== 0) fail(`expected two typed, two defaults, none asked twice, no variable; got ${JSON.stringify(count)}`);
+  const credentials = join(home, ".sheep", "credentials");
+  const kept = existsSync(credentials) ? JSON.parse(readFileSync(credentials, "utf8")) : {};
+  if (kept.cloudflare !== token || kept.anthropic !== key || (statSync(credentials).mode & 0o777) !== 0o600) fail(`expected ${credentials.replace(ring.dir, "<ring>")} mode 600 holding the two values typed`);
+  const config = JSON.parse(readFileSync(join(home, ".sheep", "config"), "utf8"));
+  if (config.home !== address || config.name !== name || typeof config.token !== "string") fail("expected ~/.sheep/config naming the station, its address, and its token");
+  ring.ok(step, typed, `${seconds}s, the shepherd played through the ring's terminal: ${name} deployed at ${address}; count: ${count.typed} values typed, ${count.yes} yes, ${count.defaults} defaults, ${count.askedTwice} asked twice, ${count.variables.length === 0 ? "no variable" : count.variables.join(", ")}; no run of eight of either value on the terminal or in the output after any of ${run.keys()} keys; ~/.sheep/credentials mode 600`);
+
+  // The dog, after: nothing in its environment, in the same directory.
+  const dog = (args, options = {}) => run0("sheep", args, { env, cwd, ...options });
+  const minted = await dog(["new", "--detach"]);
+  const id = /^([0-9a-f-]{36})\n$/.exec(minted.stdout)?.[1];
+  if (minted.code !== 0 || id === undefined) ring.fail(step, "sheep new --detach (nothing in the environment)", minted);
+  const upStarted = Date.now();
+  const upgraded = await dog(["home", "deploy", "--faux", "--json"]);
+  const upSeconds = ((Date.now() - upStarted) / 1000).toFixed(0);
+  let report;
+  try {
+    report = JSON.parse(upgraded.stdout);
+  } catch {
+    ring.fail(step, "sheep home deploy --faux --json (nothing in the environment)", upgraded);
+  }
+  if (upgraded.code !== 0 || report.name !== name || report.home !== address || report.state !== "redeployed" || report.key !== "put") {
+    ring.fail(step, "sheep home deploy --faux --json (nothing in the environment)", { ...upgraded, stderr: `${upgraded.stderr}\nexpected exit 0, ${name} redeployed at ${address}, and the key put from what the sitting kept` });
+  }
+  const deleted = await dog(["home", "delete", "--name", name, "--json"], { input: `${name}\n` });
+  if (deleted.code !== 0) ring.fail(step, `sheep home delete --name ${name} --json (the name on stdin, nothing in the environment)`, deleted);
+  station.t1.deployed = false;
+  const after = await api.listing(station.account.id);
+  if (after.workers.includes(name) || after.applications.some((application) => application.name === name)) ring.fail(step, `the account's listing after deleting ${name}`, { stdout: JSON.stringify(after), stderr: `expected no Worker and no container application named ${name}`, code: 1 });
+  ring.ok(step, `sheep new --detach; sheep home deploy --faux --json; sheep home delete --name ${name} (in <ring>/${step}/work, nothing in the environment)`, `${id} minted; redeployed in ${upSeconds}s with the key put from ~/.sheep/credentials and nothing asked; ${name} deleted, the name on stdin, and the account holds neither its Worker nor its application`);
+}
+
+/** The t1 station, when a walk failed with it still up: deleted with the token in the command's environment, as the ring's own station is. */
+async function deleteStileStation(ring, api, station, token) {
+  const t1 = station.t1;
+  if (t1 === undefined || !t1.deployed) return;
+  const deleted = await run0("sheep", ["home", "delete", "--name", t1.name], { env: { ...ring.env(), HOME: t1.home, CLOUDFLARE_API_TOKEN: token }, cwd: t1.cwd, input: `${t1.name}\n` });
+  console.log(`  sheep home delete --name ${t1.name} (exit ${deleted.code}): ${deleted.stdout.trim().split("\n").join("; ")}`);
+  t1.deployed = false;
+  const after = await api.listing(station.account.id);
+  if (after.workers.includes(t1.name) || after.applications.some((application) => application.name === t1.name)) console.log(`  STILL ON THE ACCOUNT: ${t1.name}; delete by hand: wrangler delete ${t1.name}; wrangler containers delete <id>`);
 }
 
 /* The second machine (station phase 2, journey 2). */
@@ -4388,6 +4697,7 @@ async function main() {
   try {
     ring.assertFresh();
     await ring.install();
+    await ring.stileFakes("t0");
     await ring.walk();
   } catch (error) {
     failure = error;

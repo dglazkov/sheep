@@ -14,6 +14,7 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/ws": "^8.18.1",
+    "@xterm/headless": "5.5.0",
     "typescript": "^5.9.0",
     "vitest": "^4.1.0",
     "ws": "^8.21.0"
@@ -24,6 +25,7 @@
     "@earendil-works/pi-ai": "link:../../vendor/pi/packages/ai",
     "@earendil-works/pi-client": "link:../../vendor/pi/packages/client",
     "@earendil-works/pi-coding-agent": "link:../../vendor/pi/packages/coding-agent",
-    "@earendil-works/pi-session-backend-sqlite-node": "link:../../vendor/pi/packages/session-backends/sqlite-node"
+    "@earendil-works/pi-session-backend-sqlite-node": "link:../../vendor/pi/packages/session-backends/sqlite-node",
+    "@earendil-works/pi-tui": "link:../../vendor/pi/packages/tui"
   }
 }

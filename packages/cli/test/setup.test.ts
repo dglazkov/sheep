@@ -41,6 +41,8 @@ function sheep(cwd: string, args: string[], extra: Record<string, string> = {}):
   // The credentials are the machine's, and this ring owns its environment: whatever the shell running the tests keeps is not this test's.
   delete env.CLOUDFLARE_API_TOKEN;
   delete env.ANTHROPIC_API_KEY;
+  // The dog's setup, always (stile phase 1): the terminal seam is the stile's harness's to set, and a stray one would draw the stile here.
+  delete env.SHEEP_TEST_TERMINAL;
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [bin, ...args], { env, cwd, stdio: ["ignore", "pipe", "pipe"] });
     const out: Buffer[] = [];
@@ -92,7 +94,7 @@ describe("a checkout of sheep", () => {
     expect(report.kennel).toMatchObject({ path: join(repoRoot, ".sheep"), gitignore: { path: join(repoRoot, ".gitignore"), state: "present" }, tracked: false });
     expect(existsSync(join(repoRoot, ".sheep"))).toBe(true);
     expect(report.home).toEqual({ state: "none", home: null });
-    expect(report.next).toBe("sheep home local");
+    expect(report.next).toBe("sheep --agent-help");
     expect(existsSync(join(repoRoot, ".claude", "skills", SKILL_NAME))).toBe(before);
     expect(json.stderr).toBe("");
 
@@ -106,7 +108,7 @@ describe("a checkout of sheep", () => {
       expect(prose.stdout).toContain("running from a checkout");
       expect(prose.stdout).toContain(`inside a checkout of sheep (${fake})`);
       expect(prose.stdout).toContain("kennel: .sheep/ made; not a git work tree, so no .gitignore\n");
-      expect(prose.stdout).toContain("home: none configured\nnext: sheep home local\n");
+      expect(prose.stdout).toContain("home: none configured; one sitting at the shepherd's own terminal, `sheep setup`, makes one\nnext: sheep --agent-help\n");
       // The kennel is the directory setup ran in, not the checkout's root: setup readies where it stands.
       expect(existsSync(join(fake, "packages", "cli", ".sheep"))).toBe(true);
       expect(existsSync(join(fake, ".sheep"))).toBe(false);
@@ -162,7 +164,7 @@ describe("the skill", () => {
       expect(report.cli.state).toBe("checkout");
       expect(report.skill).toMatchObject({ state: "installed", doorway: { state: "linked" } });
       expect(report.home).toEqual({ state: "none", home: null });
-      expect(report.next).toBe("sheep home local");
+      expect(report.next).toBe("sheep --agent-help");
       expect(existsSync(join(dir, ".agents", "skills", SKILL_NAME, "SKILL.md"))).toBe(true);
       expect(readlinkSync(join(dir, ".claude", "skills", SKILL_NAME))).toBe("../../.agents/skills/sheep");
 
@@ -325,7 +327,7 @@ describe("the guide", () => {
       // not move: bleat phase 1's section on a sheep that is slow was paid for by cutting the guide, as mint phase 1's
       // bullet was, not by raising the cap.
       expect(text.split(/\s+/).length).toBeLessThan(1500);
-      for (const said of ["sheep home local", "ANTHROPIC_API_KEY", "sheep wait", "--detach", "sheep pasture new", "A hand at a terminal", "npm install -g github:dglazkov/sheep#release"]) {
+      for (const said of ["sheep setup", "for the\n   shepherd:", "sheep wait", "--detach", "sheep pasture new", "A hand at a terminal", "npm install -g github:dglazkov/sheep#release"]) {
         expect(text).toContain(said);
       }
       const printed = await sheep(dir, ["--agent-help"]);

@@ -250,7 +250,7 @@ describe("the local home's record", () => {
     const none = await w.sheep("home", "--json");
     expect(none.code).toBe(0);
     expect(JSON.parse(none.stdout)).toEqual({ home: null, kennel: w.kennel, name: null, local: false, answers: false, eyes: null, build: { home: null, cli: CHECKOUT }, image: null, credentials: NO_CREDENTIALS });
-    expect((await w.sheep("home")).stdout).toBe(`home: (none); run \`sheep home local\`, or pass --home <url>\nkennel: ${w.kennel}\ncredentials: account token none kept; model key none kept\n`);
+    expect((await w.sheep("home")).stdout).toBe(`home: (none); run \`sheep setup\`, or pass --home <url>\nkennel: ${w.kennel}\ncredentials: account token none kept; model key none kept\n`);
 
     const sheepish = await listen("sheep\n");
     try {

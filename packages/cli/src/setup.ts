@@ -249,8 +249,8 @@ function versionOfBin(bin: string): string | null {
   }
 }
 
-/** The command on PATH: found, installed, or left to the next sentence. */
-function setupCli(options: { install: boolean; say: (text: string) => void }): SetupReport["cli"] {
+/** The command on PATH: found, installed, or left to the next sentence. The stile's first step is this one (stile phase 1). */
+export function setupCli(options: { install: boolean; say: (text: string) => void }): SetupReport["cli"] {
   const spec = installSpec();
   const found = findOnPath("sheep");
   if (found !== undefined) return { state: "on-path", path: found, version: versionOfBin(found), spec };
@@ -340,9 +340,9 @@ export async function setup(options: SetupOptions): Promise<SetupReport> {
       ? `npm install -g ${cli.spec}`
       : cli.bin !== undefined
         ? `export PATH="${cli.bin}:$PATH"`
-        : home.state === "none"
-          ? "sheep home local"
-          : "sheep --agent-help";
+        : // Stile phase 1: a dog with no home makes none. The guide is what it reads, and the guide tells it to ask the
+          // shepherd for one sitting at their own terminal; the home line below says as much in the report itself.
+          "sheep --agent-help";
   return { cli, skill, kennel, home, checkout, next };
 }
 
@@ -388,7 +388,7 @@ export function formatSetup(report: SetupReport, dir: string): string {
         }${kennel.tracked ? "; git tracks it, so a token is in the repository" : ""}`;
   const homeLine =
     home.state === "none"
-      ? "home: none configured"
+      ? "home: none configured; one sitting at the shepherd's own terminal, `sheep setup`, makes one"
       : home.state === "local"
         ? `home: ${home.home ?? "(none)"} (local, ${home.running ? `running, pid ${home.pid}` : "stopped; started on demand"})`
         : `home: ${home.home} (${home.answers ? "answers" : "does not answer"})`;
