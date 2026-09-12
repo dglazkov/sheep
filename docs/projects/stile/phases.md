@@ -26,7 +26,7 @@ tool, has built a facade.
 
 **Where we are: stile phase 0 is CLOSED and phase 1 PART-DONE, 12 September
 2026.** The next thing to do is **stile phase 2**, the join. Stile phase 1
-waits only on the shepherd's walk at their own terminal; the package, dog,
+waits on issue #9, the screen the shepherd's walk found bare; the package, dog,
 and ⚑ account rings all hold on release `b227c2d`, run with the
 checkout's keys at the shepherd's word, and `sheep-2` is upgraded to it.
 
@@ -197,7 +197,8 @@ the inner rings: `pnpm test`, `pnpm -r typecheck`, and `pnpm bundle` exit
 fails four stile cases on the buffer check, and a `?` that never closes
 fails journey 1's frame snapshot. Every ring holds on release `b227c2d`:
 the package ring with `t0`, the dog ring, and the ⚑ account ring (46
-lines) with `t1`, `up`, and `st`. The walk at a person's terminal is Open.
+lines) with `t1`, `up`, and `st`. The shepherd walked it and found the
+screen bare and confusing: issue #9, Open.
 
 **Findings:**
 
@@ -221,9 +222,10 @@ lines) with `t1`, `up`, and `st`. The walk at a person's terminal is Open.
   typed the real token and key through its terminal, deployed a second
   station, then herded, upgraded, and deleted it with nothing in the
   environment; `ps` saw no secret in 28,638 samples.
-- **2026-09-12 — Open: journey 1 steps 1 to 5 at a person's terminal.**
-  The screen is for one, so whether it reads well is the shepherd's to
-  judge; every ring that can stand in for them has held.
+- **2026-09-12 — Open: the shepherd's walk found the screen bare and
+  confusing.** No colour, a banner that is "fish on legs", choices as
+  bracketed text; every mechanical proof held regardless. Issue #9, kept
+  out of this project at the shepherd's word.
 
 ---
 
