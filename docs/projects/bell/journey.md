@@ -55,7 +55,13 @@ The dog holds a turn for a sheep that reads a file and answers.
 Acceptance criteria:
 
 - The stream and `sheep log --json <id>` agree: every line the stream
-  wrote is in the log, with the same id and the same bytes.
+  wrote is in the log, in the same order, with the same id, the same
+  fields, and the same values — byte for byte up to the order of an
+  object's keys, which is pi's and not sheep's: the entry the replica
+  delivers carries `seq` and `timestamp` after `message`, and the one the
+  transcript route reads back from storage carries them after `parentId`.
+  Both are `JSON.stringify(entry)`; canonicalising either would be sheep
+  inventing a shape neither half has.
 - A turn with no tool call writes the prompt and the reply, and its last
   line is what `--json` printed before this project.
 
