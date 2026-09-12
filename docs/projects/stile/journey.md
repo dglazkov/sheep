@@ -50,7 +50,7 @@ A person has a laptop with Node on it and a Cloudflare account. The
 README says one command. They type it at their own terminal.
 
 1. `npx github:dglazkov/sheep#release setup` prints a small sheep and a
-   checklist of six lines: `command`, `where`, `account`, `plan`,
+   checklist of seven lines: `command`, `where`, `account`, `plan`,
    `station`, `key`, `next`. The first fills in at once: `sheep` is
    installed and on PATH. The cursor is on `where`: this directory, or
    everywhere on this machine; everywhere is the default and Enter takes
