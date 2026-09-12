@@ -75,6 +75,9 @@ async function world(): Promise<{ w: World; listen: (options: Parameters<typeof 
     const env: Record<string, string | undefined> = { ...process.env, HOME: root, NODE_NO_WARNINGS: "1" };
     delete env.SHEEP_HOME;
     delete env.SHEEP_TOKEN;
+    // The credentials are the machine's (stile phase 0); this ring owns its environment, so `sheep home` reports none kept.
+    delete env.CLOUDFLARE_API_TOKEN;
+    delete env.ANTHROPIC_API_KEY;
     return new Promise((resolve, reject) => {
       // A terminal on stdin: the CLI's own tty is not to be had under vitest, so `script` lends one on macOS and Linux alike.
       const child = options.tty
@@ -217,9 +220,9 @@ describe("sheep home join: the config, and the report", () => {
     const after = await w.sheep(["home", "--json"]);
     expect(after.code, after.stderr).toBe(0);
     // The fake station says nothing of eyes, so `sheep home` carries null (eyes phase 2).
-    expect(JSON.parse(after.stdout)).toEqual({ home: home.url, kennel: w.kennel, name: null, local: false, answers: true, eyes: null, build: { home: STAMP, cli: { commit: "0.0.0-checkout", builtAt: null } }, image: IMAGE });
+    expect(JSON.parse(after.stdout)).toEqual({ home: home.url, kennel: w.kennel, name: null, local: false, answers: true, eyes: null, build: { home: STAMP, cli: { commit: "0.0.0-checkout", builtAt: null } }, image: IMAGE, credentials: { cloudflare: null, anthropic: null } });
     const prose = await w.sheep(["home"]);
-    expect(prose.stdout).toBe(`home: ${home.url} (answers)\nkennel: ${w.kennel}\neyes: no\nhome build: 2b71e46 (2026-09-07T23:30:00Z)\ncli build: 0.0.0-checkout (unstamped)\nimage: ${IMAGE} (by digest)\n`);
+    expect(prose.stdout).toBe(`home: ${home.url} (answers)\nkennel: ${w.kennel}\ncredentials: account token none kept; model key none kept\neyes: no\nhome build: 2b71e46 (2026-09-07T23:30:00Z)\ncli build: 0.0.0-checkout (unstamped)\nimage: ${IMAGE} (by digest)\n`);
   });
 
   it("--json carries the same; a home naming the tag says by tag in prose, and one reporting no image says so", async () => {

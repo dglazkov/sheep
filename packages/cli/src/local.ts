@@ -61,6 +61,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { configPath, readConfigFile, sheepDir, writeConfigFile } from "./config.js";
+import { modelKey } from "./credentials.js";
 import { parseJsonc } from "./deploy.js";
 
 /** The release's build stamp, `sheep` in the manifest beside the code; absent in a checkout. `image` is the pen image the release named, by digest or by tag (station phase 2); a manifest from before it has none. */
@@ -307,6 +308,10 @@ function readDevVars(): Map<string, string> {
  * copied from `ANTHROPIC_API_KEY` when the environment has one, kept
  * from before otherwise; with `faux` undefined (a start on demand) the
  * file is left as it was, the token aside.
+ *
+ * The key is whatever this machine keeps (`credentials.ts`, stile phase 0):
+ * the environment, a kennel's file, or `~/.sheep/credentials`. The rig and
+ * the station read one place, so a shepherd's one sitting serves both.
  */
 function writeDevVars(faux: boolean | undefined): { token: string; key: "held" | "not held" | "faux"; changed: boolean } {
   const before = readDevVars();
@@ -317,7 +322,8 @@ function writeDevVars(faux: boolean | undefined): { token: string; key: "held" |
     vars.delete("SHEEP_ANTHROPIC_API_KEY");
   } else if (faux === false) {
     vars.delete("SHEEP_PROVIDER");
-    if (process.env.ANTHROPIC_API_KEY) vars.set("SHEEP_ANTHROPIC_API_KEY", process.env.ANTHROPIC_API_KEY);
+    const kept = modelKey();
+    if (kept !== undefined) vars.set("SHEEP_ANTHROPIC_API_KEY", kept.value);
   }
   const text = [...vars.entries()].map(([name, value]) => `${name}=${value}`).join("\n") + "\n";
   const changed = !existsSync(devVarsPath()) || text !== [...before.entries()].map(([name, value]) => `${name}=${value}`).join("\n") + "\n";

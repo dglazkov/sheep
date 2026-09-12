@@ -106,6 +106,7 @@ export const RINGS = {
     "packages/cell/test/storage-timing.test.ts",
     "packages/cell/test/wire.test.ts",
     "packages/cli/test/bridge.test.ts",
+    "packages/cli/test/credentials.test.ts",
     "packages/cli/test/name.test.ts",
     "packages/cli/test/release-manifest.test.ts",
     "packages/cli/test/rings.test.ts",

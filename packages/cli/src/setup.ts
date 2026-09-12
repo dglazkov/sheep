@@ -11,7 +11,9 @@
  *    `.claude/skills/sheep`, never over a real directory. Inside a checkout
  *    of sheep itself: nothing, and the report says why.
  * 3. The kennel: `.sheep/` here, empty, so the directory is a dog's from
- *    then on and nothing later has to guess (kennel phase 0). In a git
+ *    then on and nothing later has to guess (kennel phase 0) — but only
+ *    when no kennel at or above this directory already names a home, since
+ *    one here would shadow that with an empty one (stile phase 0). In a git
  *    work tree the `.gitignore` here gains `.sheep/`, because the config
  *    will hold a token and the local home a model key, and the entry has
  *    to travel with a clone so a teammate's dog does not commit theirs
@@ -37,7 +39,7 @@ import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadConfig, type SheepConfig } from "./config.js";
+import { loadConfig, type SheepConfig, sheepDir } from "./config.js";
 import { localStatus, readStamp, whoAnswers } from "./local.js";
 import { findOnPath, globalBinDir } from "./onpath.js";
 
@@ -161,7 +163,8 @@ export function installSkill(dir: string, source: string = skillSource()): Skill
   return { path: dest, state, doorway: { path: doorway, state: doorwayState } };
 }
 
-export type KennelState = "made" | "present";
+/** `none`: no kennel was made here, because one at or above this directory already names a home (stile phase 0). */
+export type KennelState = "made" | "present" | "none";
 /** The entry: appended, already there, or no git work tree here at all, which needs none. */
 export type IgnoreState = "added" | "present" | "not-git";
 
@@ -173,6 +176,8 @@ export interface KennelReport {
   gitignore: { path: string | null; state: IgnoreState };
   /** `git ls-files .sheep` named something: a token is in the repository already, and only a person can decide about that. */
   tracked: boolean;
+  /** With `none`: the kennel this directory falls through to and the home its config names, which a kennel here would shadow. */
+  reachable?: { kennel: string; home: string };
 }
 
 /** Is `dir` in a git work tree? A git that is not installed, or a directory that is not in one, answer the same. */
@@ -288,9 +293,33 @@ export interface SetupOptions {
 }
 
 /**
- * The home is resolved here, after the kennel is made, and never handed
+ * The home a kennel at or above this directory already names, if any: what
+ * decides whether a kennel is made here (stile phase 0). The walk-up is
+ * `sheepDir()`'s, the same one every command does, and only the file counts
+ * — an address in the environment is one command's, not this directory's.
+ */
+function reachableHome(dir: string): { kennel: string; home: string } | undefined {
+  const kennel = sheepDir(dir);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(join(kennel, "config"), "utf8"));
+  } catch {
+    return undefined;
+  }
+  const home = (parsed as { home?: unknown } | null)?.home;
+  return typeof home === "string" && home !== "" ? { kennel, home } : undefined;
+}
+
+/**
+ * The home is resolved here, after the kennel is settled, and never handed
  * in: `sheep setup` in a fresh directory must report that directory's
  * home (none), not whatever the machine's `~/.sheep/config` names.
+ *
+ * The kennel is made only when no home is reachable from here (stile phase
+ * 0): a kennel in this directory shadows the one above it with an empty
+ * one, so a dog that runs `sheep setup` in some subdirectory would lose the
+ * station the shepherd put everywhere. Found, the report names that home
+ * and says nothing was made; not found, the kennel is made as it always was.
  */
 export async function setup(options: SetupOptions): Promise<SetupReport> {
   const cli = setupCli(options);
@@ -299,7 +328,11 @@ export async function setup(options: SetupOptions): Promise<SetupReport> {
     checkoutRoot(options.dir) !== undefined
       ? { checkout: checkoutRoot(options.dir)!, path: null, state: "checkout", doorway: null }
       : installSkill(options.dir);
-  const kennel = makeKennel(options.dir);
+  // This directory's own kennel is never "shadowed" by itself: only one found above it stops the making.
+  const found = reachableHome(options.dir);
+  const reachable = found === undefined || found.kennel === join(options.dir, ".sheep") ? undefined : found;
+  const kennel: KennelReport =
+    reachable === undefined ? makeKennel(options.dir) : { path: join(options.dir, ".sheep"), state: "none", gitignore: { path: null, state: "not-git" }, tracked: kennelTracked(options.dir), reachable };
   if (kennel.tracked) options.say(trackedWarning(options.dir));
   const home = await setupHome(await loadConfig(options.home === undefined ? {} : { home: options.home }));
   const next =
@@ -342,13 +375,17 @@ export function formatSetup(report: SetupReport, dir: string): string {
                 ? "is something else and was left alone"
                 : "could not be linked; the .agents copy stands"
         }`;
-  const kennelLine = `kennel: ${rel(kennel.path)}/ ${kennel.state === "made" ? "made" : "already here"}; ${
-    kennel.gitignore.state === "added"
-      ? `${rel(kennel.gitignore.path!)} gained .sheep/`
-      : kennel.gitignore.state === "present"
-        ? `${rel(kennel.gitignore.path!)} already ignores it`
-        : "not a git work tree, so no .gitignore"
-  }${kennel.tracked ? "; git tracks it, so a token is in the repository" : ""}`;
+  // The kennel that was not made (stile phase 0): the home this directory already reaches, and why nothing was made here.
+  const kennelLine =
+    kennel.state === "none"
+      ? `kennel: none made here; ${kennel.reachable!.kennel} already names ${kennel.reachable!.home}, and a kennel here would shadow it with an empty one`
+      : `kennel: ${rel(kennel.path)}/ ${kennel.state === "made" ? "made" : "already here"}; ${
+          kennel.gitignore.state === "added"
+            ? `${rel(kennel.gitignore.path!)} gained .sheep/`
+            : kennel.gitignore.state === "present"
+              ? `${rel(kennel.gitignore.path!)} already ignores it`
+              : "not a git work tree, so no .gitignore"
+        }${kennel.tracked ? "; git tracks it, so a token is in the repository" : ""}`;
   const homeLine =
     home.state === "none"
       ? "home: none configured"

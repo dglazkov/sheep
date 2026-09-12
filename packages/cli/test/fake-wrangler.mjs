@@ -7,8 +7,12 @@
  * in any argument), and plays the account's side of a call through the
  * fake account API's `_fake` routes: `deploy` reads the derived config it
  * was given and registers the Worker and the container application it
- * names; `delete` removes the Worker. `SHEEP_TEST_WRANGLER_FAIL=deploy`
- * makes the deploy exit 1 with wrangler's kind of message.
+ * names; `secret put` registers the secret's name on the Worker, which is
+ * what the account's secrets listing answers with (stile phase 0);
+ * `delete` removes the Worker. `SHEEP_TEST_WRANGLER_FAIL=deploy`
+ * makes the deploy exit 1 with wrangler's kind of message, and
+ * `secret:<NAME>` does the same to that one secret put, which is a deploy
+ * that failed after the Worker went live.
  *
  * Station phase 4: `dev` plays the local home's daemon for
  * `test/local.test.ts`: it listens on `--port` until SIGTERM, answering
@@ -78,6 +82,13 @@ if (args[0] === "dev") {
   await fetch(`${api}/_fake/deploy`, { method: "POST", body: JSON.stringify({ name: pen.name, container: pen.containers[0].name, image: pen.containers[0].image, vars: args.filter((arg, i) => args[i - 1] === "--var") }) });
   console.log(`Total Upload: 1234.56 KiB / gzip: 234.56 KiB\nUploaded ${pen.name} (2.34 sec)\nDeployed ${pen.name} triggers (1.23 sec)\n  https://${pen.name}.fake.workers.dev\nCurrent Version ID: 00000000-0000-0000-0000-000000000000`);
 } else if (args[0] === "secret" && args[1] === "put") {
+  if (process.env.SHEEP_TEST_WRANGLER_FAIL === `secret:${args[2]}`) {
+    console.error(`✘ [ERROR] A request to the Cloudflare API (/accounts/x/workers/scripts/${config.env.pen.name}/secrets) failed.\n\n  the fake refused this secret [code: 10000]`);
+    process.exit(1);
+  }
+  // The account's side of a secret put (stile phase 0): the Worker's secret names are what `deploy` reads when no model key
+  // is kept here, so the listing has to be what the puts actually made rather than a fixture.
+  await fetch(`${api}/_fake/secret`, { method: "POST", body: JSON.stringify({ name: config.env.pen.name, secret: args[2] }) });
   console.log(`🌀 Creating the secret for the Worker "${config.env.pen.name}" \n✨ Success! Uploaded secret ${args[2]}`);
 } else if (args[0] === "delete") {
   await fetch(`${api}/_fake/delete`, { method: "POST", body: JSON.stringify({ name: config.env.pen.name }) });

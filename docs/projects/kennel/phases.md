@@ -78,7 +78,7 @@ a real model in one of them. **⚑** none.
 - **2026-09-07 — Retiring `SHEEP_CONFIG` and `SHEEP_LOCAL` cost the tests nothing.** `HOME` plus a working directory isolates every CLI test, and is stricter: the old knob moved the config file, not the home directory.
 - **2026-09-07 — Running the suite makes the checkout a kennel.** `setup.test.ts` runs setup at the repo root; the empty `.sheep/` is ignored, and a developer's `sheep home local` in the checkout now lands in `<repo>/.sheep/local`.
 - **2026-09-07 — The machine ring's last line named images that do not exist**, `images.map(ringTag)` passing the index as the tag prefix; fixed in passing.
-- **2026-09-07 — Open: setup in a subdirectory of a kennel makes a second one that shadows the first.** The design says "there"; whether setup should say a kennel exists above waits on a walk that trips over it.
+- **2026-09-07 — Open: setup in a subdirectory of a kennel makes a second one that shadows the first.** The design says "there"; whether setup should say a kennel exists above waits on a walk that trips over it. **Closed by stile phase 0, 12 Sep 2026:** setup makes a kennel only where no config at or above names a home, and the report says which it found.
 
 ## Phase 1: The name
 

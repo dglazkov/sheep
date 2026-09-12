@@ -1,5 +1,6 @@
 import { kennelDir, loadConfig, sheepDir, type SheepConfig } from "./config.js";
-import { deleteStation, deploy, Refusal } from "./deploy.js";
+import { credentialsLine, credentialsReport } from "./credentials.js";
+import { deleteStation, deploy, Refusal, Stop } from "./deploy.js";
 import { earmarks } from "./earmark.js";
 import { writeSessionFile } from "./export.js";
 import { runAbort, runEnd, runLog, runPrompt, runStatus, runWait, watchSetup } from "./herd.js";
@@ -67,8 +68,8 @@ usage:
   sheep home stop                           stop this kennel's local home
   sheep home deploy [--name <worker>] [--subdomain <name>] [--json]
                                             the station: this package's home on the shepherd's Cloudflare account, a
-                                            container beside every cell. Nothing without CLOUDFLARE_API_TOKEN and
-                                            ANTHROPIC_API_KEY in the environment: absent, it prints what it needs and
+                                            container beside every cell. Nothing without the account token and the model
+                                            key, kept on this machine: absent, it prints what it needs and
                                             costs and exits 2. The name is the kennel's, minted at the first deploy and
                                             recorded in the config; run again, it redeploys the same Worker from this
                                             package and keeps its secrets
@@ -83,6 +84,7 @@ usage:
                                             token, then this kennel's config names it; prints the address, both stamps,
                                             and the image
   sheep home                                which kennel, which home the config names, its station's name once minted,
+                                            which credentials are kept and where (never a value),
                                             whether it answers, and its build stamp beside this command's, with one line
                                             on stderr when they differ; the pen image its config named, when it says;
                                             whether it has eyes (a station deployed before they existed says no until
@@ -445,6 +447,8 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
           `name: ${report.name}\n` +
           `account: ${report.account.name} (${report.account.id}), ${report.plan.id} ${report.plan.state}, ${report.plan.price}; subdomain ${report.subdomain.name}${report.subdomain.registered ? " (registered now)" : ""}\n` +
           `image: ${report.image.startsWith("docker.io/") ? describeImage(report.image) : report.image}${report.faux ? "; the faux provider answers every prompt, no model is spent" : ""}\n` +
+          // The model key (stile phase 0): put from what this machine keeps, or left as the home holds it when it keeps none.
+          `key: ${report.key === "put" ? "put on the home from what this machine keeps" : "left as it is; the home keeps its own, and nothing on this machine does"}\n` +
           `kennel: ${kennel}\n` +
           `config: ${report.config.path} names the station\n` +
           builds +
@@ -526,24 +530,32 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
         lines = "";
       }
       if (parsed.json) {
-        output.out(`${JSON.stringify({ home, kennel, name, local: true, running, pid: running ? status.record!.pid : null, port: status.record?.port ?? null, stamp: status.record?.stamp ?? null, startedAt: running ? status.record!.startedAt : null, container, eyes, build, image })}\n`);
+        output.out(`${JSON.stringify({ home, kennel, name, local: true, running, pid: running ? status.record!.pid : null, port: status.record?.port ?? null, stamp: status.record?.stamp ?? null, startedAt: running ? status.record!.startedAt : null, container, eyes, build, image, credentials: credentialsReport() })}\n`);
         return 0;
       }
       output.out(home === null ? "home: (none); run `sheep home local`\n" : `home: ${home} (local, ${running ? `running, pid ${status.record!.pid}` : "stopped"})\n`);
-      output.out(`kennel: ${kennel}\n${nameLine}${running ? `container: ${container ? "yes" : "no"}\n` : ""}${lines}`);
+      output.out(`kennel: ${kennel}\n${nameLine}${credentialsLine()}\n${running ? `container: ${container ? "yes" : "no"}\n` : ""}${lines}`);
       return 0;
     }
     const home = config.home ?? null;
     const answers = home === null ? "nobody" : await whoAnswers(home);
     const { build, image, eyes, lines } = await buildReport(home, answers === "sheep", false);
     if (parsed.json) {
-      output.out(`${JSON.stringify({ home, kennel, name, local: false, answers: answers === "sheep", eyes, build, image })}\n`);
+      output.out(`${JSON.stringify({ home, kennel, name, local: false, answers: answers === "sheep", eyes, build, image, credentials: credentialsReport() })}\n`);
       return 0;
     }
     output.out(home === null ? "home: (none); run `sheep home local`, or pass --home <url>\n" : `home: ${home} (${answers === "sheep" ? "answers" : answers === "other" ? "answers, but not as a sheep home" : "does not answer"})\n`);
-    output.out(`kennel: ${kennel}\n${nameLine}${lines}`);
+    output.out(`kennel: ${kennel}\n${nameLine}${credentialsLine()}\n${lines}`);
     return 0;
   } catch (error) {
+    // A stop (stile phase 0): the refusal that needs a person, printed in two parts — the dog's line, third person, saying
+    // nothing was made, and under it the shepherd's paragraph, second person, naming the one command to type at their own
+    // terminal. The dog relays that paragraph and does nothing else. `--json` is the same two parts and the `needs`.
+    if (error instanceof Stop) {
+      if (parsed.json) output.out(`${JSON.stringify({ refused: error.message, needs: error.needs, shepherd: error.shepherd })}\n`);
+      else output.err(`sheep: ${error.message}\nfor the shepherd: ${error.shepherd}\n`);
+      return 2;
+    }
     // A deploy or delete that failed after the account was touched is exit 1, so a dog can tell it from a refusal that made nothing.
     if ((sub === "deploy" || sub === "delete") && error instanceof Error && !(error instanceof Refusal)) {
       process.stderr.write(`sheep: ${error.message}\n`);

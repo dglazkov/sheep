@@ -1,11 +1,14 @@
 /**
  * The station: a home in the cloud, on the shepherd's Cloudflare account,
  * from the installed package, in one path. Station phase 1. `sheep home
- * deploy` is the design's five steps: nothing without the token and the
- * key; the account asked whose token this is, whether it is on the Paid
+ * deploy` is the design's five steps: nothing without the account token,
+ * read from what this machine keeps (`credentials.ts`, stile phase 0), and
+ * nothing without a model key either kept here or already on the Worker;
+ * the account asked whose token this is, whether it is on the Paid
  * plan, and whether it has a `workers.dev` subdomain; `wrangler deploy
  * --env pen` over a config derived from the package's, every name in it
- * the Worker's; the three secrets through stdin; the kennel's config
+ * the Worker's; the secrets through stdin, the model key among them when
+ * one is kept here; the kennel's config
  * written to name the station, with no `local` marker. Run again, it
  * redeploys the same Worker from the package it runs from, keeps the token
  * it generated, and reports the stamp moving; that is the upgrade.
@@ -61,6 +64,7 @@ import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { configPath, readConfigFile, sheepDir, writeConfigFile } from "./config.js";
+import { accountToken, modelKey } from "./credentials.js";
 import { Home } from "./home.js";
 import { type BuildSide, type BuildStamp, cliBuild, ensureWrangler, readStamp, whoAnswers } from "./local.js";
 import { kennelName, mintName } from "./name.js";
@@ -82,28 +86,72 @@ const plansPage = (accountId: string) => `https://dash.cloudflare.com/${accountI
 /** A Worker's name: lowercase letters, digits, and hyphens, neither end a hyphen, at most 63 characters. */
 const WORKER_NAME = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
-/** The one sentence a dog asks the person with; the person's step is the dashboard, and it is the only browser step. */
-export const ASK_TOKEN = `Please make a Cloudflare API token for the account the home goes on, with ${PERMISSIONS.join(", ")} (${TOKENS_PAGE}), and export it as CLOUDFLARE_API_TOKEN in the shell I run in.`;
-export const ASK_KEY = "Please export the Anthropic API key as ANTHROPIC_API_KEY in the shell I run in; the home holds it as a secret and I never see it.";
-
 /** A refusal: the command made nothing, and exits 2 with this sentence. */
 export class Refusal extends Error {}
 
+/** What a stop wants of a person: an account token, a model key, or a terminal to type at. */
+export type Need = "account" | "key" | "terminal";
+
 /**
- * Step 1's text: what the command needs and costs, then which of the two
- * is missing and the sentence to ask with. Printed whole, so the dog can
- * tell the person both the price and the ask in one go.
+ * A stop: the refusal that needs a person (stile phase 0). It carries the
+ * two parts `cli.ts` prints — the dog's line, third person, saying what was
+ * needed and that nothing was made, which is `message`; and the shepherd's
+ * paragraph, second person, naming the one command to type at their own
+ * terminal — and the `needs` a `--json` caller reads. One class and one
+ * printer, so a guard can enumerate every stop the command can throw and
+ * assert that both parts are there (`STOPS` below is that enumeration).
  */
-export function needs(missing: "token" | "key"): string {
-  const lines = [
-    "sheep home deploy makes nothing without two variables in the environment:",
-    `  CLOUDFLARE_API_TOKEN  an API token for the Cloudflare account the home goes on, with ${PERMISSIONS.join(", ")}`,
-    "  ANTHROPIC_API_KEY     the Anthropic key the home's sheep call the model with; it becomes the home's secret",
-    `it costs the ${PLAN.name} plan, ${PLAN.price}, which containers need, and a container's minutes while a sheep uses one, billed by the minute at the rate on ${PRICING_PAGE}`,
-    missing === "token" ? `CLOUDFLARE_API_TOKEN is not set. Ask: ${ASK_TOKEN}` : `ANTHROPIC_API_KEY is not set. Ask: ${ASK_KEY}`,
-  ];
-  return lines.join("\n");
+export class Stop extends Refusal {
+  constructor(
+    message: string,
+    readonly needs: Need[],
+    readonly shepherd: string,
+  ) {
+    super(message);
+  }
 }
+
+/**
+ * The sitting the shepherd is sent to, in their own words. One command to
+ * type, on its own line, and what it does with what it asks for.
+ */
+const SITTING = "At your own terminal, run\n  sheep setup\nonce. It asks for what it needs and keeps it on this machine, and nothing your agent runs will ask again.";
+
+/**
+ * Every stop `sheep home deploy` and `sheep home delete` can throw, in one
+ * place, so stile phase 1's fence can walk them. Each is the dog's line and
+ * the shepherd's paragraph, and nothing in either is a value.
+ */
+export const STOPS = {
+  /** Nothing on this machine keeps an account token, and the command needs one. */
+  deployAccount: (): Stop =>
+    new Stop(
+      "sheep home deploy needs the account token, and nothing on this machine keeps one; nothing was made",
+      ["account"],
+      `sheep needs your Cloudflare account to make the home and to upgrade it. ${SITTING} The home costs the ${PLAN.name} plan, ${PLAN.price}, which containers need, and a container's minutes while a sheep uses one, at the rate on ${PRICING_PAGE}.`,
+    ),
+  /** No model key kept, and the Worker holds none either: the home would have nothing to call the model with. */
+  deployKey: (name: string): Stop =>
+    new Stop(
+      `sheep home deploy needs the model key: nothing on this machine keeps one, and the Worker ${name} holds none; nothing was made`,
+      ["key"],
+      `sheep needs your Anthropic key, which is what the home's sheep call the model with. ${SITTING} The key becomes the home's own secret, and is never printed or passed as an argument.`,
+    ),
+  /** The delete needs the same account token, and nothing keeps one. */
+  deleteAccount: (): Stop =>
+    new Stop(
+      "sheep home delete needs the account token, and nothing on this machine keeps one; nothing was deleted",
+      ["account"],
+      `sheep needs your Cloudflare account to end the home. ${SITTING}`,
+    ),
+  /** The name typed is the shepherd's act, and there was neither a terminal to type at nor a line on stdin. */
+  deleteTerminal: (name: string): Stop =>
+    new Stop(
+      "sheep home delete needs the station's name typed to confirm, and there is no terminal here and nothing on stdin; nothing was deleted",
+      ["terminal"],
+      `ending ${name} deletes the home, its sessions, and its pastures, and it cannot be undone, so it is yours to confirm rather than your agent's. At your own terminal, in this directory, run\n  sheep home delete\nand type the station's name when it asks.`,
+    ),
+} as const;
 
 /* The account API. */
 
@@ -183,22 +231,22 @@ export class AccountApi {
    */
   async account(): Promise<Account> {
     const envelope = await this.call<Account[]>("GET", "/accounts?per_page=50");
-    if (!envelope.success) throw new Refusal(`CLOUDFLARE_API_TOKEN is not accepted: ${quoteErrors(envelope.errors)}; ${ASK_TOKEN}`);
+    if (!envelope.success) throw new Refusal(`the account token is not accepted: ${quoteErrors(envelope.errors)}; it wants ${PERMISSIONS.join(", ")}, and is made at ${TOKENS_PAGE}`);
     const accounts = envelope.result.map((account) => ({ id: account.id, name: account.name }));
-    if (accounts.length === 0) throw new Refusal(`CLOUDFLARE_API_TOKEN reaches no account; a token made in an account's API Tokens page (${TOKENS_PAGE}) reaches that one`);
+    if (accounts.length === 0) throw new Refusal(`the account token reaches no account; a token made in an account's API Tokens page (${TOKENS_PAGE}) reaches that one`);
     let chosen = accounts[0]!;
     if (accounts.length > 1) {
       const wanted = process.env.CLOUDFLARE_ACCOUNT_ID;
       const picked = accounts.find((account) => account.id === wanted);
       if (picked === undefined) {
-        throw new Refusal(`CLOUDFLARE_API_TOKEN reaches ${accounts.length} accounts (${accounts.map((account) => `${account.name}: ${account.id}`).join("; ")}); export CLOUDFLARE_ACCOUNT_ID to say which`);
+        throw new Refusal(`the account token reaches ${accounts.length} accounts (${accounts.map((account) => `${account.name}: ${account.id}`).join("; ")}); set CLOUDFLARE_ACCOUNT_ID to say which`);
       }
       chosen = picked;
     }
     const verify = await this.call<{ status?: string }>("GET", `/accounts/${chosen.id}/tokens/verify`);
     if (!(verify.success && verify.result?.status === "active")) {
       const user = await this.call<{ status?: string }>("GET", "/user/tokens/verify");
-      if (!(user.success && user.result?.status === "active")) throw new Refusal(`CLOUDFLARE_API_TOKEN is not active on ${chosen.name} (${chosen.id}): ${quoteErrors(verify.errors)}`);
+      if (!(user.success && user.result?.status === "active")) throw new Refusal(`the account token is not active on ${chosen.name} (${chosen.id}): ${quoteErrors(verify.errors)}`);
     }
     return chosen;
   }
@@ -240,6 +288,21 @@ export class AccountApi {
       if (page >= pages || envelope.result.length === 0) break;
     }
     return names;
+  }
+
+  /**
+   * The names of a Worker's secrets, and nothing of their values, which the
+   * API does not answer with (stile phase 0). A Worker the account does not
+   * have answers 404, which is `[]` here: a deploy asks this only when no
+   * model key is kept, to find out whether the home already holds one.
+   */
+  async secrets(accountId: string, script: string): Promise<string[]> {
+    const envelope = await this.call<{ name?: unknown }[] | null>("GET", `/accounts/${accountId}/workers/scripts/${script}/secrets`);
+    if (!envelope.success) {
+      if (envelope.errors?.some((error) => error.code === 10007 || error.code === 10090 || /not found/i.test(error.message))) return [];
+      throw new Error(`GET /accounts/${accountId}/workers/scripts/${script}/secrets: ${quoteErrors(envelope.errors)}`);
+    }
+    return (envelope.result ?? []).map((secret) => secret.name).filter((name): name is string => typeof name === "string");
   }
 
   /** Every container application: its id, which delete takes, and its name, which the Worker's must not collide with. */
@@ -501,6 +564,14 @@ export interface DeployReport {
   subdomain: { name: string; registered: boolean };
   image: string;
   faux: boolean;
+  /**
+   * The model key (stile phase 0): `put` when this machine keeps one, since
+   * the put is idempotent and a rotated key is the shepherd running `sheep
+   * setup` again; `left` when it keeps none and the Worker already holds
+   * `SHEEP_ANTHROPIC_API_KEY`, which a second machine that joined is. A
+   * Worker with neither is a stop, before anything is deployed.
+   */
+  key: "put" | "left";
   config: { path: string; wrangler: string };
   kennel: string;
   build: { home: BuildSide | null; cli: BuildSide };
@@ -728,6 +799,23 @@ export function validateName(name: string): void {
   if (!WORKER_NAME.test(name)) throw new Refusal(`--name ${name} is not a Worker name: lowercase letters, digits, and hyphens, neither first nor last a hyphen, at most 63 characters`);
 }
 
+/** The Worker secret the home's sheep call the model with: what a deploy puts, and what a machine keeping no key requires the Worker to hold already. */
+export const KEY_SECRET = "SHEEP_ANTHROPIC_API_KEY";
+
+/** The five steps of a deploy, in the order they happen, as the midway message names them. */
+const DEPLOY_STEPS = ["the account token and the model key", "the account read", "the Worker uploaded by wrangler", "the secrets put", "the config written and the container application healthy"];
+
+/**
+ * The first line of a failure after `wrangler deploy` returned (journey 2
+ * step 6): which of the five steps are done, that the new Worker is already
+ * live whatever else failed, and that running the command again finishes it.
+ * Without it the sentence is wrangler's tail, and a reader cannot tell a
+ * deploy that made nothing from one that made half the station.
+ */
+function midway(name: string, home: string, done: number): string {
+  return `the deploy of ${name} stopped after step ${done} of 5. Done: ${DEPLOY_STEPS.slice(0, done).join("; ")}. Not done: ${DEPLOY_STEPS.slice(done).join("; ")}. The new Worker is already live at ${home}, and \`sheep home deploy\` again finishes it.`;
+}
+
 /**
  * `sheep home deploy`. Throws a `Refusal` (exit 2, nothing made) before the
  * account is touched, and an `Error` (exit 1) after: a deploy that failed
@@ -735,11 +823,11 @@ export function validateName(name: string): void {
  */
 export async function deploy(options: DeployOptions = {}): Promise<DeployReport> {
   const say = options.say ?? (() => {});
-  // 1. Nothing without the token, and nothing without the key.
-  const token = process.env.CLOUDFLARE_API_TOKEN;
-  if (!token) throw new Refusal(needs("token"));
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) throw new Refusal(needs("key"));
+  // 1. Nothing without the account token, wherever this machine keeps it. The key is not required here: a machine that
+  // keeps none can still upgrade a home that already holds one, which is what a second machine that joined is (step 3').
+  const token = accountToken()?.value;
+  if (token === undefined) throw STOPS.deployAccount();
+  const key = modelKey()?.value;
   if (options.name !== undefined) validateName(options.name);
   const existing = readConfigFile();
   const recorded = typeof existing?.name === "string" ? existing.name : undefined;
@@ -766,6 +854,15 @@ export async function deploy(options: DeployOptions = {}): Promise<DeployReport>
   const state: DeployReport["state"] = taken.workers.includes(name) ? "redeployed" : "deployed";
   const home = address(name, subdomain);
 
+  // 2'. The model key, when this machine keeps none: the Worker's secret names are asked of the account (a GET, before
+  // anything is made), and the key's presence among them is required. Found, the redeploy leaves the key the home holds.
+  const keyState: DeployReport["key"] = key === undefined ? "left" : "put";
+  if (key === undefined) {
+    const held = await api.secrets(account.id, name);
+    if (!held.includes(KEY_SECRET)) throw STOPS.deployKey(name);
+    say(`sheep: no model key is kept on this machine; the home keeps its own, and this deploy leaves it\n`);
+  }
+
   // 3. The deploy: wrangler over the derived config, the token in its environment.
   const stamp = readStamp();
   const bin = wranglerBin(stamp, say);
@@ -787,74 +884,80 @@ export async function deploy(options: DeployOptions = {}): Promise<DeployReport>
   }
   if (deployed.code !== 0) throw new Error(`wrangler deploy --config ${derived.path} --env pen exited ${deployed.code}:\n${tail(deployed)}`);
 
-  // 4. The secrets, each on stdin. The token is generated once and kept in the config; a redeploy reuses the config's.
-  const sheepToken = recorded !== undefined && typeof existing?.token === "string" && existing.token !== "" ? existing.token : randomBytes(24).toString("hex");
-  for (const [secret, value] of [
-    ["SHEEP_TOKEN", sheepToken],
-    ["SHEEP_ANTHROPIC_API_KEY", key],
-    ["PEN_CELL_ORIGIN", home],
-  ] as const) {
-    const put = await wrangler(bin, ["secret", "put", secret, "--config", derived.path, "--env", "pen"], { token, accountId: account.id, cwd, stdin: `${value}\n` });
-    if (put.code !== 0) throw new Error(`wrangler secret put ${secret} --config ${derived.path} --env pen exited ${put.code}:\n${tail(put)}`);
-  }
+  // Past here the Worker is live, so every failure is exit 1 and says which of the five steps are done (journey 2 step 6).
+  let reached = 3;
+  try {
+    // 4. The secrets, each on stdin. The token is generated once and kept in the config; a redeploy reuses the config's.
+    // The key is put when this machine keeps one, and left as it is when it does not: the home holds its own.
+    const sheepToken = recorded !== undefined && typeof existing?.token === "string" && existing.token !== "" ? existing.token : randomBytes(24).toString("hex");
+    const secrets: [string, string][] = [["SHEEP_TOKEN", sheepToken], ...(key === undefined ? [] : ([[KEY_SECRET, key]] as [string, string][])), ["PEN_CELL_ORIGIN", home]];
+    for (const [secret, value] of secrets) {
+      const put = await wrangler(bin, ["secret", "put", secret, "--config", derived.path, "--env", "pen"], { token, accountId: account.id, cwd, stdin: `${value}\n` });
+      if (put.code !== 0) throw new Error(`wrangler secret put ${secret} --config ${derived.path} --env pen exited ${put.code}:\n${tail(put)}`);
+    }
+    reached = 4;
 
-  // 5. The config, without the local marker; then the container application waited for, the rollout, and only then the address and the stamp.
-  const { local: _local, ...rest } = existing ?? {};
-  writeConfigFile({ ...rest, home, token: sheepToken, name });
-  say(`sheep: waiting for a container instance of ${name} to be healthy\n`);
-  const waitStarted = Date.now();
-  const containers = await waitForContainers(api, account.id, name, say);
-  // Then the rollout, when the image changed: the instances above may all be the old image's until it completes.
-  if (before !== undefined && before.image !== derived.configured) say(`sheep: waiting for the rollout of ${derived.configured} to ${name}\n`);
-  const rollout = await waitForRollout(api, account.id, name, derived.configured, before, waitStarted + ROLLOUT_WAIT_MS, say);
-  // The address, then the stamp: after the waits, since a deployment takes seconds to propagate and a redeploy's `GET /home`
-  // answered the old build when read right after wrangler (station phase 3). A redeploy polls until the stamp is this
-  // command's, up to a minute; a first deploy, or an unstamped command, reads it once.
-  const probe = process.env.SHEEP_TEST_STATION_URL ?? home;
-  const deadline = Date.now() + 60_000;
-  let answers = false;
-  while (Date.now() < deadline) {
-    if ((await whoAnswers(probe)) === "sheep") {
-      answers = true;
-      break;
+    // 5. The config, without the local marker; then the container application waited for, the rollout, and only then the address and the stamp.
+    const { local: _local, ...rest } = existing ?? {};
+    writeConfigFile({ ...rest, home, token: sheepToken, name });
+    say(`sheep: waiting for a container instance of ${name} to be healthy\n`);
+    const waitStarted = Date.now();
+    const containers = await waitForContainers(api, account.id, name, say);
+    // Then the rollout, when the image changed: the instances above may all be the old image's until it completes.
+    if (before !== undefined && before.image !== derived.configured) say(`sheep: waiting for the rollout of ${derived.configured} to ${name}\n`);
+    const rollout = await waitForRollout(api, account.id, name, derived.configured, before, waitStarted + ROLLOUT_WAIT_MS, say);
+    // The address, then the stamp: after the waits, since a deployment takes seconds to propagate and a redeploy's `GET /home`
+    // answered the old build when read right after wrangler (station phase 3). A redeploy polls until the stamp is this
+    // command's, up to a minute; a first deploy, or an unstamped command, reads it once.
+    const probe = process.env.SHEEP_TEST_STATION_URL ?? home;
+    const deadline = Date.now() + 60_000;
+    let answers = false;
+    while (Date.now() < deadline) {
+      if ((await whoAnswers(probe)) === "sheep") {
+        answers = true;
+        break;
+      }
+      await sleep(1_000);
     }
-    await sleep(1_000);
-  }
-  const cli = cliBuild();
-  let homeBuild: BuildSide | null = null;
-  const stampReport: DeployReport["stamp"] = { moved: false, seconds: 0 };
-  if (answers) {
-    const stampStarted = Date.now();
-    const stampDeadline = stampStarted + STAMP_WAIT_MS;
-    const client = new Home({ home: probe, token: sheepToken });
-    for (;;) {
-      const read = await retried("the home", () => client.build(), say);
-      homeBuild = read.ok ? read.value : null;
-      stampReport.moved = homeBuild !== null && homeBuild.commit === cli.commit && homeBuild.builtAt === cli.builtAt;
-      stampReport.seconds = Math.round((Date.now() - stampStarted) / 1000);
-      if (!read.ok || stampReport.moved || state === "deployed" || cli.builtAt === null || Date.now() >= stampDeadline) break;
-      await sleep(STAMP_POLL_MS);
+    const cli = cliBuild();
+    let homeBuild: BuildSide | null = null;
+    const stampReport: DeployReport["stamp"] = { moved: false, seconds: 0 };
+    if (answers) {
+      const stampStarted = Date.now();
+      const stampDeadline = stampStarted + STAMP_WAIT_MS;
+      const client = new Home({ home: probe, token: sheepToken });
+      for (;;) {
+        const read = await retried("the home", () => client.build(), say);
+        homeBuild = read.ok ? read.value : null;
+        stampReport.moved = homeBuild !== null && homeBuild.commit === cli.commit && homeBuild.builtAt === cli.builtAt;
+        stampReport.seconds = Math.round((Date.now() - stampStarted) / 1000);
+        if (!read.ok || stampReport.moved || state === "deployed" || cli.builtAt === null || Date.now() >= stampDeadline) break;
+        await sleep(STAMP_POLL_MS);
+      }
     }
+    return {
+      home,
+      name,
+      state,
+      answers,
+      deployRetried,
+      account,
+      plan: { ...plan, price: PLAN.price },
+      subdomain: { name: subdomain, registered },
+      image: derived.image,
+      faux,
+      key: keyState,
+      config: { path: configPath(), wrangler: derived.path },
+      kennel: sheepDir(),
+      build: { home: homeBuild, cli },
+      containers,
+      rollout,
+      stamp: stampReport,
+      next: 'sheep new -- "…"',
+    };
+  } catch (error) {
+    throw new Error(`${midway(name, home, reached)}\n${error instanceof Error ? error.message : String(error)}`);
   }
-  return {
-    home,
-    name,
-    state,
-    answers,
-    deployRetried,
-    account,
-    plan: { ...plan, price: PLAN.price },
-    subdomain: { name: subdomain, registered },
-    image: derived.image,
-    faux,
-    config: { path: configPath(), wrangler: derived.path },
-    kennel: sheepDir(),
-    build: { home: homeBuild, cli },
-    containers,
-    rollout,
-    stamp: stampReport,
-    next: 'sheep new -- "…"',
-  };
 }
 
 /* Delete. */
@@ -959,8 +1062,8 @@ export async function deleteStation(options: DeleteOptions = {}): Promise<Delete
   const name = recorded ?? options.name;
   if (name === undefined) throw new Refusal("this kennel names no station; `sheep home deploy` makes one, and --name <worker> names one to delete");
   validateName(name);
-  const token = process.env.CLOUDFLARE_API_TOKEN;
-  if (!token) throw new Refusal(`sheep home delete needs CLOUDFLARE_API_TOKEN in the environment, the token the deploy used; nothing was deleted. Ask: ${ASK_TOKEN}`);
+  const token = accountToken()?.value;
+  if (token === undefined) throw STOPS.deleteAccount();
 
   // The listing: the account's side (GETs), then the home's counts with the config's token, when the config names this station.
   const api = new AccountApi(token);
@@ -975,9 +1078,12 @@ export async function deleteStation(options: DeleteOptions = {}): Promise<Delete
   const listing: DeleteListing = { home, ...counts, application: found === undefined ? null : { id: found.id }, config: configPath() };
   say(`${describeListing(name, listing)}\n`);
 
-  // The confirmation: the name, typed, or nothing happens.
+  // The confirmation: the name, typed, or nothing happens. With no terminal to type at and nothing on stdin, the act is
+  // the shepherd's and the command cannot stand in for them: a stop with `terminal` (stile phase 0).
+  const atTerminal = process.stdin.isTTY === true;
   const confirm = options.confirm ?? readLine;
   const typed = await confirm("type the name to confirm: ");
+  if (typed === "" && !atTerminal) throw STOPS.deleteTerminal(name);
   if (typed !== name) throw new Refusal(typed === "" ? `nothing typed; nothing deleted (the name is ${name})` : `${typed} is not ${name}; nothing deleted`);
 
   const stamp = readStamp();

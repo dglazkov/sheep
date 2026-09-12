@@ -24,15 +24,25 @@ tool, has built a facade.
 
 ---
 
-**Where we are: stile is planned, 12 September 2026. Nothing built.**
-The next thing to do is **stile phase 0**, the dog's half: the
-credentials file, deploy and delete reading it, the stop with its two
-parts, the midway message, and the dog's setup making a kennel only
-when no home is reachable. Written from the shepherd's issue #8 the
-morning bell closed; the shepherd's calls are in the journey's front
-matter. Two ⚑ steps, both the account ring's: `t1` in stile phase 1
-and `t2` in stile phase 2, each a station deployed and deleted on the
-shepherd's account.
+**Where we are: stile phase 0 is PART-DONE, 12 September 2026.** The next
+thing to do is **stile phase 1**, the stile itself: the flow, the screen
+over pi-tui, the words, the fence, and the rings driving it through a
+terminal they own. It can be built and proved in the inner rings without
+a person; closing it needs the shepherd, for the dog ring's cost, the walk
+at their own terminal, and the ⚑ account ring.
+
+Stile phase 0's dog half is built and green against the fakes:
+`credentials.ts` and its precedence, `deploy` and `deleteStation` reading
+what the machine keeps, `Stop` in two parts with `--json`'s `needs`, the
+key left when the Worker holds one, the midway message, and the dog's
+setup making no kennel where a home is already reachable. `pnpm test` and
+`pnpm -r typecheck` are exit 0, and both named mutations falsified their
+tests. Two things wait, both Open findings under the phase: the by-hand
+walk against `sheep-2`, which needs the shepherd's own token, and the
+account ring's a1, which asserts the old refusal's wording and is stile
+phase 1's to rewrite. Two ⚑ steps in the project, both the account ring's:
+`t1` in stile phase 1 and `t2` in stile phase 2, each a station deployed
+and deleted on the shepherd's account.
 
 The order is dependency order. Phase 0 is the mechanism under the flow,
 provable against the fakes with nothing on a screen, so the stile in
@@ -97,9 +107,39 @@ with nothing in the environment, the upgrade with nothing asked. No
 provision step: the redeploy of the shepherd's own station is the shepherd's
 call, asked out loud.
 
-**Status: NOT STARTED.**
+**Status: PART-DONE, 12 September 2026.** The mechanism holds against the
+fakes, `pnpm test` and `pnpm -r typecheck` exit 0, and both named
+mutations falsified their tests: a placeholder key put when none is kept
+fails journey 2 step 3's case on a fourth wrangler call, and a stop
+printed without its paragraph fails the two-part assertion. The by-hand
+walk on this laptop, which needs the shepherd's own token, is Open below.
 
 **Findings:**
+
+- **2026-09-12 — The key check must precede `wrangler deploy`.** A machine
+  keeping no key reads the Worker's secret names through the account API
+  first: a stop firing after the upload would claim nothing was made about
+  a Worker already live.
+- **2026-09-12 — Precedence is per credential, not per file.** A kennel's
+  `credentials` naming only `cloudflare` leaves `anthropic` the machine's;
+  whole-file shadowing would make a second account cost the shepherd a
+  second model key for nothing.
+- **2026-09-12 — The kennel rule keys on a config naming a home, not on a
+  kennel existing.** A parent kennel naming no home still gets one in the
+  subdirectory, since nothing is shadowed. Closes kennel phase 0's open
+  note about a shadowing second kennel.
+- **2026-09-12 — The fakes had to grow a secrets listing to stay
+  falsifiable.** The fake wrangler registers each `secret put` with the
+  fake account, which answers the names from what the puts made; a
+  hard-coded listing cannot fail.
+- **2026-09-12 — Open: the account ring's a1 fails until stile phase 1.**
+  It asserts the refusal says `CLOUDFLARE_API_TOKEN is not set`, and the
+  stop says otherwise. Stile phase 1's Work rewrites `hermetic.mjs`; the
+  ring is not run until then.
+- **2026-09-12 — Open: the by-hand half of the Proof waits on the
+  shepherd.** `~/.sheep/credentials` from the checkout's two files, then
+  `sheep home deploy` against `sheep-2` with nothing in the environment.
+  It needs their own Cloudflare token, so it is theirs to type.
 
 ---
 

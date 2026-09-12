@@ -38,6 +38,9 @@ function sheep(cwd: string, args: string[], extra: Record<string, string> = {}):
   delete env.SHEEP_HOME;
   delete env.SHEEP_TOKEN;
   delete env.NODE_NO_WARNINGS;
+  // The credentials are the machine's, and this ring owns its environment: whatever the shell running the tests keeps is not this test's.
+  delete env.CLOUDFLARE_API_TOKEN;
+  delete env.ANTHROPIC_API_KEY;
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [bin, ...args], { env, cwd, stdio: ["ignore", "pipe", "pipe"] });
     const out: Buffer[] = [];
@@ -242,9 +245,73 @@ describe("the kennel", () => {
       expect(home.code).toBe(0);
       expect(home.stderr.trimEnd().split("\n")).toHaveLength(1);
       expect(home.stderr).toContain("a token is in the repository");
-      expect(home.stdout).toBe(`home: http://127.0.0.1:9 (does not answer)\nkennel: ${join(dir, ".sheep")}\n`);
+      expect(home.stdout).toBe(`home: http://127.0.0.1:9 (does not answer)\nkennel: ${join(dir, ".sheep")}\ncredentials: account token none kept; model key none kept\n`);
     } finally {
       await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("the kennel the dog's setup does not make", () => {
+  /** A fresh HOME whose `~/.sheep/config` names a station, as a shepherd's one sitting leaves it. */
+  async function machineWithHome(): Promise<string> {
+    const machine = realpathSync(await mkdtemp(join(tmpdir(), "sheep-setup-machine-")));
+    await mkdir(join(machine, ".sheep"), { recursive: true });
+    await writeFile(join(machine, ".sheep", "config"), JSON.stringify({ home: "http://127.0.0.1:9", token: "t", name: "blog" }));
+    return machine;
+  }
+
+  it("is skipped where a home is already reachable, and made where none is: the skill goes in either way", async () => {
+    const machine = await machineWithHome();
+    const dir = realpathSync(await mkdtemp(join(tmpdir(), "sheep-setup-dog-")));
+    try {
+      // Journey 1 step 6: the dog, in some other directory, finds the station through ~/.sheep and makes no kennel here,
+      // since an empty one here would shadow it and the dog would lose the station the shepherd put everywhere.
+      const found = await sheep(dir, ["setup", "--json", "--no-install"], { HOME: machine });
+      expect(found.code).toBe(0);
+      const report = JSON.parse(found.stdout);
+      expect(report.skill).toMatchObject({ state: "installed" });
+      expect(report.kennel).toEqual({ path: join(dir, ".sheep"), state: "none", gitignore: { path: null, state: "not-git" }, tracked: false, reachable: { kennel: join(machine, ".sheep"), home: "http://127.0.0.1:9" } });
+      expect(existsSync(join(dir, ".sheep"))).toBe(false);
+      expect(report.home).toEqual({ state: "other", home: "http://127.0.0.1:9", answers: false });
+      const prose = await sheep(dir, ["setup", "--no-install"], { HOME: machine });
+      expect(prose.stdout).toContain(`kennel: none made here; ${join(machine, ".sheep")} already names http://127.0.0.1:9, and a kennel here would shadow it with an empty one\n`);
+      expect(prose.stdout).toContain("home: http://127.0.0.1:9 (does not answer)\n");
+
+      // The same directory under a machine that has no home: the kennel is made, as it always was.
+      const bare = realpathSync(await mkdtemp(join(tmpdir(), "sheep-setup-bare-")));
+      const none = await sheep(dir, ["setup", "--json", "--no-install"], { HOME: bare });
+      expect(none.code).toBe(0);
+      expect(JSON.parse(none.stdout).kennel).toMatchObject({ path: join(dir, ".sheep"), state: "made" });
+      expect(existsSync(join(dir, ".sheep"))).toBe(true);
+      await rm(bare, { recursive: true, force: true });
+    } finally {
+      await rm(machine, { recursive: true, force: true });
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("makes no second kennel in a subdirectory of one, which closes kennel's open note", async () => {
+    const machine = realpathSync(await mkdtemp(join(tmpdir(), "sheep-setup-machine-")));
+    const blog = realpathSync(await mkdtemp(join(tmpdir(), "sheep-setup-blog-")));
+    try {
+      await mkdir(join(blog, ".sheep"), { recursive: true });
+      await writeFile(join(blog, ".sheep", "config"), JSON.stringify({ home: "http://127.0.0.1:8", token: "b", name: "blog" }));
+      const posts = join(blog, "posts", "2026");
+      await mkdir(posts, { recursive: true });
+      const report = JSON.parse((await sheep(posts, ["setup", "--json", "--no-install"], { HOME: machine })).stdout);
+      expect(report.kennel).toMatchObject({ state: "none", reachable: { kennel: join(blog, ".sheep"), home: "http://127.0.0.1:8" } });
+      expect(existsSync(join(posts, ".sheep"))).toBe(false);
+      // The skill is still installed where the dog stands, and the home reported is the kennel above's.
+      expect(existsSync(join(posts, ".agents", "skills", SKILL_NAME, "SKILL.md"))).toBe(true);
+      expect(report.home).toMatchObject({ state: "other", home: "http://127.0.0.1:8" });
+
+      // The kennel's own directory still gets one: a kennel is never shadowed by itself.
+      const here = JSON.parse((await sheep(blog, ["setup", "--json", "--no-install"], { HOME: machine })).stdout);
+      expect(here.kennel).toMatchObject({ path: join(blog, ".sheep"), state: "present" });
+    } finally {
+      await rm(machine, { recursive: true, force: true });
+      await rm(blog, { recursive: true, force: true });
     }
   });
 });

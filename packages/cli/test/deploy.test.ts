@@ -16,7 +16,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { address, deriveConfig, needs, PERMISSIONS } from "../src/deploy.js";
+import { address, deriveConfig, STOPS } from "../src/deploy.js";
 import { bin, type Result } from "./local-home.js";
 
 const fakeWrangler = new URL("./fake-wrangler.mjs", import.meta.url).pathname;
@@ -54,11 +54,13 @@ interface FakeState {
   rollout: "none" | "progressing-then-completed" | "mirrored" | "rolling-stays" | "failed" | "dies";
   rolloutPolls: number;
   deploys: { name: string; container: string; image: string; vars: string[] }[];
+  /** Each Worker's secret names, as the fake wrangler's `secret put` registers them: never a value, as the real API answers. */
+  secrets: Record<string, string[]>;
   requests: { method: string; path: string; auth: string | undefined }[];
 }
 
 function fresh(): FakeState {
-  return { plan: "workers_paid", subdomain: "fake", subdomainPut: "ok", workers: ["learner", "sheep", "sheep-pen"], applications: [{ id: "a03d94e0-75b4-454d-b8c8-4882bfcad73d", name: "sheep-pen" }], deploys: [], requests: [], health: "healthy", polls: 0, rollout: "none", rolloutPolls: 0 };
+  return { plan: "workers_paid", subdomain: "fake", subdomainPut: "ok", workers: ["learner", "sheep", "sheep-pen"], applications: [{ id: "a03d94e0-75b4-454d-b8c8-4882bfcad73d", name: "sheep-pen" }], deploys: [], secrets: {}, requests: [], health: "healthy", polls: 0, rollout: "none", rolloutPolls: 0 };
 }
 
 const json = async (request: IncomingMessage): Promise<Record<string, unknown>> => {
@@ -95,9 +97,17 @@ function fakeAccount(state: FakeState): Promise<{ server: Server; url: string }>
       }
       return response.end("{}");
     }
+    if (path === "/_fake/secret") {
+      const body = (await json(request)) as { name: string; secret: string };
+      const held = state.secrets[body.name] ?? [];
+      if (!held.includes(body.secret)) held.push(body.secret);
+      state.secrets[body.name] = held;
+      return response.end("{}");
+    }
     if (path === "/_fake/delete") {
       const body = (await json(request)) as { name: string };
       state.workers = state.workers.filter((name) => name !== body.name);
+      delete state.secrets[body.name];
       return response.end("{}");
     }
     state.requests.push({ method: request.method ?? "", path, auth });
@@ -125,6 +135,15 @@ function fakeAccount(state: FakeState): Promise<{ server: Server; url: string }>
         response,
         rows.map((id) => ({ id, created_on: "2026-09-07T00:00:00Z" })),
         { result_info: { page, per_page: 100, total_pages: pages, count: rows.length, total_count: state.workers.length } },
+      );
+    }
+    // A Worker's secret names (stile phase 0): what the puts registered, never a value; a Worker the account lacks is a 404.
+    const holding = /^\/accounts\/[^/]+\/workers\/scripts\/([^/]+)\/secrets$/.exec(path);
+    if (holding && request.method === "GET") {
+      if (!state.workers.includes(holding[1]!)) return refuse(response, 404, 10007, "workers.api.error.script_not_found");
+      return envelope(
+        response,
+        (state.secrets[holding[1]!] ?? []).map((name) => ({ name, type: "secret_text" })),
       );
     }
     if (path === `/accounts/${ACCOUNT.id}/containers/applications` && request.method === "GET") {
@@ -224,6 +243,10 @@ interface World {
   blog: string;
   kennel: string;
   config: string;
+  /** `~/.sheep/credentials` for this world, since `HOME` is its root (stile phase 0). */
+  credentials: string;
+  /** Writes that file, mode 600, as the stile does; the environment still overrides it unless the run drops it. */
+  keep: (values: { cloudflare?: string; anthropic?: string }) => Promise<void>;
   log: string;
   state: FakeState;
   api: string;
@@ -288,7 +311,12 @@ async function world(state: FakeState = fresh(), stationState: StationState = { 
     await new Promise((resolve) => station.server.close(resolve));
     await rm(root, { recursive: true, force: true });
   };
-  const made1: World = { root, blog, kennel, config: join(kennel, "config"), log, state, api: account.url, station: station.url, stationState, stationAuths, sheep, calls, close };
+  const credentials = join(root, ".sheep", "credentials");
+  const keep: World["keep"] = async (values) => {
+    await mkdir(join(root, ".sheep"), { recursive: true });
+    await writeFile(credentials, JSON.stringify(values), { mode: 0o600 });
+  };
+  const made1: World = { root, blog, kennel, config: join(kennel, "config"), credentials, keep, log, state, api: account.url, station: station.url, stationState, stationAuths, sheep, calls, close };
   made.push(made1);
   return made1;
 }
@@ -297,28 +325,145 @@ const readConfig = async (path: string): Promise<Record<string, unknown>> => JSO
 /** The station token a `--json` deploy report's config was written with: read back from the kennel the report names. */
 const config0 = (result: Result): string => JSON.parse(readFileSync((JSON.parse(result.stdout) as { config: { path: string } }).config.path, "utf8")).token as string;
 
-describe("sheep home deploy: step 1, nothing without the two variables", () => {
-  it("refuses without the token, naming the permissions, the plan's price, the minutes, and the ask; and asks nothing of the account", async () => {
+describe("sheep home deploy: step 1, the credentials this machine keeps", () => {
+  it("stops in two parts when nothing keeps an account token, having asked the account nothing", async () => {
     const w = await world();
-    const result = await w.sheep(["home", "deploy"], { drop: ["CLOUDFLARE_API_TOKEN"] });
+    const result = await w.sheep(["home", "deploy"], { drop: ["CLOUDFLARE_API_TOKEN", "ANTHROPIC_API_KEY"] });
     expect(result.code).toBe(2);
     expect(result.stdout).toBe("");
-    for (const permission of PERMISSIONS) expect(result.stderr).toContain(permission);
-    expect(result.stderr).toContain("Workers Paid plan, 5 USD a month");
-    expect(result.stderr).toContain("billed by the minute");
-    expect(result.stderr).toContain("CLOUDFLARE_API_TOKEN is not set. Ask: Please make a Cloudflare API token");
-    expect(result.stderr).toBe(`sheep: ${needs("token")}\n`);
+    // The two parts (journey 2 step 4): the dog's line first, third person, saying nothing was made; then the shepherd's
+    // paragraph, second person, naming the one command to type at their own terminal, on a line of its own.
+    const [dog, ...shepherd] = result.stderr.split("\n");
+    expect(dog).toBe("sheep: sheep home deploy needs the account token, and nothing on this machine keeps one; nothing was made");
+    expect(shepherd[0]!.startsWith("for the shepherd: ")).toBe(true);
+    expect(result.stderr).toContain("At your own terminal, run\n  sheep setup\n");
+    expect(result.stderr).toContain("The home costs the Workers Paid plan, 5 USD a month");
+    // Nothing in the dog's voice for the shepherd to decode, and no shell named.
+    expect(result.stderr).not.toContain("export");
+    expect(result.stderr).not.toContain("CLOUDFLARE_API_TOKEN");
     // Nothing was asked, nothing was run, nothing was written.
     expect(w.state.requests).toEqual([]);
     expect(await w.calls()).toEqual([]);
     expect(existsSync(w.config)).toBe(false);
     expect(existsSync(join(w.kennel, "deploy"))).toBe(false);
 
-    const noKey = await w.sheep(["home", "deploy"], { drop: ["ANTHROPIC_API_KEY"] });
-    expect(noKey.code).toBe(2);
-    expect(noKey.stderr).toBe(`sheep: ${needs("key")}\n`);
-    expect(noKey.stderr).toContain("ANTHROPIC_API_KEY is not set. Ask: Please export the Anthropic API key");
-    expect(w.state.requests).toEqual([]);
+    // `--json` is the same two parts and the needs, on stdout, exit 2.
+    const asJson = await w.sheep(["home", "deploy", "--json"], { drop: ["CLOUDFLARE_API_TOKEN", "ANTHROPIC_API_KEY"] });
+    expect(asJson.code).toBe(2);
+    expect(asJson.stderr).toBe("");
+    const refusal = JSON.parse(asJson.stdout) as { refused: string; needs: string[]; shepherd: string };
+    expect(refusal.needs).toEqual(["account"]);
+    expect(refusal.refused).toBe(dog!.slice("sheep: ".length));
+    expect(refusal.shepherd).toContain("sheep setup");
+    expect(`${asJson.stdout}${asJson.stderr}`).not.toContain(TOKEN);
+  });
+
+  it("reads both from ~/.sheep/credentials when the environment has neither, and asks nothing", async () => {
+    const w = await world();
+    await w.keep({ cloudflare: TOKEN, anthropic: KEY });
+    const result = await w.sheep(["home", "deploy", "--json"], { drop: ["CLOUDFLARE_API_TOKEN", "ANTHROPIC_API_KEY"] });
+    expect(result.code, result.stderr).toBe(0);
+    const report = JSON.parse(result.stdout) as { name: string; key: string };
+    expect(report.name).toBe("blog");
+    expect(report.key).toBe("put");
+    // The account was reached with the kept token, and the kept key is the one that went on stdin.
+    expect(w.state.requests.every((request) => request.auth === `Bearer ${TOKEN}`)).toBe(true);
+    const calls = await w.calls();
+    expect(calls.map((call) => (call.args[0] === "secret" ? `secret ${call.args[2]}` : call.args[0]!))).toEqual(["deploy", "secret SHEEP_TOKEN", "secret SHEEP_ANTHROPIC_API_KEY", "secret PEN_CELL_ORIGIN"]);
+    expect(calls[2]!.stdin).toBe(`${KEY}\n`);
+    expect(result.stdout).not.toContain(KEY);
+    expect(result.stderr).not.toContain(KEY);
+  });
+
+  it("lets the environment override the kept values, which is what the rings and CI use", async () => {
+    const w = await world();
+    await w.keep({ cloudflare: "a-stale-token", anthropic: "a-stale-key" });
+    const result = await w.sheep(["home", "deploy", "--json"]);
+    expect(result.code, result.stderr).toBe(0);
+    // The account took the environment's token, not the file's, and the environment's key is what was put.
+    expect(w.state.requests.every((request) => request.auth === `Bearer ${TOKEN}`)).toBe(true);
+    expect((await w.calls())[2]!.stdin).toBe(`${KEY}\n`);
+  });
+
+  it("keeps the kennel's own credentials file above the machine's", async () => {
+    const w = await world();
+    await w.keep({ cloudflare: "the-machine-token", anthropic: "the-machine-key" });
+    await writeFile(join(w.kennel, "credentials"), JSON.stringify({ cloudflare: TOKEN }));
+    const result = await w.sheep(["home", "deploy", "--json"], { drop: ["CLOUDFLARE_API_TOKEN", "ANTHROPIC_API_KEY"] });
+    expect(result.code, result.stderr).toBe(0);
+    // The kennel's token reached the account; the key, which the kennel's file does not name, came from the machine's.
+    expect(w.state.requests.every((request) => request.auth === `Bearer ${TOKEN}`)).toBe(true);
+    expect((await w.calls())[2]!.stdin).toBe("the-machine-key\n");
+  });
+
+  it("leaves the model key the home already holds when this machine keeps none, and stops when neither has one", async () => {
+    // Journey 2 step 3: a second machine that joined keeps no key. A first deploy from here puts one, so the Worker holds it.
+    const w = await world();
+    const first = await w.sheep(["home", "deploy", "--json"]);
+    expect(first.code, first.stderr).toBe(0);
+    expect(w.state.secrets.blog).toEqual(["SHEEP_TOKEN", "SHEEP_ANTHROPIC_API_KEY", "PEN_CELL_ORIGIN"]);
+    const before = (await w.calls()).length;
+
+    await w.keep({ cloudflare: TOKEN });
+    const again = await w.sheep(["home", "deploy", "--json"], { drop: ["CLOUDFLARE_API_TOKEN", "ANTHROPIC_API_KEY"] });
+    expect(again.code, again.stderr).toBe(0);
+    const report = JSON.parse(again.stdout) as { key: string; state: string };
+    expect(report).toMatchObject({ key: "left", state: "redeployed" });
+    // The key was not put: three wrangler calls, and no `secret put SHEEP_ANTHROPIC_API_KEY` among them.
+    const later = (await w.calls()).slice(before);
+    expect(later.map((call) => (call.args[0] === "secret" ? `secret ${call.args[2]}` : call.args[0]!))).toEqual(["deploy", "secret SHEEP_TOKEN", "secret PEN_CELL_ORIGIN"]);
+    expect(later.some((call) => call.stdin.trim() !== "" && call.args[2] === "SHEEP_ANTHROPIC_API_KEY")).toBe(false);
+    // The Worker's secret names were read from the account, as a GET, and the deploy said what it did.
+    expect(w.state.requests.some((request) => request.method === "GET" && request.path === `/accounts/${ACCOUNT.id}/workers/scripts/blog/secrets`)).toBe(true);
+    expect(again.stderr).toContain("sheep: no model key is kept on this machine; the home keeps its own, and this deploy leaves it\n");
+    const prose = await w.sheep(["home", "deploy"], { drop: ["CLOUDFLARE_API_TOKEN", "ANTHROPIC_API_KEY"] });
+    expect(prose.stdout).toContain("\nkey: left as it is; the home keeps its own, and nothing on this machine does\n");
+
+    // A Worker with no key of its own, and no key kept here: a stop, before anything is deployed.
+    const bare = await world();
+    await bare.keep({ cloudflare: TOKEN });
+    const stopped = await bare.sheep(["home", "deploy", "--json"], { drop: ["CLOUDFLARE_API_TOKEN", "ANTHROPIC_API_KEY"] });
+    expect(stopped.code).toBe(2);
+    const refusal = JSON.parse(stopped.stdout) as { refused: string; needs: string[]; shepherd: string };
+    expect(refusal.needs).toEqual(["key"]);
+    expect(refusal.refused).toBe("sheep home deploy needs the model key: nothing on this machine keeps one, and the Worker blog holds none; nothing was made");
+    expect(refusal.shepherd).toContain("sheep setup");
+    expect(await bare.calls()).toEqual([]);
+    expect(existsSync(bare.config)).toBe(false);
+    // Nothing was written to the account before the stop: every request a GET.
+    expect(bare.state.requests.every((request) => request.method === "GET")).toBe(true);
+  });
+
+  it("says which credentials are kept and where, and never a value", async () => {
+    const w = await world();
+    const none = await w.sheep(["home"], { drop: ["CLOUDFLARE_API_TOKEN", "ANTHROPIC_API_KEY"] });
+    expect(none.code, none.stderr).toBe(0);
+    expect(none.stdout).toContain("credentials: account token none kept; model key none kept\n");
+
+    await w.keep({ cloudflare: TOKEN, anthropic: KEY });
+    const kept = await w.sheep(["home"], { drop: ["CLOUDFLARE_API_TOKEN", "ANTHROPIC_API_KEY"] });
+    expect(kept.stdout).toContain(`credentials: account token kept in ${w.credentials}; model key kept in ${w.credentials}\n`);
+    expect(kept.stdout).not.toContain(TOKEN);
+    expect(kept.stdout).not.toContain(KEY);
+
+    const fromEnv = await w.sheep(["home", "--json"]);
+    expect(JSON.parse(fromEnv.stdout).credentials).toEqual({ cloudflare: { from: "environment", path: null }, anthropic: { from: "environment", path: null } });
+    expect(fromEnv.stdout).not.toContain(TOKEN);
+  });
+
+  it("says which of the five steps are done when a deploy fails after the Worker went live", async () => {
+    const w = await world();
+    const result = await w.sheep(["home", "deploy"], { env: { SHEEP_TEST_WRANGLER_FAIL: "secret:SHEEP_TOKEN" } });
+    expect(result.code).toBe(1);
+    // Journey 2 step 6: which steps are done, that the Worker is already live, and that running it again finishes it.
+    expect(result.stderr).toContain("sheep: the deploy of blog stopped after step 3 of 5.");
+    expect(result.stderr).toContain("Done: the account token and the model key; the account read; the Worker uploaded by wrangler.");
+    expect(result.stderr).toContain("Not done: the secrets put; the config written and the container application healthy.");
+    expect(result.stderr).toContain(`The new Worker is already live at ${address("blog", "fake")}, and \`sheep home deploy\` again finishes it.`);
+    // And wrangler's own sentence under it; the config was never written, since step 5 never ran.
+    expect(result.stderr).toContain("wrangler secret put SHEEP_TOKEN --config");
+    expect(existsSync(w.config)).toBe(false);
+    expect(w.state.workers).toContain("blog");
   });
 });
 
@@ -338,6 +483,7 @@ describe("sheep home deploy: steps 2 to 5 against the fake account", () => {
     expect(report.subdomain).toEqual({ name: "fake", registered: false });
     expect(report.image).toBe("../pen/Dockerfile");
     expect(report.faux).toBe(true);
+    expect(report.key).toBe("put");
     expect(report.kennel).toBe(w.kennel);
     expect(report.config).toEqual({ path: w.config, wrangler: join(w.kennel, "deploy", "wrangler.jsonc") });
     expect(report.build).toEqual({ home: STAMP, cli: { commit: "0.0.0-checkout", builtAt: null } });
@@ -423,7 +569,7 @@ describe("sheep home deploy: steps 2 to 5 against the fake account", () => {
     const prose = await w.sheep(["home", "deploy", "--faux"]);
     expect(prose.code).toBe(0);
     expect(prose.stdout).toBe(
-      `home: ${home} (redeployed; answers)\nname: blog\naccount: ${ACCOUNT.name} (${ACCOUNT.id}), workers_paid Paid, 5 USD a month; subdomain fake\nimage: ../pen/Dockerfile; the faux provider answers every prompt, no model is spent\nkennel: ${w.kennel}\nconfig: ${w.config} names the station\nhome build: 2b71e46 (2026-09-07T23:30:00Z)\ncli build: 0.0.0-checkout (unstamped)\ncontainers: 2 healthy (0s)\nrollout: none\nstamp: not compared (this command is unstamped)\nnext: sheep new -- "…"\n`,
+      `home: ${home} (redeployed; answers)\nname: blog\naccount: ${ACCOUNT.name} (${ACCOUNT.id}), workers_paid Paid, 5 USD a month; subdomain fake\nimage: ../pen/Dockerfile; the faux provider answers every prompt, no model is spent\nkey: put on the home from what this machine keeps\nkennel: ${w.kennel}\nconfig: ${w.config} names the station\nhome build: 2b71e46 (2026-09-07T23:30:00Z)\ncli build: 0.0.0-checkout (unstamped)\ncontainers: 2 healthy (0s)\nrollout: none\nstamp: not compared (this command is unstamped)\nnext: sheep new -- "…"\n`,
     );
     // Without --faux, no --var at all.
     const plain = await w.sheep(["home", "deploy", "--json"]);
@@ -717,11 +863,17 @@ describe("sheep home delete", () => {
 
   it("prints the listing, then deletes nothing on an empty line or the wrong name, and exits 2", async () => {
     const w = await station();
-    // stdin at end of file, as `sheep home delete </dev/null`: the listing is printed, then the refusal.
+    // stdin at end of file and no terminal, as a dog runs it: the listing is printed, then the stop in two parts, since
+    // the name typed is the shepherd's act and nothing here can stand in for it (journey 2 step 5).
     const empty = await w.sheep(["home", "delete"], { stdin: "" });
     expect(empty.code).toBe(2);
     expect(empty.stdout).toBe(listing(w));
-    expect(empty.stderr).toBe("sheep: nothing typed; nothing deleted (the name is blog)\n");
+    expect(empty.stderr).toBe(`sheep: ${STOPS.deleteTerminal("blog").message}\nfor the shepherd: ${STOPS.deleteTerminal("blog").shepherd}\n`);
+    expect(empty.stderr).toContain("nothing was deleted");
+    expect(empty.stderr).toContain("\n  sheep home delete\n");
+    const emptyJson = await w.sheep(["home", "delete", "--json"], { stdin: "" });
+    expect(emptyJson.code).toBe(2);
+    expect(JSON.parse(emptyJson.stdout)).toMatchObject({ needs: ["terminal"] });
     // The station was asked its two listings with the config's token, and the account only GETs.
     expect(w.stationAuths).toContain(`Bearer ${STATION_TOKEN}`);
     expect(w.state.requests.every((request) => request.method === "GET")).toBe(true);
@@ -739,13 +891,22 @@ describe("sheep home delete", () => {
     const noToken = await w.sheep(["home", "delete"], { stdin: "blog\n", drop: ["CLOUDFLARE_API_TOKEN"] });
     expect(noToken.code).toBe(2);
     expect(noToken.stdout).toBe("");
-    expect(noToken.stderr).toContain("sheep home delete needs CLOUDFLARE_API_TOKEN");
+    expect(noToken.stderr).toBe(`sheep: ${STOPS.deleteAccount().message}\nfor the shepherd: ${STOPS.deleteAccount().shepherd}\n`);
+    expect(noToken.stderr).toContain("nothing on this machine keeps one; nothing was deleted");
     const other = await w.sheep(["home", "delete", "--name", "other"], { stdin: "other\n" });
     expect(other.code).toBe(2);
     expect(other.stdout).toBe("");
     expect(other.stderr).toContain("this kennel's station is blog");
     expect(w.state.requests).toHaveLength(asked);
     expect(await w.calls()).toEqual([]);
+
+    // The kept token is read the same way the deploy reads it: with the environment dropped, the delete gets as far as the listing.
+    await w.keep({ cloudflare: TOKEN });
+    const fromFile = await w.sheep(["home", "delete"], { stdin: "blog-2\n", drop: ["CLOUDFLARE_API_TOKEN"] });
+    expect(fromFile.code).toBe(2);
+    expect(fromFile.stdout).toBe(listing(w));
+    expect(fromFile.stderr).toContain("blog-2 is not blog; nothing deleted");
+    expect(w.state.workers).toContain("blog");
   });
 
   it("with the name typed: the listing, wrangler delete --force over the derived config, the application by id, the config cleared, and the sessions deleted", async () => {
@@ -794,7 +955,8 @@ describe("sheep home delete", () => {
     const before = bare.stationAuths.length;
     const untold = await bare.sheep(["home", "delete", "--name", "blog", "--json"], { stdin: "" });
     expect(untold.code).toBe(2);
-    expect(untold.stdout).toBe("");
+    // Nothing typed and no terminal: the stop, and the listing it would have printed is not in a `--json` run's stdout.
+    expect(JSON.parse(untold.stdout)).toMatchObject({ needs: ["terminal"] });
     expect(bare.stationAuths).toHaveLength(before);
     expect(bare.state.workers).toContain("blog");
   });
