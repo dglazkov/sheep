@@ -25,7 +25,7 @@
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { configPath, readConfigFile, sheepDir } from "../config.js";
+import { configPath, isMachineKennel, readConfigFile, realPath, samePath, sheepDir } from "../config.js";
 import { CREDENTIAL_ENV, machineCredentialsPath, modelKey, readCredentials, writeCredentials } from "../credentials.js";
 import { type Account, AccountApi, deploy, type DeployReport, KEY_SECRET, PLAN, plansPage, putModelKey, Refusal, validateName } from "../deploy.js";
 import { whoAnswers } from "../local.js";
@@ -130,8 +130,12 @@ function commandLine(cli: ReturnType<typeof setupCli>): string {
 
 /** A path as the last step prints it: under the home directory with `~`, so a line reads the same on every machine. */
 export function tilde(path: string): string {
-  const home = homedir();
-  return path === home ? "~" : path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
+  // Compared as real paths too: a config found by walking up from the working directory is a real path, and HOME may not be.
+  for (const [home, candidate] of [[homedir(), path], [realPath(homedir()), realPath(path)]] as const) {
+    if (candidate === home) return "~";
+    if (candidate.startsWith(`${home}/`)) return `~${candidate.slice(home.length)}`;
+  }
+  return path;
 }
 
 /**
@@ -152,7 +156,7 @@ export async function runFlow(options: FlowOptions): Promise<FlowReport> {
   const found = sheepDir(dir);
   const machineKennel = join(homedir(), ".sheep");
   const ownKennel = join(dir, ".sheep");
-  const inherited = found !== machineKennel ? found : undefined;
+  const inherited = isMachineKennel(found) ? undefined : found;
   // Everywhere cannot be offered where a kennel is already reachable: every command here would still find that one first.
   const whereOptions: Option[] =
     inherited === undefined
@@ -160,7 +164,7 @@ export async function runFlow(options: FlowOptions): Promise<FlowReport> {
           { value: "machine", label: "everywhere on this machine" },
           { value: "here", label: "this directory" },
         ]
-      : inherited === ownKennel
+      : samePath(inherited, ownKennel)
         ? [{ value: "kennel", label: "this directory's kennel, already here" }]
         : [
             { value: "kennel", label: `the kennel above, ${tilde(inherited)}` },

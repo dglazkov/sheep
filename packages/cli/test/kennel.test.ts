@@ -7,9 +7,9 @@
  * through `bin/sheep.js`, whose only knobs are its working directory and
  * `HOME` — there is no variable that moves either any more.
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -105,5 +105,46 @@ describe("the walk up to the kennel", () => {
     const away = await sheep(tmpdir(), home, ["config"]);
     expect(kennelOf(away)).toBe(join(home, ".sheep"));
     expect(away.stdout).toContain("home: https://fallback.example\n");
+  });
+});
+
+/**
+ * A HOME reached through a symlink (the stile's package ring on macOS, where `/var` is a link to `/private/var`): `homedir()`
+ * is HOME as it was set, and a working directory under it is a real path, so `~/.sheep` found by walking up and `~/.sheep`
+ * built from HOME name one directory two ways. Every check that asks "is this the machine's kennel" or "is this the same
+ * file" has to answer yes: the station is minted `sheep`, the credentials are the machine's and read once, and the dog's
+ * setup reports the home the machine's kennel names and makes no kennel. Linux reaches the same split with any linked HOME.
+ */
+describe("a HOME reached through a symlink", () => {
+  it("is one kennel however it is reached: the name, the credentials, and the dog's setup all see ~/.sheep", async () => {
+    const real = realpathSync(await mkdtemp(join(tmpdir(), "sheep-kennel-real-")));
+    made.push(real);
+    const link = `${real}-link`;
+    await symlink(real, link);
+    made.push(link);
+    await mkdir(join(real, ".sheep"));
+    await mkdir(join(real, "work"));
+    await writeFile(join(real, ".sheep", "credentials"), JSON.stringify({ cloudflare: "cfLinkedHomeQ7mR2vX9pL4zN8bW" }), { mode: 0o600 });
+    await writeFile(join(real, ".sheep", "config"), JSON.stringify({ home: "http://127.0.0.1:9", token: "t" }));
+    const cwd = join(link, "work");
+    const env = { PATH: process.env.PATH, HOME: link, NODE_NO_WARNINGS: "1" };
+
+    // The name a first deploy from here mints from: the machine's kennel is `sheep`, never the directory HOME really is.
+    const dist = new URL("../dist/name.js", import.meta.url).pathname;
+    const named = spawnSync(process.execPath, ["--input-type=module", "-e", `import { kennelName } from ${JSON.stringify(dist)}; process.stdout.write(kennelName());`], { cwd, env, encoding: "utf8" });
+    expect(named.stderr).toBe("");
+    expect(named.stdout).toBe("sheep");
+
+    // The credentials: kept in the machine's file, and read as the machine's, not as a kennel's shadowing it.
+    const homed = await sheep(cwd, link, ["home", "--json"]);
+    const report = JSON.parse(homed.stdout) as { credentials: { cloudflare: { from: string } | null } };
+    expect(report.credentials.cloudflare?.from).toBe("machine");
+
+    // The dog's setup: a home is reachable through ~/.sheep, so it reports that one and makes no kennel here.
+    const setup = await sheep(cwd, link, ["setup", "--json", "--no-install"]);
+    const setupReport = JSON.parse(setup.stdout) as { kennel: { state: string; reachable?: { kennel: string; home: string } } };
+    expect(setupReport.kennel.state).toBe("none");
+    expect(realpathSync(setupReport.kennel.reachable!.kennel)).toBe(join(real, ".sheep"));
+    expect(setupReport.kennel.reachable!.home).toBe("http://127.0.0.1:9");
   });
 });

@@ -875,6 +875,16 @@ class Ring {
     return `kennel: ${realpathSync(this.kennel(dir))}\n`;
   }
 
+  /**
+   * `sheep home`'s credentials line (stile phase 0) as the ring's own HOME
+   * gives it: nothing kept, since the ring's HOME is fresh and its
+   * environment carries no credential. Only the package walk asserts the
+   * prose exactly, and it runs the ref's release, never the older one.
+   */
+  credentialsLine() {
+    return "credentials: account token none kept; model key none kept\n";
+  }
+
   configOf(dir) {
     return join(this.kennel(dir), "config");
   }
@@ -1463,7 +1473,7 @@ class Ring {
     const afterStop = await ids(this.blog, "k1.4");
     if (JSON.stringify(afterStop) !== JSON.stringify([id])) this.fail("k1.4", "sheep ls --json (in blog)", { stdout: afterStop.join("\n"), stderr: `expected blog's ${id} alone, and nothing of pi's`, code: 1 });
     const piDown = await this.sheep(["home"], { cwd: this.pi });
-    if (piDown.code !== 0 || piDown.stdout !== `home: ${pi.url} (local, stopped)\n${this.kennelLine(this.pi)}`) this.fail("k1.4", "sheep home (in pi)", { ...piDown, stderr: `${piDown.stderr}\nexpected "home: ${pi.url} (local, stopped)" and ${this.kennelLine(this.pi).trim()}` });
+    if (piDown.code !== 0 || piDown.stdout !== `home: ${pi.url} (local, stopped)\n${this.kennelLine(this.pi)}${this.credentialsLine()}`) this.fail("k1.4", "sheep home (in pi)", { ...piDown, stderr: `${piDown.stderr}\nexpected "home: ${pi.url} (local, stopped)", ${this.kennelLine(this.pi).trim()}, and ${this.credentialsLine().trim()}` });
     this.ok("k1.4", "sheep home stop (in pi); sheep ls (in blog)", `pi's ${pi.url} stopped and says so; blog's ${url} still answers and lists ${id} alone`);
 
     // Journey 1 step 5: a terminal in neither directory falls back to ~/.sheep, which holds no home, and says which kennel that is.
@@ -1556,7 +1566,7 @@ class Ring {
     if (await answers(url)) this.fail("step 6", `curl ${url}/`, { stdout: "", stderr: "the home still answers after sheep home stop", code: 1 });
     if (this.record(this.blog).pid !== null) this.fail("step 6", `cat ${join(this.localOf(this.blog), "home.json")}`, { stdout: JSON.stringify(this.record(this.blog)), stderr: "the pid was not cleared", code: 1 });
     const down = await this.sheep(["home"], { cwd: this.blog });
-    if (down.code !== 0 || down.stdout !== `home: ${url} (local, stopped)\n${this.kennelLine(this.blog)}`) this.fail("step 6", "sheep home", { ...down, stderr: `${down.stderr}\nexpected "home: ${url} (local, stopped)" and ${this.kennelLine(this.blog).trim()}` });
+    if (down.code !== 0 || down.stdout !== `home: ${url} (local, stopped)\n${this.kennelLine(this.blog)}${this.credentialsLine()}`) this.fail("step 6", "sheep home", { ...down, stderr: `${down.stderr}\nexpected "home: ${url} (local, stopped)", ${this.kennelLine(this.blog).trim()}, and ${this.credentialsLine().trim()}` });
     const morning = await this.sheep(["ls"], { cwd: this.blog });
     if (morning.code !== 0 || !morning.stderr.includes("sheep: the local home is not running; starting it\n") || !morning.stdout.split("\n").some((line) => line.startsWith(`${id}\t`))) {
       this.fail("step 6", "sheep ls (the home stopped)", morning);

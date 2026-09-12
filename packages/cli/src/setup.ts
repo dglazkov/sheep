@@ -39,7 +39,7 @@ import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadConfig, type SheepConfig, sheepDir } from "./config.js";
+import { loadConfig, samePath, type SheepConfig, sheepDir } from "./config.js";
 import { localStatus, readStamp, whoAnswers } from "./local.js";
 import { findOnPath, globalBinDir } from "./onpath.js";
 
@@ -330,7 +330,7 @@ export async function setup(options: SetupOptions): Promise<SetupReport> {
       : installSkill(options.dir);
   // This directory's own kennel is never "shadowed" by itself: only one found above it stops the making.
   const found = reachableHome(options.dir);
-  const reachable = found === undefined || found.kennel === join(options.dir, ".sheep") ? undefined : found;
+  const reachable = found === undefined || samePath(found.kennel, join(options.dir, ".sheep")) ? undefined : found;
   const kennel: KennelReport =
     reachable === undefined ? makeKennel(options.dir) : { path: join(options.dir, ".sheep"), state: "none", gitignore: { path: null, state: "not-git" }, tracked: kennelTracked(options.dir), reachable };
   if (kennel.tracked) options.say(trackedWarning(options.dir));

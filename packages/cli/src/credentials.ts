@@ -24,7 +24,7 @@
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { sheepDir } from "./config.js";
+import { samePath, sheepDir } from "./config.js";
 
 /** The two, by the names the file holds them under. */
 export type CredentialName = "cloudflare" | "anthropic";
@@ -82,7 +82,8 @@ export function readCredentials(): Partial<Record<CredentialName, Kept>> {
   const machinePath = machineCredentialsPath();
   const kennelPath = kennelCredentialsPath();
   const machine = readFile(machinePath);
-  const kennel = kennelPath === machinePath ? {} : readFile(kennelPath);
+  // One file reached two ways (a HOME through a symlink, a working directory under it) is one file, read once, the machine's.
+  const kennel = samePath(kennelPath, machinePath) ? {} : readFile(kennelPath);
   const found: Partial<Record<CredentialName, Kept>> = {};
   for (const name of CREDENTIAL_NAMES) {
     const fromEnv = process.env[CREDENTIAL_ENV[name]];

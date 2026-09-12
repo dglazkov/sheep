@@ -197,7 +197,8 @@ and one more deploy per run.
 the inner rings: `pnpm test`, `pnpm -r typecheck`, and `pnpm bundle` exit
 0, and both named mutations falsified their tests — hidden input echoed
 fails four stile cases on the buffer check, and a `?` that never closes
-fails journey 1's frame snapshot. The outer rings and the walk are Open.
+fails journey 1's frame snapshot. The package ring holds with `t0` (24
+lines, walked locally on macOS). The dog and account rings are Open.
 
 **Findings:**
 
@@ -213,13 +214,14 @@ fails journey 1's frame snapshot. The outer rings and the walk are Open.
   beside it.** No new external, no native module; the bundle is 896 KiB.
   `ProcessTerminal`'s bracketed paste delivers a pasted token as one
   escape sequence, which the key splitter must unwrap.
-- **2026-09-12 — BSD `script` refuses a socket on stdin, and on macOS a
-  pipe and a FIFO are both sockets.** `stile-tty.test.ts` feeds keys
-  through `cat < fifo |` into `script`.
-- **2026-09-12 — Open: the outer rings and the walk.** `t0` runs in the
-  package ring CI walks on this commit; the dog ring, the ⚑ account ring's
-  `t1`, `up` and `a1`, and journey 1 steps 1 to 5 at a real terminal wait
-  on their runs, authorized by the shepherd the same day.
+- **2026-09-12 — A symlinked `HOME` split `~/.sheep` in two.** Kennel
+  phase 1's `kennelName()` compared a walk from the resolved cwd with
+  `HOME` as set; under macOS's `/var` link `t0` minted `t0`, not
+  `sheep-2`, while Linux CI passed. Kennel checks now compare real paths.
+- **2026-09-12 — Open: the dog ring, the ⚑ account ring's `t1`, `up`
+  and `a1`, and journey 1 steps 1 to 5 at a real terminal.** Authorized by
+  the shepherd the same day with the checkout's keys; they run against the
+  release CI cuts from this commit.
 
 ---
 

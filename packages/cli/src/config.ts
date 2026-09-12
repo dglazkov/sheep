@@ -7,10 +7,10 @@
  * kennel's. There is no environment override: the working directory and
  * `HOME` are the whole rule, which is what a ring walks.
  */
-import { chmodSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 /** Which home `sheep` talks to, and how it proves itself at the door. */
 export interface SheepConfig {
@@ -41,6 +41,40 @@ function isDirectory(path: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * A path as the filesystem resolves it: every symlink in it followed, as
+ * far as it exists, and the part that does not exist yet appended as
+ * written. Never throws. `process.cwd()` is already a real path, and
+ * `homedir()` is `HOME` as it was set, so on macOS, where `/var` is a
+ * link to `/private/var`, the two name one directory two ways: a kennel
+ * found by walking up from the working directory is `/private/var/…/.sheep`
+ * while `~/.sheep` is `/var/…/.sheep`.
+ */
+export function realPath(path: string): string {
+  let current = resolve(path);
+  const missing: string[] = [];
+  for (;;) {
+    try {
+      return join(realpathSync(current), ...missing.reverse());
+    } catch {
+      const parent = dirname(current);
+      if (parent === current) return resolve(path);
+      missing.push(basename(current));
+      current = parent;
+    }
+  }
+}
+
+/** Whether two paths name one directory or file, however either was reached: the comparison every kennel check makes. */
+export function samePath(a: string, b: string): boolean {
+  return a === b || realPath(a) === realPath(b);
+}
+
+/** Whether a kennel is the machine's, `~/.sheep`, the fallback every directory without its own walks up to. */
+export function isMachineKennel(kennel: string): boolean {
+  return samePath(kennel, join(homedir(), ".sheep"));
 }
 
 /**

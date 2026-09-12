@@ -23,7 +23,7 @@
  */
 import { spawn } from "node:child_process";
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -67,8 +67,11 @@ afterAll(async () => {
   for (const world of worlds) await world.close();
 });
 
-async function world(state: FakeState = fresh()): Promise<World> {
+async function world(state: FakeState = fresh(), options: { linkedHome?: boolean } = {}): Promise<World> {
   const root = realpathSync(await mkdtemp(join(tmpdir(), "sheep-stile-")));
+  // A HOME reached through a symlink, as macOS's /var is: HOME names the link, and the working directory is a real path.
+  const home = options.linkedHome === true ? `${root}-link` : root;
+  if (options.linkedHome === true) await symlink(root, home);
   // The wrangler log is outside HOME, so a walk of HOME for a typed value finds what the command wrote and not the fake's notes.
   const logs = realpathSync(await mkdtemp(join(tmpdir(), "sheep-stile-log-")));
   const blog = join(root, "blog");
@@ -80,7 +83,7 @@ async function world(state: FakeState = fresh()): Promise<World> {
   const env = (): Record<string, string | undefined> => ({
     // No `sheep` of this machine's on PATH: the command step reads a checkout, whatever the machine running this has installed.
     PATH: `${dirname(process.execPath)}:/usr/bin:/bin`,
-    HOME: root,
+    HOME: home,
     NODE_NO_WARNINGS: "1",
     SHEEP_TEST_ACCOUNT_API: account.url,
     SHEEP_TEST_WRANGLER: fakeWrangler,
@@ -114,6 +117,7 @@ async function world(state: FakeState = fresh()): Promise<World> {
       await new Promise((resolve) => account.server.close(resolve));
       await new Promise((resolve) => station.server.close(resolve));
       await rm(root, { recursive: true, force: true });
+      if (home !== root) await rm(home, { force: true });
       await rm(logs, { recursive: true, force: true });
     },
   };
@@ -390,6 +394,19 @@ describe("the stile: journey 1, the first sitting", () => {
 });
 
 describe("the stile: where the settings go, and a station already there", () => {
+  it("under a HOME reached through a symlink, is everywhere's sitting still: the station minted for ~/.sheep and the config shown under ~", { timeout: 90_000 }, async () => {
+    const w = await world(fresh(), { linkedHome: true });
+    await w.keep({ cloudflare: TOKEN, anthropic: KEY });
+    const run = w.stile();
+    expect(await run.waitFor("› where")).toContain(`${cursor("where", "[everywhere on this machine]  ·  this directory")}\n`);
+    await run.press(ENTER);
+    expect(await run.waitFor("› station")).toContain(`${cursor("station", "[new sheep-2]")}\n`);
+    await run.press(ENTER);
+    expect(await run.exited).toEqual({ code: 0, stderr: "" });
+    expect(run.buffer()).toContain("  ✓ station   https://sheep-2.fake.workers.dev\n");
+    expect(run.buffer()).toContain("              credentials: ~/.sheep/credentials\n              config: ~/.sheep/config\n");
+  });
+
   it("makes this directory's kennel, with its own station named for the directory, when this directory is chosen", { timeout: 90_000 }, async () => {
     const w = await world();
     await w.keep({ cloudflare: TOKEN, anthropic: KEY });

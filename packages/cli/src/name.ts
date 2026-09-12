@@ -12,9 +12,8 @@
  * application names into `taken`, calls `mintName(kennelName(), taken,
  * --name)`, and writes the result to the config.
  */
-import { homedir } from "node:os";
-import { basename, join } from "node:path";
-import { kennelDir, sheepDir } from "./config.js";
+import { basename } from "node:path";
+import { isMachineKennel, kennelDir, sheepDir } from "./config.js";
 
 /** The name the fallback kennel, `~/.sheep`, deploys as, and what an empty basename becomes. */
 export const DEFAULT_NAME = "sheep";
@@ -53,6 +52,6 @@ export function mintName(basename: string, taken: Set<string>, wanted?: string):
  * working directory in the product and a fixture's tree in a test.
  */
 export function kennelName(from?: string): string {
-  if (sheepDir(from) === join(homedir(), ".sheep")) return DEFAULT_NAME;
+  if (isMachineKennel(sheepDir(from))) return DEFAULT_NAME;
   return basename(kennelDir(from));
 }
