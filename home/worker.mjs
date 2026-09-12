@@ -125588,13 +125588,13 @@ __name(joinAnswer, "joinAnswer");
 var CHECKOUT_BUILD = { commit: "0.0.0-checkout", builtAt: null };
 function homeImage() {
   if (false) return null;
-  return true ? "docker.io/dglazkov2/sheep-pen@sha256:11376682abfa5f1cd90dbf0b7017c9d3a7194c00b06c550596ce26d2de9b732b" : null;
+  return true ? "docker.io/dglazkov2/sheep-pen@sha256:e0120cc755a11af61c8e19c6d3400194d7c7c0d2daaf43787b63234f28fde69f" : null;
 }
 __name(homeImage, "homeImage");
 function homeBuild() {
   if (false) return CHECKOUT_BUILD;
   try {
-    const parsed = JSON.parse('{"commit":"2f22cf3","builtAt":"2026-09-12T21:40:39Z"}');
+    const parsed = JSON.parse('{"commit":"dc04143","builtAt":"2026-09-12T21:51:19Z"}');
     if (typeof parsed.commit === "string" && parsed.commit !== "") return { commit: parsed.commit, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
   } catch {
   }
