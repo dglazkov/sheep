@@ -25,10 +25,10 @@ tool, has built a facade.
 ---
 
 **Where we are: stile phase 0 is CLOSED and phase 1 PART-DONE, 12 September
-2026.** The next thing to do is **stile phase 1**'s account ring, then
-**stile phase 2**, the join. The shepherd authorized the runs with the
-checkout's keys. The package ring holds with `t0` in CI's release
-`b227c2d`, the dog ring holds, and `sheep-2` is upgraded to it.
+2026.** The next thing to do is **stile phase 2**, the join. Stile phase 1
+waits only on the shepherd's walk at their own terminal; the package, dog,
+and ⚑ account rings all hold on release `b227c2d`, run with the
+checkout's keys at the shepherd's word, and `sheep-2` is upgraded to it.
 
 Both phases are green in the inner rings. Stile phase 0 is the dog's half:
 `credentials.ts`, deploy and delete reading what the machine keeps, `Stop`
@@ -37,7 +37,7 @@ and setup making no kennel where a home is reachable; its walk upgraded
 `sheep-2` from the release with an empty environment, nothing asked. Stile
 phase 1 is the stile: the flow, the screen over pi-tui, the words, the
 fence and its guard, the two halves of the README, and the ring steps,
-written and not yet run. Two ⚑ steps in the project, both the account
+all of which have run. Two ⚑ steps in the project, both the account
 ring's: `t1` in stile phase 1 and `t2` in stile phase 2, each a station
 deployed and deleted on the shepherd's account.
 
@@ -195,8 +195,9 @@ and one more deploy per run.
 the inner rings: `pnpm test`, `pnpm -r typecheck`, and `pnpm bundle` exit
 0, and both named mutations falsified their tests — hidden input echoed
 fails four stile cases on the buffer check, and a `?` that never closes
-fails journey 1's frame snapshot. The package ring holds with `t0` (24
-lines, walked locally on macOS). The dog and account rings are Open.
+fails journey 1's frame snapshot. Every ring holds on release `b227c2d`:
+the package ring with `t0`, the dog ring, and the ⚑ account ring (46
+lines) with `t1`, `up`, and `st`. The walk at a person's terminal is Open.
 
 **Findings:**
 
@@ -216,10 +217,13 @@ lines, walked locally on macOS). The dog and account rings are Open.
   phase 1's `kennelName()` compared a walk from the resolved cwd with
   `HOME` as set; under macOS's `/var` link `t0` minted `t0`, not
   `sheep-2`, while Linux CI passed. Kennel checks now compare real paths.
-- **2026-09-12 — Open: the dog ring, the ⚑ account ring's `t1`, `up`
-  and `a1`, and journey 1 steps 1 to 5 at a real terminal.** Authorized by
-  the shepherd the same day with the checkout's keys; they run against the
-  release CI cuts from this commit.
+- **2026-09-12 — The account ring played the shepherd for real.** `t1`
+  typed the real token and key through its terminal, deployed a second
+  station, then herded, upgraded, and deleted it with nothing in the
+  environment; `ps` saw no secret in 28,638 samples.
+- **2026-09-12 — Open: journey 1 steps 1 to 5 at a person's terminal.**
+  The screen is for one, so whether it reads well is the shepherd's to
+  judge; every ring that can stand in for them has held.
 
 ---
 

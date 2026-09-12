@@ -407,7 +407,7 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { createInterface } from "node:readline";
@@ -3047,6 +3047,49 @@ export async function settleStation(ring, api, station, { step, pollMs = SETTLE_
  * runs the older release through a2b, then the upgrade step ("up")
  * installs the newer over it and every step after asserts the newer.
  */
+/**
+ * The first commit on main whose command stops in two parts (stile phase 0): a release built from it or after prints the
+ * stop — the dog's line and the shepherd's paragraph — and one built before prints the old refusal naming the variables.
+ */
+const STOP_SINCE = "5cb1797";
+
+/** The dog's line the two-part stop begins with when nothing keeps an account token (`STOPS.deployAccount`). */
+const DEPLOY_STOP_LINE = "sheep: sheep home deploy needs the account token, and nothing on this machine keeps one; nothing was made";
+
+/**
+ * Whether a release in the repository was built from `STOP_SINCE` or after: what decides which refusal a1 asserts of the
+ * release installed at a1, which is the older one. Keyed on the release, not loosened to accept either: an older release
+ * from before stile phase 0 prints the old refusal, and the release after this one, whose older will carry the stop, the stop.
+ */
+function releaseCarriesStop(release) {
+  const gitDir = release.git("rev-parse", "--absolute-git-dir");
+  const done = spawnSync("git", ["--git-dir", gitDir, "merge-base", "--is-ancestor", STOP_SINCE, release.stamp.commit], { encoding: "utf8" });
+  if (done.status === 0) return true;
+  if (done.status === 1) return false;
+  throw new Error(`cannot tell whether the release built from ${release.stamp.commit} carries stile phase 0's stop: git merge-base --is-ancestor ${STOP_SINCE} ${release.stamp.commit} exited ${done.status}: ${(done.stderr || "").trim()}`);
+}
+
+/** What is wrong with a two-part stop for a missing account token, prose and `--json`, or undefined when it holds. */
+function deployStopWrong(prose, json) {
+  const [dogLine, ...rest] = prose.stderr.split("\n");
+  const shepherd = rest.join("\n");
+  if (prose.code !== 2 || prose.stdout !== "") return "expected exit 2 and nothing on stdout";
+  if (dogLine !== DEPLOY_STOP_LINE) return `expected the dog's line ${JSON.stringify(DEPLOY_STOP_LINE)}`;
+  if (!shepherd.startsWith("for the shepherd: ") || !shepherd.includes("\n  sheep setup\n") || !shepherd.includes("Workers Paid plan")) return 'expected, under it, "for the shepherd: " naming `sheep setup` on its own line, and the plan';
+  if (/\bexport\s+[A-Z_]/.test(prose.stderr)) return "the stop tells the shepherd to export a variable";
+  if (json === undefined) return undefined;
+  let report;
+  try {
+    report = JSON.parse(json.stdout);
+  } catch {
+    return "--json: stdout is not JSON";
+  }
+  if (json.code !== 2 || JSON.stringify(Object.keys(report).sort()) !== JSON.stringify(["needs", "refused", "shepherd"]) || JSON.stringify(report.needs) !== JSON.stringify(["account"]) || `sheep: ${report.refused}` !== DEPLOY_STOP_LINE || !report.shepherd.includes("\n  sheep setup\n")) {
+    return `--json: expected exit 2 and exactly {refused, needs: ["account"], shepherd}; got exit ${json.code}, ${json.stdout.trim()}`;
+  }
+  return undefined;
+}
+
 async function accountWalk(ring, api, station, { token, key, placeholder, before, spec, commit, newer }) {
   const { name, home, account, older } = station;
   const withToken = { ...ring.env(), CLOUDFLARE_API_TOKEN: token, ANTHROPIC_API_KEY: key };
@@ -3063,27 +3106,21 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     }
   };
   try {
-    // Step 1: with nothing kept and nothing in the environment, the deploy stops in two parts (stile phase 0's stop): the dog's
-    // line, saying nothing was made, and under it the shepherd's paragraph naming the one command to type at their terminal.
-    // It makes nothing, and the account's listing is what it was.
+    // Step 1: the older release is installed here, and with nothing in the environment its deploy refuses and makes nothing, and
+    // the account's listing is what it was. What the refusal says is the older release's: a build from before stile phase 0
+    // names the two variables and the plan; one from after stops in two parts, which `st` proves of the newer release too.
+    const olderStops = releaseCarriesStop(older);
     const refused = await ring.sheep(["home", "deploy"]);
-    const [dogLine, ...shepherdLines] = refused.stderr.split("\n");
-    const shepherd = shepherdLines.join("\n");
-    if (
-      refused.code !== 2 ||
-      refused.stdout !== "" ||
-      dogLine !== "sheep: sheep home deploy needs the account token, and nothing on this machine keeps one; nothing was made" ||
-      !shepherd.startsWith("for the shepherd: ") ||
-      !shepherd.includes("\n  sheep setup\n") ||
-      !shepherd.includes("Workers Paid plan") ||
-      /\bexport\s+[A-Z_]/.test(refused.stderr)
-    ) {
-      ring.fail("a1", "sheep home deploy (nothing kept, nothing in the environment)", { ...refused, stderr: `${refused.stderr}\nexpected exit 2, nothing on stdout, the dog's line saying nothing was made, then "for the shepherd: " naming \`sheep setup\` on its own line and the plan, and no export` });
-    }
+    const a1Wrong = olderStops
+      ? deployStopWrong(refused)
+      : refused.code !== 2 || refused.stdout !== "" || !refused.stderr.includes("CLOUDFLARE_API_TOKEN is not set") || !refused.stderr.includes("Workers Paid plan")
+        ? "expected exit 2, nothing on stdout, and the older release's refusal naming CLOUDFLARE_API_TOKEN and the plan"
+        : undefined;
+    if (a1Wrong !== undefined) ring.fail("a1", `sheep home deploy (the older release ${older.stamp.commit}, nothing in the environment)`, { ...refused, stderr: `${refused.stderr}\n${a1Wrong}` });
     if (existsSync(ring.configOf(ring.blog)) || existsSync(join(ring.kennel(ring.blog), "deploy"))) ring.fail("a1", `ls -a ${ring.kennel(ring.blog)}`, { stdout: readdirSync(ring.kennel(ring.blog)).join("\n"), stderr: "the refused deploy wrote into the kennel", code: 1 });
     const afterRefusal = await api.listing(account.id);
     if (JSON.stringify(afterRefusal) !== JSON.stringify(before)) ring.fail("a1", "the account's listing after the refused deploy", { stdout: JSON.stringify(afterRefusal), stderr: `expected ${JSON.stringify(before)}`, code: 1 });
-    ring.ok("a1", "sheep home deploy (nothing kept)", `exit 2: "${dogLine.replace(/^sheep: /, "")}", then the shepherd's paragraph naming \`sheep setup\`; nothing in the kennel; the account's listing identical before and after (${before.workers.length} Workers, ${before.applications.length} applications)`);
+    ring.ok("a1", `sheep home deploy (the older release ${older.stamp.commit}, nothing in the environment)`, `exit 2: "${refused.stderr.split("\n")[0].replace(/^sheep: /, "")}"${olderStops ? ", then the shepherd's paragraph naming `sheep setup`" : " (the refusal from before stile phase 0)"}; nothing in the kennel; the account's listing identical before and after (${before.workers.length} Workers, ${before.applications.length} applications)`);
 
     // Step 2: the deploy of the older release, timed; the address answers; the two stamps are equal; the config names the station with no local marker.
     station.deployed = true;
@@ -3227,6 +3264,24 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     if (upLog.code !== 0 || !upLog.stdout.includes("hello") || !upLog.stdout.includes(FAUX_REPLY)) ring.fail("up", `sheep log ${olderSheep} (after the upgrade)`, { ...upLog, stderr: `${upLog.stderr}\nexpected the turn from the older release: "hello" and "${FAUX_REPLY}"` });
     ring.ok("up", `npm install -g <newer spec>; sheep --version; sheep home; sheep home deploy --faux --json (in blog, nothing in the environment, the credentials kept)`, `${upSeconds}s to install ${stamp.commit} over ${older.stamp.commit}; sheep home warned on stderr that the home ${older.stamp.commit} is older and named \`sheep home deploy\`; redeployed ${name} in ${upDeploySeconds}s, stamp ${older.stamp.commit} → ${build.commit} (${build.builtAt}), image ${station.image}, containers ${upReport.containers.healthy} healthy after ${upReport.containers.seconds}s, ${rolloutNote}, the stamp moved in ${upReport.stamp.seconds}s; the warning stopped`);
     ring.ok("up", `sheep ls --json; sheep pasture ls; sheep log ${olderSheep} (after the upgrade)`, `${olderSheep} (older-sheep) and the pasture older still listed; the log still holds "hello" → "${FAUX_REPLY}": a redeploy of the same tags over the same names kept the rows`);
+
+    // st (stile phase 1, journey 2 step 4 and its first criterion): the stop, on the newer release. The upgrade above read the
+    // credentials the ring kept; for this one command there are none — the file set aside, the environment stripped — as on a
+    // new laptop. The deploy stops in two parts, prose and --json, before it asks the account anything, and the file goes back.
+    const aside = `${keptPath}.aside`;
+    renameSync(keptPath, aside);
+    try {
+      const stBefore = await api.listing(account.id);
+      const stopped = await ring.sheep(["home", "deploy"]);
+      const stoppedJson = await ring.sheep(["home", "deploy", "--json"]);
+      const stWrong = deployStopWrong(stopped, stoppedJson);
+      if (stWrong !== undefined) ring.fail("st", `sheep home deploy; sheep home deploy --json (the newer release ${stamp.commit}, nothing kept, nothing in the environment)`, { stdout: `${stopped.stderr}\n--- --json ---\n${stoppedJson.stdout}`, stderr: stWrong, code: stopped.code });
+      const stAfter = await api.listing(account.id);
+      if (JSON.stringify(stAfter) !== JSON.stringify(stBefore)) ring.fail("st", "the account's listing after the stop", { stdout: JSON.stringify(stAfter), stderr: `expected ${JSON.stringify(stBefore)}`, code: 1 });
+      ring.ok("st", `sheep home deploy; sheep home deploy --json (the newer release ${stamp.commit}, ~/.sheep/credentials set aside, nothing in the environment)`, `exit 2 twice: "${DEPLOY_STOP_LINE.replace(/^sheep: /, "")}", then "for the shepherd:" naming \`sheep setup\`, no export; --json {refused, needs: ["account"], shepherd}; the account's listing identical before and after`);
+    } finally {
+      renameSync(aside, keptPath);
+    }
 
     // Step 3: the faux program through the address, then a sheep whose shell names git, node, and pnpm from the container.
     const program = { steps: [{ tool: { name: "bash", args: { command: "git --version && node --version && pnpm --version" } } }, { text: "git, node, pnpm" }] };
