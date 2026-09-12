@@ -105,6 +105,7 @@ options:
   --home <url>    which home; also SHEEP_HOME or the kennel's config ({"home": "...", "token": "..."})
   --json          machine output, pi's shapes: entries are pi entries, status is pi's lane snapshot,
                   a queued prompt is pi's queue response, a detached prompt is pi's operation response;
+                  a held turn's entries stream as they land, one per line, the last assistant entry last;
                   ls rows carry "pasture": null | "<name>", "task": null | "<first line of the first prompt>", and
                   "secrets": [<the sheep's secret names, sorted>];
                   rm is {"id": …, "ended": true, "aborted": <whether a turn was stopped>};

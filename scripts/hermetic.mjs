@@ -384,6 +384,26 @@
  * `setup.sh` that exits 1, are the conductor's walk and are named among
  * what was not checked. It needs no token beyond the Cloudflare one, so it
  * has no skip.
+ *
+ * Bell phase 0 gives the account ring `b2`, after b1 and for b1's reason
+ * (bell's journey 4 step 3): what a dog holding a turn hears while the
+ * sheep works. One sheep on no pasture — the stream is what is read, not a
+ * birth — scripted with a faux program whose turn is a bash call at once
+ * and a reply a quarter of a minute later, and `sheep attach <id> --json`
+ * held for the whole of it with its stdout read off the pipe line by line,
+ * each line stamped with the milliseconds since the spawn and whether the
+ * child was still alive. That reading is the step: a stream written in a
+ * burst at the end would put every line at the exit, and what is asserted
+ * is the gap — the tool call's line written with most of the turn still to
+ * run. Then the shape: the four entries in order, the last line the turn's
+ * last assistant entry, and the ids and fields the same as `sheep log
+ * --json` afterwards, in the same order and none twice (the same up to the
+ * order of an object's keys, which is pi's on the wire and pi's again in
+ * the session file). The sheep is ended with n1's check, counted minted
+ * and ended, so a6 still lists `sessions: 0`; journey 4 steps 1 and 2, the
+ * local home with Docker and a real model, are the conductor's walk and
+ * are named among what was not checked. It needs no token beyond the
+ * Cloudflare one, so it has no skip.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
@@ -3132,6 +3152,12 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     // destroyed every container, so this birth fits under the station's cap. It ends its own sheep with n1's check.
     await journeyBleat(ring, station);
 
+    // Bell phase 0, b2 (bell's journey 4 step 3): a dog holding a turn hears the work as it happens. One sheep on no
+    // pasture, a faux program with a tool call and a reply a quarter of a minute later, and `sheep attach --json` held
+    // with its stdout read line by line while it runs: the tool call's line before the turn's end, the last line the
+    // last assistant entry, the ids the log's. After b1, for b1's reason. It ends its own sheep with n1's check.
+    await journeyBell(ring, station);
+
     // Step 6: the delete, the name on stdin: the listing first (station phase 3), counted against what the walk minted and did not
     // end (end phase 1: none); then the account listed, the last lines.
     const { deleted, after, left } = await deleteStation(ring, api, station, token);
@@ -4185,6 +4211,134 @@ async function journeyBleat(ring, station, { step = "b1" } = {}) {
   );
   ring.ok(step, `sheep log ${id} --json; sheep log ${id}; sheep ls --json`, `the block ${block.id}, exit 0 after ${block.ms} ms, its output holding setup's own line; the row says setup ok`);
   ring.unchecked.push(`bleat journey 4 steps 1 and 2 (${step}): the local home with Docker and a real model, and a setup.sh that exits 1; the account ring walks the station with the faux provider and a setup that exits 0`);
+
+  // The step runs after n1, so it ends its own sheep with n1's check, counted ended as well as minted.
+  const removed = await ring.sheep(["rm", id]);
+  if (removed.code !== 0 || removed.stdout !== `${id}\tended\n` || removed.stderr !== "") ring.fail(step, `sheep rm ${id}`, { ...removed, stderr: `${removed.stderr}\nexpected exit 0, exactly "${id}\\tended" on stdout, nothing on stderr` });
+  station.ended.push(id);
+  const afterRemoved = JSON.parse((await ring.sheep(["ls", "--json"])).stdout);
+  if (afterRemoved.some((one) => one.id === id)) ring.fail(step, "sheep ls --json (after rm)", { stdout: JSON.stringify(afterRemoved), stderr: `expected ${id} not listed after the end`, code: 1 });
+  ring.ok(step, `sheep rm ${id}; sheep ls --json`, "ended with its one line; not listed after");
+}
+
+/** b2's turn: a tool call at once, then the reply after a delay, so the call's line has a whole turn to be written before. */
+const BELL_DELAY_MS = 15_000;
+const BELL_REPLY = "the bell is rung";
+const BELL_PROGRAM = { steps: [{ tool: { name: "bash", args: { command: "echo bell > note.txt && cat note.txt" } } }, { text: BELL_REPLY, delayMs: BELL_DELAY_MS }] };
+
+/** One line of JSON with its keys sorted at every depth: the wire's entry and the log's hold the same keys and values in a different order. */
+function sortedJson(text) {
+  const sort = (value) => {
+    if (Array.isArray(value)) return value.map(sort);
+    if (typeof value !== "object" || value === null) return value;
+    return Object.fromEntries(Object.entries(value).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)).map(([key, held]) => [key, sort(held)]));
+  };
+  return JSON.stringify(sort(JSON.parse(text)));
+}
+
+/**
+ * Bell's journey 4 step 3 on the station (bell phase 0, b2): a dog holding
+ * a turn hears the work as it happens, over the network and through a real
+ * container. One sheep on no pasture — the stream is what is being read,
+ * not a birth — scripted with a faux program whose turn is a bash call at
+ * once and a reply a quarter of a minute later, and `sheep attach <id>
+ * --json` held for the whole of it.
+ *
+ * The reading is the point and it is the one thing a collected buffer
+ * cannot give: stdout is read off the pipe as it arrives, each line
+ * stamped with the milliseconds since the spawn and whether the child was
+ * still alive, and the child's exit stamped beside them. A stream written
+ * in a burst at the end would put every line at the exit; what is asserted
+ * is the gap. Then the shape: the four entries in order, the last line the
+ * turn's last assistant entry, the ids and the fields the same as `sheep
+ * log --json` afterwards and in the same order, and no id twice.
+ *
+ * After b1, and for b1's reason: the ends before it destroyed every
+ * container, so this birth fits under the station's `max_instances`. The
+ * sheep is ended here with n1's check, so it is counted minted and ended
+ * and the delete still lists `sessions: 0`.
+ */
+async function journeyBell(ring, station, { step = "b2" } = {}) {
+  const { home, token: stationToken } = station;
+  const started = Date.now();
+
+  const minted = await ring.sheep(["new", "--name", "bell", "--detach"]);
+  const id = /^([0-9a-f-]{36})\n$/.exec(minted.stdout)?.[1];
+  if (minted.code !== 0 || !id || minted.stderr !== "") ring.fail(step, "sheep new --name bell --detach", { ...minted, stderr: `${minted.stderr}\nexpected exit 0, the id alone on stdout, nothing on stderr` });
+  station.minted.push(id);
+  const posted = await fetch(`${home}/s/${encodeURIComponent(id)}/faux`, { method: "POST", headers: { authorization: `Bearer ${stationToken}`, "content-type": "application/json" }, body: JSON.stringify(BELL_PROGRAM), signal: AbortSignal.timeout(30_000) });
+  if (posted.status !== 200) ring.fail(step, `POST /s/${id}/faux`, { stdout: await posted.text(), stderr: `status ${posted.status}`, code: 1 });
+
+  // The held turn, with stdout read line by line while it runs. `run` collects the same bytes for the report; these are
+  // the same lines, timed, and the timing is the whole of the claim.
+  const lines = [];
+  let pending = "";
+  const promptStarted = Date.now();
+  const held = await ring.sheep(["attach", id, "--json", "--", "ring the bell"], {
+    onSpawn: (child) => {
+      child.stdout.on("data", (chunk) => {
+        const at = Date.now() - promptStarted;
+        const running = child.exitCode === null && child.signalCode === null;
+        pending += chunk.toString("utf8");
+        const split = pending.split("\n");
+        pending = split.pop();
+        for (const text of split) lines.push({ text, at, running });
+      });
+    },
+  });
+  const exited = Date.now() - promptStarted;
+  if (held.code !== 0) ring.fail(step, `sheep attach ${id} --json -- "ring the bell"`, held);
+  // Nothing new on stderr: a sheep on no pasture has no setup, so bleat says nothing and there is no queued notice.
+  if (held.stderr !== "") ring.fail(step, `sheep attach ${id} --json -- "ring the bell" (stderr)`, { ...held, stderr: `${held.stderr}\nexpected nothing on stderr: this sheep is on no pasture, so no setup line and no queued notice` });
+
+  // The shape: one JSON object per line, each parsing on its own, the turn's four entries in the order they landed.
+  let entries;
+  try {
+    entries = lines.map((line) => JSON.parse(line.text));
+  } catch (error) {
+    ring.fail(step, `sheep attach ${id} --json (a line of the stream)`, { stdout: lines.map((line) => line.text).join("\n"), stderr: `expected every line to parse on its own: ${error.message}`, code: 1 });
+  }
+  const roles = entries.map((entry) => entry.message?.role);
+  if (roles.join(",") !== "user,assistant,toolResult,assistant") {
+    ring.fail(step, `sheep attach ${id} --json (the stream)`, { stdout: lines.map((line) => `${line.at} ms ${line.text.slice(0, 160)}`).join("\n"), stderr: `expected the prompt, the assistant's tool call, the result, and the reply; got ${roles.join(", ") || "(nothing)"}`, code: 1 });
+  }
+
+  // The heart of it: the tool call's line was on stdout while the sheep was still working. The child was alive when the
+  // bytes came off the pipe, and the turn ran for most of a further BELL_DELAY_MS after it.
+  const call = lines[1];
+  const before = exited - call.at;
+  if (!call.running || before < BELL_DELAY_MS / 2) {
+    ring.fail(step, `sheep attach ${id} --json (when the tool call's line was written)`, {
+      stdout: lines.map((line) => `${String(line.at).padStart(6)} ms ${line.running ? "running" : "exited "} ${line.text.slice(0, 160)}`).join("\n"),
+      stderr: `expected the tool call's line off the pipe with the child still running and more than ${BELL_DELAY_MS / 2} ms of turn left; it was ${before} ms before the exit at ${exited} ms, child ${call.running ? "running" : "already exited"}`,
+      code: 1,
+    });
+  }
+
+  // The last line is the turn's last assistant entry, and the ids are the log's, in the same order, none twice. The
+  // bytes are the same up to the order of an object's keys: the entry the replica delivers carries `seq` and
+  // `timestamp` after `message`, the one the transcript route reads back carries them after `parentId`, and both are
+  // pi's own orders. A missing field, an extra one, or a different value still fails here.
+  const logged = (await ring.sheep(["log", id, "--json"])).stdout.trimEnd().split("\n").filter(Boolean);
+  const ids = entries.map((entry) => entry.id);
+  const loggedIds = logged.map((line) => JSON.parse(line).id);
+  const sameBytes = lines.length === logged.length && lines.every((line, index) => sortedJson(line.text) === sortedJson(logged[index]));
+  if (new Set(ids).size !== ids.length || ids.join(",") !== loggedIds.join(",") || !sameBytes) {
+    ring.fail(step, `sheep log ${id} --json (against the stream)`, { stdout: logged.join("\n"), stderr: `expected the stream's ${ids.length} lines to be the log's ${logged.length}, the same ids in the same order and the same fields: stream ${ids.join(", ")}; log ${loggedIds.join(", ")}`, code: 1 });
+  }
+  const lastEntry = entries[entries.length - 1];
+  if (lastEntry.message?.role !== "assistant" || !JSON.stringify(lastEntry).includes(BELL_REPLY)) {
+    ring.fail(step, `sheep attach ${id} --json (the last line)`, { stdout: lines[lines.length - 1].text, stderr: `expected the turn's last assistant entry, holding ${JSON.stringify(BELL_REPLY)}`, code: 1 });
+  }
+
+  const seconds = ((Date.now() - started) / 1000).toFixed(0);
+  ring.ok(
+    step,
+    `sheep new --name bell --detach; POST /s/${id}/faux; sheep attach ${id} --json -- "ring the bell" (held ${(exited / 1000).toFixed(0)}s)`,
+    `${seconds}s; four lines, the tool call's ${(before / 1000).toFixed(1)}s before the exit with the child still running, the reply's at ${(lines[3].at / 1000).toFixed(1)}s`,
+  );
+  ring.ok(step, `sheep log ${id} --json (against the stream)`, `the same ${ids.length} entries, the same ids in the same order, none twice, the same fields; the last line is the last assistant entry`);
+  ring.unchecked.push(`bell journey 4 steps 1 and 2 (${step}): the local home with Docker and a real model, one prompt and then two; the account ring walks the station with the faux provider`);
 
   // The step runs after n1, so it ends its own sheep with n1's check, counted ended as well as minted.
   const removed = await ring.sheep(["rm", id]);

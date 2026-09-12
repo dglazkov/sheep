@@ -135,8 +135,8 @@ What you get today:
 - The agent has pi's four tools. `read`, `write`, and `edit` work on a
   workspace stored in the cell. `bash` runs a shell interpreter inside the
   cell with the usual text tools. On a home with no container there are no
-  interpreters, package managers, or `git`; the shell says so plainly when
-  asked. Programs arrive with a container, below.
+  interpreters, package managers, or `git`; the shell says so when asked.
+  Programs arrive with a container, below.
 - On a home with eyes, `look <path>` in the shell renders a workspace page
   through the platform's Chromium and prints what the page said: errors,
   console, the accessibility tree, and the PNG it wrote, which the sheep
@@ -262,7 +262,10 @@ sheep --home <url> ...                    # a different home for one command
 
 `sheep` here means `node packages/cli/bin/sheep.js`; put an alias in your
 shell if you like. With a prompt after `--` the reply streams and the
-command exits; without one you get pi's full terminal.
+command exits; without one you get pi's full terminal. Under `--json` the
+held turn's entries stream as they land, one pi entry per line, tool calls
+and results included, and the last assistant entry is still the last line,
+so a program that reads only that line reads what it read before.
 
 A pasture's secrets (`sheep pasture secret set <name> <KEY>`, the value on
 stdin) are setup's environment for every sheep born into it, and its

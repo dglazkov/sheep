@@ -10,6 +10,11 @@
  * is used instead of spawning, with `SHEEP_TEST_TOKEN` as its token, and
  * `stopHome` leaves it running. That is how journey 5's file runs against
  * the home a user gets, not the checkout's.
+ *
+ * Bell phase 0 adds `streamSheep` beside `runSheep`: the same child, with
+ * stdout read line by line while it runs rather than collected at its
+ * exit, for the one thing a collected buffer cannot say — when a line was
+ * written.
  */
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -143,6 +148,65 @@ export async function runSheep(home: LocalHome, args: readonly string[], options
     child.stderr.on("data", (chunk: Buffer) => err.push(chunk));
     child.once("error", reject);
     child.once("close", (code) => resolve({ stdout: Buffer.concat(out).toString("utf8"), stderr: Buffer.concat(err).toString("utf8"), code: code ?? -1 }));
+    if (options.stdin !== undefined) child.stdin.end(options.stdin);
+    else child.stdin.end();
+  });
+}
+
+/** One line of a child's stdout, as it was read rather than as it was collected. */
+export interface Line {
+  /** The bytes of the line, without its newline. */
+  text: string;
+  /** Milliseconds from the spawn to the moment the line came off the pipe. */
+  at: number;
+  /** Whether the child was still running when it came off. */
+  running: boolean;
+}
+
+export interface Streamed extends Result {
+  /** stdout's lines in order, each with when it arrived. */
+  lines: Line[];
+  /** Milliseconds from the spawn to the child's exit. */
+  exited: number;
+}
+
+/**
+ * The built CLI as `runSheep` runs it, with stdout read line by line while
+ * the child runs instead of collected at its exit. Bell phase 0 needs this
+ * and `runSheep` cannot give it: "the tool call's line is written before
+ * the turn ends" is a claim about *when* bytes left the process, and a
+ * buffer read after `close` cannot tell a stream from a burst — every line
+ * of a burst would carry the same time and pass either way. So each line
+ * carries its own arrival, taken as the chunk is read, and the child's exit
+ * is timed beside it; the proof is the gap between them.
+ */
+export async function streamSheep(home: LocalHome, args: readonly string[], options: RunOptions = {}): Promise<Streamed> {
+  const env = { ...process.env, SHEEP_HOME: home.url, SHEEP_TOKEN: home.token, HOME: home.persist, NODE_NO_WARNINGS: "1" };
+  const started = Date.now();
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [bin, ...args], { env, cwd: options.cwd, stdio: ["pipe", "pipe", "pipe"] });
+    const lines: Line[] = [];
+    const err: Buffer[] = [];
+    let stdout = "";
+    let pending = "";
+    let exited = 0;
+    child.stdout.on("data", (chunk: Buffer) => {
+      const text = chunk.toString("utf8");
+      const running = child.exitCode === null && child.signalCode === null;
+      const at = Date.now() - started;
+      stdout += text;
+      pending += text;
+      const split = pending.split("\n");
+      pending = split.pop() ?? "";
+      for (const line of split) lines.push({ text: line, at, running });
+    });
+    child.stderr.on("data", (chunk: Buffer) => err.push(chunk));
+    child.once("exit", () => (exited = Date.now() - started));
+    child.once("error", reject);
+    child.once("close", (code) => {
+      if (pending !== "") lines.push({ text: pending, at: Date.now() - started, running: false });
+      resolve({ stdout, stderr: Buffer.concat(err).toString("utf8"), code: code ?? -1, lines, exited });
+    });
     if (options.stdin !== undefined) child.stdin.end(options.stdin);
     else child.stdin.end();
   });

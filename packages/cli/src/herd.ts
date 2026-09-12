@@ -201,12 +201,45 @@ class Stream {
   }
 }
 
+/**
+ * The stream (bell phase 0): in `--json`, each entry of the turn the dog is
+ * holding, written as it lands. The replica already delivers `entry_added`
+ * with the whole entry to every subscriber as the lane commits it, so
+ * nothing is asked of the home that was not already arriving; a line is
+ * `JSON.stringify(entry)`, the shape `sheep log --json` prints for that
+ * entry — the same fields and the same values, in pi's order on the wire
+ * rather than pi's order in the session file, which is the one thing about
+ * the two texts that differs. Ids are remembered, so an entry is written
+ * at most once and
+ * `printAssistant` at the end is silent when the stream has already said
+ * the last assistant entry — the guarantee a program depends on today does
+ * not become a race on whether the replica's last delivery beat the
+ * operation's resolution.
+ */
+class Entries {
+  readonly #written = new Set<string>();
+
+  constructor(private readonly out: (text: string) => void) {}
+
+  observe(state: TranscriptState): void {
+    const event = state.event;
+    if (event?.type === "entry_added") this.write(event.entry);
+  }
+
+  /** The entry as one line, unless its id has been written already. */
+  write(entry: Entry): void {
+    if (this.#written.has(entry.id)) return;
+    this.#written.add(entry.id);
+    this.out(`${JSON.stringify(entry)}\n`);
+  }
+}
+
 const idle = (state: TranscriptState): LaneTranscriptSnapshot | undefined =>
   state.snapshot !== null && state.snapshot !== undefined && state.snapshot.operation === null ? state.snapshot : undefined;
 
-function printAssistant(output: Output, snapshot: LaneTranscriptSnapshot): void {
+function printAssistant(entries: Entries, snapshot: LaneTranscriptSnapshot): void {
   const entry = lastAssistant(snapshot.transcript);
-  if (entry !== undefined) output.out(`${JSON.stringify(entry)}\n`);
+  if (entry !== undefined) entries.write(entry);
 }
 
 /**
@@ -218,6 +251,10 @@ function printAssistant(output: Output, snapshot: LaneTranscriptSnapshot): void 
  * Bleat phase 1: the setup watcher starts before the attachment, since a
  * sheep whose first prompt rents the container is held in `attachSheep`
  * for the whole of the birth, which is exactly the wait the line is for.
+ *
+ * Bell phase 0: in `--json` the same subscription that feeds `Stream` also
+ * writes each entry as it lands (`Entries`), inside the window `active`
+ * already marks. Text mode is untouched, and so is the last line.
  */
 export async function runPrompt(home: Home, id: string, prompt: string, options: { wait: boolean }, output: Output): Promise<number> {
   const watch = watchSetup(home, id, output);
@@ -231,9 +268,20 @@ export async function runPrompt(home: Home, id: string, prompt: string, options:
 async function held(home: Home, id: string, prompt: string, options: { wait: boolean }, output: Output): Promise<number> {
   const sheep = await attachSheep(home, id);
   const stream = new Stream(output.json ? () => {} : output.out);
+  const entries = new Entries(output.json ? output.out : () => {});
   let active = false;
+  /**
+   * The queued entry that opens the window under `--wait`, watched here
+   * rather than only in the `until` below: both subscribers see the same
+   * delivery, and this one runs first, so the entry whose placement opens
+   * the window is itself the stream's first line.
+   */
+  let opening: string | undefined;
   const unsubscribe = sheep.transcript.state.subscribe((state) => {
-    if (active) stream.observe(state);
+    if (!active && opening !== undefined && state.snapshot?.transcript.some((entry) => entry.id === opening) === true) active = true;
+    if (!active) return;
+    stream.observe(state);
+    entries.observe(state);
   });
   try {
     if (sheep.snapshot().operation === null) {
@@ -242,7 +290,7 @@ async function held(home: Home, id: string, prompt: string, options: { wait: boo
       if (response.accepted) {
         // pi's `prompt` resolves at the end of the operation; the replica's last delivery may still be in flight.
         const snapshot = await sheep.until(idle);
-        if (output.json) printAssistant(output, snapshot);
+        if (output.json) printAssistant(entries, snapshot);
         if (response.error !== null) return fail(output, response.error.message);
         return 0;
       }
@@ -256,18 +304,16 @@ async function held(home: Home, id: string, prompt: string, options: { wait: boo
       if (output.json) output.out(`${JSON.stringify(queued)}\n`);
       return 0;
     }
+    opening = queued.entryId;
     const placed = await sheep.until((state) => {
       const snapshot = state.snapshot;
       if (snapshot === null || snapshot === undefined) return undefined;
-      if (snapshot.transcript.some((entry) => entry.id === queued.entryId)) {
-        active = true;
-        return "placed" as const;
-      }
+      if (snapshot.transcript.some((entry) => entry.id === queued.entryId)) return "placed" as const;
       return snapshot.operation === null ? ("dropped" as const) : undefined;
     });
     if (placed === "dropped") return fail(output, `queued prompt ${queued.entryId} was dropped: the turn ended without taking it up`);
     const snapshot = await sheep.until(idle);
-    if (output.json) printAssistant(output, snapshot);
+    if (output.json) printAssistant(entries, snapshot);
     return 0;
   } finally {
     unsubscribe();

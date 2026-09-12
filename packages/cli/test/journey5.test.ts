@@ -187,7 +187,12 @@ describe.skipIf(typeof home === "string")("journey 5: a dog and its flock, throu
     const reply = await sheep("attach", docs, "--", "hello");
     expect(reply.code).toBe(0);
     expect(reply.stdout).toBe("done: note.txt written\n");
-    const replyJson = JSON.parse((await sheep("attach", docs, "--json", "--", "hello json")).stdout) as { type: string; message: { role: string; content: Array<{ text: string }> } };
+    // Bell phase 0: `--json` now writes each of the turn's entries as it lands, so stdout is four lines and not one. The
+    // last is what this always read — the turn's last assistant entry — which is journey 1 step 3: a program that reads
+    // only the last line reads what it read yesterday. The stream itself is `bell.test.ts`'s.
+    const replyLines = (await sheep("attach", docs, "--json", "--", "hello json")).stdout.trimEnd().split("\n");
+    expect(replyLines).toHaveLength(4);
+    const replyJson = JSON.parse(replyLines.at(-1)!) as { type: string; message: { role: string; content: Array<{ text: string }> } };
     expect(replyJson.type).toBe("message");
     expect(replyJson.message.role).toBe("assistant");
     expect(replyJson.message.content[0]!.text).toBe("done: note.txt written");
