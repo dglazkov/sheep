@@ -69,6 +69,15 @@ closing the handle at the last byte. Nothing of a file's size is ever
 allocated. Directories, symlinks, and links are unchanged: their bodies
 are a path or a target, and both are small.
 
+**A put-back that is abandoned closes what it opened.** A chunk the
+container cannot use ends the put-back where it stands, and `/cache` is
+emptied (fold phase 3); with a handle open on the file the record was in
+the middle of, unlinking the file does not free it, and the several
+hundred megabytes this project is about stay allocated in the container
+behind a descriptor nobody holds any more. So the reader can be
+abandoned as well as ended: whoever drops a put-back closes the handle
+first, and `/cache` going empty means what it said.
+
 **The mode is the handle's.** A writing handle takes the mode at open, so
 a file is never briefly readable by more than it should be, and the
 `0555` directories the record restores are set at the end as they are
