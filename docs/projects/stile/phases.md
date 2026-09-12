@@ -281,8 +281,8 @@ joining `sheep-2` from a scratch kennel under a fresh `HOME`, after
 in the inner rings: `pnpm test`, `pnpm -r typecheck`, and `pnpm bundle`
 exit 0, and both named mutations falsified their tests — `/join`
 answering a bearer whose key is absent fails three workerd cases, and the
-join key left in the store fails three of journey 3's. The ⚑ account ring
-and the join walk run again on the store.
+join key left in the store fails three of journey 3's. The join walked on
+`sheep-2` with no version change; the ⚑ account ring's `t2` is Open.
 
 **Findings:**
 
@@ -300,9 +300,14 @@ and the join walk run again on the store.
 - **2026-09-12 — The station row could not show two homes.** With the
   walk's station and `sheep-2` on the account the join was cut off the
   row; the row is now a window holding the selected option.
-- **2026-09-12 — Open: the ⚑ account ring and the join walk on the
-  store.** They need a release with the store, and `sheep-2` upgraded to
-  it, which makes its `sheep-2-join` namespace.
+- **2026-09-12 — The join changed no Worker version on `sheep-2`.** The
+  deployment and version ids were the same before and after; the walk
+  kept `{home, token}` and left `sheep-2-join` empty.
+- **2026-09-12 — `t2` stalled on `a3`'s container sheep, not the join.**
+  Fresh sheep held 240 s turns idle, polled, and right after a redeploy;
+  `t2` now mints its own. The container case is a lead on issue #10.
+- **2026-09-12 — Open: the ⚑ account ring's `t2` on a fresh sheep.** It
+  runs against release `0885ad0` with the checkout's ring.
 
 **Formerly: the join by a Worker secret (built 12 Sep 2026, commit
 6e64cb9).** The join token was put as `SHEEP_JOIN` with `wrangler secret

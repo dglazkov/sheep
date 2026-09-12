@@ -3508,7 +3508,8 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     // on an ended id, over HTTP or through a socket, is the one sentence on stderr, exit 2, nothing on stdout. So the delete below
     // lists `sessions: 0`, and its `sessions deleted:` is 0 too: the end released each sheep's rows, container, and browser first.
     const rmStarted = Date.now();
-    for (const endedId of station.minted) {
+    // A sheep a step before n1 already ended (t2's) is counted ended, and not ended twice.
+    for (const endedId of station.minted.filter((id) => !station.ended.includes(id))) {
       const removed = await ring.sheep(["rm", endedId]);
       if (removed.code !== 0 || removed.stdout !== `${endedId}\tended\n` || removed.stderr !== "") ring.fail("n1", `sheep rm ${endedId}`, { ...removed, stderr: `${removed.stderr}\nexpected exit 0, exactly "${endedId}\\tended" on stdout, nothing on stderr` });
       station.ended.push(endedId);
@@ -3798,7 +3799,7 @@ async function secondMachine(ring, api, station, { sheepId, spec, commit, token 
   const env = dockerEnv();
   const releaseArgs = ring.sha !== undefined ? ["--repo", "/src.git", ring.sha] : ["--spec", spec, ...(commit ? ["--commit", commit] : [])];
   const inner = (phase, extra = []) => ["node", "/ring/hermetic.mjs", "--ring", "account", "--second", "--phase", phase, ...extra, ...releaseArgs];
-  const state = async (step) => {
+  const state = async (step, id = sheepId) => {
     const listed = await ring.sheep(["ls", "--json"]);
     let rows;
     try {
@@ -3806,7 +3807,7 @@ async function secondMachine(ring, api, station, { sheepId, spec, commit, token 
     } catch {
       ring.fail(step, "sheep ls --json (in blog)", listed);
     }
-    return rows.find((candidate) => candidate.id === sheepId)?.state ?? "not listed";
+    return rows.find((candidate) => candidate.id === id)?.state ?? "not listed";
   };
   try {
     // The build context: the ref as a bare repository (an empty directory for a spec), this script, and the Dockerfile: the machine ring's shape.
@@ -3839,17 +3840,26 @@ async function secondMachine(ring, api, station, { sheepId, spec, commit, token 
     if (installed !== 0) ring.fail("a7", `docker exec ${name} … --second --phase install`, { stdout: "", stderr: `exited ${installed}; its output is above`, code: installed });
 
     // t2's turn, from the first machine, before the join: a text step after four minutes, sent detached, and seen running.
-    const posted = await fetch(`${home}/s/${encodeURIComponent(sheepId)}/faux`, { method: "POST", headers: { authorization: `Bearer ${stationToken}`, "content-type": "application/json" }, body: JSON.stringify({ steps: [JOIN_TURN] }), signal: AbortSignal.timeout(30_000) });
-    if (posted.status !== 200) ring.fail("t2", `POST /s/${sheepId}/faux`, { stdout: await posted.text(), stderr: `status ${posted.status}`, code: 1 });
-    const sent = await ring.sheep(["attach", sheepId, "--detach", "--", JOIN_PROMPT]);
-    if (sent.code !== 0) ring.fail("t2", `sheep attach ${sheepId} --detach -- "${JOIN_PROMPT}" (in blog)`, sent);
+    // On a sheep of t2's own, minted here with no prompt, so no container is rented: never a3's or any earlier sheep. The first
+    // KV run on the account (release 0885ad0) ran this turn on a3's sheep, a container-backed cell that a5 had redeployed after,
+    // and it stalled (`sheep wait` exit 124) in the same shape as issue #10, while the same join on sheep-2 changed no Worker
+    // version and a fresh sheep's 240 s turn held in every scratch probe. That stall is a container-backed sheep across a
+    // redeploy, tracked separately, and not the join; a fresh sheep makes t2 test the join alone.
+    const minted = await ring.sheep(["new", "--detach"]);
+    const joinSheep = /^([0-9a-f-]{36})\n$/.exec(minted.stdout)?.[1];
+    if (minted.code !== 0 || joinSheep === undefined || minted.stderr !== "") ring.fail("t2", "sheep new --detach (in blog)", { ...minted, stderr: `${minted.stderr}\nexpected exit 0, the id alone on stdout, and nothing on stderr` });
+    station.minted.push(joinSheep);
+    const posted = await fetch(`${home}/s/${encodeURIComponent(joinSheep)}/faux`, { method: "POST", headers: { authorization: `Bearer ${stationToken}`, "content-type": "application/json" }, body: JSON.stringify({ steps: [JOIN_TURN] }), signal: AbortSignal.timeout(30_000) });
+    if (posted.status !== 200) ring.fail("t2", `POST /s/${joinSheep}/faux`, { stdout: await posted.text(), stderr: `status ${posted.status}`, code: 1 });
+    const sent = await ring.sheep(["attach", joinSheep, "--detach", "--", JOIN_PROMPT]);
+    if (sent.code !== 0) ring.fail("t2", `sheep attach ${joinSheep} --detach -- "${JOIN_PROMPT}" (in blog)`, sent);
     const turnDeadline = Date.now() + KILL_WAIT_MS;
-    while ((await state("t2")) !== "running") {
-      if (Date.now() >= turnDeadline) ring.fail("t2", "sheep ls --json (in blog, polled)", { stdout: "", stderr: `${sheepId} never went running within ${KILL_WAIT_MS / 1000}s of the prompt`, code: 1 });
+    while ((await state("t2", joinSheep)) !== "running") {
+      if (Date.now() >= turnDeadline) ring.fail("t2", "sheep ls --json (in blog, polled)", { stdout: "", stderr: `${joinSheep} never went running within ${KILL_WAIT_MS / 1000}s of the prompt`, code: 1 });
       await new Promise((resolveSleep) => setTimeout(resolveSleep, KILL_POLL_MS));
     }
     const turnStarted = Date.now();
-    console.log(`  first machine: sheep attach ${sheepId} --detach -- "${JOIN_PROMPT}"; running, ${JOIN_TURN.delayMs / 1000}s to go, before the join`);
+    console.log(`  first machine: sheep new --detach → ${joinSheep}; sheep attach ${joinSheep} --detach -- "${JOIN_PROMPT}"; running, ${JOIN_TURN.delayMs / 1000}s to go, before the join`);
 
     // a7: the stile in the container, through the ring's terminal.
     const { driveStile, ENTER, DOWN } = harness.screen;
@@ -3914,31 +3924,37 @@ async function secondMachine(ring, api, station, { sheepId, spec, commit, token 
     if (inside.line() !== undefined) ring.fail("a7", `docker exec ${name} ps -Ao pid=,args= (polled)`, { stdout: inside.line().split(token).join("<token>").split(stationToken).join("<station token>"), stderr: "a token was in a process's arguments inside the container during the sitting", code: 1 });
     ring.ok("a7", typed, `the second machine's shepherd played through the ring's terminal: one value typed (the account token), where and plan filled, station listed ${listed.join(", ")} and the ring chose join ${station.name}; ${home}, joined, in ${joinSeconds}s, with no wrangler in the container; key asked nothing; no run of eight of either token on the terminal or in the output after any of ${sitting.keys()} keys; ps inside the container: ${inside.samples()} samples, neither token in any argument`);
 
-    // t2: no join key left in the station's join store, read from the account; the turn started before the join still running
+    // t2, on its own fresh sheep (why, above): no join key left in the station's join store, read from the account; the turn started before the join still running
     // after it, then whole: one assistant entry after its prompt, holding the reply, none empty (issue #10's restart left two).
-    const during = await state("t2");
-    if (during !== "running") ring.fail("t2", "sheep ls --json (in blog, after the join)", { stdout: during, stderr: `${sheepId} is ${during} once the sitting ended ${((Date.now() - turnStarted) / 1000).toFixed(0)}s into a ${JOIN_TURN.delayMs / 1000}s turn: either the join outlasted the turn (lengthen JOIN_TURN) or the join disturbed it`, code: 1 });
+    const during = await state("t2", joinSheep);
+    if (during !== "running") ring.fail("t2", "sheep ls --json (in blog, after the join)", { stdout: during, stderr: `${joinSheep} is ${during} once the sitting ended ${((Date.now() - turnStarted) / 1000).toFixed(0)}s into a ${JOIN_TURN.delayMs / 1000}s turn: either the join outlasted the turn (lengthen JOIN_TURN) or the join disturbed it`, code: 1 });
     const joinKeys = await api.kvKeys(station.account.id, station.joinStore.id, "join:");
     if (joinKeys.length > 0) ring.fail("t2", `GET /accounts/${station.account.id.slice(0, 6)}…/storage/kv/namespaces/${station.joinStore.id}/keys?prefix=join:`, { stdout: `${joinKeys.length} key(s)`, stderr: `expected no join key left in ${station.joinStore.title}: the home deletes the key it answers, and the stile deletes it through the API`, code: 1 });
-    const waited = await ring.sheep(["wait", "--timeout", String(Math.ceil(JOIN_TURN.delayMs / 1000) + 120), sheepId]);
-    if (waited.code !== 0 || !waited.stdout.startsWith(`${sheepId}\t`) || !waited.stdout.includes(JOIN_TURN.text)) ring.fail("t2", `sheep wait ${sheepId} (in blog)`, { ...waited, stderr: `${waited.stderr}\nexpected exit 0 and the turn's last message "${JOIN_TURN.text}"` });
-    const loggedJson = await ring.sheep(["log", sheepId, "--json"]);
+    const waited = await ring.sheep(["wait", "--timeout", String(Math.ceil(JOIN_TURN.delayMs / 1000) + 120), joinSheep]);
+    if (waited.code !== 0 || !waited.stdout.startsWith(`${joinSheep}\t`) || !waited.stdout.includes(JOIN_TURN.text)) ring.fail("t2", `sheep wait ${joinSheep} (in blog)`, { ...waited, stderr: `${waited.stderr}\nexpected exit 0 and the turn's last message "${JOIN_TURN.text}"` });
+    const loggedJson = await ring.sheep(["log", joinSheep, "--json"]);
     let turnEntries = [];
     try {
       const items = loggedJson.stdout.trimEnd().split("\n").filter(Boolean).map((line) => JSON.parse(line));
       const promptAt = items.findLastIndex((item) => item.message?.role === "user" && JSON.stringify(item.message).includes(JOIN_PROMPT));
       turnEntries = promptAt === -1 ? [] : items.slice(promptAt);
     } catch {
-      ring.fail("t2", `sheep log ${sheepId} --json (in blog)`, loggedJson);
+      ring.fail("t2", `sheep log ${joinSheep} --json (in blog)`, loggedJson);
     }
     const prompts = turnEntries.filter((item) => item.message?.role === "user");
     const replies = turnEntries.filter((item) => item.message?.role === "assistant");
     if (loggedJson.code !== 0 || prompts.length !== 1 || replies.length !== 1 || !JSON.stringify(replies[0]).includes(JOIN_TURN.text)) {
-      ring.fail("t2", `sheep log ${sheepId} --json (in blog)`, { stdout: loggedJson.stdout.slice(-2000), stderr: `expected, from the prompt "${JOIN_PROMPT}" on, exactly one user entry and one assistant entry, holding "${JOIN_TURN.text}"; got ${prompts.length} user and ${replies.length} assistant`, code: 1 });
+      ring.fail("t2", `sheep log ${joinSheep} --json (in blog)`, { stdout: loggedJson.stdout.slice(-2000), stderr: `expected, from the prompt "${JOIN_PROMPT}" on, exactly one user entry and one assistant entry, holding "${JOIN_TURN.text}"; got ${prompts.length} user and ${replies.length} assistant`, code: 1 });
     }
-    const afterTurn = await state("t2");
-    if (afterTurn !== "idle") ring.fail("t2", "sheep ls --json (in blog, after the turn)", { stdout: afterTurn, stderr: `expected ${sheepId} idle once its turn ended`, code: 1 });
-    ring.ok("t2", `sheep ls --json; GET …/storage/kv/namespaces/${station.joinStore.id}/keys?prefix=join:; sheep wait ${sheepId}; sheep log ${sheepId} --json (in blog)`, `the turn started before the join was still running when the sitting ended; ${station.joinStore.title} holds no join key; the turn ended "${JOIN_TURN.text}" ${((Date.now() - turnStarted) / 1000).toFixed(0)}s after it started, one user and one assistant entry, none empty, the lane idle: the join made no Worker version`);
+    const afterTurn = await state("t2", joinSheep);
+    if (afterTurn !== "idle") ring.fail("t2", "sheep ls --json (in blog, after the turn)", { stdout: afterTurn, stderr: `expected ${joinSheep} idle once its turn ended`, code: 1 });
+    ring.ok("t2", `sheep ls --json; GET …/storage/kv/namespaces/${station.joinStore.id}/keys?prefix=join:; sheep wait ${joinSheep}; sheep log ${joinSheep} --json (in blog)`, `the turn started before the join was still running when the sitting ended; ${station.joinStore.title} holds no join key; the turn ended "${JOIN_TURN.text}" ${((Date.now() - turnStarted) / 1000).toFixed(0)}s after it started, one user and one assistant entry, none empty, the lane idle: the join made no Worker version`);
+    // t2's sheep ends here, as the steps after n1 end theirs: counted minted above and ended now, so n1 skips it and a6 counts none left.
+    const removedJoinSheep = await ring.sheep(["rm", joinSheep]);
+    if (removedJoinSheep.code !== 0 || removedJoinSheep.stdout !== `${joinSheep}\tended\n` || removedJoinSheep.stderr !== "") ring.fail("t2", `sheep rm ${joinSheep}`, { ...removedJoinSheep, stderr: `${removedJoinSheep.stderr}\nexpected exit 0, exactly "${joinSheep}\\tended" on stdout, nothing on stderr` });
+    station.ended.push(joinSheep);
+    if ((await state("t2", joinSheep)) !== "not listed") ring.fail("t2", "sheep ls --json (after rm)", { stdout: "", stderr: `expected ${joinSheep} not listed after the end`, code: 1 });
+    ring.ok("t2", `sheep rm ${joinSheep}; sheep ls --json`, "t2's sheep ended with its one line; not listed after");
 
     // Station's a7, on the config the stile wrote: the container's herd half, the cue, and the first machine's terminal killed mid-turn.
     const herdArgs = inner("herd", ["--address", home, "--sheep", sheepId, "--expect-image", station.image]);
