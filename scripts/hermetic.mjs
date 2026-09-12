@@ -363,6 +363,27 @@
  * step ends both sheep with n1's check, each counted minted and ended, so a6
  * still lists `sessions: 0`. It needs no token beyond the Cloudflare one, so
  * it has no skip.
+ *
+ * Bleat phase 1 gives the account ring `b1`, after f2 and for f2's reason
+ * (bleat's journey 4 step 3): what a dog is told while a sheep waits on its
+ * pasture's `setup.sh`. A pasture named `bleat-<sha7>` on the same public
+ * repository, whose `setup.sh` sleeps three quarters of a minute and prints
+ * a line at each end; one sheep minted into it; its first prompt sent with
+ * `sheep attach <id> --detach`, the request that blocks through the birth,
+ * while a second process asks `sheep status <id>` every three seconds for
+ * as long as it is held. The three surfaces are read and nothing else is:
+ * the `setup running (…)` line on the held prompt's stderr with one
+ * ending line after it and nothing else there, `setup: running (…)` from
+ * `status` while the cell is being born (every ask answered in seconds,
+ * which is the row answering and not the cell), and the `[setup]` block
+ * from `sheep log --json` — `"type": "setup"`, exit 0, and setup's own
+ * words in its output, which no dog could see before this project. No step
+ * of it reads the home's own logs. The sheep is ended with n1's check,
+ * counted minted and ended, so a6 still lists `sessions: 0`; journey 4
+ * steps 1 and 2, the local home with Docker and a real model and a
+ * `setup.sh` that exits 1, are the conductor's walk and are named among
+ * what was not checked. It needs no token beyond the Cloudflare one, so it
+ * has no skip.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
@@ -3073,6 +3094,12 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     // the steps before rented is destroyed by the ends they make, so f2's two births fit under the station's cap.
     await journeySpool(ring, station);
 
+    // Bleat phase 1, b1 (bleat's journey 4 step 3): a sheep whose pasture's setup.sh is slow, its first prompt held with
+    // --detach while the row is asked from a second process; the line on stderr, `setup: running (…)` from status while the
+    // cell is being born, and the block read back from `sheep log --json`. After f2, for f2's reason: the ends before it
+    // destroyed every container, so this birth fits under the station's cap. It ends its own sheep with n1's check.
+    await journeyBleat(ring, station);
+
     // Step 6: the delete, the name on stdin: the listing first (station phase 3), counted against what the walk minted and did not
     // end (end phase 1: none); then the account listed, the last lines.
     const { deleted, after, left } = await deleteStation(ring, api, station, token);
@@ -3989,6 +4016,151 @@ async function journeySpool(ring, station, { step = "f2" } = {}) {
   const listed = afterRemoved.filter((row) => row.id === ids.cold || row.id === ids.warm).map((row) => row.id);
   if (listed.length > 0) ring.fail(step, "sheep ls --json (after rm)", { stdout: JSON.stringify(afterRemoved), stderr: `expected neither of f2's sheep listed; still there: ${listed.join(", ")}`, code: 1 });
   ring.ok(step, `sheep rm ${ids.cold}; sheep rm ${ids.warm}; sheep ls --json`, "each ended with its one line; neither listed after");
+}
+
+/** b1's setup: slow on purpose, and saying so at both ends, so the block's tail proves the dog read setup's own output. */
+const BLEAT_SLEEP_S = 45;
+const BLEAT_SAID = "bleat setup: awake after";
+
+/**
+ * Bleat's journey 4 step 3 on the station (bleat phase 1, b1): what a dog
+ * is told while a sheep is waiting on its pasture's `setup.sh`. A pasture
+ * on the same public repository f1 and f2 use, with a `setup.sh` that
+ * sleeps the better part of a minute and prints a line at each end; one
+ * sheep minted into it; its first prompt sent with `sheep attach --detach`,
+ * which is the request that blocks through the birth, while a second
+ * process asks `sheep status` every few seconds. What is asserted is the
+ * three surfaces, each from what the dog can see and never from the home's
+ * own logs: the `setup running (…)` line on the held prompt's stderr and
+ * one ending line after it; `setup: running (…)` from `status` while the
+ * cell is being born, answered from the row in about a second; and the
+ * `[setup]` block read back from `sheep log --json` with `"type":
+ * "setup"`, exit 0, and setup's own words in its output. The sheep is
+ * ended here with n1's check, so it is counted minted and ended and the
+ * delete still lists `sessions: 0`.
+ *
+ * After f2, and for f2's reason: every container the steps before rented
+ * is destroyed by the ends they make, so this birth fits under the
+ * station's `max_instances`.
+ */
+async function journeyBleat(ring, station, { step = "b1" } = {}) {
+  const { home, token: stationToken } = station;
+  const pasture = `bleat-${ring.stamp.commit.slice(0, 7)}`;
+  const setup = [
+    "set -e",
+    "started=$(date +%s%3N)",
+    `echo "bleat setup: sleeping ${BLEAT_SLEEP_S}s"`,
+    `sleep ${BLEAT_SLEEP_S}`,
+    `echo "${BLEAT_SAID} $(( $(date +%s%3N) - started )) ms"`,
+    "",
+  ].join("\n");
+  const setupFile = join(ring.dir, "bleat-setup.sh");
+  writeFileSync(setupFile, setup);
+  const started = Date.now();
+
+  const made = await ring.sheep(["pasture", "new", pasture, "--repo", FOLD_REPO.url, "--branch", FOLD_REPO.branch]);
+  if (made.code !== 0 || made.stdout !== `${pasture}\t${FOLD_REPO.url}\t${FOLD_REPO.branch}\n`) ring.fail(step, `sheep pasture new ${pasture} --repo ${FOLD_REPO.url} --branch ${FOLD_REPO.branch}`, made);
+  station.pastures.push(pasture);
+  const put = await ring.sheep(["pasture", "put", pasture, "setup.sh", setupFile]);
+  if (put.code !== 0) ring.fail(step, `sheep pasture put ${pasture} setup.sh ${setupFile}`, put);
+
+  // The mint says nothing to the home but the row: the birth waits for the first prompt (mint phase 1), which is the point.
+  const minted = await ring.sheep(["new", "--pasture", pasture, "--name", "bleat", "--detach"]);
+  const id = /^([0-9a-f-]{36})\n$/.exec(minted.stdout)?.[1];
+  if (minted.code !== 0 || !id || minted.stderr !== "") ring.fail(step, `sheep new --pasture ${pasture} --name bleat --detach`, { ...minted, stderr: `${minted.stderr}\nexpected exit 0, the id alone on stdout, nothing on stderr` });
+  station.minted.push(id);
+  const program = { steps: [{ text: FAUX_REPLY }] };
+  const posted = await fetch(`${home}/s/${encodeURIComponent(id)}/faux`, { method: "POST", headers: { authorization: `Bearer ${stationToken}`, "content-type": "application/json" }, body: JSON.stringify(program), signal: AbortSignal.timeout(30_000) });
+  if (posted.status !== 200) ring.fail(step, `POST /s/${id}/faux`, { stdout: await posted.text(), stderr: `status ${posted.status}`, code: 1 });
+
+  // The held prompt, and the second terminal beside it. `sheep ls --json` is what says when setup has started: it reads the
+  // Directory alone and waits on no cell, while `sheep status` before setup starts waits on the birth's clone, as it did
+  // before this project and as the design says it still should. Each ask while the row says `running` is timed.
+  const promptStarted = Date.now();
+  const held = ring.sheep(["attach", id, "--detach", "--", "hello"]);
+  let holding = true;
+  void held.then(() => (holding = false));
+  const asks = [];
+  const seen = [];
+  let listedRunning = 0;
+  while (holding && Date.now() - promptStarted < 600_000) {
+    const listed = await ring.sheep(["ls", "--json"]);
+    const now = listed.code === 0 ? JSON.parse(listed.stdout).find((one) => one.id === id) : undefined;
+    if (now?.setup?.state === "running") {
+      listedRunning++;
+      const askStarted = Date.now();
+      const status = await ring.sheep(["status", id]);
+      const ms = Date.now() - askStarted;
+      const line = /^setup: (.*)$/m.exec(status.stdout)?.[1] ?? null;
+      asks.push({ ms, line, code: status.code, stdout: status.stdout });
+      if (line !== null && line.startsWith("running (")) seen.push({ at: Date.now() - promptStarted, line, ms });
+    }
+    await new Promise((resolveSleep) => setTimeout(resolveSleep, 3_000));
+  }
+  const prompted = await held;
+  const promptSeconds = ((Date.now() - promptStarted) / 1000).toFixed(0);
+  if (prompted.code !== 0 || prompted.stdout !== `${id}\n`) ring.fail(step, `sheep attach ${id} --detach -- hello`, { ...prompted, stderr: `${prompted.stderr}\nexpected exit 0 and the id alone on stdout after the send` });
+
+  // The line on stderr: the first sighting, and one when it ended. Nothing of it on stdout.
+  const said = prompted.stderr.split("\n").filter(Boolean);
+  const running = said.filter((line) => /^setup running \(.*\)$/.test(line));
+  const ended = said.filter((line) => /^setup (ok|failed) \(.*\)$/.test(line));
+  if (running.length < 1 || ended.length !== 1 || !ended[0].startsWith("setup ok (") || said.length !== running.length + ended.length) {
+    ring.fail(step, `sheep attach ${id} --detach -- hello (stderr)`, { stdout: prompted.stdout, stderr: `${prompted.stderr}\nexpected at least one "setup running (…)" line and exactly one "setup ok (…)" after it, and nothing else on stderr`, code: 1 });
+  }
+
+  // The second terminal: the row said `running` while the cell was being born, and `status` said so too, from the row.
+  const whileRunning = seen;
+  const slowest = asks.reduce((worst, one) => Math.max(worst, one.ms), 0);
+  if (listedRunning < 1 || whileRunning.length < 1) {
+    ring.fail(step, `sheep ls --json; sheep status ${id} (while the prompt was held)`, { stdout: JSON.stringify(asks), stderr: `expected the row to say setup running while the birth held the cell (${listedRunning} times it did) and at least one status answering "setup: running (…)"`, code: 1 });
+  }
+  if (slowest > 15_000) {
+    ring.fail(step, `sheep status ${id} (while the prompt was held)`, { stdout: JSON.stringify(asks), stderr: `expected every ask answered from the row in seconds; the slowest took ${slowest} ms, which is a status waiting on the cell it is asking about`, code: 1 });
+  }
+  const after = await ring.sheep(["status", id]);
+  const afterLine = /^setup: (ok \(.*\))$/m.exec(after.stdout)?.[1];
+  if (after.code !== 0 || afterLine === undefined) ring.fail(step, `sheep status ${id} (after the turn)`, { ...after, stderr: `${after.stderr}\nexpected a "setup: ok (…)" line` });
+
+  // The block, read back from the log, and the row's `setup` beside the herd in `ls --json`.
+  const logged = await ring.sheep(["log", id, "--json"]);
+  if (logged.code !== 0) ring.fail(step, `sheep log ${id} --json`, logged);
+  const items = logged.stdout.trimEnd().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+  const block = items.find((item) => item.type === "setup");
+  if (block === undefined || block.exit !== 0 || typeof block.ms !== "number" || !block.output.includes(BLEAT_SAID)) {
+    ring.fail(step, `sheep log ${id} --json (the setup block)`, { stdout: JSON.stringify(block ?? null), stderr: `expected one {"type":"setup"} with exit 0, its ms, and setup's own "${BLEAT_SAID} …" in its output`, code: 1 });
+  }
+  const prose = await ring.sheep(["log", id]);
+  if (prose.code !== 0 || !prose.stdout.includes(`[setup] ${block.id} `) || !prose.stdout.includes(BLEAT_SAID)) {
+    ring.fail(step, `sheep log ${id}`, { ...prose, stderr: `${prose.stderr}\nexpected the block "[setup] ${block.id} <date> exit 0 after <how long>" and setup's output under it` });
+  }
+  const listed = await ring.sheep(["ls", "--json"]);
+  if (listed.code !== 0) ring.fail(step, "sheep ls --json (the row's setup)", listed);
+  const row = JSON.parse(listed.stdout).find((one) => one.id === id);
+  if (row?.setup?.state !== "ok" || typeof row.setup.ms !== "number") {
+    ring.fail(step, "sheep ls --json (the row's setup)", { stdout: JSON.stringify(row ?? null), stderr: `expected "setup": {"state":"ok", …} on the row`, code: 1 });
+  }
+  const seconds = ((Date.now() - started) / 1000).toFixed(0);
+  ring.ok(
+    step,
+    `sheep pasture new ${pasture} --repo ${FOLD_REPO.url}; sheep pasture put ${pasture} setup.sh (sleep ${BLEAT_SLEEP_S}); sheep new --pasture ${pasture} --detach; sheep attach ${id} --detach -- hello (held ${promptSeconds}s)`,
+    `${seconds}s; the held prompt said ${running.length} × "${running[0]}" and then "${ended[0]}", and nothing on stdout but the id`,
+  );
+  ring.ok(
+    step,
+    `sheep ls --json; sheep status ${id} (× ${asks.length} while the prompt was held); sheep status ${id} (after)`,
+    `the row said setup running ${listedRunning} times; ${whileRunning.length} status answers said "setup: ${whileRunning[0]?.line}" while the cell was being born, the slowest ask ${(slowest / 1000).toFixed(1)}s; after the turn "setup: ${afterLine}"`,
+  );
+  ring.ok(step, `sheep log ${id} --json; sheep log ${id}; sheep ls --json`, `the block ${block.id}, exit 0 after ${block.ms} ms, its output holding setup's own line; the row says setup ok`);
+  ring.unchecked.push(`bleat journey 4 steps 1 and 2 (${step}): the local home with Docker and a real model, and a setup.sh that exits 1; the account ring walks the station with the faux provider and a setup that exits 0`);
+
+  // The step runs after n1, so it ends its own sheep with n1's check, counted ended as well as minted.
+  const removed = await ring.sheep(["rm", id]);
+  if (removed.code !== 0 || removed.stdout !== `${id}\tended\n` || removed.stderr !== "") ring.fail(step, `sheep rm ${id}`, { ...removed, stderr: `${removed.stderr}\nexpected exit 0, exactly "${id}\\tended" on stdout, nothing on stderr` });
+  station.ended.push(id);
+  const afterRemoved = JSON.parse((await ring.sheep(["ls", "--json"])).stdout);
+  if (afterRemoved.some((one) => one.id === id)) ring.fail(step, "sheep ls --json (after rm)", { stdout: JSON.stringify(afterRemoved), stderr: `expected ${id} not listed after the end`, code: 1 });
+  ring.ok(step, `sheep rm ${id}; sheep ls --json`, "ended with its one line; not listed after");
 }
 
 async function main() {

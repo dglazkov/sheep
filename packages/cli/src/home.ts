@@ -4,6 +4,46 @@ import type { SheepConfig } from "./config.js";
 /** What a cell last told the Directory its lane was doing. */
 export type LaneState = "idle" | "running" | "waiting";
 
+/** What a setup is doing, as the sheep's row says it (bleat phase 0's `SetupPhase`). */
+export type SetupPhase = "running" | "ok" | "failed";
+
+/**
+ * The `setup` on a sheep's Directory row, mirroring
+ * `packages/cell/src/bleat.ts`: the live state of the pasture's `setup.sh`
+ * in this sheep's container. `ms` is absent three ways — while it runs, on
+ * a `failed` an eviction cut off (the length is unknowable, not zero), and
+ * on one whose end never came — and every surface must render each.
+ */
+export interface SetupState {
+  state: SetupPhase;
+  /** When the setup started; `Date.now() - at` is the elapsed time while it runs. */
+  at: number;
+  ms?: number;
+  exit?: number;
+  error?: string;
+}
+
+/**
+ * One setup as the cell kept it (bleat phase 0's `SetupRecord`), handed to
+ * `sheep log` beside the entries: the same facts with the command, the
+ * output's tail, and fold's cache outcome. Never a pi entry, and no model
+ * reads it.
+ */
+export interface SetupRecord {
+  /** `setup-<the millisecond it started>`, the block's id and the cell's storage key. */
+  id: string;
+  at: number;
+  ms?: number;
+  command: string;
+  exit?: number;
+  error?: string;
+  /** The tail, 40 lines and 16 KiB; `""` while setup runs, since the output is kept at the end. */
+  output: string;
+  truncated: boolean;
+  /** Fold's `CacheOutcome`, passed through untouched; the block does not read it, `--json` carries it. */
+  cache?: unknown;
+}
+
 export interface SessionSummary {
   id: string;
   name: string | null;
@@ -15,6 +55,13 @@ export interface SessionSummary {
   task: string | null;
   /** The names of the secrets this sheep was minted with, sorted; `[]` for none; never a value (earmark phase 0). */
   secrets: string[];
+  /**
+   * Bleat phase 0: what this sheep's setup is doing, or how it last ended;
+   * `null` for a sheep no setup has ever run for. Optional here and not on
+   * the cell's row: a home deployed before bleat answers without the field,
+   * and a dog's command must not fail because its home is older than it.
+   */
+  setup?: SetupState | null;
 }
 
 export interface PastureSummary {
@@ -67,6 +114,13 @@ export interface TranscriptView {
   tipId: string | null;
   operation: { id: string; kind: string; startedAt: number } | null;
   entries: Entry[];
+  /**
+   * Bleat phase 0: this sheep's last twenty setups, oldest first, beside
+   * the entries and never among them; `sheep log` merges them into what it
+   * prints by time. Absent from a home deployed before bleat, which is why
+   * it is optional and read as `[]`.
+   */
+  setups?: SetupRecord[];
 }
 
 /** `DELETE /s/<id>`'s answer (end phase 1), the cell's `EndReport` passed through: `aborted` is whether the end found a turn to stop. */
@@ -152,6 +206,19 @@ export class Home {
    */
   async session(id: string): Promise<unknown> {
     return (await this.ask(`/s/${encodeURIComponent(id)}/`)).json();
+  }
+
+  /**
+   * One sheep's row, `GET /sessions/<id>` (bleat phase 0): the Directory's
+   * answer and never a cell's — exactly the row `GET /sessions` lists, for
+   * one sheep. The Directory is what can answer while a cell is held by the
+   * very setup the dog is asking about, which is why the live `setup` state
+   * lives on the row and why this route exists. `session(id)` above is the
+   * other one and waits on the cell. The home's refusal (an id it does not
+   * have) is thrown as its sentence.
+   */
+  async row(id: string): Promise<SessionSummary> {
+    return (await (await this.ask(`/sessions/${encodeURIComponent(id)}`)).json()) as SessionSummary;
   }
 
   /** The end (end phase 1): `DELETE /s/<id>`. The home's refusal, a session it does not have, is thrown as its sentence. */

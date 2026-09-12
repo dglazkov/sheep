@@ -303,6 +303,22 @@ was kept, or `none`), and a birth's entry in `sheep log` says whether
 setup found it warm. Other ecosystems take `/cache` by their own prefix
 flags.
 
+A setup takes as long as it takes, and the dog is told what it is waiting
+on rather than left to guess whether a sheep is slow or hung. A prompt
+held by `sheep attach` says `setup running (1m 40s)` on stderr within ten
+seconds of setup starting, another every half minute, and one line when it
+ends (`setup ok (1m 52s)`, `setup failed (exit 1, 12.4 s)`); stdout is the
+reply and nothing else. `sheep status <id>` from another terminal answers
+in about a second with `setup: running (1m 40s)` — it reads the sheep's
+row at the Directory, which answers while the cell is held by the very
+setup being asked about, and gives the cell two seconds before saying what
+the row alone knows. `sheep log <id>` carries a `[setup]` block where the
+setup ran, with how it ended and the tail of what it printed, which on a
+successful setup is output nothing else shows. A sheep no setup has ever
+run for says `setup: none` and none of the rest. None of it reaches the
+model: the transcript pi keeps, the context built from it, and the tool
+result a failed setup returns are what they were.
+
 #### A home with a container: pen
 
 The second leg gave each cell a container it rents for the length of a

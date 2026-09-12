@@ -22,14 +22,16 @@ detail.
 
 ---
 
-**Where we are: bleat phase 0 is CLOSED, 11 September 2026; bleat phase 1
-is next.** A setup now says itself twice — once to the sheep's Directory row, which answers in a
-millisecond whatever the cell is doing, and once to the cell's own record,
-which carries the output's tail beside the transcript's entries. The next
-thing to do is **bleat phase 1**, the dog's three surfaces (`status`'s
-line, `log`'s block, the line on stderr), the docs, the command ring's
-fake home, and the walk on a home with Docker. Nothing waits on a person
-until bleat phase 1's ⚑ account ring.
+**Where we are: bleat phase 0 is CLOSED and bleat phase 1 is PART-DONE,
+11 September 2026.** A setup says itself twice — to the sheep's Directory
+row, which answers whatever the cell is doing, and to the cell's own
+record, which carries the output's tail beside the transcript's entries —
+and the dog hears it three ways: `setup:` on `sheep status`, the
+`[setup]` block in `sheep log`, and `setup running (1m 40s)` on stderr
+while a prompt is held. Journey 4 steps 1 and 2 are walked on a local
+home with Docker and a real model. **The one thing left is journey 4 step
+3, the account ring's `b1`, written and unrun: it deploys a station on
+the shepherd's account, so it waits on the shepherd.**
 
 The order is dependency order. Phase 0 is the fact and where it is kept,
 which all three surfaces read. Phase 1 is the surfaces, the docs, and the
@@ -104,7 +106,7 @@ mutations.
 - **2026-09-11 — `warm()` had eleven return paths and one accumulating `output`.** Wrapping it, rather than editing each return, is what makes "the sink is told whatever the ending" a property of the shape instead of a checklist a later ending could miss.
 - **2026-09-11 — A record keyed by its start millisecond needs a collision bump.** Twenty-one back-to-back setups through the fake container are fast enough that two could share a millisecond and become one record; a taken key moves the next one on.
 - **2026-09-11 — The test seam `evict()` is not the platform.** It drops `#runtime` but leaves the abandoned incarnation's `warm()` alive in this isolate, so the eviction case must hold its setup open forever and stop the fake last; a real eviction takes the isolate with it.
-- **2026-09-11 — Open: an evicted setup's record still says `running`.** Only the row is mended at boot, so a block would print as still going. Bleat phase 1 renders the block from the record with the row's ending beside it; nothing else waits on this.
+- **2026-09-11 — An evicted setup's record still says `running`;** only the row is mended at boot. Closed by bleat phase 1: the block reads the row's ending for a record with none of its own, and asks the row only when some record lacks an ending.
 
 ## Phase 1: The dog hears it
 
@@ -150,4 +152,24 @@ three surfaces read and the times recorded; then a `setup.sh` that exits
 with the new step, a station deployed and deleted on the shepherd's
 account, a few container minutes and one deploy.
 
-**Status: NOT STARTED.**
+**Status: PART-DONE.** 2026-09-11. The three surfaces are built and
+journey 4 steps 1 and 2 are walked on a local home with Docker and a real
+model: a held prompt says `setup running (7.7 s)`, `setup running (37.7
+s)`, `setup ok (45.1 s)` on stderr with the reply alone on stdout, `sheep
+status` from a second terminal answers from the row in 2.2 s while the
+cell is being born and `setup: ok (45.1 s)` in 0.21 s after, the
+`[setup]` block carries setup's own output, and the row, the block, and
+the lines agree to the tenth of a second; a `setup.sh` that exits 1 is
+`setup: failed (exit 1, 0.0 s)` with its output in the block. `pnpm test`
+exits 0 across all three rings, 120 CLI cases. Journey 4 step 3, the
+account ring's `b1`, is written and waits on the shepherd: it deploys a
+station.
+
+**Findings:**
+
+- **2026-09-11 — The walk found `sheep status` printing at two seconds and exiting at thirty-nine.** A cell being born answers the upgrade and then says nothing, and `close()` waits for a closing frame that cannot come until it is born; the short form now ends the process once its bytes are flushed, and returns in 2.2 s.
+- **2026-09-11 — The ring had the two socket behaviours the wrong way round.** An upgrade never answered is aborted cleanly by `close()`; the answered-then-silent socket, which is what a cell being born is, holds node's loop. The fake home gained that behaviour and the case measures the child's exit, not its output.
+- **2026-09-11 — The guide was cut to fit rather than the cap raised.** Bleat's section cost 159 words against two of slack, so about 200 came out of the home, verb, and pasture sections; the guide is 1492 words and the guard is `< 1500`, as mint phase 1 left it.
+- **2026-09-11 — A setup that fails fast is never said on stderr.** The broken pasture's script exited in under 50 ms, so the first poll found it already ended and the voice said nothing: the dog waited for nothing, which is the design's rule and reads right in a walk.
+- **2026-09-11 — The three surfaces agree because they share one number.** The row's `ms`, the block's, and the stderr line's are one `Date.now() - at` from the cell: the walk read 45.1 s in all three and `45108` in the row.
+- **2026-09-11 — Open: journey 4 step 3 waits on the shepherd.** `pnpm hermetic --ring account --yes <sha>` with `b1` deploys and deletes a station on their account; nothing else in bleat waits on work or on a person.

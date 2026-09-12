@@ -2,8 +2,8 @@ import { kennelDir, loadConfig, sheepDir, type SheepConfig } from "./config.js";
 import { deleteStation, deploy, Refusal } from "./deploy.js";
 import { earmarks } from "./earmark.js";
 import { writeSessionFile } from "./export.js";
-import { runAbort, runEnd, runLog, runPrompt, runStatus, runWait } from "./herd.js";
-import { Home } from "./home.js";
+import { runAbort, runEnd, runLog, runPrompt, runStatus, runWait, watchSetup } from "./herd.js";
+import { Home, type PromptResponse } from "./home.js";
 import { join } from "./join.js";
 import { type BuildSide, cliBuild, describeBuild, describeImage, eyesSentence, isRefused, localStatus, readStamp, skewLine, startLocalHome, stopLocalHome, whoAnswers } from "./local.js";
 import { PASTURE_NAME, runPasture } from "./pasture.js";
@@ -34,12 +34,17 @@ usage:
   sheep ls [--pasture <name>]               the home's sessions: id, name, created, lane state, pasture, secret names; one
                                             per line, tab separated, the pasture empty for a pastureless sheep and the
                                             names (comma separated, never a value) empty for none; with --pasture, that herd
-  sheep status <id>                         the lane now: open operation, last tool call, tokens so far
+  sheep status <id>                         the lane now: open operation, last tool call, tokens so far, and last the
+                                            pasture's setup.sh, from the sheep's row: setup: none | running (1m 40s) |
+                                            ok (1m 52s) | failed (exit 1, 12.4 s). A sheep whose setup is running is
+                                            answered from the row alone when the cell cannot answer in two seconds
   sheep wait [--timeout <seconds>] <id>...  block until every named session is idle; print each one's last assistant message
   sheep abort <id>                          stop the open operation
   sheep rm <id>                             end the session: its open turn aborted, its container and browser released, its
                                             rows gone, the pasture kept; prints <id>\\tended, with no undo (export first)
-  sheep log [--since <entry id | ISO time>] [--last <n>] <id>   the transcript as text, oldest first, one block per entry
+  sheep log [--since <entry id | ISO time>] [--last <n>] <id>   the transcript as text, oldest first, one block per entry,
+                                            and a [setup] block where each of this sheep's setup.sh runs happened, with
+                                            how it ended and the tail of what it printed (the last twenty are kept)
   sheep export <id> [file]                  write the session as a pi SQLite file (default <id>.sqlite)
   sheep config                              print the resolved home and this directory's kennel (never the token)
   sheep setup [--no-install]                ready this directory: the command on PATH (installed with
@@ -102,7 +107,9 @@ options:
                   a queued prompt is pi's queue response, a detached prompt is pi's operation response;
                   ls rows carry "pasture": null | "<name>", "task": null | "<first line of the first prompt>", and
                   "secrets": [<the sheep's secret names, sorted>];
-                  rm is {"id": …, "ended": true, "aborted": <whether a turn was stopped>}
+                  rm is {"id": …, "ended": true, "aborted": <whether a turn was stopped>};
+                  status is the snapshot with "setup" beside it, or {"id", "state", "setup", "snapshot": null} while a
+                  setup holds the cell; ls rows carry the same "setup"; log gives each setup block "type": "setup"
   --pasture <name>  with new: the pasture to be born into; with ls: only that herd
   --secret <NAME> with new, repeatable: a secret for this sheep alone, its value one line of stdin per name in the
                   order given, never an argument; laid over its pasture's secret of the same name in setup, and as
@@ -211,7 +218,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     process.stdout.write(`home: ${config.home ?? "(none)"}\ntoken: ${config.token ? "set" : "(none)"}\nkennel: ${sheepDir()}\n`);
     return 0;
   }
-  const output = { json: parsed.json, out: (text: string) => void process.stdout.write(text), err: (text: string) => void process.stderr.write(text) };
+  const output = { json: parsed.json, out: (text: string) => void process.stdout.write(text), err: (text: string) => void process.stderr.write(text), end: endAfterFlush };
   if (command === "home") return await runHome(parsed, config, output);
   if (command === "setup") {
     const report = await setup({ dir: process.cwd(), install: !parsed.noInstall, say: output.err, home: parsed.home });
@@ -259,7 +266,7 @@ async function dispatch(command: string, parsed: Parsed, config: SheepConfig, ou
     case "new": {
       if (parsed.pasture !== undefined && !PASTURE_NAME.test(parsed.pasture)) return fail(`a pasture's name is [a-z0-9-]+, not ${JSON.stringify(parsed.pasture)}`);
       const session = await home.create(parsed.name, parsed.pasture, parsed.secrets);
-      if (parsed.detach) return await detach(home, session.id, parsed);
+      if (parsed.detach) return await detach(home, session.id, parsed, output);
       process.stderr.write(`session ${session.id}\n`);
       return await attach(home, session.id, parsed, output);
     }
@@ -269,13 +276,13 @@ async function dispatch(command: string, parsed: Parsed, config: SheepConfig, ou
       if (parsed.detach && parsed.prompt === undefined) return fail(NOTHING_TO_SEND);
       const newest = (await home.list())[0];
       if (newest === undefined) return fail("no sessions at this home; run `sheep new`");
-      return await (parsed.detach ? detach(home, newest.id, parsed) : attach(home, newest.id, parsed, output));
+      return await (parsed.detach ? detach(home, newest.id, parsed, output) : attach(home, newest.id, parsed, output));
     }
     case "attach": {
       const id = parsed.rest[1];
       if (id === undefined) return fail("attach needs a session id");
       if (parsed.detach && parsed.prompt === undefined) return fail(NOTHING_TO_SEND);
-      return await (parsed.detach ? detach(home, id, parsed) : attach(home, id, parsed, output));
+      return await (parsed.detach ? detach(home, id, parsed, output) : attach(home, id, parsed, output));
     }
     case "status": {
       const id = parsed.rest[1];
@@ -557,13 +564,23 @@ const NOTHING_TO_SEND = "--detach with no prompt is sheep new's; there is nothin
  * is printed after: so on an id the home lacks the refusal is the whole
  * output, the sentence on stderr and nothing on stdout (end phase 1 left
  * that open, since the id was printed first). Nothing streams.
+ *
+ * Bleat phase 1: the request below is the one that blocks through a birth,
+ * so the setup watcher runs for its length and says on stderr what the
+ * sheep is waiting on; stdout is the id and nothing else, as before.
  */
-async function detach(home: Home, sessionId: string, parsed: Parsed): Promise<number> {
+async function detach(home: Home, sessionId: string, parsed: Parsed, output: Output): Promise<number> {
   if (parsed.prompt === undefined) {
     process.stdout.write(`${sessionId}\n`);
     return 0;
   }
-  const response = await home.prompt(sessionId, parsed.prompt);
+  const watch = watchSetup(home, sessionId, output);
+  let response: PromptResponse;
+  try {
+    response = await home.prompt(sessionId, parsed.prompt);
+  } finally {
+    await watch.stop();
+  }
   process.stdout.write(`${sessionId}\n`);
   if ("entryId" in response) process.stderr.write(`queued ${sessionId}\n`);
   if (parsed.json) process.stdout.write(`${JSON.stringify(response)}\n`);
@@ -590,4 +607,25 @@ async function attach(home: Home, sessionId: string, parsed: Parsed, output: Out
 function fail(message: string): number {
   process.stderr.write(`sheep: ${message}\n`);
   return 2;
+}
+
+/**
+ * The deliberate end (bleat phase 1), which one path uses: `sheep status`'s
+ * short form, printed while a socket to a cell being born is still open and
+ * cannot be cancelled (`herd.ts`'s `attachWithin` says why). Without it the
+ * command prints its answer at two seconds and holds the terminal — and a
+ * caller's `$(…)` — until the setup it was reporting on ends.
+ *
+ * The bytes first: a write to a pipe is asynchronous, and `process.exit`
+ * drops whatever has not drained, so the exit waits on an empty write's
+ * callback, which runs after everything already queued on that stream. The
+ * code is the one the command would have returned.
+ */
+function endAfterFlush(code: number): void {
+  let left = 2;
+  const gone = (): void => {
+    if (--left === 0) process.exit(code);
+  };
+  process.stdout.write("", gone);
+  process.stderr.write("", gone);
 }

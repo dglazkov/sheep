@@ -19,8 +19,14 @@ import { type Home, Sentence } from "./home.js";
 
 export { BACKGROUND_CONTEXT };
 
-/** pi's byte transport over a WebSocket: one protocol frame per binary message. */
-export function webSocketTransport(url: string): ByteTransportFactory {
+/**
+ * pi's byte transport over a WebSocket: one protocol frame per binary
+ * message. With a `signal` (bleat phase 1), an attachment the caller gave
+ * up on — `sheep status`'s two-second deadline on a sheep whose setup is
+ * running — closes the socket it was waiting for, so nothing is left
+ * holding the process open after the answer has been printed.
+ */
+export function webSocketTransport(url: string, signal?: AbortSignal): ByteTransportFactory {
   return (handlers: ByteTransportHandlers) =>
     new Promise<ByteTransport>((resolve, reject) => {
       const socket = new WebSocket(url);
@@ -63,6 +69,20 @@ export function webSocketTransport(url: string): ByteTransportFactory {
         if (!opened) reject(error);
         else handlers.onError(error);
       });
+      signal?.addEventListener(
+        "abort",
+        () => {
+          if (closed) return;
+          closed = true;
+          try {
+            socket.close(1000, "the attachment was abandoned");
+          } catch {
+            // A socket still connecting closes by aborting its handshake; nothing here depends on which it did.
+          }
+          if (!opened) reject(new Error("the attachment was abandoned"));
+        },
+        { once: true },
+      );
     });
 }
 
@@ -93,12 +113,12 @@ async function refusalOf(home: Home, id: string): Promise<Sentence | undefined> 
   }
 }
 
-/** One attachment to one cell, as pi's non-interactive client makes it. */
-export async function attachSheep(home: Home, id: string): Promise<Sheep> {
+/** One attachment to one cell, as pi's non-interactive client makes it; a `signal` abandons one that is taking too long. */
+export async function attachSheep(home: Home, id: string, signal?: AbortSignal): Promise<Sheep> {
   const serverId = await home.serverId();
   let client: Client;
   try {
-    client = await Client.connect({ serverId, transportFactory: webSocketTransport(home.socketUrl(id, serverId)) });
+    client = await Client.connect({ serverId, transportFactory: webSocketTransport(home.socketUrl(id, serverId), signal) });
   } catch (error) {
     // Nothing is asked on the happy path; when the connect fails, the home's sentence, if it has one, is the failure.
     throw (await refusalOf(home, id)) ?? error;

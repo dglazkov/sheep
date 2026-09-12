@@ -6,12 +6,151 @@
 import type { Entry, LaneTranscriptSnapshot } from "@earendil-works/pi-agent-core";
 import type { TranscriptState } from "@earendil-works/pi-coding-agent/experimental/services/transcript";
 import { attachSheep, BACKGROUND_CONTEXT, lastAssistant, messageText, type Sheep } from "./client.js";
-import type { Home } from "./home.js";
+import type { Home, SessionSummary, SetupRecord, SetupState } from "./home.js";
 
 export interface Output {
   json: boolean;
   out(text: string): void;
   err(text: string): void;
+  /**
+   * Bleat phase 1: end the process with this code, once what has been
+   * written is flushed. One path calls it — `sheep status`'s short form,
+   * which has said everything it has to say while a socket it cannot
+   * cancel is still in flight (see `attachWithin`). A sink without one is
+   * told nothing and the command returns normally.
+   */
+  end?(code: number): void;
+}
+
+/**
+ * The bleat, the dog's side (bleat phase 1). A sheep's `setup.sh` running
+ * in a container is three surfaces here — the `setup:` line on `sheep
+ * status`, the `[setup]` block in `sheep log`, and the line on stderr
+ * while a prompt is held — and one fact underneath: the sheep's Directory
+ * row, `GET /sessions/<id>`, which answers in a millisecond whatever the
+ * cell is doing. The durations below are one function, so the three agree
+ * to the second.
+ */
+
+/** `12.4 s` under a minute, `1m 40s` at one and over: every surface's duration, so all of them read alike. */
+export function elapsed(ms: number): string {
+  const safe = Number.isFinite(ms) && ms > 0 ? ms : 0;
+  if (safe < 60_000) return `${(safe / 1000).toFixed(1)} s`;
+  const seconds = Math.floor(safe / 1000);
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}
+
+/**
+ * What a row's `setup` says, in the words the surfaces share: `running (1m
+ * 40s)`, `ok (1m 52s)`, `failed (exit 1, 12.4 s)`, `failed (<the sentence
+ * for a setup that could not run, or that an eviction cut off>)`, and
+ * `none` for a sheep no setup has ever run for. `status` prints `setup: `
+ * before it and the held prompt prints `setup `; a running setup's elapsed
+ * time is `now - at` on both, which is why they agree. `exit` is said only
+ * for a failure: `ok` is exit 0 by definition.
+ */
+export function setupSaying(setup: SetupState | null | undefined, now: number): string {
+  if (setup === null || setup === undefined) return "none";
+  if (setup.state === "running") return `running (${elapsed(now - setup.at)})`;
+  const parts: string[] = [];
+  if (setup.state === "failed" && setup.exit !== undefined) parts.push(`exit ${setup.exit}`);
+  if (setup.error !== undefined) parts.push(setup.error);
+  if (setup.ms !== undefined) parts.push(elapsed(setup.ms));
+  return parts.length === 0 ? setup.state : `${setup.state} (${parts.join(", ")})`;
+}
+
+/** How often the row is asked while a prompt is held, and how often a setup still running is said again. */
+export const SETUP_POLL_MS = 10_000;
+export const SETUP_SAY_MS = 30_000;
+
+/**
+ * What a prompt-holding command says on stderr, as a state machine over
+ * the answers the row gives: the first sighting of a running setup, one
+ * more every `SETUP_SAY_MS` while it runs, and one line when it ends. A
+ * setup that had already ended when the command started is never said —
+ * the dog waited for nothing — and a second setup, with an `at` of its
+ * own, starts the count again. Nothing is ever written to stdout, so every
+ * program reading a reply reads the same bytes as before.
+ */
+export class SetupVoice {
+  /** The `at` of the setup being spoken about; `undefined` before the first running one is seen. */
+  #at: number | undefined;
+  #saidAt = 0;
+  #ended = false;
+
+  /** The lines to say for this answer, already newline-terminated; usually none. */
+  saw(setup: SetupState | null | undefined, now: number): string[] {
+    if (setup === null || setup === undefined) return [];
+    const line = `setup ${setupSaying(setup, now)}\n`;
+    if (setup.state === "running") {
+      if (this.#at !== setup.at) {
+        this.#at = setup.at;
+        this.#saidAt = now;
+        this.#ended = false;
+        return [line];
+      }
+      if (this.#ended || now - this.#saidAt < SETUP_SAY_MS) return [];
+      this.#saidAt = now;
+      return [line];
+    }
+    // An ending is said only for the setup this watcher announced, and only once.
+    if (this.#at !== setup.at || this.#ended) return [];
+    this.#ended = true;
+    return [line];
+  }
+
+  /** Whether a setup was announced as running and its ending has not been said yet. */
+  get waiting(): boolean {
+    return this.#at !== undefined && !this.#ended;
+  }
+}
+
+/** A running watcher, stopped when the request the dog held has returned. */
+export interface SetupWatch {
+  stop(): Promise<void>;
+}
+
+/**
+ * The watcher every path that holds a prompt starts — `runPrompt` here and
+ * `detach` in `cli.ts` — from the moment the command starts and before the
+ * socket, since during a birth the socket is what is waiting. It asks the
+ * row every `SETUP_POLL_MS` and says what `SetupVoice` gives it on stderr.
+ * A home that will not answer the row is silence, never a failure: the
+ * command the dog ran is the point, and this is a courtesy beside it. On
+ * `stop`, a setup announced but not yet ended is asked for once more, so
+ * the ending is said even when the prompt returned before the next poll.
+ */
+export function watchSetup(home: Home, id: string, output: Output): SetupWatch {
+  const voice = new SetupVoice();
+  let tail: Promise<void> = Promise.resolve();
+  const ask = (): void => {
+    tail = tail.then(async () => {
+      const row = await rowOf(home, id);
+      if (row !== undefined) for (const line of voice.saw(row.setup, Date.now())) output.err(line);
+    });
+  };
+  ask();
+  const timer = setInterval(ask, SETUP_POLL_MS);
+  // Nothing here holds the process open: the command's own request is what the dog is waiting on.
+  timer.unref();
+  return {
+    async stop(): Promise<void> {
+      clearInterval(timer);
+      await tail;
+      if (!voice.waiting) return;
+      ask();
+      await tail;
+    },
+  };
+}
+
+/** The sheep's row, or nothing: a home that will not answer it must not fail the command that asked. */
+async function rowOf(home: Home, id: string): Promise<SessionSummary | undefined> {
+  try {
+    return await home.row(id);
+  } catch {
+    return undefined;
+  }
 }
 
 function fail(output: Output, message: string): number {
@@ -75,8 +214,21 @@ function printAssistant(output: Output, snapshot: LaneTranscriptSnapshot): void 
  * operation, whose reply streams until the operation ends. A busy lane
  * queues it as pi's follow-up, taken up when the running turn ends; `sheep`
  * says so and exits, or with `wait` streams the queued turn when it starts.
+ *
+ * Bleat phase 1: the setup watcher starts before the attachment, since a
+ * sheep whose first prompt rents the container is held in `attachSheep`
+ * for the whole of the birth, which is exactly the wait the line is for.
  */
 export async function runPrompt(home: Home, id: string, prompt: string, options: { wait: boolean }, output: Output): Promise<number> {
+  const watch = watchSetup(home, id, output);
+  try {
+    return await held(home, id, prompt, options, output);
+  } finally {
+    await watch.stop();
+  }
+}
+
+async function held(home: Home, id: string, prompt: string, options: { wait: boolean }, output: Output): Promise<number> {
   const sheep = await attachSheep(home, id);
   const stream = new Stream(output.json ? () => {} : output.out);
   let active = false;
@@ -161,13 +313,44 @@ export async function runWait(home: Home, ids: readonly string[], options: { tim
   return timedOut ? 124 : failed ? 2 : 0;
 }
 
-/** The lane snapshot, read once: the open operation, the last tool call, tokens so far. */
+/** The two seconds a lane gets when the row says a setup is running, and no more. */
+export const SETUP_LANE_MS = 2_000;
+
+/** The short form's last line: what a dog is told instead of a lane the cell cannot draw yet. */
+export const SETUP_NO_LANE = "lane: none yet; the cell is held by setup.sh and answers when it ends";
+
+/**
+ * The lane snapshot, read once: the open operation, the last tool call,
+ * tokens so far, and (bleat phase 1) the `setup:` line last, from the row.
+ *
+ * The row is read first, and when it says a setup is running the lane read
+ * gets `SETUP_LANE_MS` and no more: a cell being born cannot answer — the
+ * boot is the very setup the dog is asking about — so a dog that asked what
+ * its sheep is doing is answered with what is known rather than made to
+ * wait for the thing it is waiting on. That short form is the id, the lane
+ * state the row holds, the setup line, and one sentence saying why there is
+ * no lane; `--json` is the same four as an object with `snapshot: null`.
+ * A home that will not answer the row leaves the line out and changes
+ * nothing else: the lane is still what `status` is for.
+ */
 export async function runStatus(home: Home, id: string, output: Output): Promise<number> {
-  const sheep = await attachSheep(home, id);
+  const row = await rowOf(home, id);
+  const setup = row?.setup ?? null;
+  const sheep = setup?.state === "running" ? await attachWithin(home, id, SETUP_LANE_MS) : await attachSheep(home, id);
+  if (sheep === undefined) {
+    const state = row?.state ?? "running";
+    if (output.json) output.out(`${JSON.stringify({ id, state, setup, snapshot: null })}\n`);
+    else output.out(`id: ${id}\nstate: ${state}\nsetup: ${setupSaying(setup, Date.now())}\n${SETUP_NO_LANE}\n`);
+    // The answer is written and there is nothing else to do, so the command ends rather than waiting out the setup it
+    // just reported: the abandoned attachment cannot always be cancelled, and a dog reading `out=$(sheep status <id>)`
+    // gets nothing at all until the process exits. This is the one path that ends itself.
+    output.end?.(0);
+    return 0;
+  }
   try {
     const snapshot = sheep.snapshot();
     if (output.json) {
-      output.out(`${JSON.stringify(snapshot)}\n`);
+      output.out(`${JSON.stringify(row === undefined ? snapshot : { ...snapshot, setup })}\n`);
       return 0;
     }
     const operation = snapshot.operation;
@@ -183,11 +366,50 @@ export async function runStatus(home: Home, id: string, output: Output): Promise
     const usage = snapshot.stats.usage;
     lines.push(`tokens: input=${usage.input} output=${usage.output} cacheRead=${usage.cacheRead} cacheWrite=${usage.cacheWrite}`);
     lines.push(`messages: ${snapshot.stats.messageCount}`);
+    // The setup line last, so a reader of the five above by index is unchanged; absent when the row could not be read.
+    if (row !== undefined) lines.push(`setup: ${setupSaying(setup, Date.now())}`);
     output.out(`${lines.join("\n")}\n`);
     return 0;
   } finally {
     await sheep.close();
   }
+}
+
+/**
+ * The attachment, with the deadline a running setup earns it: the one that
+ * has not arrived in `ms` is abandoned and closed if it lands late, and one
+ * that failed inside the deadline is abandoned too — a cell being born
+ * answers neither way, and the row is the answer either way. Only a sheep
+ * whose row says `running` is read like this; everything else waits as it
+ * did, so a refusal is still a refusal.
+ *
+ * Abandoning is not cancelling, and node gives no way to make it one. A
+ * socket still shaking hands is aborted by the signal and the process is
+ * free; but a cell being born answers the upgrade and then says nothing
+ * (the boot is what the birth holds), and `close()` on an open socket
+ * waits for a closing handshake that cell will not send until it is born.
+ * There is no `terminate` in the web API and no dispatcher to destroy
+ * without depending on undici, so the loop stays alive for the whole of
+ * the setup. That is why `runStatus` ends the process itself once its
+ * answer is flushed: bleat phase 1's walk measured a `status` that printed
+ * at two seconds and did not exit for thirty-nine.
+ */
+async function attachWithin(home: Home, id: string, ms: number): Promise<Sheep | undefined> {
+  const controller = new AbortController();
+  const attaching = attachSheep(home, id, controller.signal);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => resolve(undefined), ms);
+  });
+  const sheep = await Promise.race([attaching.catch(() => undefined), deadline]);
+  clearTimeout(timer);
+  // The socket is closed by the signal, and an attachment that landed all the same is closed here: a command that
+  // has printed its answer must exit, and a half-open attachment to a cell being born would hold the process.
+  if (sheep === undefined) {
+    controller.abort();
+    void attaching.then((late) => late.close(), () => undefined);
+  }
+  return sheep;
 }
 
 function lastToolCall(snapshot: LaneTranscriptSnapshot): { name: string; args: string } | undefined {
@@ -244,26 +466,84 @@ export async function runEnd(home: Home, id: string, output: Output): Promise<nu
   return 0;
 }
 
-/** The transcript as text, oldest first, one block per entry; `--json` is pi's entries, one per line. */
+/**
+ * The transcript as text, oldest first, one block per entry; `--json` is
+ * pi's entries, one per line.
+ *
+ * Bleat phase 1: the cell's setups (`TranscriptView.setups`) are merged in
+ * by time, so each `[setup]` block prints where it happened — between the
+ * tool call that rented the container and that call's result, and before
+ * the `birth` entry when the birth rented it. They are sheep's own rows,
+ * not pi's entries: `--json` gives each `"type": "setup"` and every pi
+ * entry beside it is unchanged. `--since` and `--last` bound them the way
+ * they bound the entries. The row is read only when a record has no ending
+ * of its own, which is the one case the record alone cannot render.
+ */
 export async function runLog(home: Home, id: string, options: { since: string | undefined; last: number | undefined }, output: Output): Promise<number> {
   const view = await home.transcript(id);
   let entries = view.entries;
+  let setups = view.setups ?? [];
   if (options.since !== undefined) {
     const index = entries.findIndex((entry) => entry.id === options.since);
-    if (index !== -1) entries = entries.slice(index + 1);
-    else {
+    if (index !== -1) {
+      const at = entries[index]!.timestamp;
+      entries = entries.slice(index + 1);
+      setups = setups.filter((setup) => setup.at >= at);
+    } else {
       const time = Date.parse(options.since);
       if (Number.isNaN(time)) return fail(output, `--since needs an entry id from this transcript or an ISO time, not ${options.since}`);
       entries = entries.filter((entry) => entry.timestamp >= time);
+      setups = setups.filter((setup) => setup.at >= time);
     }
   }
-  if (options.last !== undefined) entries = entries.slice(-options.last);
+  if (options.last !== undefined) {
+    entries = entries.slice(-options.last);
+    const first = entries[0];
+    setups = first === undefined ? [] : setups.filter((setup) => setup.at >= first.timestamp);
+  }
+  // Bleat phase 0's open finding: an eviction mends the row and not the record, so a record with no ending is
+  // rendered with the row's beside it when the row speaks of that same setup. Only then is the row asked at all.
+  const row = setups.some((setup) => setup.ms === undefined) ? (await rowOf(home, id))?.setup ?? null : null;
+  const now = Date.now();
+  const merged = merge(entries, setups);
   if (output.json) {
-    for (const entry of entries) output.out(`${JSON.stringify(entry)}\n`);
+    for (const item of merged) output.out(`${JSON.stringify("entry" in item ? item.entry : { type: "setup", ...item.setup })}\n`);
     return 0;
   }
-  output.out(entries.map(formatEntry).join("\n"));
+  output.out(merged.map((item) => ("entry" in item ? formatEntry(item.entry) : formatSetupBlock(item.setup, row, now))).join("\n"));
   return 0;
+}
+
+type Printed = { at: number; entry: Entry } | { at: number; setup: SetupRecord };
+
+/** The entries and the setups in one order, by time; a setup sharing a millisecond with an entry follows it. */
+function merge(entries: readonly Entry[], setups: readonly SetupRecord[]): Printed[] {
+  const printed: Printed[] = [...entries.map((entry) => ({ at: entry.timestamp, entry })), ...setups.map((setup) => ({ at: setup.at, setup }))];
+  return printed.sort((left, right) => left.at - right.at || (("setup" in left ? 1 : 0) - ("setup" in right ? 1 : 0)));
+}
+
+/**
+ * The block: the record's id, when setup started, how it ended, and the
+ * tail of what it printed — which on a successful setup is output no dog
+ * could see before. A record with no ending of its own is `running (12.4
+ * s)`, unless the row's `setup` for that same `at` has ended, in which case
+ * the block says what the row says: an eviction is mended on the row alone.
+ */
+export function formatSetupBlock(record: SetupRecord, row: SetupState | null, now: number): string {
+  const lines = [`[setup] ${record.id} ${new Date(record.at).toISOString()} ${setupEnding(record, row, now)}`];
+  if (record.output !== "") lines.push(...record.output.replace(/\n$/, "").split("\n"));
+  return `${lines.join("\n")}\n`;
+}
+
+function setupEnding(record: SetupRecord, row: SetupState | null, now: number): string {
+  if (record.ms !== undefined || record.exit !== undefined || record.error !== undefined) return endedAfter(record.exit, record.error, record.ms);
+  if (row !== null && row.at === record.at && row.state !== "running") return endedAfter(row.exit, row.error, row.ms);
+  return `running (${elapsed(now - record.at)})`;
+}
+
+function endedAfter(exit: number | undefined, error: string | undefined, ms: number | undefined): string {
+  const how = exit !== undefined ? `exit ${exit}` : error !== undefined ? `error ${error}` : "ended";
+  return ms === undefined ? how : `${how} after ${elapsed(ms)}`;
 }
 
 export function formatEntry(entry: Entry): string {

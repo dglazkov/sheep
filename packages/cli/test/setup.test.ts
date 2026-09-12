@@ -254,6 +254,9 @@ describe("the guide", () => {
     const dir = await mkdtemp(join(tmpdir(), "sheep-setup-"));
     try {
       const text = await readFile(guide, "utf8");
+      // The guide is read whole, by an agent, before it does anything, and this bound is what keeps it holdable. It does
+      // not move: bleat phase 1's section on a sheep that is slow was paid for by cutting the guide, as mint phase 1's
+      // bullet was, not by raising the cap.
       expect(text.split(/\s+/).length).toBeLessThan(1500);
       for (const said of ["sheep home local", "ANTHROPIC_API_KEY", "sheep wait", "--detach", "sheep pasture new", "A hand at a terminal", "npm install -g github:dglazkov/sheep#release"]) {
         expect(text).toContain(said);

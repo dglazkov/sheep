@@ -296,7 +296,8 @@ describe.skipIf(typeof home === "string")("journey 5: a dog and its flock, throu
     expect((await sheep("log", id, "--json")).stdout).toBe("");
     const status = await sheep("status", id);
     expect(status.code).toBe(0);
-    expect(status.stdout).toBe(`id: ${id}\nstate: idle\noperation: none\ntool: none\ntokens: input=0 output=0 cacheRead=0 cacheWrite=0\nmessages: 0\n`);
+    // Bleat phase 1's one new line, last: this home has no container, so no setup has ever run for this sheep and its row says so.
+    expect(status.stdout).toBe(`id: ${id}\nstate: idle\noperation: none\ntool: none\ntokens: input=0 output=0 cacheRead=0 cacheWrite=0\nmessages: 0\nsetup: none\n`);
 
     // Step 4: the first prompt is the sheep's first turn: the reply streams, the task is the prompt's first line, the log starts
     // with the prompt. The reply is the program's first step, so the mint consumed none of it.
