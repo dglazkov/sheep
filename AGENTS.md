@@ -38,6 +38,9 @@ memory and not a file's worth.
 is waiting on: a pasture's setup running in a container is a row the home
 answers at once, a block of its own in the dog's log, and a line on
 stderr while the dog holds a prompt.
+[Project bell](docs/projects/bell/design.md) lets a dog hear the work as
+it happens: `sheep attach --json` writes each of the turn's entries as it
+lands, from the events the attached client was already being given.
 Setup and usage are in [README.md](README.md).
 Read a project's `phases.md` for where its work stands and what the next
 phase is; [docs/projects/README.md](docs/projects/README.md) lists them.
