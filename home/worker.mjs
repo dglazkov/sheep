@@ -125371,13 +125371,13 @@ __name(admitted, "admitted");
 var CHECKOUT_BUILD = { commit: "0.0.0-checkout", builtAt: null };
 function homeImage() {
   if (false) return null;
-  return true ? "docker.io/dglazkov2/sheep-pen@sha256:9d82c0dd4fe44606b1be4bdae14561a7af1d6c7642212a9289c2c59adad0023b" : null;
+  return true ? "docker.io/dglazkov2/sheep-pen@sha256:67a10fc53c7cbfb7a4ff6953f808f2907deb27c21ad4cc1a894015c9b7fa8e8d" : null;
 }
 __name(homeImage, "homeImage");
 function homeBuild() {
   if (false) return CHECKOUT_BUILD;
   try {
-    const parsed = JSON.parse('{"commit":"c9f5e4e","builtAt":"2026-09-12T01:51:08Z"}');
+    const parsed = JSON.parse('{"commit":"8cb6544","builtAt":"2026-09-12T02:12:30Z"}');
     if (typeof parsed.commit === "string" && parsed.commit !== "") return { commit: parsed.commit, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
   } catch {
   }
