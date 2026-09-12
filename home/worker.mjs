@@ -125566,35 +125566,35 @@ function admitted(request, env) {
   return void 0;
 }
 __name(admitted, "admitted");
-function sameSecret(a, b) {
-  const left = new TextEncoder().encode(a);
-  const right = new TextEncoder().encode(b);
-  let differs = left.length ^ right.length;
-  const length = Math.max(left.length, right.length);
-  for (let i = 0; i < length; i++) differs |= (left[i] ?? 0) ^ (right[i] ?? 0);
-  return differs === 0;
+async function joinKey(token) {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token)));
+  return `join:${[...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
-__name(sameSecret, "sameSecret");
-function joinAnswer(request, env) {
-  const join3 = env.SHEEP_JOIN;
+__name(joinKey, "joinKey");
+async function joinAnswer(request, env) {
+  const store = env.JOIN;
   const token = env.SHEEP_TOKEN;
-  if (join3 === void 0 || join3 === "" || token === void 0 || token === "") return void 0;
+  if (store === void 0 || token === void 0 || token === "") return void 0;
   const header = request.headers.get("authorization") ?? "";
   if (!header.startsWith("Bearer ")) return void 0;
-  if (!sameSecret(header.slice("Bearer ".length), join3)) return void 0;
+  const bearer = header.slice("Bearer ".length);
+  if (bearer === "") return void 0;
+  const key = await joinKey(bearer);
+  if (await store.get(key) === null) return void 0;
+  await store.delete(key);
   return Response.json({ token }, { headers: { "cache-control": "no-store" } });
 }
 __name(joinAnswer, "joinAnswer");
 var CHECKOUT_BUILD = { commit: "0.0.0-checkout", builtAt: null };
 function homeImage() {
   if (false) return null;
-  return true ? "docker.io/dglazkov2/sheep-pen@sha256:e0120cc755a11af61c8e19c6d3400194d7c7c0d2daaf43787b63234f28fde69f" : null;
+  return true ? "docker.io/dglazkov2/sheep-pen@sha256:d4d54e2239d55c9b6187346c600c4d9a0403f76681a4bf608b790d720e3f2ef7" : null;
 }
 __name(homeImage, "homeImage");
 function homeBuild() {
   if (false) return CHECKOUT_BUILD;
   try {
-    const parsed = JSON.parse('{"commit":"dc04143","builtAt":"2026-09-12T21:51:19Z"}');
+    const parsed = JSON.parse('{"commit":"da56d27","builtAt":"2026-09-12T22:17:26Z"}');
     if (typeof parsed.commit === "string" && parsed.commit !== "") return { commit: parsed.commit, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
   } catch {
   }
@@ -125669,7 +125669,7 @@ var index_default = {
       inner.pathname = "/pen";
       return env.SESSION_CELL.getByName(id2).fetch(new Request(inner, request));
     }
-    if (url.pathname === "/join" && request.method === "POST") return joinAnswer(request, env) ?? new Response("not found", { status: 404 });
+    if (url.pathname === "/join" && request.method === "POST") return await joinAnswer(request, env) ?? new Response("not found", { status: 404 });
     const refused = admitted(request, env);
     if (refused) return refused;
     if (url.pathname === "/sessions" && request.method === "POST") {
@@ -125746,7 +125746,8 @@ export {
   homeBuild,
   homeImage,
   homeReport,
-  joinAnswer
+  joinAnswer,
+  joinKey
 };
 /*! Bundled license information:
 
