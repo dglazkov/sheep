@@ -20,99 +20,144 @@ The long version of the idea, and where the work stands, is in
 
 The install spec is `github:dglazkov/sheep#release`: the `release` branch
 of this repository, built from `main`, installed with npm's git installer.
-Nothing is on npm. The first five minutes, as the dog walks them:
+Nothing is on npm. You need Node 22.19 or newer, a Cloudflare account on
+the Workers Paid plan, and an Anthropic API key. The first five minutes
+are yours, at your own terminal; everything after them is your agent's.
 
-1. With Claude Code (or another coding agent) open in a repository, say:
-   "Install sheep from github.com/dglazkov/sheep and try it out." The dog
-   runs
+1. At your own terminal, in any directory:
 
    ```sh
    npx github:dglazkov/sheep#release setup
    ```
 
-   which puts `sheep` on PATH (`npm install -g github:dglazkov/sheep#release`),
-   installs the skill into the current directory under `.agents/skills/sheep`
-   with a `.claude/skills/sheep` doorway, makes this directory's kennel
-   `.sheep/` (adding it to the `.gitignore` here when you are in a git work
-   tree), reports that no home is configured, and prints the one sentence to
-   run next. It is idempotent; `--json` gives the same report to a program.
+   prints a small sheep and a checklist of seven steps that fill in as you
+   go. **command** puts `sheep` on PATH. **where** asks whether this
+   machine's settings go everywhere on it or in this directory alone;
+   everywhere is the default, and Enter takes it. **account** asks for a
+   Cloudflare API token at a hidden prompt and becomes the account's name.
+   **plan** checks for Workers Paid, 5 USD a month, and waits on the
+   dashboard's plans page if the account is not on it yet. **station**
+   offers a new home named for where you are, and Enter deploys it: one
+   Worker and its container application on your account, the step
+   becoming its address. **key** asks for your Anthropic key at a hidden
+   prompt and puts it on the home as its secret. **next** prints the
+   address, where the two values are kept, and the one sentence to say to
+   your agent.
 
-2. `sheep home local` starts a home on the machine, under the kennel's
-   `local/`, and writes the kennel's `config`. It says the home has no model
-   key; the dog asks you for an Anthropic key, which you export as
-   `ANTHROPIC_API_KEY`, and `sheep home local` again reports the key held,
-   and where. No account is needed. (`--faux` runs a scripted model instead,
-   for a look at the plumbing without a key.)
+   Pressing `?` on a step opens a few lines under it: what the step is
+   for, where to get what it asks for, what it costs, and what sheep does
+   with it; `?` again closes them, and `sheep setup --explain` opens each
+   as it is reached. What you type is never on the screen, in a process's
+   arguments, or in any file but `~/.sheep/credentials` (mode 600). You
+   typed two values and pressed Enter a few times, and that is the whole
+   of your part.
 
-   With Docker Desktop (or the docker engine) on the machine, the same
-   command gives the home a container beside every cell, pulled from the
-   registry as the release named it: the sheep have `git`, `node`, `pnpm`,
-   and `python`, and can clone, build, test, and push. Without Docker the
-   report says so in one sentence, and the sheep read, write, and edit.
-   `--no-container` asks for none. `sheep home` says which the home has.
+2. Say to your agent — Claude Code, or another coding agent, open in a
+   repository — the sentence `next` printed: "sheep is set up on this
+   machine; run `sheep --agent-help` and herd." The agent runs `sheep
+   setup` itself where it stands. With no terminal it asks nothing: it
+   installs the skill there under `.agents/skills/sheep` with a
+   `.claude/skills/sheep` doorway, finds the home you made through
+   `~/.sheep`, and prints a report.
 
-   The home has **eyes**: a sheep can `look <path>` at a page it wrote, in a
-   real Chromium, and read the picture; the report (errors, console, the
-   accessibility tree) comes back in its transcript, and you read it in
-   `sheep log`. The first look on a machine fetches a Chrome into the
-   wrangler cache, which `sheep home local` says. A station deployed before
-   this release has none until `sheep home deploy` upgrades it; `sheep home`
-   prints `eyes: yes` or `no`.
+3. The agent herds. `sheep new -- "What can you see in the workspace?"`
+   mints a sheep and streams its reply; `sheep new --detach` starts several
+   at once; `sheep ls`, `sheep status <id>`, `sheep wait`, and `sheep log
+   <id>` say what they are doing and what they did; `sheep rm <id>` ends
+   one. A sheep's container has `git`, `node`, `pnpm`, and `python`, so it
+   can clone, build, test, and push. A pasture (`sheep pasture new`) is a
+   shared tree a herd works on, a repository behind it or none.
 
-   With a container as well as eyes, a sheep can look at its own dev server:
-   `look --serve 'npx vite --port $PORT --strictPort' /` runs that command in
-   the container with `PORT` set, renders the page its port serves, and stops
-   it. A server lives for one look and no longer, which is why nothing is left
-   running behind a sheep. The recipe for a frontend app is a skill this
-   repository ships, [`docs/projects/serve/skills/frontend/SKILL.md`](docs/projects/serve/skills/frontend/SKILL.md);
-   `sheep pasture put <name> skills/frontend/SKILL.md <that file>` puts it in
-   a pasture and every sheep born there reads it.
+4. `sheep attach <id>` at your own terminal opens pi's interactive
+   terminal on the same sheep, from the installed bundle, with no checkout
+   of pi anywhere.
 
-   The **kennel** is `.sheep/` at or above the working directory, found the
-   way git finds `.git`, and `~/.sheep` when there is none: this directory's
-   config, its token, and its own local home. Open a dog in each of several
-   directories and each is its own — its own sheep, its own port, its own
-   home to start and stop — with nothing shared but the command and the
-   runtime under `~/.sheep/tools`. `cd` is the switch; there is no variable
-   to set. `sheep config` and `sheep home` print which kennel they found.
-
-3. `sheep new -- "What can you see in the workspace?"` mints a sheep and
-   streams its reply. `sheep ls` lists it; `sheep status <id>` and
-   `sheep log <id>` say what it is doing and what it did. `sheep new
-   --detach` with no prompt mints a sheep and prints its id alone, for a
-   task the dog has not composed yet: the sheep is idle and costs nothing
-   until something is asked of it, and one born into a pasture with a
-   repository is cloned and set up at its first prompt, not at the mint.
-
-4. `sheep attach <id> -- "And now?"` continues it. At your own terminal,
-   `sheep attach <id>` opens pi's interactive terminal on the same sheep,
-   from the installed bundle, with no checkout of pi anywhere.
-
-5. `sheep --agent-help` is the guide the dog reads: the verbs, the home,
-   what needs a person, in the words this build ships. The skill says to
+5. `sheep --agent-help` is the guide your agent reads: the verbs, the
+   home, what needs you, in the words this build ships. The skill says to
    read it, and little else.
 
-6. The next morning the home is not running. `sheep ls` starts it and lists
-   yesterday's sheep. `sheep home stop` stops it; `sheep home` says so.
+The home has **eyes**: a sheep can `look <path>` at a page it wrote, in a
+real Chromium, and read the picture; the report (errors, console, the
+accessibility tree) comes back in its transcript, and you read it in
+`sheep log`. With its container too, `look --serve 'npx vite --port $PORT
+--strictPort' /` runs that command with `PORT` set, renders the page its
+port serves, and stops it: a server lives for one look and no longer. The
+recipe for a frontend app is a skill this repository ships,
+[`docs/projects/serve/skills/frontend/SKILL.md`](docs/projects/serve/skills/frontend/SKILL.md);
+`sheep pasture put <name> skills/frontend/SKILL.md <that file>` puts it in
+a pasture and every sheep born there reads it.
 
-7. `sheep export <id>` writes a pi session file. `sheep --version` prints
-   the build stamp: the commit on `main` the release was built from, and
-   when. Upgrading is `npm install -g github:dglazkov/sheep#release` again.
+The **kennel** is `.sheep/` at or above the working directory, found the
+way git finds `.git`, and `~/.sheep` when there is none. Setting up for
+everywhere puts the config there, so every directory finds the one home;
+setting up for this directory gives that directory a kennel and a station
+of its own, with `.sheep/` added to the `.gitignore` in a git work tree.
+`sheep config` and `sheep home` print which kennel they found.
 
-Every release is proved before it is pushed by installing it the way you
-do, into a fresh prefix, cache, and `HOME`, and walking the steps above
-with the scripted model: `pnpm hermetic --ring package`. The walk includes
-a look: a sheep writes a page with a bug, looks at it, reads the picture,
-and clicks, the Chrome fetched into that fresh `HOME`. With `--docker`,
-on a machine with Docker, the walk's home has a container: a sheep names
-its tools from the registry's image, another looks at a page its own
-server serves and finds nothing listening afterwards, and the container is
-gone after the idle period.
+**After the first sitting, nothing asks you for anything.** Upgrading is
+`npm install -g github:dglazkov/sheep#release`; `sheep home` then says the
+home is older, and `sheep home deploy` reads the token and the key that
+were kept, redeploys, and moves the home's stamp with every session and
+pasture kept. `CLOUDFLARE_API_TOKEN` and `ANTHROPIC_API_KEY` in the
+environment take precedence over what is kept, and nothing requires them.
+When a command does need you — the credentials file is gone, say, on a new
+laptop — it stops with a paragraph that begins `for the shepherd:` and
+names the one command to type at your terminal, `sheep setup`; your agent
+passes it on. `sheep home delete` is yours too: it lists what goes and
+waits for the station's name typed at your terminal.
+
+`sheep export <id>` writes a pi session file. `sheep --version` prints the
+build stamp: the commit on `main` the release was built from, and when.
 
 ## Developing sheep
 
 Everything below is the checkout: `sheep` here means
 `node packages/cli/bin/sheep.js`, against a home run from source.
+
+### The developer's rig
+
+A shepherd's home is a station on their account. A developer of sheep also
+has the **rig**: the local home, workerd under a kennel's `local/`, which is
+what the rings run a release's Worker in and what the conductor walks a
+journey with a real model on without spending the account. It needs
+everything a station does not: wrangler's workerd, a Chrome fetched on the
+first look, and Docker for the container. It is the checkout's and the
+rings', and a shepherd never hears of it.
+
+```sh
+node packages/cli/bin/sheep.js home local [--faux] [--no-container]   # a home under the kennel's local/, started if it was not
+node packages/cli/bin/sheep.js home stop                               # stop this kennel's local home
+```
+
+`sheep home local` writes the kennel's config when there is none and
+`.dev.vars` (mode 600) under `local/` with the home's token and the model
+key, which it reads from what `sheep setup` kept in `~/.sheep/credentials`
+or from `ANTHROPIC_API_KEY` in the environment; `--faux` runs the scripted
+model that answers "ok" instead, for the plumbing without a key. With
+Docker Desktop (or the docker engine) on the machine the home rents a
+container beside every cell, pulled from the registry as the release
+named it; without Docker, or with `--no-container`, its sheep read, write,
+and edit, and the report says which in one sentence. The local home always
+has eyes, and its first look fetches a Chrome into the wrangler cache. A
+command whose home is the local one starts it when the connection is
+refused, and says so on stderr.
+
+Every release is proved before it is pushed by installing it the way a
+user does, into a fresh prefix, cache, and `HOME`, and walking it:
+`pnpm hermetic --ring package`. The walk drives the stile through a
+terminal the ring owns against the fake account (`t0`), then walks the
+herd on the rig with the scripted model, including a look: a sheep writes a
+page with a bug, looks at it, reads the picture, and clicks, the Chrome
+fetched into that fresh `HOME`. With `--docker`, on a machine with Docker,
+the walk's home has a container: a sheep names its tools from the
+registry's image, another looks at a page its own server serves and finds
+nothing listening afterwards, and the container is gone after the idle
+period. `--ring machine` repeats it inside `node:22-slim` and
+`node:24-slim`; `--ring dog` gives Claude Code the sentence in a container
+whose rig home and kennel the ring set up first; `--ring account` deploys
+a station on the shepherd's account, plays the shepherd through the stile
+with the real token and key, and walks the dog with nothing in the
+environment.
 
 ### sheep
 
@@ -212,19 +257,21 @@ node packages/cli/bin/sheep.js new                                              
 
 #### Deploy a home on Cloudflare
 
-From the installed command, with a Cloudflare API token (Workers Scripts,
-Durable Objects, Containers, Workers Subdomain, Account Settings read,
-Billing read) and the Anthropic key in the shell, on an account with the
-Workers Paid plan:
+`sheep setup` at a terminal is the shepherd's way, and deploys through
+the same code. From the installed command, with a Cloudflare API token
+(Workers Scripts, Durable Objects, Containers, Workers Subdomain, Account
+Settings read, Billing read) and the Anthropic key either kept in
+`~/.sheep/credentials` or in the environment, which is how the rings and CI
+give them, on an account with the Workers Paid plan:
 
 ```sh
-export CLOUDFLARE_API_TOKEN=...  ANTHROPIC_API_KEY=...
-sheep home deploy [--name <worker>] [--subdomain <name>]   # the pen home, a container beside every cell; prints the address
+CLOUDFLARE_API_TOKEN=... ANTHROPIC_API_KEY=... sheep home deploy [--name <worker>] [--subdomain <name>] [--faux]
 sheep home delete                                          # lists what goes (sessions, pastures, the application), then ends it after its name is typed
 ```
 
-Without the two variables it prints what it needs and costs, and makes
-nothing. The first deploy from a directory mints the Worker's name from
+With neither kept nor set it stops in two parts, the dog's line and the
+shepherd's paragraph, and makes nothing; `--faux` sets the scripted model
+as the station's var, the account ring's flag. The first deploy from a directory mints the Worker's name from
 the directory's, records it in the kennel's config (`.sheep/config`, or
 `~/.sheep/config` outside a kennel) with the address and the token it
 generated, and sets the secrets through `wrangler secret put` on stdin;

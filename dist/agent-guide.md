@@ -12,45 +12,32 @@ build you run.
 
 `sheep --version` says which build this is. If the command is missing,
 `npx github:dglazkov/sheep#release setup` installs it and puts the skill
-here. Upgrading is
-`npm install -g github:dglazkov/sheep#release` again, then `sheep home
-deploy` for a deployed home, which `sheep home` asks for on stderr while
-the home is older; every session is kept.
+here. Upgrading is `npm install -g github:dglazkov/sheep#release` again,
+then `sheep home deploy`, which `sheep home` asks for while the home is
+older; it asks nobody anything, and every session is kept.
 
-Every verb talks to a home; the first is this machine's:
+Every verb talks to a **home**: the shepherd's station on their
+Cloudflare account, where every sheep lives with a container to clone,
+build, test, and push in. You never make one. The shepherd does, once, at
+their own terminal, with `sheep setup`, which asks them for their account
+token and their Anthropic key and keeps both. Run by you, with no
+terminal, `sheep setup` asks nothing: it installs the skill here and its
+report's `home:` line says whether a home is reachable.
 
-```sh
-sheep home local
-```
-
-It starts a home under the kennel and prints its address, the kennel, the
-config, and a `key:` line. Without a key that line says what the shepherd
-must export (see the end). `sheep home local --faux` runs a scripted model
-that answers "ok": the plumbing, without a key.
-
-A `container:` line follows: with Docker the home rents one beside every
-cell and its sheep can clone, build, test, and push; without, one sentence
-says what a container would add — tell the shepherd it when the work needs
-a repository.
-
-`sheep home stop` stops it; the next verb starts it again. `sheep home`
-reports the kennel, the home, and whether it answers, and `--home <url>`
-or `SHEEP_HOME` selects another for one command. `sheep home deploy` puts
-this package's home on the shepherd's Cloudflare account, a container
-beside every cell: it needs `CLOUDFLARE_API_TOKEN` and `ANTHROPIC_API_KEY`
-in your shell, and without them prints what it needs and costs and makes
-nothing. `sheep home delete` ends that station after its name is typed at
-a terminal; `sheep home join <address>` is a second machine's way in, the
-token one line of stdin, piped by the shepherd, never an argument.
+`sheep home` reports the kennel, the home, whether it answers, and which
+credentials are kept (never a value); `--home <url>` or `SHEEP_HOME`
+selects another for one command. `sheep home delete` is the shepherd's;
+`sheep home join <address>` is a second machine's way in, the token one
+line of stdin piped by the shepherd.
 
 ## The kennel
 
 The **kennel** is `.sheep/` at or above the working directory, found the
-way git finds `.git`, and `~/.sheep` when there is none. Each directory
-with one has its own config, sheep, token, and home, and `cd` is how you
-switch. `sheep setup` makes one here, and in a git work tree ignores it,
-since the config holds a token. If the command says `.sheep` is tracked,
-tell the shepherd a token is in their repository; do not fix it yourself.
+way git finds `.git`, and `~/.sheep` when there is none, which is usually
+where the shepherd's home is named, so you find it wherever you stand;
+`cd` is how you switch. Your `sheep setup` makes a kennel only where no
+home is reachable. If the command says `.sheep` is tracked, tell the
+shepherd a token is in their repository; do not fix it yourself.
 
 ## The verbs
 
@@ -101,10 +88,10 @@ the sheep, except `~/.cache`, `~/.npm`, and caches like `node_modules`.
 On a home with eyes a sheep sees what it wrote: `look <path>` renders a
 workspace page in Chromium and prints errors, console, and the
 accessibility tree beside a `look.png` it can `read`; the report is in
-`sheep log`. The local home has eyes; `sheep home` says whether a
-station has them. With a container, `look --serve 'npx vite --port $PORT
---strictPort' /` runs that command with `PORT` set, renders the page its
-port serves, and stops it; the recipe for a frontend app is the skill
+`sheep log`. `sheep home` says whether the home has them. With a
+container, `look --serve 'npx vite --port $PORT --strictPort' /` runs
+that command with `PORT` set, renders the page its port serves, and stops
+it; the recipe for a frontend app is the skill
 `docs/projects/serve/skills/frontend/SKILL.md`, for a pasture.
 
 ## Pastures: a herd on one tree
@@ -156,10 +143,13 @@ a sheep failed. A sheep you are finished with is ended with `sheep rm
 
 ## What needs a person
 
-1. **A model key.** Ask the shepherd to `export ANTHROPIC_API_KEY`, then
-   run `sheep home local` again. Never in the chat, never in a file.
-2. **An account for a deployed home.** The local home needs none; `sheep
-   home deploy` says what it needs when the shepherd wants one.
+1. **A home, and the two values it needs.** When `sheep home` says there
+   is none, or a command exits 2 with a paragraph that begins `for the
+   shepherd:`, give the shepherd that paragraph as it is and do nothing
+   else toward it: it names their one sitting, `sheep setup` at their own
+   terminal. Never ask for a token or a key in the chat.
+2. **Ending the station.** `sheep home delete` wants the station's name
+   typed at their terminal; give them the command.
 3. **A hand at a terminal.** `sheep new` or `sheep attach <id>` with no
    prompt opens pi's interactive terminal; tell the shepherd the command
    and the id.
