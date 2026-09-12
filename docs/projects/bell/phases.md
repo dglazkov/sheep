@@ -21,11 +21,15 @@ found the bug, not a detail.
 
 ---
 
-**Where we are: bell is planned, 11 September 2026. Nothing built.** The
-next thing to do is **bell phase 0**, which is the whole project: the
-stream in `runPrompt`, the docs, the rings, and the walk. Written from
-the shepherd's issue #7 the day bleat closed. One ⚑ step, the account
-ring's `b2`, which the shepherd has authorized the conductor to run.
+**Where we are: bell is done, 12 September 2026. Its one phase is
+CLOSED.** A dog holding a turn hears the work as it happens: `sheep
+attach --json` writes each entry as it lands, from the events the
+attached client was already being given, and the last assistant entry is
+still the last line. Planned from the shepherd's issue #7 the day bleat
+closed and closed the next morning. All four journeys are walked, the
+account ring's `b2` among 43 lines with none failed. One open finding,
+which waits on a sighting rather than on work; nothing waits on a
+person.
 
 One phase, because there is one change: the client already receives what
 the dog is polling for, and reads two fields out of it.
@@ -77,4 +81,20 @@ journey 4 step 3: `pnpm hermetic --ring account --yes <sha>` with `b2`,
 a station deployed and deleted on the shepherd's account, a few container
 minutes and one deploy; the shepherd authorized the conductor to run it.
 
-**Status: NOT STARTED.**
+**Status: CLOSED.** 2026-09-12. All four journeys are walked. The home
+ring reads the stream off the running child's pipe with a clock; the walk
+on a local home with Docker and a real model shows a turn's tool call
+twelve seconds before its result; the account ring closes it on release
+5230def, `ok b2` among 43 lines with none failed. `pnpm test` exits 0
+across all three inner rings, 124 CLI cases; `pnpm --filter @sheep/cli
+typecheck` exits 0.
+
+**Findings:**
+
+- **2026-09-12 — The stream is the subscription that was already there.** `entry_added` carries the whole entry to every replica subscriber, so `--json` gained four lines a turn with no new request and no second client.
+- **2026-09-12 — "Before the turn ends" can only be proved from the pipe.** Under a mutation that flushes the lines at the end, every other assertion still passed — the four lines, the roles, the ids, the bytes, the last line — and only the arrival time failed.
+- **2026-09-12 — The queued window had to open in the writing subscriber.** `until` subscribes second, so on the delivery that places the queued entry the writer ran first with the window shut and the dog's own prompt entry was swallowed.
+- **2026-09-12 — The wire's entry and the session file's are the same fields in a different key order.** `seq` and `timestamp` follow `message` from the replica and `parentId` from storage; the journey's criterion was corrected rather than the bytes canonicalised.
+- **2026-09-12 — The walk is where the promise is visible.** With a real model and a first act of `sleep 12 && echo awake`, the call's line came off the pipe at 1.33 s and its result at 13.35 s, twelve seconds of a sheep at work.
+- **2026-09-12 — The account ring closes it on release 5230def, `ok b2`, 43 lines held:** four lines, the tool call's 15.0 s before the exit with the child still running, and `sheep log --json` holding the same four ids in the same order.
+- **2026-09-12 — Open: a compaction entry after the final assistant entry would make the last line not an assistant one.** Nothing filters the stream, by design; no faux program compacts, so a long real session is where it would show.
