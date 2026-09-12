@@ -258,7 +258,8 @@ read whole after it.
 **Proof:** `pnpm test` exits 0 across all three inner rings; `pnpm -r
 typecheck` exits 0. Falsified by at least one mutation: `/join`
 answering a home with no `SHEEP_JOIN` (the workerd test fails), and the
-join secret left on the Worker (`t2` fails against the fakes). **⚑**
+join secret left on the Worker (journey 3's case in `stile.test.ts` fails
+against the fakes, as `t2` would on the account). **⚑**
 `pnpm hermetic --ring account --yes <sha>` with a7 as the stile and
 `t2`: a station deployed and deleted on the shepherd's account, a few
 container minutes. Then the walk, journey 3 steps 1 to 3, by hand: this
