@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 // @ts-expect-error no declarations for the release script
 import { BIN_SHEEP_JS, expectedReleaseFiles, IMAGE_REPOSITORY, PREPARATION_KEYS, releaseManifest, SKILL_FILE } from "../../../scripts/release.mjs";
 // @ts-expect-error no declarations for the bundle script
-import { assertEyes, EYES_BINDING, IMAGE_DIGEST, imageBy, imageReference, shippedConfig } from "../../../scripts/bundle.mjs";
+import { assertEyes, assertJoin, EYES_BINDING, IMAGE_DIGEST, imageBy, imageReference, JOIN_BINDING, shippedConfig } from "../../../scripts/bundle.mjs";
 import { parseJsonc } from "../src/deploy.js";
 
 const cellConfigPath = new URL("../../cell/wrangler.jsonc", import.meta.url).pathname;
@@ -133,6 +133,21 @@ describe("the release manifest", () => {
     expect(shipped.browser).toEqual(browser);
     expect(shipped.env.pen.browser).toEqual(browser);
     expect(assertEyes(shippedConfig(cell, undefined))).toMatchObject({ browser, env: { pen: { browser } } });
+  });
+
+  it("ships the join store's binding with no id at the top level and in env.pen, and refuses a config without it (stile phase 2)", () => {
+    expect(JOIN_BINDING).toBe("JOIN");
+    const kv = [{ binding: "JOIN" }];
+    const both = { name: "sheep", kv_namespaces: kv, env: { pen: { name: "sheep-pen", kv_namespaces: kv } } };
+    expect(assertJoin(both)).toBe(both);
+    expect(() => assertJoin({ ...both, env: { pen: { name: "sheep-pen" } } })).toThrow(/no id-less KV binding named JOIN at env\.pen;/);
+    expect(() => assertJoin({ name: "sheep" })).toThrow(/at the top level or env\.pen;/);
+    // An id in the shipped config would bind every station to one namespace: deploy writes each station's own.
+    expect(() => assertJoin({ ...both, env: { pen: { name: "sheep-pen", kv_namespaces: [{ binding: "JOIN", id: "shared" }] } } })).toThrow(/at env\.pen;/);
+    const cell = parseJsonc(readFileSync(cellConfigPath, "utf8"));
+    const shipped = assertJoin(shippedConfig(cell, { commit: STAMP.commit, builtAt: STAMP.builtAt, imageDigest: DIGEST })) as { kv_namespaces: unknown; env: { pen: { kv_namespaces: unknown } } };
+    expect(shipped.kv_namespaces).toEqual(kv);
+    expect(shipped.env.pen.kv_namespaces).toEqual(kv);
   });
 
   it("refuses a stamp with a piece missing", () => {

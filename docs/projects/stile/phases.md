@@ -277,38 +277,32 @@ container minutes. Then the walk, journey 3 steps 1 to 3: this laptop
 joining `sheep-2` from a scratch kennel under a fresh `HOME`, after
 `sheep-2` is upgraded to carry the binding.
 
-**Status: PART-DONE, 12 September 2026.** The join is built and green in
-the inner rings: `pnpm test`, `pnpm -r typecheck`, and `pnpm bundle` exit
-0, and both named mutations falsified their tests. The join walked on
-`sheep-2` and a7 held on the account, but `t2` failed and a probe proved
-why: the secret put restarts the turns it should leave alone. Open.
+**Status: PART-DONE, 12 September 2026.** Re-cut to the KV store and green
+in the inner rings: `pnpm test`, `pnpm -r typecheck`, and `pnpm bundle`
+exit 0, and both named mutations falsified their tests — `/join`
+answering a bearer whose key is absent fails three workerd cases, and the
+join key left in the store fails three of journey 3's. The ⚑ account ring
+and the join walk run again on the store.
 
 **Findings:**
 
-- **2026-09-12 — The join is two wrangler calls and an ask between.** A
-  put and a delete, with `POST /join` over plain HTTP in the middle; the
-  test proves the order by recording, at each ask, whether `SHEEP_JOIN`
-  was on the Worker.
-- **2026-09-12 — The delete runs on every path after the put.** A poll
-  that times out or a config write that throws still deletes; a failed
-  delete names the secret left behind. A Ctrl-C mid-poll leaves one no
-  process holds, and the next join overwrites it.
-- **2026-09-12 — The station row could not show two homes.** With the
-  walk's station and `sheep-2` on the account the options passed the
-  row's width and hid the join; the row is now a window holding the
-  selected option.
-- **2026-09-12 — A global `sheep` beside `node` broke setup's tests.**
-  The shepherd's taste test installed one, as journey 1 step 1 does; the
-  command step then read "on PATH". The tests now build their own PATH.
 - **2026-09-12 — A secret put restarts a running turn.** On a scratch
   station a 180 s faux turn ended whole alone; with `SHEEP_JOIN` put and
-  deleted mid-turn it restarted, left two empty assistant entries, and
-  its lane stayed running past its reply. The design's "config-only, not
-  a rollout" is false.
-- **2026-09-12 — Open: the join rebuilt on a KV store.** The shepherd
-  chose a `<worker>-join` namespace per station over warning of restarts;
-  their token already writes KV. Stile phase 2 is re-cut to it, and its
-  rings and walk run again.
+  deleted mid-turn it restarted with two empty assistant entries and a
+  lane stuck running. Issue #10; the shepherd chose a KV store.
+- **2026-09-12 — The join has no wrangler call now.** The key is written,
+  asked with, and deleted through the account API; the home deletes a key
+  it answers, so `t2` cannot see the stile's own delete, which the fakes'
+  event order proves instead.
+- **2026-09-12 — A station with no store is refused before any write.**
+  Otherwise joining one deployed before the store sits through ninety
+  seconds of 404s; the refusal names `sheep home deploy`.
+- **2026-09-12 — The station row could not show two homes.** With the
+  walk's station and `sheep-2` on the account the join was cut off the
+  row; the row is now a window holding the selected option.
+- **2026-09-12 — Open: the ⚑ account ring and the join walk on the
+  store.** They need a release with the store, and `sheep-2` upgraded to
+  it, which makes its `sheep-2-join` namespace.
 
 **Formerly: the join by a Worker secret (built 12 Sep 2026, commit
 6e64cb9).** The join token was put as `SHEEP_JOIN` with `wrangler secret

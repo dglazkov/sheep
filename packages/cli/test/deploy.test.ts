@@ -286,15 +286,22 @@ describe("sheep home deploy: steps 2 to 5 against the fake account", () => {
     expect(result.stderr).not.toContain(TOKEN);
     expect(result.stderr).not.toContain(KEY);
 
-    // Step 2: the account was asked, in order, and nothing was written to it before wrangler ran: every request a GET.
+    // Step 2: the account was asked, in order, and nothing was written to it before wrangler ran but the join store.
     const asked = w.state.requests.map((request) => `${request.method} ${request.path}`);
     expect(asked.slice(0, 4)).toEqual(["GET /accounts", `GET /accounts/${ACCOUNT.id}/tokens/verify`, `GET /accounts/${ACCOUNT.id}/subscriptions`, `GET /accounts/${ACCOUNT.id}/workers/subdomain`]);
     // Two listings of the applications: the names taken before the deploy, and the health polled after the secrets.
     expect(asked.filter((line) => line === `GET /accounts/${ACCOUNT.id}/containers/applications`)).toHaveLength(2);
     expect(asked.indexOf(`GET /accounts/${ACCOUNT.id}/containers/applications`)).toBeLessThan(asked.lastIndexOf(`GET /accounts/${ACCOUNT.id}/containers/applications`));
     expect(asked.filter((line) => line.startsWith(`GET /accounts/${ACCOUNT.id}/workers/scripts`))).toHaveLength(2);
-    expect(w.state.requests.every((request) => request.method === "GET")).toBe(true);
+    // The one write before wrangler is the join store (stile phase 2): the account asked for a namespace titled blog-join, and
+    // having none, one made; every other request a GET.
+    const namespaces = `/accounts/${ACCOUNT.id}/storage/kv/namespaces`;
+    expect(w.state.requests.filter((request) => request.method !== "GET").map((request) => `${request.method} ${request.path}`)).toEqual([`POST ${namespaces}`]);
+    expect(asked.indexOf(`GET ${namespaces}`)).toBeLessThan(asked.indexOf(`POST ${namespaces}`));
     expect(w.state.requests.every((request) => request.auth === `Bearer ${TOKEN}`)).toBe(true);
+    expect(w.state.kv.map(({ id, title }) => ({ id, title }))).toEqual([{ id: report.joinStore.id, title: "blog-join" }]);
+    expect(report.joinStore).toEqual({ id: w.state.kv[0]!.id, title: "blog-join", state: "made" });
+    expect(result.stderr).toContain(`sheep: made the join store blog-join (${report.joinStore.id})\n`);
 
     // Step 3 and 4: four wrangler calls, the token and the account in each one's environment and in no argument.
     const calls = await w.calls();
@@ -316,7 +323,8 @@ describe("sheep home deploy: steps 2 to 5 against the fake account", () => {
     expect(calls[2]!.stdin).toBe(`${KEY}\n`);
     expect(calls[3]!.stdin).toBe(`${home}\n`);
     // The account's side of the deploy: the Worker and the container application both named blog, the config's image.
-    expect(w.state.deploys).toEqual([{ name: "blog", container: "blog", image: join(cellConfig, "..", "..", "pen", "Dockerfile"), vars: ["SHEEP_PROVIDER:faux"] }]);
+    // And the join store bound to it as JOIN by the namespace's id, in the pen environment wrangler deployed (stile phase 2).
+    expect(w.state.deploys).toEqual([{ name: "blog", container: "blog", image: join(cellConfig, "..", "..", "pen", "Dockerfile"), vars: ["SHEEP_PROVIDER:faux"], kv: [{ binding: "JOIN", id: report.joinStore.id }] }]);
 
     // The derived config: plain JSON, every name the Worker's, main absolute, no secret in it.
     const written = JSON.parse(await readFile(derived, "utf8")) as Record<string, any>;
@@ -326,6 +334,8 @@ describe("sheep home deploy: steps 2 to 5 against the fake account", () => {
     expect(written.env.pen.containers[0].name).toBe("blog");
     expect(written.main.startsWith("/")).toBe(true);
     expect(written.$schema).toBeUndefined();
+    expect(written.env.pen.kv_namespaces).toEqual([{ binding: "JOIN", id: report.joinStore.id }]);
+    expect(written.kv_namespaces).toBeUndefined();
     expect(await readFile(derived, "utf8")).not.toContain(config.token as string);
 
     // Step 5: the config names the station, with the token and the name and no local marker, mode 600; the station was asked with the token.
@@ -344,6 +354,11 @@ describe("sheep home deploy: steps 2 to 5 against the fake account", () => {
     expect(second.home).toBe(home);
     // The same image again: the application was read before the deploy, and no rollout followed.
     expect(second.rollout).toEqual({ status: "none", step: null, healthy: null, seconds: 0, from: null });
+    // The join store found by its title and kept: no second namespace, and the redeploy bound the same one.
+    expect(second.joinStore).toEqual({ ...report.joinStore, state: "kept" });
+    expect(w.state.kv).toHaveLength(1);
+    expect(w.state.requests.filter((request) => request.method === "POST")).toHaveLength(1);
+    expect(w.state.deploys.at(-1)!.kv).toEqual([{ binding: "JOIN", id: report.joinStore.id }]);
     expect(await readConfig(w.config)).toEqual(config);
     const later = (await w.calls()).slice(4);
     expect(later.map((call) => call.args[0])).toEqual(["deploy", "secret", "secret", "secret"]);
@@ -620,6 +635,22 @@ describe("the derived config", () => {
     expect(config.env.pen.migrations.map((migration: { tag: string }) => migration.tag)).toEqual(["v1", "v2", "v3", "v4"]);
     expect(config.env.pen.worker_loaders).toEqual([{ binding: "LOADER" }]);
     expect(config.env.pen.vars).toEqual({ SHEEP_MODEL: "claude-sonnet-5", PEN_IDLE: "10m" });
+    // The join store (stile phase 2): the base binds JOIN with no id, at the top and in pen; with no id given, neither is carried,
+    // since wrangler would make a namespace of its own for an id-less binding.
+    expect(config.env.pen.kv_namespaces).toBeUndefined();
+    expect(config.kv_namespaces).toBeUndefined();
+    const bound = JSON.parse(deriveConfig(text, cellConfig, "blog", "0f2ac74b498b48028511e0dc8a8b1f1c").text) as Record<string, any>;
+    expect(bound.env.pen.kv_namespaces).toEqual([{ binding: "JOIN", id: "0f2ac74b498b48028511e0dc8a8b1f1c" }]);
+    expect(bound.kv_namespaces).toBeUndefined();
+  });
+
+  it("binds the join store into a release's config that has no JOIN of its own, as an older release's does, keeping any other namespace", () => {
+    const base = JSON.stringify({ name: "sheep", main: "worker.mjs", env: { pen: { name: "sheep-pen", kv_namespaces: [{ binding: "CACHE", id: "c0ffee" }], containers: [{ image: "docker.io/someone/sheep-pen:2b71e46", class_name: "PenContainer" }] } } });
+    const config = JSON.parse(deriveConfig(base, "/pkg/home/wrangler.jsonc", "blog", "join-id").text) as Record<string, any>;
+    expect(config.env.pen.kv_namespaces).toEqual([
+      { binding: "CACHE", id: "c0ffee" },
+      { binding: "JOIN", id: "join-id" },
+    ]);
   });
 
   it("leaves a registry image reference alone, as a release's config names one", () => {
@@ -637,7 +668,7 @@ describe("sheep home delete", () => {
   /** A deployed kennel: the config names blog with the station's token; the account holds it; the station holds three sheep and one pasture. */
   const station = async (): Promise<World> => {
     const w = await world(
-      { ...fresh(), workers: ["sheep", "sheep-pen", "blog"], applications: [{ id: "app-pen", name: "sheep-pen" }, { id: "app-blog", name: "blog" }] },
+      { ...fresh(), workers: ["sheep", "sheep-pen", "blog"], applications: [{ id: "app-pen", name: "sheep-pen" }, { id: "app-blog", name: "blog" }], kv: [{ id: "kv-sheep", title: "sheep-join", values: {} }, { id: "kv-blog", title: "blog-join", values: {} }] },
       { token: STATION_TOKEN, sessions: [born("11111111-1111-4111-8111-111111111111", "older-sheep"), born("22222222-2222-4222-8222-222222222222", null), born("33333333-3333-4333-8333-333333333333", "typo", "ring-1")], pastures: [{ name: "ring-1", createdAt: 1_757_000_000_000 }] },
     );
     await writeFile(w.config, JSON.stringify({ home: address("blog", "fake"), token: STATION_TOKEN, name: "blog" }));
@@ -698,15 +729,17 @@ describe("sheep home delete", () => {
     const w = await station();
     const result = await w.sheep(["home", "delete"], { stdin: "blog\n" });
     expect(result.code, result.stderr).toBe(0);
-    expect(result.stdout).toBe(`${listing(w)}deleted the Worker blog and its objects\ndeleted the container application blog (app-blog)\nconfig: ${w.config} removed\nsessions deleted: 3\n`);
+    expect(result.stdout).toBe(`${listing(w)}deleted the Worker blog and its objects\ndeleted the container application blog (app-blog)\ndeleted the join store blog-join (kv-blog)\nconfig: ${w.config} removed\nsessions deleted: 3\n`);
     const calls = await w.calls();
     expect(calls).toHaveLength(1);
     expect(calls[0]!.args).toEqual(["delete", "--config", join(w.kennel, "deploy", "wrangler.jsonc"), "--env", "pen", "--force"]);
     expect(calls[0]!.env).toMatchObject({ CI: "1", token: true, tokenInArgs: false });
     expect(w.state.workers).toEqual(["sheep", "sheep-pen"]);
     expect(w.state.applications).toEqual([{ id: "app-pen", name: "sheep-pen" }]);
-    expect(w.state.requests.filter((request) => request.method === "DELETE").map((request) => request.path)).toEqual([`/accounts/${ACCOUNT.id}/containers/applications/app-blog`]);
-    // The one DELETE came after every GET: nothing was written to the account before the name was typed.
+    // The application, then the join store after the Worker that bound it (stile phase 2); another station's store is left.
+    expect(w.state.requests.filter((request) => request.method === "DELETE").map((request) => request.path)).toEqual([`/accounts/${ACCOUNT.id}/containers/applications/app-blog`, `/accounts/${ACCOUNT.id}/storage/kv/namespaces/kv-blog`]);
+    expect(w.state.kv.map((namespace) => namespace.title)).toEqual(["sheep-join"]);
+    // The DELETEs came after every GET: nothing was written to the account before the name was typed.
     const methods = w.state.requests.map((request) => request.method);
     expect(methods.lastIndexOf("GET")).toBeLessThan(methods.indexOf("DELETE"));
     expect(existsSync(w.config)).toBe(false);
@@ -723,6 +756,7 @@ describe("sheep home delete", () => {
       listing: { home: address("blog", "fake"), sessions: 3, pastures: 1, application: { id: "app-blog" }, config: w.config },
       worker: "deleted",
       application: { id: "app-blog", state: "deleted" },
+      joinStore: { id: "kv-blog", title: "blog-join", state: "deleted" },
       config: { path: w.config, state: "removed" },
       sessionsDeleted: 3,
     });
@@ -732,7 +766,7 @@ describe("sheep home delete", () => {
     await writeFile(stale.config, JSON.stringify({ home: address("blog", "fake"), token: "not-the-station-token", name: "blog" }));
     const unknown = await stale.sheep(["home", "delete"], { stdin: "blog\n" });
     expect(unknown.code, unknown.stderr).toBe(0);
-    expect(unknown.stdout).toBe(`${listing(stale, "app-blog", "unknown (the home did not answer)", "unknown (the home did not answer)")}deleted the Worker blog and its objects\ndeleted the container application blog (app-blog)\nconfig: ${stale.config} removed\nsessions deleted: unknown\n`);
+    expect(unknown.stdout).toBe(`${listing(stale, "app-blog", "unknown (the home did not answer)", "unknown (the home did not answer)")}deleted the Worker blog and its objects\ndeleted the container application blog (app-blog)\ndeleted the join store blog-join (kv-blog)\nconfig: ${stale.config} removed\nsessions deleted: unknown\n`);
 
     // No token in the config at all: the station is not asked, and the counts are unknown.
     const bare = await station();
@@ -757,6 +791,7 @@ describe("sheep home delete", () => {
       listing: { home: address("blog", "fake"), sessions: 0, pastures: 0, application: null, config: w.config },
       worker: "absent",
       application: null,
+      joinStore: null,
       config: { path: w.config, state: "cleared" },
       sessionsDeleted: 0,
     });
@@ -766,7 +801,7 @@ describe("sheep home delete", () => {
     await writeFile(w.config, JSON.stringify({ home: address("blog", "fake"), token: STATION_TOKEN, name: "blog", extra: "kept" }));
     const prose = await w.sheep(["home", "delete"], { stdin: "blog\n" });
     expect(prose.code, prose.stderr).toBe(0);
-    expect(prose.stdout).toBe(`${listing(w, "none on the account", "0", "0")}no Worker named blog on ${ACCOUNT.name}\nno container application named blog\nconfig: ${w.config} cleared\nsessions deleted: 0\n`);
+    expect(prose.stdout).toBe(`${listing(w, "none on the account", "0", "0")}no Worker named blog on ${ACCOUNT.name}\nno container application named blog\nno join store named blog-join\nconfig: ${w.config} cleared\nsessions deleted: 0\n`);
     // With no station named anywhere, there is nothing to type for.
     await writeFile(w.config, JSON.stringify({ extra: "kept" }));
     const none = await w.sheep(["home", "delete"], { stdin: "blog\n" });

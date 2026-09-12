@@ -15,16 +15,18 @@
  * the credentials file mode 600, and the count — with a frame snapshot at
  * every step. Journey 3 is walked the same way (stile phase 2): the
  * station step listing the account's sheep homes, the join chosen with an
- * arrow and Enter, the join's put, asks, and delete read back from the fake
- * wrangler's log and the fake station's, and `key` asking nothing. The
- * frames are written out by hand below, from the design's mock, and are not recorded from a run: a snapshot that is
- * whatever the code printed cannot fail.
+ * arrow and Enter, the join key's write, the asks, and its delete read back
+ * from the fake account's and the fake station's logs in one order, no
+ * wrangler call, and `key` asking nothing. The frames are written out by
+ * hand below, from the design's mock, and are not recorded from a run: a
+ * snapshot that is whatever the code printed cannot fail.
  *
  * Every world is its own `HOME`, a temporary directory: the machine this
  * runs on may keep real credentials in its own `~/.sheep`, and nothing
  * here may read them.
  */
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -405,26 +407,38 @@ describe("the stile: journey 1, the first sitting", () => {
 /** The home's own token on the fake station a join finds: made of no word on any screen, and sharing no run of eight with either fake value. */
 const STATION_TOKEN = "hT3wQ8zK5nV1pR7mX2cL9bJ4fD6gS0yA";
 
-/** A second laptop's world: the account already has `sheep`, deployed from the first, with its secrets, and the fake station is that Worker. */
-async function secondLaptop(options: { env?: Record<string, string>; joinLag?: number; worker?: string } = {}) {
+/**
+ * A second laptop's world: the account already has `sheep`, deployed from the first, with its secrets and its join store
+ * (the KV namespace `sheep-join`, empty), and the fake station is that Worker. `store: false` is a station from before stores.
+ */
+async function secondLaptop(options: { env?: Record<string, string>; joinLag?: number; worker?: string; store?: boolean; kvDeleteFails?: boolean } = {}) {
   const state = fresh();
   const worker = options.worker ?? "sheep";
   if (!state.workers.includes(worker)) state.workers.push(worker);
   state.secrets[worker] = ["SHEEP_TOKEN", "SHEEP_ANTHROPIC_API_KEY", "PEN_CELL_ORIGIN"];
+  // Another namespace first, so the store is found by its title and not by being the only one.
+  state.kv.push({ id: "kv-other-0000000000000000000000", title: "learner-cache", values: {} });
+  if (options.store !== false) state.kv.push({ id: "kv-join-00000000000000000000000", title: `${worker}-join`, values: {} });
+  state.kvDeleteFails = options.kvDeleteFails === true;
   const log: NonNullable<StationState["log"]> = [];
   const w = await world(state, { station: { token: STATION_TOKEN, worker, joinLag: options.joinLag ?? 1, log }, env: options.env });
   return { w, log };
 }
 
-/** The join token, as the put carried it on wrangler's stdin: the one place the test can learn it. */
-const joinTokenOf = (w: World): string => {
-  const put = w.wrangler().find((call) => call.args.slice(0, 3).join(" ") === "secret put SHEEP_JOIN");
-  expect(put, "a secret put SHEEP_JOIN in the wrangler log").toBeDefined();
-  return put!.stdin.replace(/\n$/, "");
+/** The join token, as the station's log saw it on the one bearer a join carries: the only place the test can learn it. */
+const joinTokenOf = (log: NonNullable<StationState["log"]>): string => {
+  const bearers = [...new Set(log.filter((entry) => entry.path === "/join").map((entry) => entry.auth))];
+  expect(bearers, "one bearer on every POST /join").toHaveLength(1);
+  return bearers[0]!.slice("Bearer ".length);
 };
 
+const keyOf = (joinToken: string): string => `join:${createHash("sha256").update(joinToken).digest("hex")}`;
+
+/** Every join key the fake account's stores hold now. */
+const joinKeysIn = (w: World): string[] => w.state.kv.flatMap((namespace) => Object.keys(namespace.values).filter((key) => key.startsWith("join:")));
+
 describe("the stile: journey 3, the second laptop", () => {
-  it("lists the account's sheep homes after new, joins sheep with the join token alone, keeps the home's token, deletes the join secret, and asks no key", { timeout: 120_000 }, async () => {
+  it("lists the account's sheep homes after new, joins sheep: the key written, asked, and deleted in order, no wrangler call, the join token alone at the home, and no key asked", { timeout: 120_000 }, async () => {
     const { w, log } = await secondLaptop();
     const run = w.stile([], [STATION_TOKEN]);
     await run.waitFor("› where");
@@ -449,17 +463,31 @@ describe("the stile: journey 3, the second laptop", () => {
     );
     // The listing asked every Worker on the account at its address, with no bearer, and nothing else yet.
     expect(log.map((entry) => `${entry.method} ${entry.path} ${entry.auth ?? "(no bearer)"}`).sort()).toEqual(["GET / (no bearer)", "GET / (no bearer)", "GET / (no bearer)"]);
-    expect(w.wrangler()).toEqual([]);
+    expect(w.state.events).toEqual([]);
     await run.press(DOWN);
     expect(run.frame()).toContain(`${cursor("station", "new sheep-2  ·  [join sheep]")}\n`);
     await run.press(ENTER);
 
     const exit = await run.exited;
     expect(exit).toEqual({ code: 0, stderr: "" });
-    // After the join the Worker has no SHEEP_JOIN, which is what the account ring reads from the account: not in the
-    // account's listing of the Worker's secrets, and not in the env the Worker is handed.
+    const joinToken = joinTokenOf(log);
+    expect(joinToken).toMatch(/^[0-9a-f]{48}$/);
+    const key = keyOf(joinToken);
+    // The join, in order: the key written to sheep-join with its two-minute TTL; the ask before the write reached the edge,
+    // refused; the ask after, answered, the home deleting the key it used; and the key deleted through the account API. After
+    // it the store holds no join key, which is what the account ring reads from the account.
+    expect(w.state.events).toEqual([`put ${key} ttl 120`, "ask 404", "ask 200", `delete ${key}`]);
+    expect(joinKeysIn(w)).toEqual([]);
+    const writes = w.state.requests.filter((request) => request.method !== "GET");
+    expect(writes.map((request) => `${request.method} ${request.path}`)).toEqual([
+      `PUT /accounts/${ACCOUNT.id}/storage/kv/namespaces/kv-join-00000000000000000000000/values/${encodeURIComponent(key)}`,
+      `DELETE /accounts/${ACCOUNT.id}/storage/kv/namespaces/kv-join-00000000000000000000000/values/${encodeURIComponent(key)}`,
+    ]);
+    // Through the account API, with the account token in the header; no wrangler call, and so no Worker version (issue #10).
+    for (const request of writes) expect(request.auth).toBe(`Bearer ${TOKEN}`);
+    expect(w.wrangler()).toEqual([]);
     expect(w.state.secrets.sheep).toEqual(["SHEEP_TOKEN", "SHEEP_ANTHROPIC_API_KEY", "PEN_CELL_ORIGIN"]);
-    expect(w.state.env.sheep?.SHEEP_JOIN).toBeUndefined();
+
     // The sentence the command prints after the screen stops, taken by the emulator before the buffer is read.
     await run.waitFor((text) => text.endsWith("\n\nsheep is set up on this machine; run `sheep --agent-help` and herd."), { whole: true, timeoutMs: 5_000 });
     expect(run.buffer()).toBe(
@@ -481,31 +509,17 @@ describe("the stile: journey 3, the second laptop", () => {
     expect(run.output()).not.toContain("API key:");
     expect(new Set(run.output().match(/(Cloudflare API token|Anthropic API key):/g) ?? [])).toEqual(new Set(["Cloudflare API token:"]));
 
-    // The join's wrangler calls, in order: the put, then the delete, and nothing deployed; the join token on the put's
-    // stdin and in no argument, and the account token in wrangler's environment and in no argument.
-    const calls = w.wrangler();
-    expect(calls.map((call) => call.args.slice(0, 3).join(" "))).toEqual(["secret put SHEEP_JOIN", "secret delete SHEEP_JOIN"]);
-    const joinToken = joinTokenOf(w);
-    expect(joinToken).toMatch(/^[0-9a-f]{48}$/);
-    for (const call of calls) {
-      expect(call.env.token).toBe(true);
-      expect(call.env.tokenInArgs).toBe(false);
-      expect(call.args.some((arg) => arg.includes(joinToken) || arg.includes(TOKEN) || arg.includes(STATION_TOKEN))).toBe(false);
-    }
-    expect(calls[1]!.stdin).toBe("");
-
-    // The poll, between them: every POST /join came while SHEEP_JOIN was on the Worker, the first answered 404 as the
-    // version before the put does, and the last answered the token.
+    // The asks: both carried the join token and nothing else, the first while the write was still on its way to the edge.
     const joins = log.filter((entry) => entry.path === "/join");
-    expect(joins.length).toBe(2);
-    expect(joins.map((entry) => [entry.method, entry.joinSet, entry.status])).toEqual([
+    expect(joins.map((entry) => [entry.method, entry.keyed, entry.status])).toEqual([
       ["POST", true, 404],
       ["POST", true, 200],
     ]);
     // The account token never reaches the home: the fake station's log holds the join token alone as a bearer, never the
-    // account token and never the home's own.
+    // account token and never the home's own. And the store never held the token, only its hash.
     const bearers = new Set(log.map((entry) => entry.auth).filter((auth) => auth !== undefined));
     expect([...bearers]).toEqual([`Bearer ${joinToken}`]);
+    expect(w.state.events.join("\n")).not.toContain(joinToken);
 
     // The config: the address and the home's token, no name, no local marker, mode 600, in ~/.sheep where `where` said.
     const configPath = `${w.root}/.sheep/config`;
@@ -543,9 +557,10 @@ describe("the stile: journey 3, the second laptop", () => {
     await run.press(ENTER);
     expect((await run.exited).code).toBe(0);
     expect(JSON.parse(readFileSync(`${w.root}/.sheep/config`, "utf8"))).toEqual({ home: `https://${long}.fake.workers.dev`, token: STATION_TOKEN });
+    expect(joinKeysIn(w)).toEqual([]);
   });
 
-  it("deletes the join secret when the home never answers the join, keeps nothing, and says so", { timeout: 60_000 }, async () => {
+  it("deletes the join key when the home never answers the join, keeps nothing, and says so", { timeout: 60_000 }, async () => {
     const { w, log } = await secondLaptop({ joinLag: 1_000, env: { SHEEP_TEST_RETRY_MS: "5" } });
     await w.keep({ cloudflare: TOKEN });
     const run = w.stile();
@@ -558,15 +573,18 @@ describe("the stile: journey 3, the second laptop", () => {
     expect(exit.code).not.toBe(0);
     expect(exit.stderr).toContain("did not answer the join");
     expect(exit.stderr).toContain("nothing was kept");
-    expect(w.wrangler().map((call) => call.args.slice(0, 3).join(" "))).toEqual(["secret put SHEEP_JOIN", "secret delete SHEEP_JOIN"]);
-    expect(log.filter((entry) => entry.path === "/join").length).toBe(60);
-    expect(w.state.secrets.sheep).not.toContain("SHEEP_JOIN");
-    expect(w.state.env.sheep?.SHEEP_JOIN).toBeUndefined();
+    // Ninety asks, the whole budget, each refused; then the key the home never used deleted through the API, and none left.
+    expect(log.filter((entry) => entry.path === "/join").length).toBe(90);
+    const key = keyOf(joinTokenOf(log));
+    expect(w.state.events[0]).toBe(`put ${key} ttl 120`);
+    expect(w.state.events.at(-1)).toBe(`delete ${key}`);
+    expect(joinKeysIn(w)).toEqual([]);
+    expect(w.wrangler()).toEqual([]);
     expect(existsSync(`${w.root}/.sheep/config`)).toBe(false);
   });
 
-  it("names the join secret left on the Worker when its delete fails, after keeping what the home answered", { timeout: 60_000 }, async () => {
-    const { w } = await secondLaptop({ env: { SHEEP_TEST_WRANGLER_FAIL: "secret-delete:SHEEP_JOIN" } });
+  it("names the join key left in the store when its delete fails, and its TTL, after keeping what the home answered", { timeout: 60_000 }, async () => {
+    const { w, log } = await secondLaptop({ joinLag: 1_000, env: { SHEEP_TEST_RETRY_MS: "5" }, kvDeleteFails: true });
     await w.keep({ cloudflare: TOKEN });
     const run = w.stile();
     await run.waitFor("› where");
@@ -576,9 +594,28 @@ describe("the stile: journey 3, the second laptop", () => {
     await run.press(ENTER);
     const exit = await run.exited;
     expect(exit.code).not.toBe(0);
-    expect(exit.stderr).toContain("the join secret SHEEP_JOIN is still on sheep");
-    expect(exit.stderr).not.toContain(joinTokenOf(w));
-    expect(w.state.secrets.sheep).toContain("SHEEP_JOIN");
+    expect(exit.stderr).toContain("did not answer the join");
+    expect(exit.stderr).toContain("the join key is still in sheep-join (kv-join-00000000000000000000000) until it expires 120s after it was written");
+    expect(exit.stderr).not.toContain(joinTokenOf(log));
+    expect(joinKeysIn(w)).toEqual([keyOf(joinTokenOf(log))]);
+  });
+
+  it("refuses a station with no join store before writing anything or asking the home: its next deploy gives it one", { timeout: 60_000 }, async () => {
+    const { w, log } = await secondLaptop({ store: false });
+    await w.keep({ cloudflare: TOKEN });
+    const run = w.stile();
+    await run.waitFor("› where");
+    await run.press(ENTER);
+    await run.waitFor("› station");
+    await run.press(DOWN);
+    await run.press(ENTER);
+    const exit = await run.exited;
+    expect(exit.code).toBe(2);
+    expect(exit.stderr).toContain("sheep has no join store (no KV namespace sheep-join on the account)");
+    expect(exit.stderr).toContain("`sheep home deploy` from the machine that deployed it gives it one; nothing was written");
+    expect(w.state.events).toEqual([]);
+    expect(log.filter((entry) => entry.path === "/join")).toEqual([]);
+    expect(existsSync(`${w.root}/.sheep/config`)).toBe(false);
   });
 });
 

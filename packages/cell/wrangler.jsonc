@@ -22,6 +22,9 @@
   // and no eyes. Locally, wrangler and the test pool launch a Chrome from the wrangler cache,
   // `~/Library/Caches/.wrangler/chrome` on macOS and `~/.cache/.wrangler/chrome` on Linux.
   "browser": { "binding": "BROWSER" },
+  // Stile phase 2: the join store. No id here: `sheep home deploy` makes the station's `<worker>-join` namespace through the
+  // account API and writes its id into the derived config's `pen` environment; wrangler dev and the test pool simulate it locally.
+  "kv_namespaces": [{ "binding": "JOIN" }],
   "vars": {
     "SHEEP_MODEL": "claude-sonnet-5"
   },
@@ -61,6 +64,8 @@
       "worker_loaders": [{ "binding": "LOADER" }],
       // Eyes phase 0: the same binding as the top level's, repeated because a named environment inherits none.
       "browser": { "binding": "BROWSER" },
+      // Stile phase 2: the join store, repeated because a named environment inherits no binding; deploy fills in the id.
+      "kv_namespaces": [{ "binding": "JOIN" }],
       "vars": {
         "SHEEP_MODEL": "claude-sonnet-5",
         "PEN_IDLE": "10m"

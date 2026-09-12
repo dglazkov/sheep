@@ -168,14 +168,23 @@
  * this checkout as t1 drives the first machine's, the account token typed
  * in, the walk's station chosen from the listing, and `ps` polled inside
  * the container for either token; t2 then reads the turn still running,
- * the Worker's secret names from the account with no `SHEEP_JOIN`, and
+ * the station's join store through the account API with no `join:` key, and
  * the turn whole once it ends; and `--phase herd`, on the config the
  * stile wrote, runs `sheep home --json`, `sheep ls --json` listing the
  * sheep the first machine minted, a promptless `sheep attach <id>`, and
  * then, once the outer half has started a turn on that sheep from `blog`
  * with `sheep attach <id> -- …` and killed that process with SIGKILL once
  * it runs (lamb's journey 2: the first terminal closed mid-turn), `sheep
- * wait <id>` and `sheep log <id>` showing the turn's end. Journey 3 (step a8): pasture's
+ * wait <id>` and `sheep log <id>` showing the turn's end. The join store
+ * (stile phase 2, re-cut from a Worker secret after issue #10): the
+ * preflight lists the account's KV namespaces and refuses a leftover
+ * `<name>-join`; a2 expects one only when the older release ships the
+ * `JOIN` binding (read from its tree); `up` expects the upgrade to have
+ * made or kept it and bound it by id; a5 keeps it; t2 lists its keys for
+ * no `join:` left and reads the turn from the prompt on as one user and one
+ * assistant entry, the lane idle; t1 sees its station's made and deleted;
+ * a6 expects the delete's line for it and none left; and every failure
+ * path deletes either station's store through the API. Journey 3 (step a8): pasture's
  * journey 1 against `dglazkov/lamb-playground` with the shepherd's
  * fine-grained token, read from `LAMB_PLAYGROUND_TOKEN` in this process's
  * environment and piped into `sheep pasture secret set`: two sheep born
@@ -2602,11 +2611,38 @@ function accountApi(token) {
       const applications = (await call("GET", `/accounts/${accountId}/containers/applications`)).result.map((application) => ({ id: application.id, name: application.name }));
       workers.sort();
       applications.sort((a, b) => a.name.localeCompare(b.name));
-      return { workers, applications };
+      // The join stores (stile phase 2): KV namespace titles, so a walk that leaves a `<worker>-join` behind differs from before it.
+      const namespaces = (await this.kvNamespaces(accountId)).map((namespace) => namespace.title).sort();
+      return { workers, applications, namespaces };
     },
-    /** A Worker's secret names, never a value, as `AccountApi.secrets` reads them (stile phase 2): what t2 reads for no SHEEP_JOIN. */
-    async secrets(accountId, script) {
-      return ((await call("GET", `/accounts/${accountId}/workers/scripts/${script}/secrets`)).result ?? []).map((secret) => secret.name);
+    /** Every KV namespace on the account, by title and id, over every page (stile phase 2): where the stations' join stores are. */
+    async kvNamespaces(accountId) {
+      const namespaces = [];
+      for (let page = 1; ; page++) {
+        const envelope = await call("GET", `/accounts/${accountId}/storage/kv/namespaces?page=${page}&per_page=100`);
+        namespaces.push(...envelope.result.map((namespace) => ({ id: namespace.id, title: namespace.title })));
+        if (page >= (envelope.result_info?.total_pages ?? 1) || envelope.result.length === 0) break;
+      }
+      return namespaces;
+    },
+    /** The station's join store, `<worker>-join`, or undefined when the account has none of that title. */
+    async joinStore(accountId, worker) {
+      return (await this.kvNamespaces(accountId)).find((namespace) => namespace.title === `${worker}-join`);
+    },
+    /** The names of a namespace's keys under a prefix, never a value: what t2 reads for no `join:` key left. */
+    async kvKeys(accountId, namespaceId, prefix) {
+      const names = [];
+      let cursor = "";
+      for (;;) {
+        const envelope = await call("GET", `/accounts/${accountId}/storage/kv/namespaces/${namespaceId}/keys?prefix=${encodeURIComponent(prefix)}&limit=1000${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`);
+        names.push(...envelope.result.map((key) => key.name));
+        cursor = envelope.result_info?.cursor ?? "";
+        if (!cursor || envelope.result.length === 0) break;
+      }
+      return names;
+    },
+    async deleteKvNamespace(accountId, namespaceId) {
+      await call("DELETE", `/accounts/${accountId}/storage/kv/namespaces/${namespaceId}`);
     },
     async deleteApplication(accountId, applicationId) {
       await call("DELETE", `/accounts/${accountId}/containers/applications/${applicationId}`);
@@ -2748,6 +2784,8 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
     console.log(`account: ${station.account.name} (${station.account.id}); plan ${plan.id} ${plan.state}, ${plan.price} ${plan.currency} ${plan.frequency}; subdomain ${station.subdomain}.workers.dev`);
     console.log(`  Workers: ${before.workers.join(", ") || "(none)"}`);
     console.log(`  container applications: ${before.applications.map((application) => `${application.name} (${application.id})`).join(", ") || "(none)"}`);
+    // The join stores (stile phase 2): the listing read the account's KV namespaces, which is also the check that the token has Workers KV Storage.
+    console.log(`  KV namespaces: ${before.namespaces.join(", ") || "(none)"}`);
     // The older's image, from its tree; then the newer's, from its tree or, for a spec, from the install after the upgrade.
     older.image = imageOf(parseJsonc(older.git("show", `${older.sha}:home/wrangler.jsonc`)));
     if (typeof older.image !== "string") throw new Error(`${older.ref}'s home/wrangler.jsonc names no image in its pen container; a release does`);
@@ -2764,6 +2802,9 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
     if (station.name !== undefined && (before.workers.includes(station.name) || before.applications.some((application) => application.name === station.name))) {
       throw new Error(`the account already holds ${station.name}; a ring that left it behind failed, and deploy would refuse the name: delete it first (sheep home delete --name ${station.name}, or wrangler delete and wrangler containers delete)`);
     }
+    // A join store of either station's name left by a ring that failed would be kept by the deploy and read by t2: refused, as the name is.
+    const leftStores = before.namespaces.filter((title) => title === `${station.name}-join` || title === `${station.name}-t-join`);
+    if (leftStores.length > 0) throw new Error(`the account already holds the KV namespace ${leftStores.join(" and ")}; a ring that left it behind failed: delete it first (wrangler kv namespace delete --namespace-id <id>)`);
     console.log(`station: ${station.name} at https://${station.name}.${station.subdomain}.workers.dev, deleted at the end whatever happens`);
 
     // The price and the yes, before anything is made.
@@ -2801,6 +2842,7 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
       ring.installingOlder = false;
       console.log(`installed: sheep ${ring.stamp.commit} (${ring.stamp.builtAt}), wrangler ${ring.stamp.wrangler}; the older, upgraded in the walk`);
       station.home = `https://${station.name}.${station.subdomain}.workers.dev`;
+      station.walked = true;
       await accountWalk(ring, api, station, { token, key: keyForDeploy, placeholder: key === undefined || key === "", before, spec, commit, newer });
     }
   } catch (error) {
@@ -2814,6 +2856,9 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
       console.log(`\nhermetic: the walk failed with the stile's station up; deleting ${station.t1.name}`);
       await deleteStileStation(ring, api, station, token);
     }
+    // The join stores (stile phase 2): whatever path the failure took, neither station's `<worker>-join` outlives the walk. Only once
+    // the walk began, since the preflight refuses a store that was there before it, which is not the ring's to delete.
+    if (failure && station.walked) for (const worker of [station.name, `${station.name}-t`]) await dropJoinStore(api, station.account.id, worker);
     if (failure && keep) console.error("hermetic: the walk failed; the local home is stopped even with --keep");
     if (failure) ring.keep = false;
     await ring.stopLocalHome();
@@ -2856,11 +2901,40 @@ async function deleteStation(ring, api, station, token) {
   const deleted = await ring.sheep(["home", "delete", "--name", station.name], { env, input: `${station.name}\n` });
   console.log(`  sheep home delete (exit ${deleted.code}): ${deleted.stdout.trim().split("\n").join("; ")}${deleted.stderr.trim() ? `; stderr: ${deleted.stderr.trim()}` : ""}`);
   station.deployed = false;
+  const store = await dropJoinStore(api, station.account.id, station.name);
   const after = await api.listing(station.account.id);
-  const left = [...after.workers.filter((worker) => worker === station.name).map((worker) => `Worker ${worker}`), ...after.applications.filter((application) => application.name === station.name).map((application) => `container application ${application.name} (${application.id})`)];
-  if (left.length > 0) console.log(`  STILL ON THE ACCOUNT: ${left.join(", ")}; delete by hand: wrangler delete ${station.name}; wrangler containers delete <id>`);
-  else console.log(`  the account holds no Worker and no container application named ${station.name}`);
-  return { deleted, after, left };
+  const left = [...after.workers.filter((worker) => worker === station.name).map((worker) => `Worker ${worker}`), ...after.applications.filter((application) => application.name === station.name).map((application) => `container application ${application.name} (${application.id})`), ...after.namespaces.filter((title) => title === `${station.name}-join`).map((title) => `KV namespace ${title}`)];
+  if (left.length > 0) console.log(`  STILL ON THE ACCOUNT: ${left.join(", ")}; delete by hand: wrangler delete ${station.name}; wrangler containers delete <id>; wrangler kv namespace delete --namespace-id <id>`);
+  else console.log(`  the account holds no Worker, no container application, and no join store named ${station.name}`);
+  return { deleted, after, left, store };
+}
+
+/**
+ * The join store a delete left behind (stile phase 2), deleted through the
+ * account API so no path out of the ring leaves a `<worker>-join`
+ * namespace on the shepherd's account: a release from before stores never
+ * made one, and one whose delete failed midway would leave it. Returns
+ * what it found left, undefined when nothing was.
+ */
+async function dropJoinStore(api, accountId, worker) {
+  const left = await api.joinStore(accountId, worker).catch(() => undefined);
+  if (left === undefined) return undefined;
+  console.log(`  the join store ${left.title} (${left.id}) was still on the account; deleting it through the API`);
+  await api.deleteKvNamespace(accountId, left.id).catch((error) => console.log(`  STILL ON THE ACCOUNT: KV namespace ${left.title} (${left.id}): ${error.message}`));
+  return left;
+}
+
+/**
+ * Whether a release ships the join store's binding (stile phase 2): its
+ * `home/wrangler.jsonc` binds `JOIN` as a KV namespace in the `pen`
+ * environment. Read from the release's own tree, so an expectation about
+ * the store is keyed on the release installed, as a1's stop is: the older
+ * release in an account run from before stores deploys none, and its
+ * upgrade makes one.
+ */
+function releaseCarriesJoinStore(release) {
+  const config = parseJsonc(release.git("show", `${release.sha}:home/wrangler.jsonc`));
+  return Array.isArray(config.env?.pen?.kv_namespaces) && config.env.pen.kv_namespaces.some((namespace) => namespace?.binding === "JOIN");
 }
 
 /**
@@ -3180,8 +3254,16 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     if (derived.name !== name || derived.env?.pen?.name !== name || derived.env?.pen?.containers?.[0]?.name !== name || imageOf(derived) !== older.image) {
       ring.fail("a2", `cat ${join(ring.kennel(ring.blog), "deploy", "wrangler.jsonc")}`, { stdout: JSON.stringify(derived), stderr: `expected every name ${name} and the image ${older.image}`, code: 1 });
     }
+    // The join store (stile phase 2), keyed on the release installed: an older release that ships the JOIN binding made the
+    // station's `<name>-join` at this deploy and bound it; one from before stores (66480aa, the first account run's) made none.
+    const olderStores = releaseCarriesJoinStore(older);
+    const storeAfterA2 = await api.joinStore(account.id, name);
+    if (olderStores !== (storeAfterA2 !== undefined) || (olderStores && report.joinStore?.id !== storeAfterA2.id)) {
+      ring.fail("a2", `GET /accounts/${account.id.slice(0, 6)}…/storage/kv/namespaces`, { stdout: JSON.stringify({ report: report.joinStore ?? null, account: storeAfterA2 ?? null }), stderr: olderStores ? `the older release ${older.stamp.commit} ships the JOIN binding, so its deploy should have made ${name}-join and reported it` : `the older release ${older.stamp.commit} ships no JOIN binding, and yet the account holds ${name}-join after its deploy`, code: 1 });
+    }
     ring.ok("a2", `sheep home deploy --faux --name ${name} --json (in blog, the older release)`, `${seconds}s; ${home} answers sheep; containers ${report.containers.healthy} healthy after ${report.containers.seconds}s; account ${report.account.name}, ${report.plan.id} ${report.plan.state}; wrangler ${stamp.wrangler} fetched into ~/.sheep/tools; <blog>/.sheep/config names the station, no local marker; deploy/wrangler.jsonc names ${name} three times; the key secret is ${placeholder ? "a placeholder (no ANTHROPIC_API_KEY here; the faux provider uses none)" : "the environment's ANTHROPIC_API_KEY"}`);
     ring.ok("a2", "sheep home --json (in blog)", `home ${home}, name ${name}, answers; build.home = build.cli = ${build.commit} (${build.builtAt}), the older; nothing on stderr`);
+    ring.ok("a2", `GET /accounts/${account.id.slice(0, 6)}…/storage/kv/namespaces`, olderStores ? `the older release ships the join store: ${name}-join (${storeAfterA2.id}) made and bound` : `the older release ${older.stamp.commit} ships no join store, and the account holds no ${name}-join: the upgrade makes it`);
     ring.ok("a2", `GET /home; GET /accounts/${account.id.slice(0, 6)}…/containers/applications`, `image ${older.image}: the Worker reports it, the application ${application.id} is configured with it${older.tagDigest !== undefined && older.image.includes("@sha256:") ? `, and the registry's digest for the tag at ${stamp.commit} is it` : " (by tag; a release built by hand)"}`);
 
     // Step 2b (station phase 3): on the older release, one sheep with a turn, and one pasture with no repository; both must survive the upgrade.
@@ -3270,6 +3352,18 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
       ring.fail("up", `GET /accounts/${account.id}/containers/applications`, { stdout: JSON.stringify(upApplication), stderr: `expected the same application ${application.id}${upReport.rollout.status === "completed" ? ` configured with ${station.image}` : ""}`, code: 1 });
     }
     station.applicationImage = upApplication.image;
+    // The join store (stile phase 2): the newer release ships the JOIN binding, and its redeploy found the station's store (an older
+    // release that shipped it made it at a2) or made it (one from before stores); either way bound by id in the derived config.
+    const upStore = await api.joinStore(account.id, name);
+    const upDerived = JSON.parse(readFileSync(join(ring.kennel(ring.blog), "deploy", "wrangler.jsonc"), "utf8"));
+    const upBound = (upDerived.env?.pen?.kv_namespaces ?? []).find((namespace) => namespace.binding === "JOIN");
+    const upStoreState = olderStores ? "kept" : "made";
+    const shippedConfig = parseJsonc(readFileSync(join(ring.pkg, "home", "wrangler.jsonc"), "utf8"));
+    if (!(shippedConfig.env?.pen?.kv_namespaces ?? []).some((namespace) => namespace.binding === "JOIN")) ring.fail("up", `cat ${join(ring.pkg, "home", "wrangler.jsonc")}`, { stdout: JSON.stringify(shippedConfig.env?.pen?.kv_namespaces ?? null), stderr: "expected the newer release to bind JOIN in its pen environment", code: 1 });
+    if (upStore === undefined || upReport.joinStore?.id !== upStore.id || upReport.joinStore?.title !== `${name}-join` || upReport.joinStore?.state !== upStoreState || upBound?.id !== upStore.id || (olderStores && upStore.id !== storeAfterA2.id)) {
+      ring.fail("up", "sheep home deploy --faux --json (the join store)", { stdout: JSON.stringify({ report: upReport.joinStore ?? null, account: upStore ?? null, bound: upBound ?? null }), stderr: `expected ${name}-join on the account, ${upStoreState} by the upgrade, reported, and bound as JOIN by its id in <blog>/.sheep/deploy/wrangler.jsonc`, code: 1 });
+    }
+    station.joinStore = upStore;
     if (upReport.rollout.status === "rolling") console.log(`  the application ${application.id} is configured with ${upApplication.image} while the rollout runs`);
     // Every row survived: the sheep and its turn, and the pasture.
     const upRows = parse("up", "sheep ls --json (after the upgrade)", await ring.sheep(["ls", "--json"]));
@@ -3280,6 +3374,7 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     const upLog = await ring.sheep(["log", olderSheep]);
     if (upLog.code !== 0 || !upLog.stdout.includes("hello") || !upLog.stdout.includes(FAUX_REPLY)) ring.fail("up", `sheep log ${olderSheep} (after the upgrade)`, { ...upLog, stderr: `${upLog.stderr}\nexpected the turn from the older release: "hello" and "${FAUX_REPLY}"` });
     ring.ok("up", `npm install -g <newer spec>; sheep --version; sheep home; sheep home deploy --faux --json (in blog, nothing in the environment, the credentials kept)`, `${upSeconds}s to install ${stamp.commit} over ${older.stamp.commit}; sheep home warned on stderr that the home ${older.stamp.commit} is older and named \`sheep home deploy\`; redeployed ${name} in ${upDeploySeconds}s, stamp ${older.stamp.commit} → ${build.commit} (${build.builtAt}), image ${station.image}, containers ${upReport.containers.healthy} healthy after ${upReport.containers.seconds}s, ${rolloutNote}, the stamp moved in ${upReport.stamp.seconds}s; the warning stopped`);
+    ring.ok("up", `GET /accounts/${account.id.slice(0, 6)}…/storage/kv/namespaces; cat <blog>/.sheep/deploy/wrangler.jsonc (after the upgrade)`, `the join store ${name}-join (${upStore.id}) ${upStoreState} by the upgrade and bound as JOIN in the pen environment`);
     ring.ok("up", `sheep ls --json; sheep pasture ls; sheep log ${olderSheep} (after the upgrade)`, `${olderSheep} (older-sheep) and the pasture older still listed; the log still holds "hello" → "${FAUX_REPLY}": a redeploy of the same tags over the same names kept the rows`);
 
     // st (stile phase 1, journey 2 step 4 and its first criterion): the stop, on the newer release. The upgrade above read the
@@ -3397,10 +3492,11 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     if (configAgain.token !== config.token || configAgain.name !== name || configAgain.home !== home) ring.fail("a5", `cat ${ring.configOf(ring.blog)}`, { stdout: JSON.stringify({ ...configAgain, token: "…" }), stderr: "expected the same token, name, and home", code: 1 });
     const stillThere = parse("a5", "sheep ls --json (in blog)", await ring.sheep(["ls", "--json"]));
     if (!stillThere.some((row) => row.id === id)) ring.fail("a5", "sheep ls --json (after the redeploy)", { stdout: JSON.stringify(stillThere), stderr: `expected ${id} still listed`, code: 1 });
-    ring.ok("a5", "sheep home deploy --faux --json (again, no --name)", `${againSeconds}s; redeployed ${name} at ${home}, the same token, stamp ${second.build.home.commit} (${second.build.home.builtAt}); containers ${second.containers.healthy} healthy after ${second.containers.seconds}s; ${id} still listed`);
+    if (second.joinStore?.id !== station.joinStore.id || second.joinStore?.state !== "kept") ring.fail("a5", "sheep home deploy --faux --json (again, the join store)", { stdout: JSON.stringify(second.joinStore ?? null), stderr: `expected the same join store ${station.joinStore.title} (${station.joinStore.id}), kept`, code: 1 });
+    ring.ok("a5", "sheep home deploy --faux --json (again, no --name)", `${againSeconds}s; redeployed ${name} at ${home}, the same token, stamp ${second.build.home.commit} (${second.build.home.builtAt}); containers ${second.containers.healthy} healthy after ${second.containers.seconds}s; ${id} still listed; the join store kept`);
 
     // Step 7 (station phase 2; stile phase 2): the second machine, a container, joins the station through the stile at the ring's
-    // terminal while a turn runs on it (t2 reads the turn whole and the Worker's secrets for no SHEEP_JOIN), then watches a turn
+    // terminal while a turn runs on it (t2 reads the turn whole and the join store for no join key), then watches a turn
     // the first machine left running. After `up`, so the container installs the newer release and the station answers /join.
     await secondMachine(ring, api, station, { sheepId: id, spec, commit, token });
 
@@ -3463,7 +3559,8 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
 
     // Step 6: the delete, the name on stdin: the listing first (station phase 3), counted against what the walk minted and did not
     // end (end phase 1: none); then the account listed, the last lines.
-    const { deleted, after, left } = await deleteStation(ring, api, station, token);
+    const { deleted: deletedRun, after, left, store: leftStore } = await deleteStation(ring, api, station, token);
+    const deleted = { ...deletedRun, store: leftStore };
     const remaining = station.minted.length - station.ended.length;
     const lines = deleted.stdout.trim().split("\n");
     const configLine = join(realpathSync(ring.kennel(ring.blog)), "config");
@@ -3479,12 +3576,14 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
       ring.fail("a6", `sheep home delete --name ${name} (the name on stdin)`, { ...deleted, stderr: `${deleted.stderr}\nexpected the listing before the prompt, line ${wrongListing + 1} being ${JSON.stringify(expectedListing[wrongListing])}: ${remaining} sessions (${station.minted.length} minted: ${station.minted.join(", ")}; ${station.ended.length} ended), ${station.pastures.length} pastures (${station.pastures.join(", ")}), the application ${station.applicationId}` });
     }
     const report6 = lines.slice(expectedListing.length);
-    if (report6[0] !== `deleted the Worker ${name} and its objects` || report6[1] !== `deleted the container application ${name} (${station.applicationId})` || report6[2] !== `config: ${configLine} removed` || report6[3] !== `sessions deleted: ${remaining}` || report6.length !== 4) {
-      ring.fail("a6", `sheep home delete --name ${name} (the name on stdin)`, { ...deleted, stderr: `${deleted.stderr}\nexpected, after the listing, the three lines: the Worker, the application ${station.applicationId}, the config removed; then sessions deleted: ${remaining}` });
+    if (report6[0] !== `deleted the Worker ${name} and its objects` || report6[1] !== `deleted the container application ${name} (${station.applicationId})` || report6[2] !== `deleted the join store ${name}-join (${station.joinStore.id})` || report6[3] !== `config: ${configLine} removed` || report6[4] !== `sessions deleted: ${remaining}` || report6.length !== 5) {
+      ring.fail("a6", `sheep home delete --name ${name} (the name on stdin)`, { ...deleted, stderr: `${deleted.stderr}\nexpected, after the listing, the four lines: the Worker, the application ${station.applicationId}, the join store ${name}-join (${station.joinStore.id}), the config removed; then sessions deleted: ${remaining}` });
     }
+    // No join store left (stile phase 2): the delete's own, not the ring's fallback, deleted it.
+    if (deleted.store !== undefined || after.namespaces.includes(`${name}-join`)) ring.fail("a6", "the account's KV namespaces after the delete", { stdout: after.namespaces.join("\n"), stderr: `expected no ${name}-join: sheep home delete deletes the join store after the Worker`, code: 1 });
     if (existsSync(ring.configOf(ring.blog)) || existsSync(join(ring.kennel(ring.blog), "deploy"))) ring.fail("a6", `ls -a ${ring.kennel(ring.blog)}`, { stdout: readdirSync(ring.kennel(ring.blog)).join("\n"), stderr: "expected the config and deploy/ gone", code: 1 });
     if (left.length > 0) ring.fail("a6", "the account's listing after the delete", { stdout: left.join("\n"), stderr: `expected no Worker and no container application named ${name}`, code: 1 });
-    ring.ok("a6", `sheep home delete --name ${name} (the name on stdin)`, `listed ${remaining} sessions (${station.minted.length} minted, ${station.ended.length} ended) and ${station.pastures.length} pastures (${station.pastures.join(", ")}), the application ${station.applicationId}; then ${report6.join("; ").replace(ring.dir, "<ring>")}; the account holds neither`);
+    ring.ok("a6", `sheep home delete --name ${name} (the name on stdin)`, `listed ${remaining} sessions (${station.minted.length} minted, ${station.ended.length} ended) and ${station.pastures.length} pastures (${station.pastures.join(", ")}), the application ${station.applicationId}; then ${report6.join("; ").replace(ring.dir, "<ring>")}; the account holds neither, and no ${name}-join`);
     console.log(`  Workers: ${after.workers.join(", ") || "(none)"}`);
     console.log(`  container applications: ${after.applications.map((application) => `${application.name} (${application.id})`).join(", ") || "(none)"}`);
     if (JSON.stringify(after) !== JSON.stringify(before)) ring.fail("a6", "the account's listing after the walk", { stdout: JSON.stringify(after), stderr: `expected the listing from before the walk: ${JSON.stringify(before)}`, code: 1 });
@@ -3551,6 +3650,9 @@ async function stileOnAccount(ring, api, station, { token, key, step = "t1" }) {
   if (kept.cloudflare !== token || kept.anthropic !== key || (statSync(credentials).mode & 0o777) !== 0o600) fail(`expected ${credentials.replace(ring.dir, "<ring>")} mode 600 holding the two values typed`);
   const config = JSON.parse(readFileSync(join(home, ".sheep", "config"), "utf8"));
   if (config.home !== address || config.name !== name || typeof config.token !== "string") fail("expected ~/.sheep/config naming the station, its address, and its token");
+  // The join store (stile phase 2): the sitting's deploy made the new station's `<name>-join`.
+  const t1Store = await api.joinStore(station.account.id, name);
+  if (t1Store === undefined) fail(`expected the account to hold ${name}-join, the join store the sitting's deploy makes`);
   ring.ok(step, typed, `${seconds}s, the shepherd played through the ring's terminal: ${name} deployed at ${address}; count: ${count.typed} values typed, ${count.yes} yes, ${count.defaults} defaults, ${count.askedTwice} asked twice, ${count.variables.length === 0 ? "no variable" : count.variables.join(", ")}; no run of eight of either value on the terminal or in the output after any of ${run.keys()} keys; ~/.sheep/credentials mode 600`);
 
   // The dog, after: nothing in its environment, in the same directory.
@@ -3574,8 +3676,8 @@ async function stileOnAccount(ring, api, station, { token, key, step = "t1" }) {
   if (deleted.code !== 0) ring.fail(step, `sheep home delete --name ${name} --json (the name on stdin, nothing in the environment)`, deleted);
   station.t1.deployed = false;
   const after = await api.listing(station.account.id);
-  if (after.workers.includes(name) || after.applications.some((application) => application.name === name)) ring.fail(step, `the account's listing after deleting ${name}`, { stdout: JSON.stringify(after), stderr: `expected no Worker and no container application named ${name}`, code: 1 });
-  ring.ok(step, `sheep new --detach; sheep home deploy --faux --json; sheep home delete --name ${name} (in <ring>/${step}/work, nothing in the environment)`, `${id} minted; redeployed in ${upSeconds}s with the key put from ~/.sheep/credentials and nothing asked; ${name} deleted, the name on stdin, and the account holds neither its Worker nor its application`);
+  if (after.workers.includes(name) || after.applications.some((application) => application.name === name) || after.namespaces.includes(`${name}-join`)) ring.fail(step, `the account's listing after deleting ${name}`, { stdout: JSON.stringify(after), stderr: `expected no Worker, no container application, and no join store named ${name}`, code: 1 });
+  ring.ok(step, `sheep new --detach; sheep home deploy --faux --json; sheep home delete --name ${name} (in <ring>/${step}/work, nothing in the environment)`, `${id} minted; redeployed in ${upSeconds}s with the key put from ~/.sheep/credentials and nothing asked; ${name} deleted, the name on stdin, and the account holds neither its Worker nor its application nor its join store ${name}-join (${t1Store.id})`);
 }
 
 /** The t1 station, when a walk failed with it still up: deleted with the token in the command's environment, as the ring's own station is. */
@@ -3585,6 +3687,7 @@ async function deleteStileStation(ring, api, station, token) {
   const deleted = await run0("sheep", ["home", "delete", "--name", t1.name], { env: { ...ring.env(), HOME: t1.home, CLOUDFLARE_API_TOKEN: token }, cwd: t1.cwd, input: `${t1.name}\n` });
   console.log(`  sheep home delete --name ${t1.name} (exit ${deleted.code}): ${deleted.stdout.trim().split("\n").join("; ")}`);
   t1.deployed = false;
+  await dropJoinStore(api, station.account.id, t1.name);
   const after = await api.listing(station.account.id);
   if (after.workers.includes(t1.name) || after.applications.some((application) => application.name === t1.name)) console.log(`  STILL ON THE ACCOUNT: ${t1.name}; delete by hand: wrangler delete ${t1.name}; wrangler containers delete <id>`);
 }
@@ -3600,14 +3703,15 @@ const SECOND_PROMPT = "Finish this after I am gone.";
 /**
  * The turn t2 runs across the join (stile phase 2, journey 3's third
  * criterion): started from `blog` before the join is chosen, and long
- * enough to outlast it — the listing, wrangler fetched into the second
- * machine's `~/.sheep/tools` on its first call, the put, the asks, and the
- * delete — so that the put and the delete land while it runs. A text step
- * after a delay rents no container.
+ * enough to outlast it — the listing, the join key's write, up to ninety
+ * seconds of asks while the write reaches the edge, and the key's delete —
+ * so that all of it lands while the turn runs. The first cut's secret put
+ * restarted a turn like this one (issue #10); a KV write must not. A text
+ * step after a delay rents no container.
  */
 const JOIN_TURN = { text: "the turn ran across the join and ended whole", delayMs: 240_000 };
 const JOIN_PROMPT = "Keep going while another machine joins.";
-/** How long a7 waits for the stile in the container to end once the join is chosen: wrangler's first fetch there is most of it. */
+/** How long a7 waits for the stile in the container to end once the join is chosen: the join asks for up to ninety seconds, with room. */
 const JOIN_SITTING_MS = 600_000;
 /**
  * How long the first machine waits for its prompt to be durable before its
@@ -3679,8 +3783,8 @@ function watchContainerPs(name, needles, everyMs = 200) {
  *    the cue, and the first machine's turn outliving its killed terminal.
  *
  * Between 1 and 2, the first machine starts t2's turn on the sheep from
- * `blog`; after 2, t2 asserts it is still running, reads the Worker's
- * secret names from the account for no `SHEEP_JOIN`, and reads the turn
+ * `blog`; after 2, t2 asserts it is still running, reads the station's
+ * join store from the account for no `join:` key, and reads the turn
  * whole once it ends. Every failure ends as a rejection of this function
  * (a `ring.fail` error), so `accountWalk`'s try/finally deletes the
  * station; the container is removed whatever happens.
@@ -3808,22 +3912,33 @@ async function secondMachine(ring, api, station, { sheepId, spec, commit, token 
       sitting.kill();
     }
     if (inside.line() !== undefined) ring.fail("a7", `docker exec ${name} ps -Ao pid=,args= (polled)`, { stdout: inside.line().split(token).join("<token>").split(stationToken).join("<station token>"), stderr: "a token was in a process's arguments inside the container during the sitting", code: 1 });
-    ring.ok("a7", typed, `the second machine's shepherd played through the ring's terminal: one value typed (the account token), where and plan filled, station listed ${listed.join(", ")} and the ring chose join ${station.name}; ${home}, joined, in ${joinSeconds}s (wrangler's first fetch in the container among it); key asked nothing; no run of eight of either token on the terminal or in the output after any of ${sitting.keys()} keys; ps inside the container: ${inside.samples()} samples, neither token in any argument`);
+    ring.ok("a7", typed, `the second machine's shepherd played through the ring's terminal: one value typed (the account token), where and plan filled, station listed ${listed.join(", ")} and the ring chose join ${station.name}; ${home}, joined, in ${joinSeconds}s, with no wrangler in the container; key asked nothing; no run of eight of either token on the terminal or in the output after any of ${sitting.keys()} keys; ps inside the container: ${inside.samples()} samples, neither token in any argument`);
 
-    // t2: the join secret gone from the Worker, read from the account; the turn started before the join still running after it, then whole.
+    // t2: no join key left in the station's join store, read from the account; the turn started before the join still running
+    // after it, then whole: one assistant entry after its prompt, holding the reply, none empty (issue #10's restart left two).
     const during = await state("t2");
-    if (during !== "running") ring.fail("t2", "sheep ls --json (in blog, after the join)", { stdout: during, stderr: `${sheepId} is ${during} once the sitting ended ${((Date.now() - turnStarted) / 1000).toFixed(0)}s into a ${JOIN_TURN.delayMs / 1000}s turn: either the join outlasted the turn (lengthen JOIN_TURN) or the put and the delete ended it`, code: 1 });
-    const secrets = await api.secrets(station.account.id, station.name);
-    const wantedSecrets = ["PEN_CELL_ORIGIN", "SHEEP_ANTHROPIC_API_KEY", "SHEEP_TOKEN"];
-    if (secrets.includes("SHEEP_JOIN") || wantedSecrets.some((secret) => !secrets.includes(secret))) ring.fail("t2", `GET /accounts/${station.account.id.slice(0, 6)}…/workers/scripts/${station.name}/secrets`, { stdout: secrets.join("\n"), stderr: `expected no SHEEP_JOIN, and ${wantedSecrets.join(", ")} still there`, code: 1 });
+    if (during !== "running") ring.fail("t2", "sheep ls --json (in blog, after the join)", { stdout: during, stderr: `${sheepId} is ${during} once the sitting ended ${((Date.now() - turnStarted) / 1000).toFixed(0)}s into a ${JOIN_TURN.delayMs / 1000}s turn: either the join outlasted the turn (lengthen JOIN_TURN) or the join disturbed it`, code: 1 });
+    const joinKeys = await api.kvKeys(station.account.id, station.joinStore.id, "join:");
+    if (joinKeys.length > 0) ring.fail("t2", `GET /accounts/${station.account.id.slice(0, 6)}…/storage/kv/namespaces/${station.joinStore.id}/keys?prefix=join:`, { stdout: `${joinKeys.length} key(s)`, stderr: `expected no join key left in ${station.joinStore.title}: the home deletes the key it answers, and the stile deletes it through the API`, code: 1 });
     const waited = await ring.sheep(["wait", "--timeout", String(Math.ceil(JOIN_TURN.delayMs / 1000) + 120), sheepId]);
     if (waited.code !== 0 || !waited.stdout.startsWith(`${sheepId}\t`) || !waited.stdout.includes(JOIN_TURN.text)) ring.fail("t2", `sheep wait ${sheepId} (in blog)`, { ...waited, stderr: `${waited.stderr}\nexpected exit 0 and the turn's last message "${JOIN_TURN.text}"` });
-    const logged = await ring.sheep(["log", sheepId]);
-    const times = (needle) => logged.stdout.split(needle).length - 1;
-    if (logged.code !== 0 || times(JOIN_PROMPT) !== 1 || times(JOIN_TURN.text) < 1 || logged.stdout.lastIndexOf(JOIN_PROMPT) > logged.stdout.lastIndexOf(JOIN_TURN.text) || /aborted|interrupted/i.test(logged.stdout.slice(logged.stdout.lastIndexOf(JOIN_PROMPT)))) {
-      ring.fail("t2", `sheep log ${sheepId} (in blog)`, { ...logged, stderr: `${logged.stderr}\nexpected the prompt "${JOIN_PROMPT}" once, then "${JOIN_TURN.text}", and nothing aborted after the prompt` });
+    const loggedJson = await ring.sheep(["log", sheepId, "--json"]);
+    let turnEntries = [];
+    try {
+      const items = loggedJson.stdout.trimEnd().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+      const promptAt = items.findLastIndex((item) => item.message?.role === "user" && JSON.stringify(item.message).includes(JOIN_PROMPT));
+      turnEntries = promptAt === -1 ? [] : items.slice(promptAt);
+    } catch {
+      ring.fail("t2", `sheep log ${sheepId} --json (in blog)`, loggedJson);
     }
-    ring.ok("t2", `sheep ls --json; GET …/workers/scripts/${station.name}/secrets; sheep wait ${sheepId}; sheep log ${sheepId} (in blog)`, `the turn started before the join was still running when the sitting ended; the Worker's secrets are ${secrets.sort().join(", ")}: no SHEEP_JOIN; the turn ended "${JOIN_TURN.text}" ${((Date.now() - turnStarted) / 1000).toFixed(0)}s after it started, its transcript whole: a secret put and delete are config-only versions, not a rollout`);
+    const prompts = turnEntries.filter((item) => item.message?.role === "user");
+    const replies = turnEntries.filter((item) => item.message?.role === "assistant");
+    if (loggedJson.code !== 0 || prompts.length !== 1 || replies.length !== 1 || !JSON.stringify(replies[0]).includes(JOIN_TURN.text)) {
+      ring.fail("t2", `sheep log ${sheepId} --json (in blog)`, { stdout: loggedJson.stdout.slice(-2000), stderr: `expected, from the prompt "${JOIN_PROMPT}" on, exactly one user entry and one assistant entry, holding "${JOIN_TURN.text}"; got ${prompts.length} user and ${replies.length} assistant`, code: 1 });
+    }
+    const afterTurn = await state("t2");
+    if (afterTurn !== "idle") ring.fail("t2", "sheep ls --json (in blog, after the turn)", { stdout: afterTurn, stderr: `expected ${sheepId} idle once its turn ended`, code: 1 });
+    ring.ok("t2", `sheep ls --json; GET …/storage/kv/namespaces/${station.joinStore.id}/keys?prefix=join:; sheep wait ${sheepId}; sheep log ${sheepId} --json (in blog)`, `the turn started before the join was still running when the sitting ended; ${station.joinStore.title} holds no join key; the turn ended "${JOIN_TURN.text}" ${((Date.now() - turnStarted) / 1000).toFixed(0)}s after it started, one user and one assistant entry, none empty, the lane idle: the join made no Worker version`);
 
     // Station's a7, on the config the stile wrote: the container's herd half, the cue, and the first machine's terminal killed mid-turn.
     const herdArgs = inner("herd", ["--address", home, "--sheep", sheepId, "--expect-image", station.image]);

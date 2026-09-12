@@ -17,10 +17,11 @@
  *
  * **The second machine** (stile phase 2): the station step lists the
  * account's sheep homes after `new`, and choosing one is the join,
- * `joinStation` in `deploy.ts` beside the deploy it shares its put with.
- * The account token goes to wrangler's environment to put a join token on
- * the Worker, the join token goes to the home, and the home's own token
- * comes back into the config; the account token never reaches the home.
+ * `joinStation` in `deploy.ts`, beside the deploy that makes the station's
+ * join store. The account token writes a hashed join key to that store
+ * through the account API, the join token goes to the home, and the home's
+ * own token comes back into the config; the account token never reaches
+ * the home, and no Worker version is made, so no running turn restarts.
  *
  * **The rule about values.** A value the shepherd types is read at a
  * hidden prompt and goes to exactly two places: `~/.sheep/credentials`,

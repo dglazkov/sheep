@@ -30,6 +30,12 @@
  * command typechecks and is testable; a deploy from a checkout is not a
  * supported path.
  *
+ * The join store (stile phase 2): every station has a KV namespace titled
+ * `<worker>-join`, bound as `JOIN` in the `pen` environment. The deploy
+ * finds it by title or makes it through the account API before wrangler
+ * runs, and writes its id into the derived config; the delete deletes it
+ * after the Worker; a second machine's join writes one hashed key to it.
+ *
  * `sheep home delete` is the end of a station (station phase 3, whole).
  * Before the prompt, the listing of what goes: the Worker at its address,
  * its Durable Objects, its container application by id, and how many
@@ -60,7 +66,7 @@
  * fake wrangler, touching no account; the account ring walks the real one.
  */
 import { spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
@@ -77,7 +83,7 @@ const packageDir = fileURLToPath(new URL("..", import.meta.url));
 const API_BASE = "https://api.cloudflare.com/client/v4";
 
 /** What the token needs, by the names the dashboard's token editor shows. */
-export const PERMISSIONS = ["Workers Scripts (edit)", "Durable Objects (edit)", "Containers (edit)", "Workers Subdomain (edit)", "Account Settings (read)", "Billing (read)"];
+export const PERMISSIONS = ["Workers Scripts (edit)", "Durable Objects (edit)", "Containers (edit)", "Workers Subdomain (edit)", "Workers KV Storage (edit)", "Account Settings (read)", "Billing (read)"];
 
 /** The plan containers need, and its price. */
 export const PLAN = { id: "workers_paid", name: "Workers Paid", price: "5 USD a month" };
@@ -212,11 +218,11 @@ export class AccountApi {
     this.base = base.replace(/\/+$/, "");
   }
 
-  private async call<T>(method: string, path: string, body?: unknown): Promise<ApiEnvelope<T>> {
+  private async call<T>(method: string, path: string, body?: unknown, raw?: string): Promise<ApiEnvelope<T>> {
     const response = await fetch(`${this.base}${path}`, {
       method,
-      headers: { authorization: `Bearer ${this.token}`, ...(body === undefined ? {} : { "content-type": "application/json" }) },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      headers: { authorization: `Bearer ${this.token}`, ...(raw !== undefined ? { "content-type": "text/plain" } : body === undefined ? {} : { "content-type": "application/json" }) },
+      body: raw !== undefined ? raw : body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(30_000),
     });
     const text = await response.text();
@@ -389,6 +395,49 @@ export class AccountApi {
   async deleteApplication(accountId: string, applicationId: string): Promise<void> {
     await this.must<unknown>("DELETE", `/accounts/${accountId}/containers/applications/${applicationId}`);
   }
+
+  /* The join store (stile phase 2): a KV namespace per station, written through the API, never through a Worker version. */
+
+  /** The account's KV namespace of this title, over every page of the listing, or undefined when it has none. */
+  async kvNamespace(accountId: string, title: string): Promise<KvNamespace | undefined> {
+    for (let page = 1; ; page++) {
+      const envelope = await this.call<{ id: string; title: string }[]>("GET", `/accounts/${accountId}/storage/kv/namespaces?page=${page}&per_page=100`);
+      if (!envelope.success) throw new Error(`GET /accounts/${accountId}/storage/kv/namespaces: ${quoteErrors(envelope.errors)}; the token wants Workers KV Storage (edit)`);
+      const found = envelope.result.find((namespace) => namespace.title === title);
+      if (found !== undefined) return { id: found.id, title: found.title };
+      const pages = envelope.result_info?.total_pages ?? 1;
+      if (page >= pages || envelope.result.length === 0) return undefined;
+    }
+  }
+
+  async createKvNamespace(accountId: string, title: string): Promise<KvNamespace> {
+    const created = await this.must<{ id: string; title: string }>("POST", `/accounts/${accountId}/storage/kv/namespaces`, { title });
+    return { id: created.id, title: created.title };
+  }
+
+  async deleteKvNamespace(accountId: string, namespaceId: string): Promise<void> {
+    await this.must<unknown>("DELETE", `/accounts/${accountId}/storage/kv/namespaces/${namespaceId}`);
+  }
+
+  /** One key written, its value the body, expiring `ttl` seconds after the write. */
+  async putKv(accountId: string, namespaceId: string, key: string, value: string, ttl: number): Promise<void> {
+    const path = `/accounts/${accountId}/storage/kv/namespaces/${namespaceId}/values/${encodeURIComponent(key)}?expiration_ttl=${ttl}`;
+    const envelope = await this.call<unknown>("PUT", path, undefined, value);
+    if (!envelope.success) throw new Error(`PUT ${path.replace(encodeURIComponent(key), "<key>")}: ${quoteErrors(envelope.errors)}`);
+  }
+
+  /** One key deleted; a key that is not there is deleted already, as the API answers it. */
+  async deleteKv(accountId: string, namespaceId: string, key: string): Promise<void> {
+    const path = `/accounts/${accountId}/storage/kv/namespaces/${namespaceId}/values/${encodeURIComponent(key)}`;
+    const envelope = await this.call<unknown>("DELETE", path);
+    if (!envelope.success) throw new Error(`DELETE ${path.replace(encodeURIComponent(key), "<key>")}: ${quoteErrors(envelope.errors)}`);
+  }
+}
+
+/** A KV namespace as the account API answers it: what the derived config binds, and what the join writes to. */
+export interface KvNamespace {
+  id: string;
+  title: string;
 }
 
 /** A container application as the account holds it: what `deploy` reads before a redeploy and polls after it. */
@@ -458,7 +507,7 @@ type Json = Record<string, unknown>;
  * names set to the Worker's: the top level's, `env.pen`'s, and
  * `env.pen.containers[0]`'s. The output is plain JSON.
  */
-export function deriveConfig(baseText: string, basePath: string, name: string): Derived {
+export function deriveConfig(baseText: string, basePath: string, name: string, joinStore?: string): Derived {
   const { $schema: _schema, ...config } = parseJsonc(baseText);
   const dir = dirname(resolve(basePath));
   const absolute = (value: unknown): unknown => (typeof value === "string" && (value.startsWith(".") || value.startsWith("/")) ? resolve(dir, value) : value);
@@ -469,14 +518,24 @@ export function deriveConfig(baseText: string, basePath: string, name: string): 
   if (!Array.isArray(containers) || containers.length !== 1) throw new Error(`${basePath}: the pen environment must have exactly one container`);
   const container = containers[0] as Json;
   if (typeof container.image !== "string") throw new Error(`${basePath}: the pen container names no image`);
+  // The join store (stile phase 2): `JOIN` bound to the station's namespace by id. Without an id (a secret put, a delete, which
+  // bind nothing) no `JOIN` is written, and a KV binding with no id is dropped too, since wrangler would try to make one itself.
+  const others = (Array.isArray(pen.kv_namespaces) ? (pen.kv_namespaces as Json[]) : []).filter((binding) => binding.binding !== JOIN_BINDING && typeof binding.id === "string");
+  const kv = joinStore === undefined ? others : [...others, { binding: JOIN_BINDING, id: joinStore }];
+  const { kv_namespaces: _kv, ...penRest } = pen;
+  // The top level is not the station (deploy is `--env pen`); its id-less `JOIN`, the local home's, is not carried either.
+  const { kv_namespaces: topKv, ...top } = config;
+  const topKept = (Array.isArray(topKv) ? (topKv as Json[]) : []).filter((binding) => typeof binding.id === "string");
   const derived: Json = {
-    ...config,
+    ...top,
+    ...(topKept.length === 0 ? {} : { kv_namespaces: topKept }),
     name,
     main: resolve(dir, config.main),
     env: {
       ...env,
       pen: {
-        ...pen,
+        ...penRest,
+        ...(kv.length === 0 ? {} : { kv_namespaces: kv }),
         name,
         containers: [{ ...container, name, image: absolute(container.image), ...(container.image_build_context === undefined ? {} : { image_build_context: absolute(container.image_build_context) }) }],
       },
@@ -496,9 +555,9 @@ export function deployDir(): string {
  * written, which is what the account's application will name (the same
  * for a registry reference; absolute for a checkout's Dockerfile path).
  */
-export function writeDerivedConfig(name: string, stamp: BuildStamp | undefined = readStamp()): { path: string; image: string; configured: string } {
+export function writeDerivedConfig(name: string, stamp: BuildStamp | undefined = readStamp(), joinStore?: string): { path: string; image: string; configured: string } {
   const base = baseConfigPath(stamp);
-  const derived = deriveConfig(readFileSync(base, "utf8"), base, name);
+  const derived = deriveConfig(readFileSync(base, "utf8"), base, name, joinStore);
   mkdirSync(deployDir(), { recursive: true });
   const path = join(deployDir(), "wrangler.jsonc");
   writeFileSync(path, derived.text);
@@ -594,6 +653,13 @@ export interface DeployReport {
    * is the stile's `keyLater`: its own `key` step puts one right after.
    */
   key: "put" | "left" | "later";
+  /**
+   * The join store (stile phase 2): the station's `<worker>-join` KV
+   * namespace, bound as `JOIN`; `made` when this deploy made it (a first
+   * deploy, or the upgrade of a station from before stores), `kept` when
+   * the account had one of that title already.
+   */
+  joinStore: { id: string; title: string; state: "made" | "kept" };
   config: { path: string; wrangler: string };
   kennel: string;
   build: { home: BuildSide | null; cli: BuildSide };
@@ -841,9 +907,10 @@ async function putSecret(options: { bin: string; config: string; cwd: string; se
  * step (stile phase 1), which asks for the key after the station is
  * deployed, as journey 1 does. It is deploy's fourth step for one secret
  * and nothing else — the same derived config, the same wrangler, the same
- * stdin — so the stile adds no second deploy path. A put is a
- * config-only version and not a rollout, so a turn running on the home is
- * undisturbed by it.
+ * stdin — so the stile adds no second deploy path. A put is a new Worker
+ * version, which restarts the Durable Objects holding running turns (issue
+ * #10); on a first sitting there are none yet. The derived config is
+ * written with no `JOIN` binding, which a secret put does not read.
  */
 export async function putModelKey(options: { name: string; key: string; token: string; accountId: string; say?: (text: string) => void }): Promise<void> {
   const say = options.say ?? (() => {});
@@ -858,17 +925,23 @@ export async function putModelKey(options: { name: string; key: string; token: s
 /** What `sheep home join`, withdrawn, answers with any arguments: one sentence, exit 2, naming the command that does it now. */
 export const JOIN_WITHDRAWN = "sheep home join is withdrawn; `sheep setup`, at the shepherd's own terminal, joins this machine to a station the account already has, and no token is carried by hand";
 
-/** The Worker secret a joining machine puts, asks the home with, and deletes: the proof that it can write this Worker's secrets. */
-export const JOIN_SECRET = "SHEEP_JOIN";
+/** The binding the cell reads the join store through, `env.JOIN`, in the `pen` environment. */
+export const JOIN_BINDING = "JOIN";
+
+/** The station's join store: the KV namespace `<worker>-join`, one per station, found by its title. */
+export const joinStoreTitle = (name: string): string => `${name}-join`;
+
+/** How long a join key lives when nothing deletes it: the backstop for a process killed mid-join, which holds no token after. */
+export const JOIN_TTL_SECONDS = 120;
 
 /**
- * How long the join asks `POST /join` for: up to a minute, as deploy
- * polls the stamp, a second apart (`SHEEP_TEST_RETRY_MS` shortens the gap
- * in tests, and every ring strips it). A put is a new version of the
- * Worker, and the version before it answers 404 until it is replaced.
+ * How long the join asks `POST /join` for: up to ninety seconds, a second
+ * apart (`SHEEP_TEST_RETRY_MS` shortens the gap in tests, and every ring
+ * strips it). A KV write through the API can take up to a minute to reach
+ * the edge that serves the Worker, and until it does the home answers 404.
  */
-const JOIN_WAIT_MS = 60_000;
-const JOIN_POLLS = 60;
+const JOIN_WAIT_MS = 90_000;
+const JOIN_POLLS = 90;
 const joinPollMs = (): number => {
   const seam = Number(process.env.SHEEP_TEST_RETRY_MS);
   return process.env.SHEEP_TEST_RETRY_MS !== undefined && Number.isFinite(seam) && seam >= 0 ? seam : 1_000;
@@ -917,10 +990,10 @@ export interface JoinOptions {
   /** The Worker's name on the account, and its address. */
   name: string;
   home: string;
-  /** The account token, which goes to wrangler's environment and never to the home. */
+  /** The account token, which goes to the account API's header and never to the home. */
   token: string;
   accountId: string;
-  /** Keeps what the home answered: the config write. Called before the join secret is deleted, and the delete follows it whatever it does. */
+  /** Keeps what the home answered: the config write. Called before the join key is deleted, and the delete follows it whatever it does. */
   keep: (homeToken: string) => void;
   say?: (text: string) => void;
 }
@@ -932,28 +1005,38 @@ export interface JoinReport {
   seconds: number;
 }
 
+/** The key a join token is written under: `join:` and the hex of its SHA-256, as the cell computes it; the token itself is stored nowhere. */
+export function joinKey(joinToken: string): string {
+  return `join:${createHash("sha256").update(joinToken).digest("hex")}`;
+}
+
 /**
- * The join (design, "The second machine"): a join token generated here
- * and put on the Worker as `SHEEP_JOIN` through wrangler's stdin, with the
- * account token in wrangler's environment, through deploy's own `putSecret`;
- * `POST /join` asked with it as the bearer until the new version answers,
- * up to a minute; the home's token handed to `keep`; and `SHEEP_JOIN`
- * deleted with `wrangler secret delete`.
+ * The join (design, "The second machine"): the station's `<worker>-join`
+ * namespace found through the account API; a join token generated here and
+ * `join:<its sha256>` written there with a 120 s TTL, the account token in
+ * the request's header; `POST /join` asked with the token as the bearer
+ * until the key reaches the edge, up to ninety seconds; the home's token
+ * handed to `keep`; and the key deleted through the account API. No
+ * wrangler call and no Worker version, so nothing running on the station
+ * restarts (issue #10).
  *
- * **Once the put has succeeded, the delete happens on every path out**: a
- * poll that times out, a `keep` that throws, and a join that worked. A join
- * secret left on a Worker is a door left open, so a delete that fails is
- * its own failure, named, whatever else happened.
+ * **Once the key is written, the delete happens on every path out**: an
+ * ask that times out, a `keep` that throws, and a join that worked (where
+ * the cell deleted it already). A delete that fails is its own failure,
+ * named, and the TTL is the backstop behind it.
  */
 export async function joinStation(options: JoinOptions): Promise<JoinReport> {
   const say = options.say ?? (() => {});
-  const stamp = readStamp();
-  const bin = wranglerBin(stamp, say);
-  const derived = writeDerivedConfig(options.name, stamp);
-  const cwd = dirname(derived.path);
+  const api = new AccountApi(options.token);
+  const title = joinStoreTitle(options.name);
+  const store = await api.kvNamespace(options.accountId, title);
+  if (store === undefined) {
+    throw new Refusal(`${options.name} has no join store (no KV namespace ${title} on the account): it was deployed before stations had one, and \`sheep home deploy\` from the machine that deployed it gives it one; nothing was written`);
+  }
   const joinToken = randomBytes(24).toString("hex");
-  say(`sheep: putting a join token on ${options.name}\n`);
-  await putSecret({ bin, config: derived.path, cwd, secret: JOIN_SECRET, value: joinToken, token: options.token, accountId: options.accountId });
+  const key = joinKey(joinToken);
+  say(`sheep: writing a join key to ${title}\n`);
+  await api.putKv(options.accountId, store.id, key, "1", JOIN_TTL_SECONDS);
 
   let failure: unknown;
   let report: JoinReport | undefined;
@@ -970,7 +1053,7 @@ export async function joinStation(options: JoinOptions): Promise<JoinReport> {
       await sleep(joinPollMs());
     }
     if (homeToken === undefined) {
-      throw new Error(`${options.home} did not answer the join in ${Math.round((Date.now() - started) / 1000)}s (${polls} asks); nothing was kept. A home deployed before this release has no join: \`sheep home deploy\` from the machine that deployed it upgrades it`);
+      throw new Error(`${options.home} did not answer the join in ${Math.round((Date.now() - started) / 1000)}s (${polls} asks); nothing was kept. A home deployed before stations had a join store does not bind one until \`sheep home deploy\` from the machine that deployed it`);
     }
     options.keep(homeToken);
     report = { home: options.home, polls, seconds: Math.round((Date.now() - started) / 1000) };
@@ -978,11 +1061,12 @@ export async function joinStation(options: JoinOptions): Promise<JoinReport> {
     failure = error;
   }
 
-  say(`sheep: deleting the join token from ${options.name}\n`);
-  const removed = await wrangler(bin, ["secret", "delete", JOIN_SECRET, "--config", derived.path, "--env", "pen"], { token: options.token, accountId: options.accountId, cwd });
-  if (removed.code !== 0) {
+  say(`sheep: deleting the join key from ${title}\n`);
+  try {
+    await api.deleteKv(options.accountId, store.id, key);
+  } catch (error) {
     const before = failure === undefined ? "" : `${failure instanceof Error ? failure.message : String(failure)}\n`;
-    throw new Error(`${before}the join secret ${JOIN_SECRET} is still on ${options.name}, and while it is, anyone holding it can ask the home for its token: wrangler secret delete ${JOIN_SECRET} --config ${derived.path} --env pen exited ${removed.code}:\n${tail(removed)}`);
+    throw new Error(`${before}the join key is still in ${title} (${store.id}) until it expires ${JOIN_TTL_SECONDS}s after it was written, and until then its token can ask the home for the home's own: ${error instanceof Error ? error.message : String(error)}`);
   }
   if (failure !== undefined) throw failure;
   return report!;
@@ -1067,10 +1151,16 @@ export async function deploy(options: DeployOptions = {}): Promise<DeployReport>
     say(`sheep: no model key is kept on this machine; the home keeps its own, and this deploy leaves it\n`);
   }
 
-  // 3. The deploy: wrangler over the derived config, the token in its environment.
+  // 3. The deploy: wrangler over the derived config, the token in its environment. First the join store (stile phase 2): the
+  // station's `<worker>-join` namespace, found by its title or made, so a redeploy reuses it and a station from before stores
+  // gets one at its upgrade; its id is the derived config's `JOIN` binding.
+  const title = joinStoreTitle(name);
+  const kept = await api.kvNamespace(account.id, title);
+  const joinStore: DeployReport["joinStore"] = kept === undefined ? { ...(await api.createKvNamespace(account.id, title)), state: "made" } : { ...kept, state: "kept" };
+  if (joinStore.state === "made") say(`sheep: made the join store ${title} (${joinStore.id})\n`);
   const stamp = readStamp();
   const bin = wranglerBin(stamp, say);
-  const derived = writeDerivedConfig(name, stamp);
+  const derived = writeDerivedConfig(name, stamp, joinStore.id);
   const cwd = dirname(derived.path);
   const faux = options.faux === true;
   // Before a redeploy, the application as it is: a new image makes the deploy a rollout, and this is what it rolls from.
@@ -1148,6 +1238,7 @@ export async function deploy(options: DeployOptions = {}): Promise<DeployReport>
       image: derived.image,
       faux,
       key: keyState,
+      joinStore,
       config: { path: configPath(), wrangler: derived.path },
       kennel: sheepDir(),
       build: { home: homeBuild, cli },
@@ -1191,6 +1282,8 @@ export interface DeleteReport {
   listing: DeleteListing;
   worker: "deleted" | "absent";
   application: { id: string; state: "deleted" } | null;
+  /** The station's join store (stile phase 2), deleted after the Worker; null when the account has no `<worker>-join` namespace. */
+  joinStore: { id: string; title: string; state: "deleted" } | null;
   config: { path: string; state: "cleared" | "removed" | "absent" };
   /** The listing's session count when the Worker was deleted, 0 when there was none to delete, null when the count was unknown. */
   sessionsDeleted: number | null;
@@ -1269,7 +1362,7 @@ export async function deleteStation(options: DeleteOptions = {}): Promise<Delete
   // The listing: the account's side (GETs), then the home's counts with the config's token, when the config names this station.
   const api = new AccountApi(token);
   const account = await api.account();
-  const [taken, subdomain] = await Promise.all([api.taken(account.id), api.subdomain(account.id)]);
+  const [taken, subdomain, store] = await Promise.all([api.taken(account.id), api.subdomain(account.id), api.kvNamespace(account.id, joinStoreTitle(name))]);
   const found = taken.applications.find((candidate) => candidate.name === name);
   const home = subdomain === undefined ? (typeof existing?.home === "string" ? existing.home : null) : address(name, subdomain);
   // The token is this station's when the config records the name, or names the address; a joined kennel deleting another name has none for it.
@@ -1307,6 +1400,14 @@ export async function deleteStation(options: DeleteOptions = {}): Promise<Delete
   }
   say(application === null ? `no container application named ${name}\n` : `deleted the container application ${name} (${application.id})\n`);
 
+  // The join store (stile phase 2), after the Worker that bound it: a station from before stores has none, and says so.
+  let joinStore: DeleteReport["joinStore"] = null;
+  if (store !== undefined) {
+    await api.deleteKvNamespace(account.id, store.id);
+    joinStore = { ...store, state: "deleted" };
+  }
+  say(joinStore === null ? `no join store named ${joinStoreTitle(name)}\n` : `deleted the join store ${joinStore.title} (${joinStore.id})\n`);
+
   // The config: cleared of the station, the file removed when nothing else is in it; the derived config goes with it.
   let config: DeleteReport["config"]["state"] = "absent";
   if (existing !== undefined) {
@@ -1324,5 +1425,5 @@ export async function deleteStation(options: DeleteOptions = {}): Promise<Delete
   // The sessions went with the Worker's objects: the listing's count, or none when there was no Worker to delete.
   const sessionsDeleted = worker === "deleted" ? listing.sessions : 0;
   say(`sessions deleted: ${sessionsDeleted ?? "unknown"}\n`);
-  return { name, account, listing, worker, application, config: { path: configPath(), state: config }, sessionsDeleted };
+  return { name, account, listing, worker, application, joinStore, config: { path: configPath(), state: config }, sessionsDeleted };
 }

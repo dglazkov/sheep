@@ -11,6 +11,7 @@
  * test file: what spawns is the ring's business, and both rings that use
  * these run the built command as a child.
  */
+import { createHash } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
 export const ACCOUNT = { id: "6821ca17f9f0938585204d69dd050445", name: "Fake's Account" };
@@ -49,19 +50,27 @@ export interface FakeState {
    */
   rollout: "none" | "progressing-then-completed" | "mirrored" | "rolling-stays" | "failed" | "dies";
   rolloutPolls: number;
-  deploys: { name: string; container: string; image: string; vars: string[] }[];
+  deploys: { name: string; container: string; image: string; vars: string[]; kv: { binding: string; id?: string }[] }[];
   /** Each Worker's secret names, as the fake wrangler's `secret put` registers them: never a value, as the real API answers. */
   secrets: Record<string, string[]>;
   /**
-   * Each Worker's env as the platform hands it to the Worker (stile phase 2): a put secret's value, by name, removed by a
-   * `secret delete`. The account API never answers with it; the fake station reads it, as a Worker reads its own env.
+   * The account's KV namespaces (stile phase 2, the join store), as the API lists, makes, and deletes them, each with
+   * its keys: the value and the `expiration_ttl` it was written with. The fake station reads the namespace titled
+   * `<worker>-join` as its `JOIN` binding, as the cell reads its own.
    */
-  env: Record<string, Record<string, string>>;
+  kv: { id: string; title: string; values: Record<string, { value: string; ttl: number | null }> }[];
+  /**
+   * What happened to join keys, in the order it happened, across the account and the station: `put <key> ttl <n>` and
+   * `delete <key>` through the API, `ask <status>` and `ask deleted <key>` at the station. The order a join must keep.
+   */
+  events: string[];
+  /** A KV key's delete refused by the API, as a token without Workers KV Storage (edit) would be: the join's failed delete. */
+  kvDeleteFails?: boolean;
   requests: { method: string; path: string; auth: string | undefined }[];
 }
 
 export function fresh(): FakeState {
-  return { plan: "workers_paid", subdomain: "fake", subdomainPut: "ok", workers: ["learner", "sheep", "sheep-pen"], applications: [{ id: "a03d94e0-75b4-454d-b8c8-4882bfcad73d", name: "sheep-pen" }], deploys: [], secrets: {}, env: {}, requests: [], health: "healthy", polls: 0, rollout: "none", rolloutPolls: 0 };
+  return { plan: "workers_paid", subdomain: "fake", subdomainPut: "ok", workers: ["learner", "sheep", "sheep-pen"], applications: [{ id: "a03d94e0-75b4-454d-b8c8-4882bfcad73d", name: "sheep-pen" }], deploys: [], secrets: {}, kv: [], events: [], requests: [], health: "healthy", polls: 0, rollout: "none", rolloutPolls: 0 };
 }
 
 const json = async (request: IncomingMessage): Promise<Record<string, unknown>> => {
@@ -84,7 +93,7 @@ export function fakeAccount(state: FakeState): Promise<{ server: Server; url: st
     const auth = request.headers.authorization;
     // The fake wrangler's side door: what a deploy or a delete does to the account.
     if (path === "/_fake/deploy") {
-      const body = (await json(request)) as { name: string; container: string; image: string; vars: string[] };
+      const body = (await json(request)) as { name: string; container: string; image: string; vars: string[]; kv: { binding: string; id?: string }[] };
       state.deploys.push(body);
       if (!state.workers.includes(body.name)) state.workers.push(body.name);
       const existing = state.applications.find((application) => application.name === body.container);
@@ -99,24 +108,16 @@ export function fakeAccount(state: FakeState): Promise<{ server: Server; url: st
       return response.end("{}");
     }
     if (path === "/_fake/secret") {
-      const body = (await json(request)) as { name: string; secret: string; value?: string };
+      const body = (await json(request)) as { name: string; secret: string };
       const held = state.secrets[body.name] ?? [];
       if (!held.includes(body.secret)) held.push(body.secret);
       state.secrets[body.name] = held;
-      if (typeof body.value === "string") state.env[body.name] = { ...(state.env[body.name] ?? {}), [body.secret]: body.value };
-      return response.end("{}");
-    }
-    if (path === "/_fake/secret-delete") {
-      const body = (await json(request)) as { name: string; secret: string };
-      state.secrets[body.name] = (state.secrets[body.name] ?? []).filter((secret) => secret !== body.secret);
-      if (state.env[body.name] !== undefined) delete state.env[body.name]![body.secret];
       return response.end("{}");
     }
     if (path === "/_fake/delete") {
       const body = (await json(request)) as { name: string };
       state.workers = state.workers.filter((name) => name !== body.name);
       delete state.secrets[body.name];
-      delete state.env[body.name];
       return response.end("{}");
     }
     state.requests.push({ method: request.method ?? "", path, auth });
@@ -207,6 +208,53 @@ export function fakeAccount(state: FakeState): Promise<{ server: Server; url: st
       ];
       return envelope(response, [{ id: "rollout-1", status: application.rollout.status, kind: "full_auto", strategy: "rolling", current_version: 1, target_version: 2, target_configuration: { image: application.rollout.target }, steps }]);
     }
+    // The join store (stile phase 2): KV namespaces listed in pages, made by title, deleted by id; a key written with its TTL
+    // as the raw body, deleted, and its namespace's keys listed. What the real API answers, over the state above.
+    if (path === `/accounts/${ACCOUNT.id}/storage/kv/namespaces` && request.method === "GET") {
+      const page = Number(url.searchParams.get("page") ?? "1");
+      const per = Number(url.searchParams.get("per_page") ?? "20");
+      const rows = state.kv.slice((page - 1) * per, page * per).map(({ id, title }) => ({ id, title, supports_url_encoding: true }));
+      return envelope(response, rows, { result_info: { page, per_page: per, count: rows.length, total_count: state.kv.length, total_pages: Math.max(1, Math.ceil(state.kv.length / per)) } });
+    }
+    if (path === `/accounts/${ACCOUNT.id}/storage/kv/namespaces` && request.method === "POST") {
+      const body = (await json(request)) as { title: string };
+      if (state.kv.some((namespace) => namespace.title === body.title)) return refuse(response, 400, 10014, "a namespace with this account ID and title already exists");
+      const made = { id: `kv${String(state.kv.length + 1).padStart(30, "0")}`, title: body.title, values: {} };
+      state.kv.push(made);
+      return envelope(response, { id: made.id, title: made.title, supports_url_encoding: true });
+    }
+    const namespaceRoute = /^\/accounts\/[^/]+\/storage\/kv\/namespaces\/([^/]+)(\/.*)?$/.exec(path);
+    if (namespaceRoute) {
+      const namespace = state.kv.find((candidate) => candidate.id === namespaceRoute[1]);
+      if (namespace === undefined) return refuse(response, 404, 10013, "namespace not found");
+      const rest = namespaceRoute[2] ?? "";
+      if (rest === "" && request.method === "DELETE") {
+        state.kv = state.kv.filter((candidate) => candidate !== namespace);
+        return envelope(response, null);
+      }
+      if (rest === "/keys" && request.method === "GET") {
+        const prefix = url.searchParams.get("prefix") ?? "";
+        return envelope(response, Object.keys(namespace.values).filter((key) => key.startsWith(prefix)).map((name) => ({ name })), { result_info: { count: 0, cursor: "" } });
+      }
+      const value = /^\/values\/(.+)$/.exec(rest);
+      if (value) {
+        const key = decodeURIComponent(value[1]!);
+        if (request.method === "PUT") {
+          let text = "";
+          for await (const chunk of request) text += chunk;
+          const ttl = url.searchParams.get("expiration_ttl");
+          namespace.values[key] = { value: text, ttl: ttl === null ? null : Number(ttl) };
+          state.events.push(`put ${key} ttl ${ttl}`);
+          return envelope(response, null);
+        }
+        if (request.method === "DELETE") {
+          if (state.kvDeleteFails === true) return refuse(response, 403, 10000, "Authentication error");
+          delete namespace.values[key];
+          state.events.push(`delete ${key}`);
+          return envelope(response, null);
+        }
+      }
+    }
     const deleting = /^\/accounts\/[^/]+\/containers\/applications\/([^/]+)$/.exec(path);
     if (deleting && request.method === "DELETE") {
       const before = state.applications.length;
@@ -229,21 +277,22 @@ export interface StationState {
    * probe that names none is answered as a sheep home, as deploy's is. Unset, no named Worker is this station.
    */
   worker?: string;
-  /** The fake account whose `env[worker]` is this station's env: `POST /join` reads `SHEEP_JOIN` there and nowhere else. */
+  /** The fake account whose namespace titled `<worker>-join` is this station's `JOIN` binding: `POST /join` reads it and nothing else. */
   account?: FakeState;
-  /** How many `POST /join` asks, after `SHEEP_JOIN` is on the Worker, answer 404 still, as the version before the put does. */
+  /** How many `POST /join` asks, after the key is written, answer 404 still, as the edge does until the write reaches it. */
   joinLag?: number;
-  /** Every request, in order: method, path, the bearer it carried, and, for a join, whether `SHEEP_JOIN` was on the Worker when it came. */
-  log?: { method: string; path: string; auth: string | undefined; joinSet?: boolean; status: number }[];
+  /** Every request, in order: method, path, the bearer it carried, the status, and, for a join, whether a join key was in the store when it came. */
+  log?: { method: string; path: string; auth: string | undefined; keyed?: boolean; status: number }[];
 }
 
 /**
  * The station's door: `GET /` answers `sheep`, `GET /home` the stamp; the
  * listings need the station's bearer, a 401 otherwise (the home's
  * `admitted`); what bearer each request carried is kept. `POST /join` is
- * the cell's (stile phase 2): the station's token to a bearer equal to the
- * `SHEEP_JOIN` the fake account holds for this Worker, and a bare 404 when
- * there is none, it differs, or the put is still `joinLag` asks away.
+ * the cell's (stile phase 2): the bearer hashed, its `join:<sha256>` key
+ * looked up in the fake account's `<worker>-join` namespace and deleted,
+ * and the station's token answered; a bare 404 when the key is not there,
+ * there is no namespace, or the write is still `joinLag` asks from the edge.
  */
 export function fakeStation(auths: (string | undefined)[], state: StationState): Promise<{ server: Server; url: string }> {
   let joinAsks = 0;
@@ -260,12 +309,22 @@ export function fakeStation(auths: (string | undefined)[], state: StationState):
     const named = url.searchParams.get("worker");
     if (url.pathname === "/" && request.method === "GET") return named === null || named === state.worker ? answer(200, "sheep\n") : answer(200, "<!doctype html><title>another Worker</title>");
     if (url.pathname === "/join" && request.method === "POST") {
-      const join = state.worker === undefined || named !== state.worker ? undefined : state.account?.env[state.worker]?.SHEEP_JOIN;
-      entry.joinSet = join !== undefined;
-      if (join === undefined || join === "") return answer(404, "not found");
+      const store = state.worker === undefined || named !== state.worker ? undefined : state.account?.kv.find((namespace) => namespace.title === `${state.worker}-join`);
+      const joinKeys = Object.keys(store?.values ?? {}).filter((key) => key.startsWith("join:"));
+      entry.keyed = joinKeys.length > 0;
+      const refused = () => {
+        state.account?.events.push("ask 404");
+        return answer(404, "not found");
+      };
+      if (store === undefined || joinKeys.length === 0) return refused();
       joinAsks++;
-      if (joinAsks <= (state.joinLag ?? 0)) return answer(404, "not found");
-      if (request.headers.authorization !== `Bearer ${join}`) return answer(404, "not found");
+      if (joinAsks <= (state.joinLag ?? 0)) return refused();
+      const header = request.headers.authorization ?? "";
+      if (!header.startsWith("Bearer ") || header === "Bearer ") return refused();
+      const key = `join:${createHash("sha256").update(header.slice("Bearer ".length)).digest("hex")}`;
+      if (store.values[key] === undefined) return refused();
+      delete store.values[key];
+      state.account?.events.push("ask 200");
       return answer(200, JSON.stringify({ token: state.token }));
     }
     if (url.pathname === "/home") return answer(200, JSON.stringify({ serverId: "fake-station", container: true, build: STAMP }));

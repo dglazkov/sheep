@@ -30,10 +30,13 @@
  * the cell is held by the very setup it is waiting on.
  * Stile phase 2: `POST /join` is the second machine's way in, and the one
  * route the home's token does not guard. A machine that can write this
- * Worker's secrets owns the account: it puts a join token as `SHEEP_JOIN`
- * and asks here with it as the bearer, and the home answers `{ token }`,
- * its own. Anything else — no `SHEEP_JOIN`, an empty one, another bearer —
- * is the same bare 404 as a route that does not exist, saying nothing.
+ * station's KV namespace owns the account: it writes the key
+ * `join:<sha256 of a join token>` through the account API and asks here
+ * with the token as the bearer, and the home deletes the key and answers
+ * `{ token }`, its own, once. Anything else — no `JOIN` binding, no
+ * bearer, a bearer whose key is not there — is the same bare 404 as a
+ * route that does not exist, saying nothing. A KV write is not a Worker
+ * version, so nothing running here restarts (issue #10).
  */
 import { type Budget, mintSecrets, unknownPasture, unknownSession } from "./directory.ts";
 import { hasEyes } from "./eyes/eyes.ts";
@@ -60,30 +63,30 @@ function admitted(request: Request, env: Env): Response | undefined {
   return undefined;
 }
 
-/** Two strings compared in time that depends on their lengths alone, never on where they first differ: the join bearer is a secret. */
-function sameSecret(a: string, b: string): boolean {
-  const left = new TextEncoder().encode(a);
-  const right = new TextEncoder().encode(b);
-  let differs = left.length ^ right.length;
-  const length = Math.max(left.length, right.length);
-  for (let i = 0; i < length; i++) differs |= (left[i] ?? 0) ^ (right[i] ?? 0);
-  return differs === 0;
+/** The key a join token is looked up by: `join:` and the hex of its SHA-256. The raw token is never stored, and never compared. */
+export async function joinKey(token: string): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token)));
+  return `join:${[...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
 /**
- * `POST /join` (stile phase 2): the home's token to the bearer that equals a
- * set, non-empty `SHEEP_JOIN`; `undefined` otherwise, which the router
- * answers as it answers any route it does not have. The account token
- * never comes here: writing the secret is the proof, and the join token is
- * all that travels.
+ * `POST /join` (stile phase 2): the home's token to a bearer whose key is
+ * in the `JOIN` namespace, the key deleted first so the token is good for
+ * one ask; `undefined` otherwise, which the router answers as it answers
+ * any route it does not have. The account token never comes here: writing
+ * the key is the proof, and the join token is all that travels.
  */
-export function joinAnswer(request: Request, env: Env): Response | undefined {
-  const join = env.SHEEP_JOIN;
+export async function joinAnswer(request: Request, env: Env): Promise<Response | undefined> {
+  const store = env.JOIN;
   const token = env.SHEEP_TOKEN;
-  if (join === undefined || join === "" || token === undefined || token === "") return undefined;
+  if (store === undefined || token === undefined || token === "") return undefined;
   const header = request.headers.get("authorization") ?? "";
   if (!header.startsWith("Bearer ")) return undefined;
-  if (!sameSecret(header.slice("Bearer ".length), join)) return undefined;
+  const bearer = header.slice("Bearer ".length);
+  if (bearer === "") return undefined;
+  const key = await joinKey(bearer);
+  if ((await store.get(key)) === null) return undefined;
+  await store.delete(key);
   return Response.json({ token }, { headers: { "cache-control": "no-store" } });
 }
 
@@ -209,7 +212,7 @@ export default {
 
     // The join (stile phase 2), before the home's door: the one route the home's token does not guard. Refused, it is the
     // router's own bare 404, so a prober learns nothing of whether a join is open.
-    if (url.pathname === "/join" && request.method === "POST") return joinAnswer(request, env) ?? new Response("not found", { status: 404 });
+    if (url.pathname === "/join" && request.method === "POST") return (await joinAnswer(request, env)) ?? new Response("not found", { status: 404 });
 
     const refused = admitted(request, env);
     if (refused) return refused;

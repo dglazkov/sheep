@@ -60,10 +60,10 @@ export const WORDS: Record<StepName, Words> = {
     does: "sheep writes the skill your agent reads and, for this directory, an empty .sheep/; nothing else.",
   },
   account: {
-    what: "the Cloudflare account your home is deployed on, proved by an API token.",
+    what: "the Cloudflare account your home lives on, proved by an API token.",
     where: `made at ${TOKENS_PAGE}, with: ${PERMISSIONS.join(", ")}.`,
-    cost: "the account is free; the plan it needs is the next step.",
-    does: `sheep keeps it in ${CREDENTIALS_FILE}, mode 600, and sends it to Cloudflare alone; never printed, logged, or an argument.`,
+    cost: "free; the plan it needs is the next step.",
+    does: `kept in ${CREDENTIALS_FILE}, mode 600; sent to Cloudflare alone, never shown or logged.`,
   },
   plan: {
     what: `the ${PLAN.name} plan, which the containers your sheep work in need.`,

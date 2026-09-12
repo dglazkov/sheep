@@ -3,88 +3,105 @@
  *
  * The route is before the home's door and is the one route the home's
  * token does not guard, so what it refuses matters more than what it
- * answers. A home with `SHEEP_JOIN` set answers `{ token }`, its own, to a
- * bearer equal to it and to nothing else; a home with no `SHEEP_JOIN` —
- * which is every home but for the seconds a join takes — answers 404 to
- * every bearer, the home's own included, with the same body as a route
- * that does not exist. And the join bearer opens nothing else: `GET /home`
- * is still 401 without the home's token, with a join set or not.
- *
- * The pool's home (`SELF`) is the one with no `SHEEP_JOIN`, as the
- * bindings in `vitest.config.ts` make it; a home with one set is the same
- * Worker's `fetch` called with that env, since a secret is only ever an
- * env value to the Worker.
+ * answers. The station's `JOIN` namespace (bound in `wrangler.jsonc`, a
+ * local KV here) holds `join:<sha256 of a join token>` for the seconds a
+ * join takes, written by the joining machine through the account API. A
+ * bearer whose key is there is answered `{ token }`, the home's own, once:
+ * the key is deleted, and a second ask is 404. A bearer whose key is not
+ * there, no bearer, and a home with no binding are the same bare 404 as a
+ * route that does not exist. And the join bearer opens nothing else:
+ * `GET /home` is still 401 without the home's token.
  */
 import { env, SELF } from "cloudflare:test";
-import { describe, expect, it } from "vitest";
-import worker from "../src/index.ts";
+import { beforeEach, describe, expect, it } from "vitest";
+import worker, { joinKey } from "../src/index.ts";
 
 const HOME_TOKEN = "test-token";
-const JOIN = "join-4f9c2a7e1b8d6053c1a9e7f2b4d8c6a0e3f5b7d9";
-
-/** The same Worker, with `SHEEP_JOIN` in its env as a put would have set it. */
-async function withJoin(join: string, path: string, init: RequestInit = {}): Promise<Response> {
-  const request = new Request(`https://sheep.test${path}`, init) as unknown as Parameters<typeof worker.fetch>[0];
-  return worker.fetch(request, { ...env, SHEEP_JOIN: join } as Env);
-}
+const JOIN = "4f9c2a7e1b8d6053c1a9e7f2b4d8c6a0e3f5b7d9a1c3e5f7";
 
 const bearer = (token: string) => ({ authorization: `Bearer ${token}` });
+const ask = (headers: Record<string, string>, path = "/join") => SELF.fetch(`https://sheep.test${path}`, { method: "POST", headers });
 
-describe("POST /join on a home with SHEEP_JOIN set", () => {
-  it("answers { token }, the home's own, to the join token as the bearer", async () => {
-    const response = await withJoin(JOIN, "/join", { method: "POST", headers: bearer(JOIN) });
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ token: HOME_TOKEN });
-    expect(response.headers.get("cache-control")).toBe("no-store");
+/** What the joining machine writes through the account API: the hashed key, value "1". */
+async function write(token: string): Promise<string> {
+  const key = await joinKey(token);
+  await env.JOIN!.put(key, "1", { expirationTtl: 120 });
+  return key;
+}
+
+beforeEach(async () => {
+  for (const { name } of (await env.JOIN!.list()).keys) await env.JOIN!.delete(name);
+});
+
+describe("POST /join with a join key written", () => {
+  it("keys the store by the token's SHA-256, never the token", async () => {
+    expect(await joinKey("abc")).toBe("join:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    await write(JOIN);
+    const keys = (await env.JOIN!.list()).keys.map((key) => key.name);
+    expect(keys).toHaveLength(1);
+    expect(keys[0]).not.toContain(JOIN);
   });
 
-  it("answers the bare 404 to every other bearer, to none, and to the join token anywhere but the header", async () => {
-    const refusals: [string, RequestInit, string?][] = [
-      ["no bearer", { method: "POST" }],
-      ["the home's own token", { method: "POST", headers: bearer(HOME_TOKEN) }],
-      ["a prefix of the join token", { method: "POST", headers: bearer(JOIN.slice(0, -1)) }],
-      ["the join token and more", { method: "POST", headers: bearer(`${JOIN}x`) }],
-      ["one character changed", { method: "POST", headers: bearer(`${JOIN.slice(0, -1)}1`) }],
-      ["an empty bearer", { method: "POST", headers: bearer("") }],
-      ["the join token without Bearer", { method: "POST", headers: { authorization: JOIN } }],
-      ["the join token as a query", { method: "POST" }, `?token=${JOIN}`],
+  it("answers { token }, the home's own, to the token as the bearer, deletes the key, and answers a second ask 404", async () => {
+    const key = await write(JOIN);
+    const first = await ask(bearer(JOIN));
+    expect(first.status).toBe(200);
+    expect(await first.json()).toEqual({ token: HOME_TOKEN });
+    expect(first.headers.get("cache-control")).toBe("no-store");
+    expect(await env.JOIN!.get(key)).toBeNull();
+    const second = await ask(bearer(JOIN));
+    expect(second.status).toBe(404);
+    expect(await second.text()).toBe("not found");
+  });
+
+  it("answers the bare 404 to every other bearer, to none, and to the token anywhere but the header, and leaves the key", async () => {
+    const key = await write(JOIN);
+    const refusals: [string, Record<string, string>, string?][] = [
+      ["no bearer", {}],
+      ["the home's own token", bearer(HOME_TOKEN)],
+      ["a prefix of the join token", bearer(JOIN.slice(0, -1))],
+      ["the join token and more", bearer(`${JOIN}x`)],
+      ["the key itself", bearer(key)],
+      ["the key's hash alone", bearer(key.slice("join:".length))],
+      ["an empty bearer", { authorization: "Bearer " }],
+      ["the join token without Bearer", { authorization: JOIN }],
+      ["the join token as a query", {}, `/join?token=${JOIN}`],
     ];
-    for (const [what, init, query] of refusals) {
-      const response = await withJoin(JOIN, `/join${query ?? ""}`, init);
+    for (const [what, headers, path] of refusals) {
+      const response = await ask(headers, path);
       expect(response.status, what).toBe(404);
       expect(await response.text(), what).toBe("not found");
     }
+    expect(await env.JOIN!.get(key)).toBe("1");
   });
 
-  it("answers nothing but POST: a GET with the join token is not the token", async () => {
-    const response = await withJoin(JOIN, "/join", { headers: bearer(JOIN) });
+  it("answers nothing but POST: a GET with the join token is the door's 401, and the key stays", async () => {
+    const key = await write(JOIN);
+    const response = await SELF.fetch("https://sheep.test/join", { headers: bearer(JOIN) });
     expect(response.status).toBe(401);
     expect(await response.text()).not.toContain(HOME_TOKEN);
+    expect(await env.JOIN!.get(key)).toBe("1");
   });
 
   it("opens no other route: GET /home and GET /sessions are still 401 without the home's token, the join bearer included", async () => {
+    await write(JOIN);
     for (const path of ["/home", "/sessions"]) {
-      expect((await withJoin(JOIN, path)).status, `${path} with no bearer`).toBe(401);
-      expect((await withJoin(JOIN, path, { headers: bearer(JOIN) })).status, `${path} with the join bearer`).toBe(401);
+      expect((await SELF.fetch(`https://sheep.test${path}`)).status, `${path} with no bearer`).toBe(401);
+      expect((await SELF.fetch(`https://sheep.test${path}`, { headers: bearer(JOIN) })).status, `${path} with the join bearer`).toBe(401);
     }
-  });
-
-  it("treats an empty SHEEP_JOIN as none: an empty bearer is not a join", async () => {
-    expect((await withJoin("", "/join", { method: "POST", headers: bearer("") })).status).toBe(404);
-    expect((await withJoin("", "/join", { method: "POST", headers: { authorization: "Bearer " } })).status).toBe(404);
+    expect((await SELF.fetch("https://sheep.test/home", { headers: bearer(HOME_TOKEN) })).status).toBe(200);
   });
 });
 
-describe("POST /join on a home with no SHEEP_JOIN", () => {
+describe("POST /join with no join key", () => {
   it("is the bare 404 to every bearer, the home's own included, saying nothing", async () => {
-    expect(env.SHEEP_JOIN).toBeUndefined();
     for (const [what, headers] of [
       ["no bearer", {}],
       ["the home's own token", bearer(HOME_TOKEN)],
-      ["a join token", bearer(JOIN)],
+      ["a join token never written", bearer(JOIN)],
       ["an empty bearer", { authorization: "Bearer " }],
     ] as [string, Record<string, string>][]) {
-      const response = await SELF.fetch("https://sheep.test/join", { method: "POST", headers });
+      const response = await ask(headers);
       expect(response.status, what).toBe(404);
       const body = await response.text();
       expect(body, what).toBe("not found");
@@ -92,9 +109,12 @@ describe("POST /join on a home with no SHEEP_JOIN", () => {
     }
   });
 
-  it("leaves the door as it was: GET /home is 401 without the home's token and 200 with it", async () => {
-    expect((await SELF.fetch("https://sheep.test/home")).status).toBe(401);
-    expect((await SELF.fetch("https://sheep.test/home", { headers: bearer(JOIN) })).status).toBe(401);
-    expect((await SELF.fetch("https://sheep.test/home", { headers: bearer(HOME_TOKEN) })).status).toBe(200);
+  it("is the bare 404 on a home with no JOIN binding, a station deployed before the store, even with the key written", async () => {
+    await write(JOIN);
+    const { JOIN: _store, ...unbound } = env;
+    const request = new Request("https://sheep.test/join", { method: "POST", headers: bearer(JOIN) }) as unknown as Parameters<typeof worker.fetch>[0];
+    const response = await worker.fetch(request, unbound as Env);
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe("not found");
   });
 });

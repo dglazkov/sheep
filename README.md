@@ -267,8 +267,8 @@ node packages/cli/bin/sheep.js new                                              
 
 `sheep setup` at a terminal is the shepherd's way, and deploys through
 the same code. From the installed command, with a Cloudflare API token
-(Workers Scripts, Durable Objects, Containers, Workers Subdomain, Account
-Settings read, Billing read) and the Anthropic key either kept in
+(Workers Scripts, Durable Objects, Containers, Workers Subdomain, Workers
+KV Storage, Account Settings read, Billing read) and the Anthropic key either kept in
 `~/.sheep/credentials` or in the environment, which is how the rings and CI
 give them, on an account with the Workers Paid plan:
 
@@ -290,25 +290,35 @@ home deploy` moves its stamp with every session and pasture kept.
 `--subdomain` registers a `workers.dev` subdomain when the account has
 none.
 
+Every station has a **join store**: a KV namespace titled
+`<worker>-join`, bound to the Worker as `JOIN`. `sheep home deploy` makes
+it through the account API when the account has none of that title
+(a redeploy finds it, and a station deployed before stores gets one at
+its next deploy) and writes its id into the derived config; `sheep home
+delete` deletes it after the Worker. The token needs Workers KV Storage
+(edit) for it.
+
 A second machine joins a station the account already has through the
 same `sheep setup`, and nothing is carried between the machines. Its
 station step lists `new <name>` and then every Worker on the account
 whose `GET /` answers `sheep`; choosing one is the join. The home's own
 token is a Worker secret and cannot be read back, so the join turns that
-around: writing the Worker's secrets proves this machine owns the
-account. The stile generates a join token and puts it as `SHEEP_JOIN`
-through `wrangler secret put`'s stdin, the account token in wrangler's
-environment; asks `POST /join` with the join token as the bearer, a
-second apart for up to a minute, until the new version answers; writes
-the kennel's config with the address and the token it answered, and no
-name, since the station is the other kennel's; and deletes `SHEEP_JOIN`
-with `wrangler secret delete`, on every path out once the put succeeded.
-The cell answers `{ token }` only to a bearer equal to a set `SHEEP_JOIN`,
-and the same bare 404 as a missing route otherwise; it is the one route
-the home's token does not guard. The account token never reaches the
-home, and a secret put is a config-only version, so a turn running on the
-station is undisturbed. `key` then asks nothing: the station holds its
-own. `sheep home join`, station's piped way in, is withdrawn and says so.
+around: writing to the station's store proves this machine owns the
+account. The stile generates a join token and writes the key
+`join:<sha256 of it>` to `<worker>-join` through the account API with a
+120-second TTL; asks `POST /join` with the token as the bearer, a second
+apart for up to ninety seconds, since a KV write can take up to a minute
+to reach the edge; writes the kennel's config with the address and the
+token the home answered, and no name, since the station is the other
+kennel's; and deletes the key through the API on every path out once it
+was written, the TTL behind that. The cell hashes the bearer, and when
+that key is in `JOIN` deletes it and answers `{ token }`; anything else is
+the same bare 404 as a missing route. It is the one route the home's
+token does not guard. The account token never reaches the home, and no
+wrangler call is made: a secret put or delete is a new Worker version,
+which restarts the Durable Objects holding running turns, and a KV write
+is not (issue #10). `key` then asks nothing: the station holds its own.
+`sheep home join`, station's piped way in, is withdrawn and says so.
 
 ```sh
 npx github:dglazkov/sheep#release setup   # on the second machine: station → join <name>; then sheep ls, sheep attach <id>
