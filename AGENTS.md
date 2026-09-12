@@ -41,6 +41,10 @@ stderr while the dog holds a prompt.
 [Project bell](docs/projects/bell/design.md) lets a dog hear the work as
 it happens: `sheep attach --json` writes each of the turn's entries as it
 lands, from the events the attached client was already being given.
+[Project stile](docs/projects/stile/design.md) is the shepherd's one
+sitting at a terminal: `sheep setup` asks for the account token and the
+model key the first time and keeps them, and every command the dog runs
+after reads what was kept; the local home becomes the developer's rig.
 Setup and usage are in [README.md](README.md).
 Read a project's `phases.md` for where its work stands and what the next
 phase is; [docs/projects/README.md](docs/projects/README.md) lists them.
