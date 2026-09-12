@@ -22,16 +22,16 @@ detail.
 
 ---
 
-**Where we are: bleat phase 0 is CLOSED and bleat phase 1 is PART-DONE,
-11 September 2026.** A setup says itself twice — to the sheep's Directory
-row, which answers whatever the cell is doing, and to the cell's own
-record, which carries the output's tail beside the transcript's entries —
-and the dog hears it three ways: `setup:` on `sheep status`, the
-`[setup]` block in `sheep log`, and `setup running (1m 40s)` on stderr
-while a prompt is held. Journey 4 steps 1 and 2 are walked on a local
-home with Docker and a real model. **The one thing left is journey 4 step
-3, the account ring's `b1`, written and unrun: it deploys a station on
-the shepherd's account, so it waits on the shepherd.**
+**Where we are: bleat is done, 11 September 2026. Both phases CLOSED.** A
+setup says itself twice — to the sheep's Directory row, which answers
+whatever the cell is doing, and to the cell's own record, which carries
+the output's tail beside the transcript's entries — and the dog hears it
+three ways: `setup:` on `sheep status`, the `[setup]` block in `sheep
+log`, and `setup running (1m 40s)` on stderr while a prompt is held.
+Planned and built in one day from the shepherd's issue #4. All four
+journeys are walked: 1 to 3 on a local home with Docker and a real model,
+4 by the account ring on release 220ba1f, `ok b1` among 40 lines. Nothing
+waits on work or on a person.
 
 The order is dependency order. Phase 0 is the fact and where it is kept,
 which all three surfaces read. Phase 1 is the surfaces, the docs, and the
@@ -152,25 +152,24 @@ three surfaces read and the times recorded; then a `setup.sh` that exits
 with the new step, a station deployed and deleted on the shepherd's
 account, a few container minutes and one deploy.
 
-**Status: PART-DONE.** 2026-09-11. The three surfaces are built and
-journey 4 steps 1 and 2 are walked on a local home with Docker and a real
-model: a held prompt says `setup running (7.7 s)`, `setup running (37.7
-s)`, `setup ok (45.1 s)` on stderr with the reply alone on stdout, `sheep
-status` from a second terminal answers from the row in 2.2 s while the
-cell is being born and `setup: ok (45.1 s)` in 0.21 s after, the
-`[setup]` block carries setup's own output, and the row, the block, and
-the lines agree to the tenth of a second; a `setup.sh` that exits 1 is
-`setup: failed (exit 1, 0.0 s)` with its output in the block. `pnpm test`
-exits 0 across all three rings, 120 CLI cases. Journey 4 step 3, the
-account ring's `b1`, is written and waits on the shepherd: it deploys a
-station.
+**Status: CLOSED.** 2026-09-11. All four journeys are walked. Journey 4
+steps 1 and 2 on a local home with Docker and a real model: a held prompt
+says `setup running (7.7 s)`, `setup running (37.7 s)`, `setup ok (45.1
+s)` on stderr with the reply alone on stdout, `sheep status` from a
+second terminal answers from the row in 2.2 s while the cell is being
+born and `setup: ok (45.1 s)` in 0.21 s after, the `[setup]` block
+carries setup's own output, and the row, the block, and the lines agree
+to the tenth of a second; a `setup.sh` that exits 1 is `setup: failed
+(exit 1, 0.0 s)` with its output in the block. Journey 4 step 3 by the
+account ring on release 220ba1f, `ok b1` among 40 lines with none
+failed. `pnpm test` exits 0 across all three rings, 121 CLI cases.
 
 **Findings:**
 
-- **2026-09-11 — The walk found `sheep status` printing at two seconds and exiting at thirty-nine.** A cell being born answers the upgrade then says nothing, and `close()` waits for a frame that cannot come until it is born; the short form now ends once flushed, and returns in 2.2 s.
-- **2026-09-11 — The ring had the two socket behaviours the wrong way round.** An upgrade never answered is aborted cleanly; the answered-then-silent one, which a cell being born is, holds the loop. The fake home gained it, and the case measures the child's exit.
+- **2026-09-11 — The walk found `sheep status` printing at two seconds and exiting at thirty-nine.** A cell being born answers the upgrade then says nothing, and `close()` waits on a frame that cannot come; the short form now ends once flushed. The ring had faked a handshake, which node frees, not an open socket, which it does not.
 - **2026-09-11 — The guide was cut to fit rather than the cap raised.** Bleat's section cost 159 words against two of slack, so about 200 came out elsewhere; 1492 words, the guard still `< 1500`, as mint phase 1 left it.
-- **2026-09-11 — A setup that fails fast is never said on stderr.** The broken pasture's script exited in under 50 ms, so the first poll found it ended and said nothing: the dog waited for nothing, which is the design's rule and reads right.
-- **2026-09-11 — The three surfaces agree because they share one number.** The row's `ms`, the block's, and the line's are one `Date.now() - at`: the walk read 45.1 s in all three, `45108` in the row.
-- **2026-09-11 — The account ring's first run failed at `s2`, before `b1`.** Not bleat's: the platform now mirrors container images into its own registry, so the settle waited on a configuration that could never name the image; fixed in `7d3b22d`.
-- **2026-09-11 — Open: journey 4 step 3 waits on the shepherd.** `pnpm hermetic --ring account --yes <sha>` with `b1` deploys and deletes a station on their account, and proves `7d3b22d` too. Nothing else in bleat waits.
+- **2026-09-11 — A setup that fails fast is never said on stderr.** The broken pasture's script exited in under 50 ms, so the first poll found it ended and said nothing: the dog waited for nothing, as the design has it.
+- **2026-09-11 — The three surfaces agree because they share one number,** one `Date.now() - at`: the walk read 45.1 s in all three and `45108` in the row.
+- **2026-09-11 — The account ring's first run failed at `s2`, before `b1`.** Not bleat's: the platform now mirrors container images into its own registry, so the settle waited on a configuration that could never name it; fixed in `7d3b22d`.
+- **2026-09-11 — The account ring closes it on release 220ba1f, `ok b1`, 40 lines held:** the held prompt said `setup running` twice then `setup ok (45.2 s)`, eight `status` answers came from the row while the cell was born, the slowest 2.4 s, and the block held setup's own line.
+- **2026-09-11 — The same run proved `7d3b22d`:** `s2` settled in 24 s on a rollout that completed while the application named another digest — the state that burned 305 s an hour before.
