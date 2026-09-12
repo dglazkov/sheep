@@ -50,8 +50,9 @@ home` as a screen; Windows.
 
 ## Phase 0: What the dog reads
 
-**Closes:** journey 2 steps 1 to 6 against the fakes; journey 1 step 6;
-journey 2's first, second, and fourth criteria.
+**Closes:** journey 2 steps 1 to 6 against the fakes, but for step 4's
+last sentence, which is the stile's; journey 1 step 6; journey 2's fourth
+criterion.
 
 **Work:** `packages/cli/src/credentials.ts`: `readCredentials()`, the
 kennel's `.sheep/credentials` over `~/.sheep/credentials`, the
@@ -105,7 +106,8 @@ call, asked out loud.
 ## Phase 1: The stile
 
 **Closes:** journey 1 steps 1 to 5 and its criteria; journey 4 steps 1
-to 3 and its criteria; journey 2's third criterion.
+to 3 and its criteria; journey 2's first, second, and third criteria, and
+its step 4's last sentence.
 
 **Work:** `packages/cli/src/stile/flow.ts`: the steps as a machine with
 `ask`, `say`, and `choose`; the answers scripted or from a terminal;
