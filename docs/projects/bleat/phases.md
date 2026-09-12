@@ -23,10 +23,11 @@ detail.
 ---
 
 **Where we are: bleat is planned, 11 September 2026. Nothing built.**
-Written from the shepherd's issue #4 the day spool closed. Two phases:
-the sink, the row, and the record, proved in workerd against the fake
-container; then the dog's three surfaces, the docs, the rings, and the
-walk on a home with Docker.
+Written from the shepherd's issue #4 the day spool closed. The next thing
+to do is **bleat phase 0**, the sink, the row, and the record, proved in
+workerd against the fake container; then bleat phase 1 is the dog's three
+surfaces, the docs, the rings, and the walk on a home with Docker.
+Nothing waits on a person until bleat phase 1's account ring.
 
 The order is dependency order. Phase 0 is the fact and where it is kept,
 which all three surfaces read. Phase 1 is the surfaces, the docs, and the
