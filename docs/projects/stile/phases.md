@@ -24,19 +24,17 @@ tool, has built a facade.
 
 ---
 
-**Where we are: stile phases 0 and 1 are PART-DONE, 12 September 2026.**
-The next thing to do is **stile phase 1**'s outer rings and walk, then
+**Where we are: stile phase 0 is CLOSED and phase 1 PART-DONE, 12 September
+2026.** The next thing to do is **stile phase 1**'s account ring, then
 **stile phase 2**, the join. The shepherd authorized the runs with the
-checkout's keys: the package ring with `t0` through CI's release, the dog
-ring, the ⚑ account ring with `t1`, and stile phase 0's upgrade of
-`sheep-2` with nothing in the environment.
+checkout's keys. The package ring holds with `t0` in CI's release
+`b227c2d`, the dog ring holds, and `sheep-2` is upgraded to it.
 
 Both phases are green in the inner rings. Stile phase 0 is the dog's half:
 `credentials.ts`, deploy and delete reading what the machine keeps, `Stop`
 in two parts, the key left when the Worker holds one, the midway message,
-and setup making no kennel where a home is reachable; its walk has read
-`~/.sheep/credentials` from a scratch directory with nothing in the
-environment and found `sheep-2`, and the upgrade itself is left. Stile
+and setup making no kennel where a home is reachable; its walk upgraded
+`sheep-2` from the release with an empty environment, nothing asked. Stile
 phase 1 is the stile: the flow, the screen over pi-tui, the words, the
 fence and its guard, the two halves of the README, and the ring steps,
 written and not yet run. Two ⚑ steps in the project, both the account
@@ -106,12 +104,12 @@ with nothing in the environment, the upgrade with nothing asked. No
 provision step: the redeploy of the shepherd's own station is the shepherd's
 call, asked out loud.
 
-**Status: PART-DONE, 12 September 2026.** The mechanism holds against the
+**Status: CLOSED, 12 September 2026.** The mechanism holds against the
 fakes, `pnpm test` and `pnpm -r typecheck` exit 0, and both named
-mutations falsified their tests: a placeholder key put when none is kept
-fails journey 2 step 3's case on a fourth wrangler call, and a stop
-printed without its paragraph fails the two-part assertion. The by-hand
-walk on this laptop, which needs the shepherd's own token, is Open below.
+mutations falsified their tests. The walk held on the shepherd's station:
+the released `sheep 82cf207`, under `env -i` with stdin at `/dev/null`,
+upgraded `sheep-2` from what `~/.sheep` keeps, nothing asked, and its
+nine sessions and four pastures survived.
 
 **Findings:**
 
@@ -131,14 +129,14 @@ walk on this laptop, which needs the shepherd's own token, is Open below.
   falsifiable.** The fake wrangler registers each `secret put` with the
   fake account, which answers the names from what the puts made; a
   hard-coded listing cannot fail.
-- **2026-09-12 — Open: the account ring's a1 fails until stile phase 1.**
-  It asserts the refusal says `CLOUDFLARE_API_TOKEN is not set`, and the
-  stop says otherwise. Stile phase 1 rewrote the assertion to the stop's
-  two parts; it holds when the account ring runs it.
-- **2026-09-12 — Open: the by-hand half of the Proof waits on the
-  shepherd.** `~/.sheep/credentials` from the checkout's two files, then
-  `sheep home deploy` against `sheep-2` with nothing in the environment.
-  It needs their own Cloudflare token, so it is theirs to type.
+- **2026-09-12 — The account ring's a1 runs the older release.** It
+  deploys the prior release first, so a1 must keep the old refusal and
+  the two-part stop is proved after the upgrade; rewriting a1 to the stop
+  failed the ring's first real run, with nothing made.
+- **2026-09-12 — The upgrade needed nothing but the file.** `sheep home
+  deploy` from the release, environment empty, read the kept token, put
+  the kept key, and moved `sheep-2`'s stamp in a second, from an
+  unstamped checkout build to `82cf207`; `sheep ls` listed all nine.
 
 ---
 
