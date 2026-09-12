@@ -125566,16 +125566,35 @@ function admitted(request, env) {
   return void 0;
 }
 __name(admitted, "admitted");
+function sameSecret(a, b) {
+  const left = new TextEncoder().encode(a);
+  const right = new TextEncoder().encode(b);
+  let differs = left.length ^ right.length;
+  const length = Math.max(left.length, right.length);
+  for (let i = 0; i < length; i++) differs |= (left[i] ?? 0) ^ (right[i] ?? 0);
+  return differs === 0;
+}
+__name(sameSecret, "sameSecret");
+function joinAnswer(request, env) {
+  const join3 = env.SHEEP_JOIN;
+  const token = env.SHEEP_TOKEN;
+  if (join3 === void 0 || join3 === "" || token === void 0 || token === "") return void 0;
+  const header = request.headers.get("authorization") ?? "";
+  if (!header.startsWith("Bearer ")) return void 0;
+  if (!sameSecret(header.slice("Bearer ".length), join3)) return void 0;
+  return Response.json({ token }, { headers: { "cache-control": "no-store" } });
+}
+__name(joinAnswer, "joinAnswer");
 var CHECKOUT_BUILD = { commit: "0.0.0-checkout", builtAt: null };
 function homeImage() {
   if (false) return null;
-  return true ? "docker.io/dglazkov2/sheep-pen@sha256:d4ca087063bdede9a9b0af80435e5d2104ecdc91b55a4effcf8926852a0d8dd6" : null;
+  return true ? "docker.io/dglazkov2/sheep-pen@sha256:92ff501820a7488c37a2184bf32bb581f1d21c495407ca460d999ee6bdf996a5" : null;
 }
 __name(homeImage, "homeImage");
 function homeBuild() {
   if (false) return CHECKOUT_BUILD;
   try {
-    const parsed = JSON.parse('{"commit":"bd7b64e","builtAt":"2026-09-12T20:51:24Z"}');
+    const parsed = JSON.parse('{"commit":"6e64cb9","builtAt":"2026-09-12T21:05:15Z"}');
     if (typeof parsed.commit === "string" && parsed.commit !== "") return { commit: parsed.commit, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
   } catch {
   }
@@ -125650,6 +125669,7 @@ var index_default = {
       inner.pathname = "/pen";
       return env.SESSION_CELL.getByName(id2).fetch(new Request(inner, request));
     }
+    if (url.pathname === "/join" && request.method === "POST") return joinAnswer(request, env) ?? new Response("not found", { status: 404 });
     const refused = admitted(request, env);
     if (refused) return refused;
     if (url.pathname === "/sessions" && request.method === "POST") {
@@ -125725,7 +125745,8 @@ export {
   index_default as default,
   homeBuild,
   homeImage,
-  homeReport
+  homeReport,
+  joinAnswer
 };
 /*! Bundled license information:
 

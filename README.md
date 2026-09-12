@@ -106,6 +106,14 @@ names the one command to type at your terminal, `sheep setup`; your agent
 passes it on. `sheep home delete` is yours too: it lists what goes and
 waits for the station's name typed at your terminal.
 
+**A second laptop** is the same command at its own terminal. **account**
+asks for the token, since that machine has never held one; **station**
+lists the homes the account already has after the new one, and choosing
+yours joins it: this machine proves it owns the account, the home hands
+over its own token, and nothing is copied between the laptops by hand.
+**key** asks nothing, since the home holds its own. `sheep ls` there lists
+the sheep your first laptop's agent made.
+
 `sheep export <id>` writes a pi session file. `sheep --version` prints the
 build stamp: the commit on `main` the release was built from, and when.
 
@@ -282,15 +290,28 @@ home deploy` moves its stamp with every session and pasture kept.
 `--subdomain` registers a `workers.dev` subdomain when the account has
 none.
 
-A second machine joins the same station with the token on stdin, never as
-an argument: pipe it from the first machine's `.sheep/config` or a
-password manager. It writes this kennel's config (address and token, no
-name: the station is the other kennel's), and prints both build stamps and
-the pen image the station runs, by digest.
+A second machine joins a station the account already has through the
+same `sheep setup`, and nothing is carried between the machines. Its
+station step lists `new <name>` and then every Worker on the account
+whose `GET /` answers `sheep`; choosing one is the join. The home's own
+token is a Worker secret and cannot be read back, so the join turns that
+around: writing the Worker's secrets proves this machine owns the
+account. The stile generates a join token and puts it as `SHEEP_JOIN`
+through `wrangler secret put`'s stdin, the account token in wrangler's
+environment; asks `POST /join` with the join token as the bearer, a
+second apart for up to a minute, until the new version answers; writes
+the kennel's config with the address and the token it answered, and no
+name, since the station is the other kennel's; and deletes `SHEEP_JOIN`
+with `wrangler secret delete`, on every path out once the put succeeded.
+The cell answers `{ token }` only to a bearer equal to a set `SHEEP_JOIN`,
+and the same bare 404 as a missing route otherwise; it is the one route
+the home's token does not guard. The account token never reaches the
+home, and a secret put is a config-only version, so a turn running on the
+station is undisturbed. `key` then asks nothing: the station holds its
+own. `sheep home join`, station's piped way in, is withdrawn and says so.
 
 ```sh
-npx github:dglazkov/sheep#release setup
-sheep home join https://<worker>.<subdomain>.workers.dev < token.txt   # then sheep ls, sheep attach <id>
+npx github:dglazkov/sheep#release setup   # on the second machine: station → join <name>; then sheep ls, sheep attach <id>
 ```
 
 #### Use it

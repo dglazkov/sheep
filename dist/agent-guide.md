@@ -26,9 +26,9 @@ report's `home:` line says whether a home is reachable.
 
 `sheep home` reports the kennel, the home, whether it answers, and which
 credentials are kept (never a value); `--home <url>` or `SHEEP_HOME`
-selects another for one command. `sheep home delete` is the shepherd's;
-`sheep home join <address>` is a second machine's way in, the token one
-line of stdin piped by the shepherd.
+selects another for one command. `sheep home delete` is the shepherd's,
+and so is a second machine: `sheep setup` at their terminal there joins
+the station the account already has.
 
 ## The kennel
 
