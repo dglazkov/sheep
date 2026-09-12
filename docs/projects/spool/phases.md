@@ -107,8 +107,11 @@ handle on all three paths that drop a put-back.
 `packages/pen/test/agent.test.ts`, the command ring's process test: a
 real `/cache` whose largest file is several chunks, described and put
 back through a real disk, its bytes and mode right afterwards, and the
-process's own `VmHWM` read before and after — the number the phase is
-for. `scripts/hermetic.mjs`: the account ring's new step, `f2`, after
+agent child's resident set sampled while it works, its highest reading
+far below the largest file — the number the phase is for. The ring's
+host is the shepherd's laptop, which has no `/proc`, so the sample is
+`ps -o rss=` on the child's pid rather than `VmHWM`; `VmHWM` from
+`/proc/1/status` is the container's, where journey 3 reads it. `scripts/hermetic.mjs`: the account ring's new step, `f2`, after
 f1: a pasture whose `setup.sh` writes a file larger than the agent could
 once have held, beside a small tool; one sheep born cold and one born
 warm, each scripted by the faux provider to run the tool and stat the
