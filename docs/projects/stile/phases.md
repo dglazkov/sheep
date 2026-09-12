@@ -25,8 +25,9 @@ tool, has built a facade.
 ---
 
 **Where we are: stile phase 0 is CLOSED, phases 1 and 2 PART-DONE, 12
-September 2026.** Phase 2 is PART-DONE: the next thing to do is **stile phase 2**'s
-account ring and join walk. Stile phase 1 waits on issue #9, the screen
+September 2026.** Stile phase 2 is PART-DONE and waits on the shepherd:
+a secret put restarts running turns, so the join's mechanism changes
+before **stile phase 2** can close. Stile phase 1 waits on issue #9, the screen
 the shepherd's walk found bare; the package, dog,
 and ⚑ account rings all hold on release `b227c2d`, run with the
 checkout's keys at the shepherd's word, and `sheep-2` is upgraded to it.
@@ -270,10 +271,9 @@ laptop joining `sheep-2` from a scratch kennel under a fresh `HOME`.
 
 **Status: PART-DONE, 12 September 2026.** The join is built and green in
 the inner rings: `pnpm test`, `pnpm -r typecheck`, and `pnpm bundle` exit
-0, and both named mutations falsified their tests — `/join` answering a
-home with no `SHEEP_JOIN` fails two workerd cases, and the join secret
-left on the Worker fails three of journey 3's. The ⚑ account ring and the
-join walk from this laptop are Open.
+0, and both named mutations falsified their tests. The join walked on
+`sheep-2` and a7 held on the account, but `t2` failed and a probe proved
+why: the secret put restarts the turns it should leave alone. Open.
 
 **Findings:**
 
@@ -292,6 +292,12 @@ join walk from this laptop are Open.
 - **2026-09-12 — A global `sheep` beside `node` broke setup's tests.**
   The shepherd's taste test installed one, as journey 1 step 1 does; the
   command step then read "on PATH". The tests now build their own PATH.
-- **2026-09-12 — Open: the ⚑ account ring with a7 as the stile and `t2`,
-  and the join walk from this laptop to `sheep-2`.** Both need a release
-  with `/join`, and `sheep-2` upgraded to it.
+- **2026-09-12 — A secret put restarts a running turn.** On a scratch
+  station a 180 s faux turn ended whole alone; with `SHEEP_JOIN` put and
+  deleted mid-turn it restarted, left two empty assistant entries, and
+  its lane stayed running past its reply. The design's "config-only, not
+  a rollout" is false.
+- **2026-09-12 — Open: the join must not touch the Worker's version.**
+  Journey 3's third criterion cannot hold with a secret; the mechanism
+  waits on the shepherd's call, since the likely fix adds a store per
+  station.
