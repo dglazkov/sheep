@@ -23,11 +23,16 @@ of the code.
 
 ---
 
-**Where we are: planned, 11 Sep 2026. Both phases NOT STARTED.** Next
-is spool phase 0, the slices and the cap, proved in workerd against the
-fake container and against a disk that refuses to hand over a whole
-file. Nothing waits on a person until spool phase 1's account ring, one
-⚑ step.
+**Where we are: spool phase 0 closed, 11 Sep 2026.** Next is spool
+phase 1, the image, the memory, and the walk, NOT STARTED, and it waits
+on the shepherd: the walk needs a local home with Docker and a real
+model, and journey 3 step 3 is the account ring's one ⚑. What phase 0
+left standing: the record moves in slices both ways behind optional
+handles on `Disk`, the cap is asked of the listing before a file is
+opened, and a put-back that is dropped closes the file it was in the
+middle of — proved in workerd over a disk that throws for any whole
+file, and byte for byte the same record as the disk with no handles at
+all. Nothing waits on work.
 
 The order is dependency order. Phase 0 is the record in slices, which is
 all of the mechanism. Phase 1 is the image, the walk where the memory is
@@ -79,7 +84,19 @@ failing the new tests and put back: the reader allocating the file's size
 again; the writer reading the file whole again; the cap checked after the
 read. **⚑** none.
 
-**Status: NOT STARTED.**
+**Status: CLOSED, 11 Sep 2026.** The record streams both ways over a
+disk that throws for any whole file, makes the same bytes as the disk
+with no handles at all, refuses the cap without a read, and closes its
+handle on all three paths that drop a put-back.
+
+**Findings:**
+
+- **2026-09-11 — The cap taken from the listing costs no reading at all.** An over-cap `/cache` counted 0 reads and 0 bytes on the disk, where fold's shape read every file before refusing; the refusal the cell logs is fold phase 1's, unchanged.
+- **2026-09-11 — The later name of a hard-linked pair was the last whole-file path,** copied through `read` and `write` on a disk without `link`; only a disk that refuses a whole file found it, not a reading of the diff.
+- **2026-09-11 — A streaming reader must be abandonable, not only endable.** Three paths drop a put-back and empty `/cache`; an unlinked file with a descriptor still on it keeps its blocks, and PID 1 outlives the put-back. The design gained it (`722b260`).
+- **2026-09-11 — A memory disk's reading handle must look its entry up at each slice** rather than capture the bytes at open, as a descriptor reads the file and not a copy; that alone makes a file changing length under the writer provable in workerd.
+- **2026-09-11 — A listing with no size needs two passes, count then stream,** because a header precedes its body; `nodeDisk` and the memory disk both give sizes, so that path is the edge and not the road.
+- **2026-09-11 — Mutations, all four run by the conductor:** the reader buffering a file again fails five cases, the writer reading one whole four, the cap after the read two, the three `abandon` calls removed three. Put back.
 
 ## Phase 1: The image, the memory, and the walk
 

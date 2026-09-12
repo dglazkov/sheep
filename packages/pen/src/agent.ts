@@ -131,6 +131,28 @@ export interface DiskEntry {
 }
 
 /**
+ * Spool phase 0: a file opened for reading, asked for its slices in order.
+ * `read` gives at most `length` bytes, starting where the last slice ended,
+ * and an empty slice at the end of the file; `close` is called whatever
+ * happens, including a read that threw.
+ */
+export interface ReadHandle {
+  read(length: number): Promise<Uint8Array>;
+  close(): Promise<void>;
+}
+
+/**
+ * Spool phase 0: a file opened for writing with its mode, appended to in
+ * order and closed at its last byte. The mode is the open's, so the file is
+ * never briefly readable by more than it should be, and whatever was at the
+ * path is replaced, as `write` replaces it.
+ */
+export interface WriteHandle {
+  append(bytes: Uint8Array): Promise<void>;
+  close(): Promise<void>;
+}
+
+/**
  * What the agent needs of a filesystem. The checkout root is the disk's
  * own business; every path here is relative to it. Writes create parents;
  * `remove` is recursive and quiet about a path that is not there.
@@ -138,6 +160,17 @@ export interface DiskEntry {
 export interface Disk {
   read(path: string): Promise<Uint8Array>;
   write(path: string, bytes: Uint8Array, options?: { mode?: number }): Promise<void>;
+  /**
+   * Spool phase 0: the file at `path` opened for reading in slices, so the
+   * record can pass a file through the agent rather than into it. Optional,
+   * with `openWrite`: **a disk with neither is served by `read` and `write`**,
+   * and the record then holds one whole file at a time, as it did before
+   * this project. A disk that has them is asked for them by `record.ts` and
+   * never for a whole file.
+   */
+  openRead?(path: string): Promise<ReadHandle>;
+  /** Spool phase 0: the file at `path` opened for writing with `mode`, replacing whatever is there. Optional, as `openRead` is, and read the note there. */
+  openWrite?(path: string, mode: number): Promise<WriteHandle>;
   mkdir(path: string, mode: number): Promise<void>;
   /** Replaces whatever is at `path`. */
   symlink(target: string, path: string): Promise<void>;
@@ -511,10 +544,13 @@ class Agent {
       // Whatever failed, the sync it was part of is over, and the cell is told.
       this.checkout = null;
       this.expecting = null;
-      // A put-back cut off leaves no half of a cache behind: `/cache` goes empty, and the next setup runs cold.
+      // A put-back cut off leaves no half of a cache behind: the reader is abandoned, so the file it was in the middle of
+      // is not held open while `/cache` is unlinked (spool phase 0), and then `/cache` goes empty and setup runs cold.
       if (this.restoring !== null && this.cacheDisk !== undefined) {
+        const { reader } = this.restoring;
         this.restoring = null;
         this.putBack = null;
+        await reader.abandon().catch(() => undefined);
         await emptyDisk(this.cacheDisk).catch(() => undefined);
       }
       const message = error instanceof Error ? error.message : String(error);
@@ -596,8 +632,11 @@ class Agent {
         // The cell could not give a chunk of the cache it is putting back: the cache moved under the put-back. `/cache` goes
         // empty, the files are already written, and the sync-in ends whole; setup runs cold.
         if (frame.of === "need" && this.restoring !== null && frame.id === this.restoring.id && this.cacheDisk !== undefined) {
-          const { id } = this.restoring;
+          const { id, reader } = this.restoring;
           this.restoring = null;
+          // Spool phase 0: the handle on the file the record was in the middle of is closed before the unlink, or the
+          // file's blocks stay allocated behind a descriptor nobody holds.
+          await reader.abandon();
           await emptyDisk(this.cacheDisk);
           this.send({ type: "checkout", id });
         }
@@ -991,13 +1030,16 @@ class Agent {
    * `checkout` completes the sync-in, so setup runs cold, the description
    * after it writes a record, and the sheep's command never sees this. The
    * chunks already on their way, the rest of the `need`, are dropped as
-   * they arrive.
+   * they arrive. Spool phase 0: the reader is abandoned before `/cache` is
+   * emptied, so the file it was in the middle of — the large one this
+   * project is about — is not unlinked with a descriptor still on it.
    */
   private async endRestoreCold(restoring: NonNullable<Agent["restoring"]>, reason: string): Promise<void> {
     const { id } = restoring;
     for (const hash of restoring.ref.chunks.slice(restoring.next + 1, restoring.asked)) this.dropping.add(hash);
     this.restoring = null;
     this.putBack = null;
+    await restoring.reader.abandon();
     await emptyDisk(this.cacheDisk!);
     this.send({ type: "error", code: "mismatch", of: "cache", id, message: reason });
     this.send({ type: "checkout", id });

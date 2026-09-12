@@ -43,6 +43,13 @@
  * from one it touched, as `lstat` does on a real disk. It never says two
  * entries are one file, so a record over it has no links. `writes` counts
  * the writes a disk took, which is how a test sees a scratch left alone.
+ *
+ * Spool phase 0: the memory disk has the record's two handles, `openRead`
+ * and `openWrite`, so the cell's tests exercise the streaming path and not
+ * the fallback, and it counts what a `Map` would otherwise hide: `reads` and
+ * `bytesRead`, which say a cap refused before it read anything, and
+ * `openHandles`, which says a put-back that was dropped closed the file it
+ * was in the middle of before `/cache` was emptied.
  */
 import { type Disk, type DiskEntry, type Fetcher, type FetchRequest, type FetchResponse, type Runner, type RunOutcome, type RunRequest, serveAgent } from "@sheep/pen/agent";
 import {
@@ -67,8 +74,24 @@ export type MemoryEntry =
 /** A disk in a `Map`, every kind of entry first-class. Parents are created on write, as `node:fs` does for the agent. */
 export interface MemoryDisk extends Disk {
   readonly entries: Map<string, MemoryEntry>;
-  /** How many times `write` was called on this disk. */
+  /** How many times `write` was called on this disk, the whole-file way; a file written through a handle is not one of these. */
   readonly writes: number;
+  /**
+   * Spool phase 0, the counter journey 2 step 3 is proved with: how many
+   * times this disk was asked for a file's bytes at all — a `read`, an
+   * `openRead`, or one slice from a handle — and how many bytes it handed
+   * over. A cap that refuses before it opens anything leaves both where they
+   * were.
+   */
+  readonly reads: number;
+  readonly bytesRead: number;
+  /**
+   * Spool phase 0: how many handles are open on this disk right now — a
+   * descriptor a real disk would still be holding. A put-back that was
+   * dropped and left one open is a file whose blocks survive `emptyDisk`,
+   * which a `Map` cannot show and a container cannot afford.
+   */
+  readonly openHandles: number;
   /** Writes a file, creating parents. A string is UTF-8. */
   putFile(path: string, content: string | Uint8Array, mode?: number): void;
   putDirectory(path: string, mode?: number): void;
@@ -92,6 +115,9 @@ export function memoryDisk(): MemoryDisk {
   /** Each path's mtime, beside the entries so an entry compares as it did before fold phase 2. */
   const mtimes = new Map<string, number>();
   let writes = 0;
+  let reads = 0;
+  let bytesRead = 0;
+  let openHandles = 0;
   const ensureParents = (path: string) => {
     const parts = path.split("/");
     for (let depth = 1; depth < parts.length; depth++) {
@@ -117,6 +143,15 @@ export function memoryDisk(): MemoryDisk {
     get writes() {
       return writes;
     },
+    get reads() {
+      return reads;
+    },
+    get bytesRead() {
+      return bytesRead;
+    },
+    get openHandles() {
+      return openHandles;
+    },
     putFile(path, content, mode = 0o644) {
       ensureParents(path);
       entries.set(path, { kind: "file", bytes: typeof content === "string" ? encoder.encode(content) : content, mode });
@@ -136,12 +171,72 @@ export function memoryDisk(): MemoryDisk {
     async read(path) {
       const entry = entries.get(path);
       if (entry?.kind !== "file") throw new Error(`ENOENT: ${path}`);
+      reads++;
+      bytesRead += entry.bytes.byteLength;
       return entry.bytes;
     },
     async write(path, bytes, options) {
       writes++;
       const existing = entries.get(path);
       disk.putFile(path, bytes, options?.mode ?? (existing?.kind === "file" ? existing.mode : 0o644));
+    },
+    /**
+     * Spool phase 0: the file read in slices, over the `Map`. The entry is
+     * looked up at each slice rather than held, as a file descriptor reads
+     * the file and not a copy of it, so a file that changes under the reader
+     * is seen to change.
+     */
+    async openRead(path) {
+      if (entries.get(path)?.kind !== "file") throw new Error(`ENOENT: ${path}`);
+      reads++;
+      openHandles++;
+      let offset = 0;
+      let open = true;
+      return {
+        async read(length) {
+          const entry = entries.get(path);
+          if (entry?.kind !== "file") throw new Error(`ENOENT: ${path}`);
+          reads++;
+          const slice = entry.bytes.slice(offset, offset + length);
+          offset += slice.byteLength;
+          bytesRead += slice.byteLength;
+          return slice;
+        },
+        async close() {
+          if (!open) return;
+          open = false;
+          openHandles--;
+        },
+      };
+    },
+    /** Spool phase 0: the file written in slices, with its mode from the open; what was at the path is gone from the first byte, as `O_TRUNC` leaves it. */
+    async openWrite(path, mode) {
+      const parts: Uint8Array[] = [];
+      let length = 0;
+      let open = true;
+      openHandles++;
+      disk.putFile(path, new Uint8Array(0), mode);
+      return {
+        async append(bytes) {
+          // A slice is a view into the caller's chunk; the disk keeps a copy of its own, as a write to a file would.
+          parts.push(bytes.slice());
+          length += bytes.byteLength;
+        },
+        async close() {
+          if (!open) return;
+          open = false;
+          openHandles--;
+          // A handle closed on a path that is gone wrote nothing that survives, as a descriptor on an unlinked file does not.
+          if (entries.get(path) === undefined) return;
+          const whole = new Uint8Array(length);
+          let offset = 0;
+          for (const part of parts) {
+            whole.set(part, offset);
+            offset += part.byteLength;
+          }
+          disk.putFile(path, whole, mode);
+        },
+      };
     },
     async mkdir(path, mode) {
       // The root itself (`""`, as the agent names it for the pasture's disk) is always there and has no entry.

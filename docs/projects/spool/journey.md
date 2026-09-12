@@ -1,8 +1,8 @@
 ---
-status: planned
+status: partial
 since: 2026-09-11
 see: spool
-note: "written 11 Sep 2026, the evening fold closed, from fold phase 3's open debt: the agent holds a whole file in memory, 470 MiB of an instance's 1 GiB on wrangler's cache, because `Disk` reads and writes a file whole. A tool whose largest file is several hundred MB would take the process, and every fresh container would die at the same file. Two phases: slices both ways behind optional handles on `Disk`, with the cap checked before the read; then the image, the walk with a file too big for the old shape, and the ring's step. Nothing built."
+note: "written 11 Sep 2026, the evening fold closed, from fold phase 3's open debt: the agent holds a whole file in memory, 470 MiB of an instance's 1 GiB on wrangler's cache, because `Disk` reads and writes a file whole. A tool whose largest file is several hundred MB would take the process, and every fresh container would die at the same file. Two phases: slices both ways behind optional handles on `Disk`, with the cap checked before the read; then the image, the walk with a file too big for the old shape, and the ring's step. Phase 0 closed the same day: the record streams both ways in the cell's terms, over a disk that throws for any whole file, and makes the same bytes as the disk with no handles at all; the cap refuses without a read, and a dropped put-back closes the file it was in the middle of. The image, the peak from `/proc`, and the walks are phase 1's, and they wait on the shepherd."
 ---
 
 # Spool — the journeys
