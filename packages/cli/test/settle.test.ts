@@ -13,10 +13,14 @@
  * socket (`1000: SIGTERM`), and a run open on that socket — which is what
  * a served look holds, across a browser render — ends as "the container
  * went away during the run". So the ring waits for the platform to say
- * the rollout is completed and the application configured with the image,
- * and the cases below say that it waits for exactly that: it does not
- * shorten the wait, does not retry the look, and does not pass a station
- * that never settled.
+ * that the rollout to the station's image is completed — and for nothing
+ * else: the platform mirrors an image into its own registry, so what the
+ * application is configured with afterwards is a
+ * `registry.cloudflare.com/…` reference of another digest and never the
+ * one we deployed (11 Sep 2026). The cases below say that it waits for
+ * exactly that: it does not shorten the wait, does not retry the look, and
+ * does not pass a station while the platform is still replacing
+ * instances.
  *
  * This lives in the CLI's suite for the same reason the ring guard and
  * the release manifest's guard do: the package that ships the command is
@@ -27,6 +31,8 @@ import { settleStation } from "../../../scripts/hermetic.mjs";
 
 const IMAGE = "docker.io/dglazkov/sheep-pen:newer";
 const OLDER = "docker.io/dglazkov/sheep-pen:older";
+/** What the platform configures an application with once it has mirrored the image into its own registry: another registry, another digest (11 Sep 2026). */
+const MIRRORED = "registry.cloudflare.com/6821ca17f9f0938585204d69dd050445/sheep-hermetic-abc1234@sha256:c6dc1888e1a0f2d3c4b5a6978899aabbccddeeff00112233445566778899aabb";
 const STATION = { account: { id: "0123456789abcdef" }, name: "sheep-hermetic-abc1234", image: IMAGE };
 
 /** The ring's `fail`, which throws with the step and the command on it; the real one is `Ring.fail` in `scripts/hermetic.mjs`. */
@@ -65,7 +71,7 @@ const completed = { id: "r1", status: "completed", targetImage: IMAGE, steps: [{
 const fast = { step: "s2", pollMs: 1, budgetMs: 2_000, sayMs: 10_000, say: () => {} };
 
 describe("the account ring's settle wait", () => {
-  it("returns at once when the rollout completed and the application is configured with the image", async () => {
+  it("returns at once when the rollout to the station's image completed", async () => {
     const { api, asked } = scripted([{ image: IMAGE, rollouts: [completed] }]);
     const settled = await settleStation(ring, api, STATION, fast);
     expect(settled.waited).toBe(false);
@@ -92,17 +98,38 @@ describe("the account ring's settle wait", () => {
     expect(said.at(-1)).toContain("settled after");
   });
 
-  it("does not call a station settled while the application is still configured with the older image", async () => {
-    // The rollout says completed and the configuration has not caught up; `deploy` waits for both, and so does this.
-    const { api } = scripted([{ image: OLDER, rollouts: [completed] }]);
-    await expect(settleStation(ring, api, STATION, { ...fast, budgetMs: 20 })).rejects.toThrow("s2: GET /accounts/012345…/containers/applications[/<id>/rollouts]");
+  it("settles on the completed rollout while the application is configured with another image entirely", async () => {
+    // What failed `s2` on 11 Sep 2026: the platform mirrors the image into its own registry, so the application is configured with a
+    // `registry.cloudflare.com/…` reference of another digest — here still the older one — and the rollout's own word is all there is.
+    for (const configured of [OLDER, MIRRORED]) {
+      const { api, asked } = scripted([{ image: configured, rollouts: [completed] }]);
+      const settled = await settleStation(ring, api, STATION, { ...fast, budgetMs: 20 });
+      expect(settled.waited, `the wait burned its budget with the application configured with ${configured}`).toBe(false);
+      expect(settled.rounds).toBe(0);
+      expect(asked.length).toBe(1);
+      expect(settled.line).toContain(`the rollout r1 to ${IMAGE} completed`);
+      // Said, not required.
+      expect(settled.line).toContain(`the application is configured with ${configured}`);
+    }
   });
 
-  it("ignores a rollout that targets some other image", async () => {
-    const { api } = scripted([{ image: IMAGE, rollouts: [{ ...rolling, targetImage: "docker.io/someone/else:1" }] }]);
-    const settled = await settleStation(ring, api, STATION, fast);
+  it("settles with no rollout to this image only while none at all is in flight", async () => {
+    // The platform made none: nothing is replacing instances, and there is nothing to wait for.
+    const none = scripted([{ image: IMAGE, rollouts: [] }]);
+    const settled = await settleStation(ring, none.api, STATION, fast);
     expect(settled.waited).toBe(false);
-    expect(settled.line).toContain("no rollout to wait for");
+    expect(settled.line).toContain("no rollout to wait for, and none in flight");
+
+    // A later rollout superseded ours — `replaced`, the word the platform marks the rollouts it mirrors over — and completed; over is over.
+    const mirror = { id: "r2", status: "completed", targetImage: MIRRORED, steps: [{ status: "completed", percentage: 100 }] };
+    const superseded = scripted([{ image: MIRRORED, rollouts: [{ ...completed, status: "replaced" }, mirror] }]);
+    const after = await settleStation(ring, superseded.api, STATION, fast);
+    expect(after.waited).toBe(false);
+    expect(after.line).toContain(`the rollout r1 to ${IMAGE} is replaced, and no rollout is in flight`);
+
+    // A rollout of the platform's own still going is a container replacement coming, whatever image it names: that is waited for.
+    const flying = scripted([{ image: MIRRORED, rollouts: [{ ...rolling, id: "r2", targetImage: MIRRORED }] }]);
+    await expect(settleStation(ring, flying.api, STATION, { ...fast, budgetMs: 20 })).rejects.toThrow("s2: GET /accounts/012345…/containers/applications[/<id>/rollouts]");
   });
 
   it("fails the step on a rollout that will not complete, saying so, rather than waiting out the budget", async () => {

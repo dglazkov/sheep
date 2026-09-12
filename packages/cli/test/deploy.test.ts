@@ -26,6 +26,12 @@ const ACCOUNT = { id: "6821ca17f9f0938585204d69dd050445", name: "Fake's Account"
 const TOKEN = "fake-cloudflare-token-0123456789abcdef";
 const KEY = "fake-anthropic-key-0123456789abcdef";
 const STAMP = { commit: "2b71e46", builtAt: "2026-09-07T23:30:00Z" };
+/**
+ * What the account's own registry answers with once the platform has mirrored a container image into it (11 Sep 2026):
+ * the application is configured with `registry.cloudflare.com/<account>/<name>@sha256:<a different digest>`, the manifest
+ * having been re-uploaded, and the Docker Hub rollouts are marked `replaced`.
+ */
+const MIRRORED = `registry.cloudflare.com/${ACCOUNT.id}/blog@sha256:c6dc1888e1a0f2d3c4b5a6978899aabbccddeeff00112233445566778899aabb`;
 
 interface FakeState {
   plan: "workers_paid" | "free";
@@ -40,10 +46,12 @@ interface FakeState {
   polls: number;
   /**
    * What a redeploy with a new image does (station phase 3): the image set at once; a rollout whose first step runs, then
-   * a gap before the second, then both done and the image moved on the third poll; one whose second step stays under way
-   * with the image not moved; one that `failed`; or an API that drops the connection on every rollouts read.
+   * a gap before the second, then both done and the image moved on the third poll; the same, except that the platform
+   * mirrors the image into its own registry and the configuration ends up naming that instead (11 Sep 2026); one whose
+   * second step stays under way with the image not moved; one that `failed`; or an API that drops the connection on every
+   * rollouts read.
    */
-  rollout: "none" | "progressing-then-completed" | "rolling-stays" | "failed" | "dies";
+  rollout: "none" | "progressing-then-completed" | "mirrored" | "rolling-stays" | "failed" | "dies";
   rolloutPolls: number;
   deploys: { name: string; container: string; image: string; vars: string[] }[];
   requests: { method: string; path: string; auth: string | undefined }[];
@@ -151,9 +159,10 @@ function fakeAccount(state: FakeState): Promise<{ server: Server; url: string }>
       // The account API dropping the connection: what a deploy saw once at 35 s into a rollout ("fetch failed").
       if (state.rollout === "dies") return request.socket.destroy();
       if (state.rollout === "failed") application.rollout.status = "failed";
-      else if (state.rollout === "progressing-then-completed" && state.rolloutPolls > 2 && application.pending !== undefined) {
+      else if ((state.rollout === "progressing-then-completed" || state.rollout === "mirrored") && state.rolloutPolls > 2 && application.pending !== undefined) {
         application.rollout.status = "completed";
-        application.image = application.pending;
+        // Mirrored: the rollout completes and the configuration names the platform's own registry, another digest, not the image deployed.
+        application.image = state.rollout === "mirrored" ? MIRRORED : application.pending;
         delete application.pending;
       }
       // Two steps, as the account's rolling strategy has them: 34% of the instances, then 100%, the second starting a while after the
@@ -521,6 +530,33 @@ describe("sheep home deploy: steps 2 to 5 against the fake account", () => {
     const rollingProse = await staysProse.sheep(["home", "deploy"]);
     expect(rollingProse.code, rollingProse.stderr).toBe(0);
     expect(rollingProse.stdout).toMatch(new RegExp(`\nrollout: at step 2 of 2 \\(100%\\), 2 healthy \\(\\d+s\\); the platform finishes it, from ${OLD.replace(/[.@]/g, "\\$&")}\nstamp: `));
+  });
+
+  it("reports the rollout completed when the platform mirrors the image into its own registry", { timeout: 60_000 }, async () => {
+    // The rollout to the image completes and the application is then configured with `registry.cloudflare.com/…@sha256:<another
+    // digest>`, which is what the platform does to a Docker Hub image now (11 Sep 2026). The rollout's own word ends the wait: a
+    // deploy that also asked the configuration to name the image would wait out its 300 s budget and tell the shepherd `progressing`,
+    // "the old image serves until it completes", about a rollout that has completed.
+    const OLD = "docker.io/dglazkov2/sheep-pen@sha256:6d1848d95eb4e0d749b27a56a7cc20ee9354ba4a78747a4ce79929b45a4ea55c";
+    const NEW = join(cellConfig, "..", "..", "pen", "Dockerfile");
+    const w = await world({ ...fresh(), rollout: "mirrored", workers: ["sheep", "blog"], applications: [{ id: "app-blog", name: "blog", image: OLD }] });
+    await writeFile(w.config, JSON.stringify({ home: address("blog", "fake"), token: STATION_TOKEN, name: "blog" }));
+    const result = await w.sheep(["home", "deploy", "--json"]);
+    expect(result.code, result.stderr).toBe(0);
+    const report = JSON.parse(result.stdout) as Record<string, any>;
+    expect(report.rollout).toMatchObject({ status: "completed", step: "2 of 2 (100%)", healthy: 2, from: OLD });
+    // Three polls, as the unmirrored rollout takes: the wait ended on the rollout, not on the budget.
+    expect(w.state.rolloutPolls).toBe(3);
+    expect(report.rollout.seconds).toBeLessThan(60);
+    expect(w.state.applications).toEqual([{ id: "app-blog", name: "blog", image: MIRRORED, rollout: { status: "completed", target: NEW } }]);
+
+    // And the prose says completed, not "the old image serves until it completes".
+    const again = await world({ ...fresh(), rollout: "mirrored", workers: ["sheep", "blog"], applications: [{ id: "app-blog", name: "blog", image: OLD }] });
+    await writeFile(again.config, JSON.stringify({ home: address("blog", "fake"), token: STATION_TOKEN, name: "blog" }));
+    const prose = await again.sheep(["home", "deploy"]);
+    expect(prose.code, prose.stderr).toBe(0);
+    expect(prose.stdout).toMatch(new RegExp(`\nrollout: completed \\(\\d+s\\), from ${OLD.replace(/[.@]/g, "\\$&")}\n`));
+    expect(prose.stdout).not.toContain("serves until it completes");
   });
 
   it("retries a read the account API drops, three times, and ends the rollout wait as unknown rather than failing", { timeout: 30_000 }, async () => {

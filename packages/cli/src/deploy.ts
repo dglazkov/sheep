@@ -515,16 +515,21 @@ export interface DeployReport {
   /**
    * The rollout (station phase 3): a redeploy whose image differs from the
    * application's is a rollout the platform runs after wrangler returns,
-   * replacing the instances over minutes; `completed` once the application's
-   * configuration names the new image, `progressing` when the budget ran
-   * out first (the old image serves until it completes), `none` on a first
-   * deploy or a redeploy of the same image. `from` is the image before.
+   * replacing the instances over minutes; `completed` once the platform
+   * says the rollout to the new image completed, `progressing` when the
+   * budget ran out first (the old image serves until it completes), `none`
+   * on a first deploy or a redeploy of the same image. `from` is what the
+   * configuration named before this deploy — which, once the platform has
+   * mirrored the image into its own registry, is a
+   * `registry.cloudflare.com/<account>/<name>@sha256:…` reference and not
+   * the one we deployed (11 Sep 2026).
    */
   rollout: {
     /**
-     * `completed`: the rollout says so and the application names the image; `rolling`: its last step is under way with a
-     * healthy instance, and the platform finishes it; `progressing`: the budget ran out first; `unknown`: the account API
-     * stopped answering; `none`: no rollout.
+     * `completed`: the platform says the rollout to this image completed — what the application is configured with
+     * afterwards is the platform's own business, since it mirrors the image into its own registry; `rolling`: its last
+     * step is under way with a healthy instance, and the platform finishes it; `progressing`: the budget ran out first;
+     * `unknown`: the account API stopped answering; `none`: no rollout.
      */
     status: "none" | "completed" | "rolling" | "progressing" | "unknown" | string;
     /** The step under way when the wait ended, `2 of 2 (100%)`; null without one. */
@@ -627,13 +632,15 @@ async function waitForRollout(api: AccountApi, accountId: string, name: string, 
   const started = Date.now();
   const seconds = () => Math.round((Date.now() - started) / 1000);
   if (before === undefined) return { status: "none", step: null, healthy: null, seconds: 0, from: null };
+  // What the configuration named before this deploy, when that is not the image being deployed; after the platform has mirrored an
+  // image it is that mirror's reference, which is what the application was serving and so what this rolls from.
   const from = before.image !== image ? before.image : null;
   let lastSaid = started;
   let step: string | null = null;
   let healthy: number | null = null;
   const unknown = () => ({ status: "unknown", step, healthy, seconds: seconds(), from });
   for (;;) {
-    // The rollout first, then the application: a rollout seen completed is followed by the configuration naming the image in the same round.
+    // The rollout first, then the application: the rollout decides, and the application's read is for the errors it reports and the instances it has.
     const rollouts = await retried("the account API", () => api.rollouts(accountId, before.id), say);
     if (!rollouts.ok) return unknown();
     const rollout = rollouts.value.find((candidate) => candidate.targetImage === image);
@@ -648,7 +655,10 @@ async function waitForRollout(api: AccountApi, accountId: string, name: string, 
     if (state.health.errors.length > 0) throw new Error(`the container application ${name} reports an error during its rollout: ${state.health.errors.join("; ")}; the Worker is deployed, and \`sheep home deploy\` again retries the rollout`);
     const { instances } = state.health;
     healthy = instances.healthy;
-    if (rollout.status === "completed" && state.image === image) return { status: "completed", step, healthy, seconds: seconds(), from };
+    // The rollout's own word ends the wait. Not "and the configuration names the image": the platform mirrors the image into its own
+    // registry, so an application deployed from a Docker Hub digest ends up configured with a `registry.cloudflare.com/…` reference
+    // of another digest, and that condition can never become true (11 Sep 2026).
+    if (rollout.status === "completed") return { status: "completed", step, healthy, seconds: seconds(), from };
     // The last step under way with a healthy instance: the platform finishes it on its own (a rollout's status stayed `progressing` past 600 s once).
     if (current?.last && current.underWay && instances.healthy >= 1) return { status: "rolling", step, healthy, seconds: seconds(), from };
     if (Date.now() >= deadline) return { status: "progressing", step, healthy, seconds: seconds(), from };

@@ -2702,6 +2702,15 @@ const SETTLE_POLL_MS = 5_000;
 const SETTLE_SAY_MS = 30_000;
 /** A rollout's statuses that mean it will not complete; `deploy.ts`'s `ROLLOUT_FAILED`. */
 const SETTLE_FAILED = new Set(["failed", "reverted", "rolled_back"]);
+/**
+ * A rollout's statuses that mean it is over, whatever it did: it is
+ * replacing no more instances. Anything else — `progressing`, and
+ * whatever the platform calls a rollout it has not started yet — is in
+ * flight. `replaced` is the word the platform marks a rollout with when a
+ * later one supersedes it, which is what it does to the rollout we
+ * deployed once it mirrors the image into its own registry.
+ */
+const SETTLE_OVER = new Set(["completed", "replaced", ...SETTLE_FAILED]);
 
 /**
  * Serve phase 2, s2: the station settled after the redeploy, before a
@@ -2727,9 +2736,22 @@ const SETTLE_FAILED = new Set(["failed", "reverted", "rolled_back"]);
  * whatever reason it gives. It is the ring waiting on the one thing it
  * already knows is in flight, asked of the platform rather than guessed
  * from a clock — the rollout whose target is the image the station now
- * runs, completed, and the application configured with that image. Once
- * both hold there is no replacement left to come, and a container
- * started after them starts on the final image.
+ * runs, read until it says `completed`. A completed rollout has replaced
+ * every instance it was going to, and a container started after it starts
+ * on the final image.
+ *
+ * What the application is *configured with* afterwards is not a condition
+ * and cannot be one (11 Sep 2026): the platform mirrors the image into
+ * its own registry, so an application deployed from a Docker Hub digest
+ * ends up configured with `registry.cloudflare.com/<account>/<name>@sha256:<a
+ * different digest>` and the rollout we deployed is marked `replaced`.
+ * The reference never becomes the one we named, so requiring it burned the
+ * whole budget and failed `s2` on 11 Sep 2026. It is still said on the
+ * settling line, as information.
+ *
+ * The one case with no rollout to read — the platform made none, or
+ * superseded ours — settles only when no rollout at all is in flight:
+ * nothing is replacing instances then either.
  *
  * A rollout that fails, or a budget that runs out with one still going,
  * fails the step: taking the look anyway would be taking it into the
@@ -2749,11 +2771,13 @@ export async function settleStation(ring, api, station, { step, pollMs = SETTLE_
   for (;;) {
     let application;
     let rollout;
+    let inFlight = [];
     try {
       application = await api.application(account.id, name);
       if (application !== undefined) {
         const rollouts = await api.rollouts(account.id, application.id);
         rollout = rollouts.find((candidate) => candidate.targetImage === image);
+        inFlight = rollouts.filter((candidate) => !SETTLE_OVER.has(candidate.status));
       }
     } catch (error) {
       // A bad answer from the account API is another round, as `deploy`'s own reads make it; the budget below is what ends the wait.
@@ -2764,14 +2788,22 @@ export async function settleStation(ring, api, station, { step, pollMs = SETTLE_
       if (rollout !== undefined && SETTLE_FAILED.has(rollout.status)) {
         ring.fail(step, where, { stdout: JSON.stringify(rollout), stderr: `the rollout of ${image} to ${name} ${rollout.status}; the station never took the image this ring deployed, so a served look on it would be looking at the older one`, code: 1 });
       }
-      // Settled: the rollout to this image is done — or the platform made none — and the application is configured with it.
-      if ((rollout === undefined || rollout.status === "completed") && application.image === image) {
-        const how = rollout === undefined ? "no rollout to wait for" : `the rollout ${rollout.id ?? "?"} to ${image} completed`;
-        const line = rounds === 0 ? `the station was settled before this step: ${how}, and the application is configured with ${image}` : `the station settled after ${seconds()}s: ${how}, and the application is configured with ${image}`;
+      // Settled: the rollout to this image completed, or there is none left to read and nothing is replacing instances. What the
+      // application is configured with is said, not required: the platform mirrors the image into its own registry (11 Sep 2026).
+      if ((rollout !== undefined && rollout.status === "completed") || inFlight.length === 0) {
+        const how =
+          rollout !== undefined && rollout.status === "completed"
+            ? `the rollout ${rollout.id ?? "?"} to ${image} completed`
+            : rollout === undefined
+              ? "no rollout to wait for, and none in flight"
+              : `the rollout ${rollout.id ?? "?"} to ${image} is ${rollout.status}, and no rollout is in flight`;
+        const configured = `the application is configured with ${application.image ?? "nothing"}`;
+        const line = rounds === 0 ? `the station was settled before this step: ${how} (${configured})` : `the station settled after ${seconds()}s: ${how} (${configured})`;
         if (rounds > 0) say(`  ${line}`);
         return { seconds: seconds(), waited: rounds > 0, rounds, line };
       }
-      last = `the rollout to ${image} is ${rollout === undefined ? "not listed" : `${rollout.status} (steps ${rollout.steps.map((one) => one.status).join(", ") || "none listed"})`}, and the application is configured with ${application.image ?? "nothing"}`;
+      const others = inFlight.filter((candidate) => candidate !== rollout);
+      last = `the rollout to ${image} is ${rollout === undefined ? "not listed" : `${rollout.status} (steps ${rollout.steps.map((one) => one.status).join(", ") || "none listed"})`}${others.length > 0 ? `, ${others.length} other rollout${others.length === 1 ? "" : "s"} in flight` : ""}, and the application is configured with ${application.image ?? "nothing"}`;
     }
     if (Date.now() - started >= budgetMs) {
       ring.fail(step, where, { stdout: last, stderr: `the station ${name} had not settled after ${seconds()}s; a served look taken while the platform is still replacing container instances is taken into the window that stops one (1000: SIGTERM)`, code: 1 });
