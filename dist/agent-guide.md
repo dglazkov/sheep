@@ -24,15 +24,14 @@ sheep home local
 ```
 
 It starts a home under the kennel and prints its address, the kennel, the
-config, and a `key:` line. Without a key that line says to export
-`ANTHROPIC_API_KEY` and run `sheep home local` again, which needs the
-shepherd (see the end). `sheep home local --faux` runs a scripted model
+config, and a `key:` line. Without a key that line says what the shepherd
+must export (see the end). `sheep home local --faux` runs a scripted model
 that answers "ok": the plumbing, without a key.
 
 A `container:` line follows: with Docker the home rents one beside every
 cell and its sheep can clone, build, test, and push; without, one sentence
-says what a container would add and how to get one — tell the shepherd it
-when the work needs a repository.
+says what a container would add — tell the shepherd it when the work needs
+a repository.
 
 `sheep home stop` stops it; the next verb starts it again. `sheep home`
 reports the kennel, the home, and whether it answers, and `--home <url>`
@@ -69,6 +68,9 @@ stderr as `sheep: …` with exit 2.
 - `sheep attach <id> -- "<prompt>"` sends a prompt and streams the reply.
   To a busy sheep it is queued behind the running turn: `queued <id>` on
   stderr, exit 0, or with `--wait` the queued turn streams when it starts.
+  With `--json` the turn's entries stream as they land, one pi entry per
+  line, tool calls included, and the last assistant entry is still the last
+  line.
 - `sheep ls [--pasture <name>]` lists the home's sheep, one per line,
   tab-separated: id, name, created, lane state (`idle`, `running`, `waiting`),
   pasture, secret names.
@@ -97,7 +99,7 @@ shell has `git`, `node`, `pnpm`, and `python` too, and `~` is kept with
 the sheep, except `~/.cache`, `~/.npm`, and caches like `node_modules`.
 
 On a home with eyes a sheep sees what it wrote: `look <path>` renders a
-workspace page in a real Chromium and prints errors, console, and the
+workspace page in Chromium and prints errors, console, and the
 accessibility tree beside a `look.png` it can `read`; the report is in
 `sheep log`. The local home has eyes; `sheep home` says whether a
 station has them. With a container, `look --serve 'npx vite --port $PORT
@@ -135,12 +137,11 @@ repository should know.
 ## A sheep that is slow
 
 A first command in a fresh container waits for its pasture's `setup.sh`,
-which can be minutes, so you are told rather than left guessing. A held
-prompt says `setup running (1m 40s)` on stderr within ten seconds of setup
-starting, again every half minute, and once when it ends; stdout is the
-reply and nothing else. `sheep status <id>` from another terminal answers
-in about a second from the sheep's row, which speaks while the cell being
-born cannot. `sheep log <id>` has the `[setup]` block, with the tail of
+which can be minutes. A held prompt says `setup running (1m 40s)` on
+stderr within ten seconds of setup starting, again every half minute, and
+once when it ends; stdout is the reply and nothing else. `sheep status
+<id>` from another terminal answers in about a second from the sheep's
+row, which speaks while the cell cannot. `sheep log <id>` has the `[setup]` block, with the tail of
 what setup printed. Wait while it says `running`; read the block when it
 says `failed`. A sheep with no `setup.sh` says `setup: none` and none of
 this.
@@ -160,8 +161,8 @@ a sheep failed. A sheep you are finished with is ended with `sheep rm
 2. **An account for a deployed home.** The local home needs none; `sheep
    home deploy` says what it needs when the shepherd wants one.
 3. **A hand at a terminal.** `sheep new` or `sheep attach <id>` with no
-   prompt opens pi's interactive terminal on the sheep; tell the shepherd
-   the command and the id.
+   prompt opens pi's interactive terminal; tell the shepherd the command
+   and the id.
 
 Ask for each in one sentence, saying what it unlocks, and go on with what
 does not need it.
