@@ -30616,6 +30616,71 @@ __name(Compile, "Compile");
 // src/directory.ts
 import { DurableObject as DurableObject2 } from "cloudflare:workers";
 
+// src/bleat.ts
+var SETUP_TAIL_LINES = 40;
+var SETUP_TAIL_BYTES = 16 * 1024;
+var SETUP_KEY_PREFIX = "setup-";
+var SETUP_KEPT = 20;
+function setupRecordKey(at) {
+  return `${SETUP_KEY_PREFIX}${at}`;
+}
+__name(setupRecordKey, "setupRecordKey");
+var SETUP_EVICTED = "the cell was evicted while setup.sh was running, so nothing is running it now";
+function setupStartedState(at) {
+  return { state: "running", at };
+}
+__name(setupStartedState, "setupStartedState");
+function setupEndedState(at, ms2, end) {
+  if ("exit" in end) return { state: end.exit === 0 ? "ok" : "failed", at, ms: ms2, exit: end.exit };
+  return { state: "failed", at, ms: ms2, error: end.error };
+}
+__name(setupEndedState, "setupEndedState");
+function setupEvictedState(at) {
+  return { state: "failed", at, error: SETUP_EVICTED };
+}
+__name(setupEvictedState, "setupEvictedState");
+function setupStateOf(stored) {
+  if (stored === null || stored === void 0 || stored === "") return void 0;
+  let parsed;
+  try {
+    parsed = JSON.parse(stored);
+  } catch {
+    return void 0;
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return void 0;
+  const record2 = parsed;
+  if (record2.state !== "running" && record2.state !== "ok" && record2.state !== "failed") return void 0;
+  if (typeof record2.at !== "number") return void 0;
+  return {
+    state: record2.state,
+    at: record2.at,
+    ...typeof record2.ms === "number" ? { ms: record2.ms } : {},
+    ...typeof record2.exit === "number" ? { exit: record2.exit } : {},
+    ...typeof record2.error === "string" ? { error: record2.error } : {}
+  };
+}
+__name(setupStateOf, "setupStateOf");
+function setupTail(output) {
+  const ends = output.endsWith("\n");
+  const body = ends ? output.slice(0, -1) : output;
+  const lines = body === "" ? [] : body.split("\n");
+  let kept2 = lines.length > SETUP_TAIL_LINES ? lines.slice(-SETUP_TAIL_LINES) : lines;
+  let truncated = kept2.length < lines.length;
+  const encoder7 = new TextEncoder();
+  while (kept2.length > 1 && encoder7.encode(kept2.join("\n")).length > SETUP_TAIL_BYTES) {
+    kept2 = kept2.slice(1);
+    truncated = true;
+  }
+  let text = kept2.join("\n");
+  const bytes = encoder7.encode(text);
+  if (bytes.length > SETUP_TAIL_BYTES) {
+    text = new TextDecoder().decode(bytes.slice(bytes.length - SETUP_TAIL_BYTES));
+    truncated = true;
+  }
+  return { output: text === "" && !ends ? "" : `${text}${ends ? "\n" : ""}`, truncated };
+}
+__name(setupTail, "setupTail");
+
 // src/pasture.ts
 import { DurableObject } from "cloudflare:workers";
 
@@ -31590,6 +31655,7 @@ var Directory = class extends DurableObject2 {
     if (!columns.some((column) => column.name === "state")) ctx.storage.sql.exec("ALTER TABLE sessions ADD COLUMN state TEXT");
     if (!columns.some((column) => column.name === "pasture")) ctx.storage.sql.exec("ALTER TABLE sessions ADD COLUMN pasture TEXT");
     if (!columns.some((column) => column.name === "task")) ctx.storage.sql.exec("ALTER TABLE sessions ADD COLUMN task TEXT");
+    if (!columns.some((column) => column.name === "setup")) ctx.storage.sql.exec("ALTER TABLE sessions ADD COLUMN setup TEXT");
     ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS pastures (name TEXT PRIMARY KEY, created_at INTEGER NOT NULL)");
     ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
     ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS containers (session_id TEXT PRIMARY KEY, started_at INTEGER NOT NULL)");
@@ -31651,7 +31717,7 @@ var Directory = class extends DurableObject2 {
       sql2.exec("INSERT INTO sessions (id, name, created_at, state, pasture) VALUES (?, ?, ?, 'idle', ?)", id2, name, createdAt, pasture);
       for (const [key, value3] of Object.entries(checked.secrets)) sql2.exec("INSERT INTO session_secrets (session_id, name, value) VALUES (?, ?, ?)", id2, key, value3);
     });
-    return { id: id2, name, createdAt, state: "idle", pasture, task: null, secrets: Object.keys(checked.secrets).sort() };
+    return { id: id2, name, createdAt, state: "idle", pasture, task: null, secrets: Object.keys(checked.secrets).sort(), setup: null };
   }
   /**
    * A sheep's own secrets, name to value, read now (earmark phase 0): for the cell alone, over RPC, at the moment setup
@@ -31717,6 +31783,36 @@ var Directory = class extends DurableObject2 {
     this.ctx.storage.sql.exec("UPDATE sessions SET state = ? WHERE id = ?", state2, id2);
   }
   /**
+   * Bleat phase 0. The cell's report that `setup.sh` has started in one of
+   * this sheep's containers: the row says `running` from now, and `at` is
+   * what every surface counts the elapsed time from. An `UPDATE`, never an
+   * upsert, as `setState` is: a report that arrives after `remove`
+   * resurrects nothing.
+   */
+  setupStarted(id2, at) {
+    this.writeSetup(id2, setupStartedState(at));
+  }
+  /** The cell's report that it ended, however it ended: `ok` for exit 0, `failed` for any other code and for one that could not run. */
+  setupEnded(id2, at, ms2, end) {
+    this.writeSetup(id2, setupEndedState(at, ms2, end));
+  }
+  /**
+   * A boot that found this row saying `running`: the incarnation that held
+   * the container's socket is gone, so the setup has no ending coming and
+   * the row is ended here with the sentence for an eviction. Only a row
+   * that says `running` is written — a setup that ended while this boot was
+   * on its way keeps its own ending, and a sheep with no setup gains none.
+   */
+  setupInterrupted(id2) {
+    const row = this.ctx.storage.sql.exec("SELECT setup FROM sessions WHERE id = ?", id2).toArray()[0];
+    const setup = row === void 0 ? void 0 : setupStateOf(row.setup);
+    if (setup?.state !== "running") return;
+    this.writeSetup(id2, setupEvictedState(setup.at));
+  }
+  writeSetup(id2, setup) {
+    this.ctx.storage.sql.exec("UPDATE sessions SET setup = ? WHERE id = ?", JSON.stringify(setup), id2);
+  }
+  /**
    * The removal (end phase 0): the session's row goes, and its container
    * row is closed now, so a container the platform is still stopping has
    * its minutes counted and `containerMinutes` stops growing for this
@@ -31745,7 +31841,16 @@ var Directory = class extends DurableObject2 {
   }
 };
 function toSummary(row, names2) {
-  return { id: row.id, name: row.name, createdAt: row.created_at, state: toLaneState(row.state), pasture: row.pasture ?? null, task: row.task ?? null, secrets: names2.get(row.id) ?? [] };
+  return {
+    id: row.id,
+    name: row.name,
+    createdAt: row.created_at,
+    state: toLaneState(row.state),
+    pasture: row.pasture ?? null,
+    task: row.task ?? null,
+    secrets: names2.get(row.id) ?? [],
+    setup: setupStateOf(row.setup) ?? null
+  };
 }
 __name(toSummary, "toSummary");
 function toLaneState(value3) {
@@ -119389,6 +119494,8 @@ var CellExecutionEnv = class _CellExecutionEnv {
   isolate;
   killTimeoutMs;
   serveReadyMs;
+  /** Bleat phase 0: who hears a setup start and end, or nobody. */
+  onSetup;
   /** The record for the container socket most recently rented; one per socket, so per container. */
   lease;
   runs = 0;
@@ -119409,6 +119516,7 @@ var CellExecutionEnv = class _CellExecutionEnv {
     this.isolate = options.isolate;
     this.killTimeoutMs = options.killTimeoutMs;
     this.serveReadyMs = options.serveReadyMs ?? SERVE_READY_MS;
+    this.onSetup = options.onSetup;
     this.shellEnv = {
       HOME: this.homeDir,
       PATH: "/usr/local/bin:/usr/bin:/bin",
@@ -120160,12 +120268,46 @@ Cannot execute bash commands.`));
    * Fold phase 1: after a setup that exits 0 and its sync-out, the
    * pasture's cache is kept (`keep`); every outcome carries what the cache
    * came to, warm or cold, for the birth's entry.
+   *
+   * Bleat phase 0: the sink is told once here, after the script is known to
+   * exist and before anything about this setup can fail, and once at the
+   * end whatever the ending — so the row says `running` for exactly as long
+   * as the dog waits, and says how it ended even when it ended badly. The
+   * three ways there is nothing to run — the socket already warmed, no
+   * pasture, no `setup.sh` in the tree — are no setup at all and say
+   * nothing, which is journey 3's quiet sheep.
    */
   async warm(lease, tree, signal, capture, line) {
     const pasture = this.pasture;
     if (lease.warmed || pasture === void 0) return { skipped: true };
     const key = setupKey(tree);
     if (key === void 0) return { skipped: true };
+    const at = Date.now();
+    let output = "";
+    await this.tellSetup({ phase: "start", at, command: SETUP_COMMAND });
+    let ran;
+    try {
+      ran = await this.runSetup(lease, pasture, key, signal, capture, line, at, (data) => {
+        output += data;
+      }, () => output);
+    } catch (error) {
+      await this.tellSetup({ phase: "end", at, command: SETUP_COMMAND, ms: Date.now() - at, end: { error: messageOf3(error) }, output });
+      throw error;
+    }
+    await this.tellSetup({ phase: "end", at, command: SETUP_COMMAND, ms: Date.now() - at, end: ran.end, output, ...ran.cache === void 0 ? {} : { cache: ran.cache } });
+    return ran;
+  }
+  /** The sink, if there is one: a setup's start or end, awaited; one that throws is logged and changes nothing about setup. */
+  async tellSetup(event) {
+    if (this.onSetup === void 0) return;
+    try {
+      await this.onSetup(event);
+    } catch (error) {
+      console.error(`[pen] the setup sink failed at the ${event.phase}: ${messageOf3(error)}`);
+    }
+  }
+  /** The setup run itself, from the secrets to the cache: every return is an ending the sink is told about. */
+  async runSetup(lease, pasture, key, signal, capture, line, started, onData, full) {
     const { checkout } = lease;
     const found = lease.putBack !== void 0 && lease.putBack.key === key ? {
       found: "warm",
@@ -120176,12 +120318,11 @@ Cannot execute bash commands.`));
       stored: lease.putBack.stored,
       read: lease.putBack.readMs
     } : { found: "cold", bytes: 0, files: 0, ms: 0 };
-    let output = "";
     const failed3 = /* @__PURE__ */ __name((outcome) => {
-      const full = "error" in outcome ? output : `${line(outcome.exitCode)}
-${output}`;
-      capture.push(full);
-      return { full, outcome };
+      const text = "error" in outcome ? full() : `${line(outcome.exitCode)}
+${full()}`;
+      capture.push(text);
+      return { full: text, outcome };
     }, "failed");
     const unavailable2 = /* @__PURE__ */ __name((message, cause) => ({ skipped: false, end: { error: message }, failed: failed3({ error: new ExecutionError("shell_unavailable", message, cause) }), cache: found }), "unavailable");
     let secrets;
@@ -120193,15 +120334,12 @@ ${output}`;
     }
     const { PATH: _path, HOME: _home, ...runEnv } = this.shellEnv;
     const id2 = `setup-${++this.runs}`;
-    const started = Date.now();
     const frame = await this.runFrame(
       lease.socket,
       { id: id2, command: SETUP_COMMAND, cwd: WORKSPACE_ROOT, env: { ...runEnv, ...secrets.environment, PWD: WORKSPACE_ROOT }, timeout: SETUP_TIMEOUT_S },
       signal,
-      (data) => {
-        output += data;
-      },
-      () => output
+      onData,
+      full
     );
     if ("failed" in frame) {
       const { outcome } = frame.failed;
@@ -120220,7 +120358,7 @@ ${output}`;
       const message = end.killed === "timeout" ? `setup ran for ${SETUP_TIMEOUT_S} s without ending and was killed` : `the container ended setup: ${end.killed}`;
       return { skipped: false, end: { error: message }, failed: failed3({ error: new ExecutionError(end.killed === "timeout" ? "timeout" : "unknown", message) }), cache: found };
     }
-    console.info(`[pen] setup exit ${end.exit} after ${Date.now() - started} ms, ${output.length} bytes of output`);
+    console.info(`[pen] setup exit ${end.exit} after ${Date.now() - started} ms, ${full().length} bytes of output`);
     if (end.exit !== 0) return { skipped: false, end: { exit: end.exit }, failed: failed3({ exitCode: end.exit }), cache: found };
     lease.warmed = true;
     return { skipped: false, end: { exit: 0 }, cache: await this.keep(lease, key, secrets.own, found) };
@@ -124790,6 +124928,13 @@ var SessionCell = class extends DurableObject4 {
    */
   #lease;
   /**
+   * Bleat phase 0: the record each setup running now is being kept under,
+   * by the millisecond it started, so the sink's end writes the record its
+   * start minted. Per incarnation: a setup whose end never comes is the
+   * next boot's stale `running` to clear, not this map's.
+   */
+  #setups = /* @__PURE__ */ new Map();
+  /**
    * Whoever starts this cell's container, made once (end phase 0): the
    * lease rents through it, and the end asks it for the destroy whether or
    * not a lease is live, so an ended sheep's container goes even when the
@@ -124817,7 +124962,11 @@ var SessionCell = class extends DurableObject4 {
     const existing = (await repo.list(void 0, context2)).find((metadata) => metadata.id === this.sessionId);
     const session = existing === void 0 ? await repo.create({ id: this.sessionId }, context2) : await repo.open(existing, context2);
     const directory = this.env.DIRECTORY.getByName("home");
-    const pastureName = (await directory.get(this.sessionId))?.pasture ?? null;
+    const summary = await directory.get(this.sessionId);
+    const pastureName = summary?.pasture ?? null;
+    if (summary?.setup?.state === "running") {
+      await directory.setupInterrupted(this.sessionId).catch((error) => console.error(`[cell ${this.sessionId}] could not end the interrupted setup:`, error instanceof Error ? error.message : error));
+    }
     const object = pastureName === null ? void 0 : this.env.PASTURE.getByName(pastureName);
     const pasture = pastureName === null || object === void 0 ? void 0 : { name: pastureName, source: object };
     const sheep = { secrets: /* @__PURE__ */ __name(() => directory.secrets(this.sessionId), "secrets") };
@@ -124830,6 +124979,9 @@ var SessionCell = class extends DurableObject4 {
       // The eyes (eyes phase 1), over the env's own files table and this cell's SQLite for the session row; `eyesFor` decides
       // whether this home has any, and a home without the binding gets none and no `look`.
       eyes: /* @__PURE__ */ __name((files) => eyesFor(this.env, files, this.ctx.storage.sql), "eyes"),
+      // Bleat phase 0: the sink, closing over the Directory stub and this cell's storage and nothing else — the lane is
+      // not made yet when the birth's setup runs through it, and is not what a setup has anything to say to.
+      onSetup: /* @__PURE__ */ __name((event) => this.recordSetup(directory, event), "onSetup"),
       // The mount and the program, both over the one stub: what the program puts, the mount's next call reads. Setup's
       // secrets are the pasture's with the sheep's laid over them (earmark phase 0), both read when setup runs.
       ...pasture === void 0 || object === void 0 ? {} : {
@@ -124990,6 +125142,52 @@ var SessionCell = class extends DurableObject4 {
     }
     await tell("idle");
   }
+  /**
+   * The sink (bleat phase 0), wired at boot and called by the env at the
+   * start of every setup and at its end. Two things happen at each call and
+   * in this order: the cell's own record, which `sheep log` prints as the
+   * block, and the Directory's row, which every dog asking what this sheep
+   * is doing reads. The record is minted at the start so a dog holding a
+   * prompt sees the block exist while setup runs, and replaced at the end
+   * with the output's tail and how it ended.
+   *
+   * The key is the millisecond the setup started, so the keys sort in the
+   * order the setups ran and the oldest beyond `SETUP_KEPT` are the ones
+   * deleted. Two setups in one millisecond would otherwise be one record,
+   * so a taken key moves the next one on; the record's `at` is the setup's
+   * own either way, which is what the sink's end is found by.
+   */
+  async recordSetup(directory, event) {
+    if (event.phase === "start") {
+      let key = event.at;
+      while (await this.ctx.storage.get(setupRecordKey(key)) !== void 0) key++;
+      const id3 = setupRecordKey(key);
+      this.#setups.set(event.at, id3);
+      await this.ctx.storage.put(id3, { id: id3, at: event.at, command: event.command, output: "", truncated: false });
+      await directory.setupStarted(this.sessionId, event.at);
+      return;
+    }
+    const id2 = this.#setups.get(event.at) ?? setupRecordKey(event.at);
+    this.#setups.delete(event.at);
+    const tail = setupTail(event.output);
+    await this.ctx.storage.put(id2, {
+      id: id2,
+      at: event.at,
+      ms: event.ms,
+      command: event.command,
+      ..."exit" in event.end ? { exit: event.end.exit } : { error: event.end.error },
+      output: tail.output,
+      truncated: tail.truncated,
+      ...event.cache === void 0 ? {} : { cache: event.cache }
+    });
+    await directory.setupEnded(this.sessionId, event.at, event.ms, event.end);
+    const keys = [...(await this.ctx.storage.list({ prefix: SETUP_KEY_PREFIX })).keys()];
+    if (keys.length > SETUP_KEPT) await this.ctx.storage.delete(keys.slice(0, keys.length - SETUP_KEPT));
+  }
+  /** This sheep's last setups, oldest first, as the keys sort: the transcript view's `setups`. */
+  async setups() {
+    return [...(await this.ctx.storage.list({ prefix: SETUP_KEY_PREFIX })).values()];
+  }
   async settleWhenCurrent(runtime) {
     if (this.#runtime === void 0 || await this.#runtime !== runtime) return;
     await this.settleAlarm(runtime);
@@ -125142,7 +125340,7 @@ var SessionCell = class extends DurableObject4 {
     const handle = await runtime.lane.watch(BACKGROUND_CONTEXT);
     try {
       const { tipId, operation, configuration, transcript } = handle.snapshot;
-      return { id: this.sessionId, tipId, operation, model: configuration.model, serverId: runtime.serverId, entries: transcript };
+      return { id: this.sessionId, tipId, operation, model: configuration.model, serverId: runtime.serverId, entries: transcript, setups: await this.setups() };
     } finally {
       handle.unsubscribe();
     }
@@ -125371,13 +125569,13 @@ __name(admitted, "admitted");
 var CHECKOUT_BUILD = { commit: "0.0.0-checkout", builtAt: null };
 function homeImage() {
   if (false) return null;
-  return true ? "docker.io/dglazkov2/sheep-pen@sha256:67a10fc53c7cbfb7a4ff6953f808f2907deb27c21ad4cc1a894015c9b7fa8e8d" : null;
+  return true ? "docker.io/dglazkov2/sheep-pen@sha256:f6fb9825bdb37f83a70b7be222279baa3758dd058c88d655362c8b61b08d8f5f" : null;
 }
 __name(homeImage, "homeImage");
 function homeBuild() {
   if (false) return CHECKOUT_BUILD;
   try {
-    const parsed = JSON.parse('{"commit":"8cb6544","builtAt":"2026-09-12T02:12:30Z"}');
+    const parsed = JSON.parse('{"commit":"1b31346","builtAt":"2026-09-12T03:08:08Z"}');
     if (typeof parsed.commit === "string" && parsed.commit !== "") return { commit: parsed.commit, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
   } catch {
   }
@@ -125391,6 +125589,7 @@ async function homeReport(env) {
 }
 __name(homeReport, "homeReport");
 var PEN_DOOR = /^\/s\/([^/]+)\/pen$/;
+var SESSION_ROW = /^\/sessions\/([^/]+)$/;
 var PASTURE = /^\/p\/([^/]+)(\/.*)?$/;
 async function pastureRoute(request, env, name, path4) {
   const directory = env.DIRECTORY.getByName("home");
@@ -125467,6 +125666,13 @@ var index_default = {
     if (url.pathname === "/sessions" && request.method === "GET") {
       const pasture = url.searchParams.get("pasture");
       return Response.json(pasture === null ? await directory.list() : await directory.herd(pasture));
+    }
+    const one = SESSION_ROW.exec(url.pathname);
+    if (one && request.method === "GET") {
+      const id2 = decodeURIComponent(one[1]);
+      const summary = await directory.get(id2);
+      if (summary === void 0) return new Response(unknownSession(id2), { status: 404 });
+      return Response.json(summary);
     }
     if (url.pathname === "/home" && request.method === "GET") return Response.json(await homeReport(env));
     if (url.pathname === "/faux" && request.method === "POST" && env.SHEEP_PROVIDER === "faux") {
