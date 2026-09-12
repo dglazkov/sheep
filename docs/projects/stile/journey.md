@@ -156,9 +156,10 @@ The shepherd opens a second laptop.
    account already has: `new sheep-2`, and `join sheep`, the station
    from the first laptop, found because it answers as a sheep home.
    They choose join.
-2. The join is invisible: a join token is put on the Worker as a secret
-   with the account token, the home is asked for its own token with it,
-   the answer is kept in the config, and the join secret is deleted.
+2. The join is invisible: a join token is written to the station's own
+   store with the account token, the home is asked for its own token
+   with it, the answer is kept in the config, and the join token is
+   deleted.
    `key` says the station holds its own and asks nothing. `next` prints
    the address.
 3. `sheep ls` lists the sheep minted from the first laptop. `sheep
@@ -172,11 +173,10 @@ Acceptance criteria:
 - The account token never reaches the home: the fake station's request
   log shows the join token alone, and never the account token or the
   home's own.
-- After the join the Worker has no `SHEEP_JOIN` secret, which the ring
+- After the join the station's store holds no join token, which the ring
   reads from the account.
 - A turn running on the station across the join finishes, and its
-  transcript is whole: the secret put is a config-only version and not
-  a rollout.
+  transcript is whole: the join changes no Worker version.
 - The second machine is a container in the account ring, as station's
   journey 2 made it, with the ring playing the shepherd at its terminal.
 

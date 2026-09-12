@@ -50,7 +50,7 @@ shepherd sees and what a developer of sheep keeps.
 | a stop | an exit 2 that needs a person: the dog's line and the shepherd's paragraph | `Stop` in `deploy.ts`, printed by `cli.ts` |
 | the fence | what a shepherd's surface may name, and a guard that reads it | `packages/cli/test/surface.test.ts` |
 | the developer's rig | the local home, `sheep home local`, from the checkout and in the rings | `local.ts`, the README's developer half |
-| the join | a machine proving it owns the account, and the home answering with its token | `POST /join` in the cell; the station step |
+| the join | a machine proving it owns the account by writing to the station's KV store, and the home answering with its token | `POST /join` in the cell; the `JOIN` namespace; the station step |
 | the terminal seam | the flow driven through pipes as if through a terminal of a given size | `SHEEP_TEST_TERMINAL=<cols>x<rows>` |
 | the count | values typed, a yes, values asked twice, variables the dog needed | the account ring's `t1` line |
 
@@ -292,27 +292,49 @@ kennel.
 The station step on a machine that holds the account token lists the
 account's sheep homes. Joining one needs the home's own token, which is
 a wrangler secret and cannot be read back. The mechanism turns that
-around: writing a Worker's secrets is the proof that this machine owns
-the account, and the home answers that proof with its token.
+around: writing to the station's own store through the account API is
+the proof that this machine owns the account, and the home answers that
+proof with its token.
 
-1. The stile generates a join token and puts it on the Worker as
-   `SHEEP_JOIN` through `wrangler secret put`'s stdin, with the account
-   token in wrangler's environment, as deploy does.
-2. It asks `POST /join` with the join token as the bearer, polling until
-   the new version answers, up to a minute, as deploy polls the stamp.
-3. The cell answers `{ token: env.SHEEP_TOKEN }` when `env.SHEEP_JOIN` is
-   set and equals the bearer, and 404 otherwise, saying nothing. The
-   route is before the bearer check and is the one route the home's
-   token does not guard.
+**Why a store and not a secret (12 September 2026).** The first cut put
+the join token on the Worker as a secret, on the belief that a secret
+put is config-only and leaves running turns alone. A probe on a scratch
+station proved otherwise: a secret put or delete is a new Worker
+version, the version restarts the Durable Objects holding turns, and a
+180 s turn restarted with empty entries and a lane stuck running (issue
+#10). A KV write changes no version. The shepherd chose the store.
+
+**The store.** Every station has a KV namespace titled `<worker>-join`,
+bound to its Worker as `JOIN`. `sheep home deploy` makes it through the
+account API when the account has none of that title, and writes its id
+into the derived config's `pen` environment; `sheep home delete` deletes
+it after the Worker. A station deployed before this has no binding, and
+its first `sheep home deploy` gives it one. The token's permissions gain
+`Workers KV Storage (edit)`.
+
+1. The stile generates a join token and writes the key
+   `join:<sha256 of the token>` with `expiration_ttl` 120 to the
+   station's namespace through the account API, the account token in
+   the request's header. No wrangler call, no Worker version.
+2. It asks `POST /join` with the join token as the bearer, polling up to
+   ninety seconds, since a KV write can take up to a minute to reach
+   the edge that serves the Worker.
+3. The cell hashes the bearer, reads that key from `env.JOIN`, and when
+   it is there deletes it and answers `{ token: env.SHEEP_TOKEN }`; a
+   missing key, a missing binding, or a missing bearer is the bare 404.
+   The route is before the bearer check and is the one route the home's
+   token does not guard. The raw join token is never stored anywhere.
 4. The stile keeps the answer in the config with the address and no
-   name, as `join.ts` wrote it, and deletes `SHEEP_JOIN` with `wrangler
-   secret delete`.
+   name, and deletes the key through the account API on every path out
+   once it was written. The TTL is the backstop: a key left by a killed
+   process expires in two minutes, and no process holds its token.
 
 The account token never reaches the home; the home's token travels once,
-over HTTPS, to a machine that proved it owns the account. A secret put
-is a config-only version, not a rollout, and the account ring confirms
-a running turn is undisturbed by one. `sheep home join` and `join.ts`
-are withdrawn: the verb answers with a sentence naming `sheep setup`.
+over HTTPS, to a machine that proved it owns the account. The join
+changes no Worker version, so a turn running on the station is
+undisturbed, which the account ring confirms. `sheep home join` and
+`join.ts` are withdrawn: the verb answers with a sentence naming `sheep
+setup`.
 
 ## Testing it hermetically
 
@@ -346,9 +368,10 @@ stile through a terminal it owns.
   asserts none of the rig's words; enumerates every `Stop` and asserts
   its two parts and its `--json` shape; and asserts no user-facing
   string says `export` or names a shell.
-- **The cell, checkout ring.** `POST /join` in workerd: answers the token
-  to the join bearer, 404 to anything else and to a home with no
-  `SHEEP_JOIN`, and `GET /home` still 401 without the home's token.
+- **The cell, checkout ring.** `POST /join` in workerd with a KV binding:
+  answers the token to a bearer whose hash is a key, deletes the key so a
+  second ask is 404, 404 to anything else and to a home with no binding,
+  and `GET /home` still 401 without the home's token.
 - **The package ring.** A step `t0` before the walk: the released
   command's stile through the seam against the fakes, started from the
   checkout: the frames, the count, the credentials file, the config
@@ -365,8 +388,9 @@ stile through a terminal it owns.
   --detach`, `sheep home deploy` as the upgrade with nothing asked, and
   `sheep home delete` with the name on stdin. The line prints the
   count. `t2` in the second machine's container: the stile joining the
-  walk's station, a turn running across the join, and the account read
-  for no `SHEEP_JOIN` afterwards. The upgrade step already there
+  walk's station, a turn running across the join ending whole, the
+  station's namespace read for no join key afterwards, and `sheep home
+  delete` leaving no `<worker>-join` namespace. The upgrade step already there
   (`up`) runs with the environment stripped and the credentials
   written by the ring, which is what the older release's setup would
   have kept.

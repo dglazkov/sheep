@@ -25,9 +25,9 @@ tool, has built a facade.
 ---
 
 **Where we are: stile phase 0 is CLOSED, phases 1 and 2 PART-DONE, 12
-September 2026.** Stile phase 2 is PART-DONE and waits on the shepherd:
-a secret put restarts running turns, so the join's mechanism changes
-before **stile phase 2** can close. Stile phase 1 waits on issue #9, the screen
+September 2026.** The next thing to do is **stile phase 2**, re-cut: the
+join by a KV store per station instead of a Worker secret, since a secret
+put restarts running turns (issue #10). Stile phase 1 waits on issue #9, the screen
 the shepherd's walk found bare; the package, dog,
 and ⚑ account rings all hold on release `b227c2d`, run with the
 checkout's keys at the shepherd's word, and `sheep-2` is upgraded to it.
@@ -236,38 +236,46 @@ screen bare and confusing: issue #9, Open.
 **Closes:** journey 3 in full; journey 4 step 4.
 
 **Work:** `packages/cell/src/index.ts`: `POST /join` before the bearer
-check, answering `{ token }` to a bearer equal to a set `SHEEP_JOIN` and
-404 otherwise; `packages/cell/test/join.test.ts` in workerd. `stile/
-flow.ts`: the station step listing the account's sheep homes (`taken`
-and `whoAnswers`), and the join: the join token put, `POST /join`
-polled up to a minute, the config written with the address and the
-token and no name, the secret deleted; `key` skipped on a joined
-station with its line. `join.ts` withdrawn; `sheep home join` answers
-with the sentence naming `sheep setup`, exit 2, and leaves `USAGE`.
-`README.md`'s second-machine section rewritten. `packages/cli/test/
-fake-wrangler.mjs` and the fake station: the put recorded, `/join`
-answering only after it, the delete recorded.
+check, answering `{ token }` to a bearer whose `sha256` is a key in the
+`JOIN` KV binding, deleting that key, and 404 otherwise; `env.d.ts`
+declaring `JOIN`; `packages/cell/wrangler.jsonc` and the release's
+config carrying the binding; `packages/cell/test/join.test.ts` in
+workerd. `deploy.ts`: the `<worker>-join` namespace made through the
+account API when absent and its id written to the derived config;
+`deleteStation` deleting it; `joinStation` writing
+`join:<sha256>` with a 120 s TTL, polling `POST /join` up to ninety
+seconds, keeping `{home, token}`, and deleting the key on every path;
+`PERMISSIONS` gaining `Workers KV Storage (edit)`. `stile/flow.ts`: the
+station step listing the account's sheep homes, and `key` skipped on a
+joined station. `join.ts` withdrawn; `sheep home join` answers with the
+sentence naming `sheep setup`, exit 2, and leaves `USAGE`. `README.md`'s
+second-machine section. The fake account: KV namespaces and values; the
+fake station answering `/join` only from the fake namespace, and
+deleting the key.
 
 Tests: `stile.test.ts` gains journey 3 through the harness: the listing,
-the join's put, ask, and delete in order, the fake station's request
-log holding the join token alone, the config written, `key` skipped.
-`join.test.ts` in the command ring becomes the one refusal. `scripts/
-hermetic.mjs`: the account ring's a7 becomes the stile in the second
-machine's container, joining the walk's station; `t2` reads the Worker's
-secret names for no `SHEEP_JOIN`, and a turn started before the join is
-read whole after it.
+the key written, the ask, and the key deleted in order, no wrangler call
+in the join, the fake station's request log holding the join token
+alone, the config written, `key` skipped. `deploy.test.ts`: the
+namespace made once and bound, and deleted with the station.
+`join.test.ts` in the command ring becomes the one refusal.
+`scripts/hermetic.mjs`: the account ring's a7 is the stile in the second
+machine's container, joining the walk's station; `t2` reads the
+station's namespace for no join key and reads a turn started before the
+join whole after it; a6 leaves no `<worker>-join` namespace.
 
 **Not this phase:** Nothing open above.
 
 **Proof:** `pnpm test` exits 0 across all three inner rings; `pnpm -r
 typecheck` exits 0. Falsified by at least one mutation: `/join`
-answering a home with no `SHEEP_JOIN` (the workerd test fails), and the
-join secret left on the Worker (journey 3's cases in `stile.test.ts` fail
-against the fakes, as `t2` would on the account). **⚑**
-`pnpm hermetic --ring account --yes <sha>` with a7 as the stile and
-`t2`: a station deployed and deleted on the shepherd's account, a few
-container minutes. Then the walk, journey 3 steps 1 to 3, by hand: this
-laptop joining `sheep-2` from a scratch kennel under a fresh `HOME`.
+answering a bearer whose key is absent (the workerd test fails), and the
+join key left in the store (journey 3's cases in `stile.test.ts` fail
+against the fakes, as `t2` would on the account). **⚑** `pnpm hermetic
+--ring account --yes <sha>` with a7 as the stile and `t2`: a station and
+its namespace deployed and deleted on the shepherd's account, a few
+container minutes. Then the walk, journey 3 steps 1 to 3: this laptop
+joining `sheep-2` from a scratch kennel under a fresh `HOME`, after
+`sheep-2` is upgraded to carry the binding.
 
 **Status: PART-DONE, 12 September 2026.** The join is built and green in
 the inner rings: `pnpm test`, `pnpm -r typecheck`, and `pnpm bundle` exit
@@ -297,7 +305,16 @@ why: the secret put restarts the turns it should leave alone. Open.
   deleted mid-turn it restarted, left two empty assistant entries, and
   its lane stayed running past its reply. The design's "config-only, not
   a rollout" is false.
-- **2026-09-12 — Open: the join must not touch the Worker's version.**
-  Journey 3's third criterion cannot hold with a secret; the mechanism
-  waits on the shepherd's call, since the likely fix adds a store per
-  station.
+- **2026-09-12 — Open: the join rebuilt on a KV store.** The shepherd
+  chose a `<worker>-join` namespace per station over warning of restarts;
+  their token already writes KV. Stile phase 2 is re-cut to it, and its
+  rings and walk run again.
+
+**Formerly: the join by a Worker secret (built 12 Sep 2026, commit
+6e64cb9).** The join token was put as `SHEEP_JOIN` with `wrangler secret
+put`, asked with, and deleted with `wrangler secret delete`; the cell
+compared it in constant time. It walked on `sheep-2` and a7 held, but a
+secret put or delete is a new Worker version, which restarts the turns
+running on the station (the finding above, issue #10), so journey 3's
+third criterion could not hold. Re-cut to the KV store at the shepherd's
+choice.
