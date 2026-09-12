@@ -30,8 +30,9 @@ import { Server } from "@earendil-works/pi-server";
 import type { SqliteSessionRepo } from "@earendil-works/pi-session-backend-sqlite-node/sqlite";
 import { DurableObject } from "cloudflare:workers";
 import { BIRTH_ENTRY, BIRTH_TAIL_BYTES, BIRTH_TAIL_LINES, BIRTH_TIMEOUT_S, type BirthData, type BirthRecord, birthCommand, birthProjector } from "./birth.ts";
+import { SETUP_KEPT, SETUP_KEY_PREFIX, type SetupRecord, setupRecordKey, setupTail } from "./bleat.ts";
 import { type LaneState, taskOf } from "./directory.ts";
-import { CellExecutionEnv, type ContainerLineResult, type SetupSecrets } from "./env/execution-env.ts";
+import { CellExecutionEnv, type ContainerLineResult, type SetupEnd, type SetupEvent, type SetupSecrets } from "./env/execution-env.ts";
 import { eyesFor, sessionFor } from "./eyes/eyes.ts";
 import { type CellModels, createCellModels, type FauxProgram, isFauxProgram } from "./models.ts";
 import type { CacheCommit, Pasture } from "./pasture.ts";
@@ -104,6 +105,12 @@ export interface CellState {
 
 export interface TranscriptView extends CellState {
   entries: Entry[];
+  /**
+   * Bleat phase 0: this sheep's last setups, oldest first, beside the
+   * entries and not among them. `sheep log` merges them into what it prints
+   * by time; no model reads them.
+   */
+  setups: SetupRecord[];
 }
 
 /**
@@ -190,6 +197,13 @@ export class SessionCell extends DurableObject<Env> {
    */
   #lease: PenLease | undefined;
   /**
+   * Bleat phase 0: the record each setup running now is being kept under,
+   * by the millisecond it started, so the sink's end writes the record its
+   * start minted. Per incarnation: a setup whose end never comes is the
+   * next boot's stale `running` to clear, not this map's.
+   */
+  #setups = new Map<number, string>();
+  /**
    * Whoever starts this cell's container, made once (end phase 0): the
    * lease rents through it, and the end asks it for the destroy whether or
    * not a lease is live, so an ended sheep's container goes even when the
@@ -221,7 +235,13 @@ export class SessionCell extends DurableObject<Env> {
     const session = existing === undefined ? await repo.create({ id: this.sessionId }, context) : await repo.open(existing, context);
     const directory = this.env.DIRECTORY.getByName("home");
     // The cell learns its pasture from the directory's row, once, at boot: a row that names none, or no row, is lamb's sheep.
-    const pastureName = (await directory.get(this.sessionId))?.pasture ?? null;
+    const summary = await directory.get(this.sessionId);
+    const pastureName = summary?.pasture ?? null;
+    // Bleat phase 0: a row still saying `running` is an incarnation evicted mid-setup, whose socket went with it. It is
+    // ended here, from the summary this boot already read, before the birth below can start a setup of its own.
+    if (summary?.setup?.state === "running") {
+      await directory.setupInterrupted(this.sessionId).catch((error: unknown) => console.error(`[cell ${this.sessionId}] could not end the interrupted setup:`, error instanceof Error ? error.message : error));
+    }
     // One stub for the pasture's object: the prompt builder and the mount read through it, the program writes through it,
     // the checkout sends its tree as the second root, and the broker reads its `GIT_TOKEN` through it.
     const object = pastureName === null ? undefined : this.env.PASTURE.getByName(pastureName);
@@ -238,6 +258,9 @@ export class SessionCell extends DurableObject<Env> {
       // The eyes (eyes phase 1), over the env's own files table and this cell's SQLite for the session row; `eyesFor` decides
       // whether this home has any, and a home without the binding gets none and no `look`.
       eyes: (files) => eyesFor(this.env, files, this.ctx.storage.sql),
+      // Bleat phase 0: the sink, closing over the Directory stub and this cell's storage and nothing else — the lane is
+      // not made yet when the birth's setup runs through it, and is not what a setup has anything to say to.
+      onSetup: (event) => this.recordSetup(directory, event),
       // The mount and the program, both over the one stub: what the program puts, the mount's next call reads. Setup's
       // secrets are the pasture's with the sheep's laid over them (earmark phase 0), both read when setup runs.
       ...(pasture === undefined || object === undefined
@@ -422,6 +445,62 @@ export class SessionCell extends DurableObject<Env> {
     await tell("idle");
   }
 
+  /**
+   * The sink (bleat phase 0), wired at boot and called by the env at the
+   * start of every setup and at its end. Two things happen at each call and
+   * in this order: the cell's own record, which `sheep log` prints as the
+   * block, and the Directory's row, which every dog asking what this sheep
+   * is doing reads. The record is minted at the start so a dog holding a
+   * prompt sees the block exist while setup runs, and replaced at the end
+   * with the output's tail and how it ended.
+   *
+   * The key is the millisecond the setup started, so the keys sort in the
+   * order the setups ran and the oldest beyond `SETUP_KEPT` are the ones
+   * deleted. Two setups in one millisecond would otherwise be one record,
+   * so a taken key moves the next one on; the record's `at` is the setup's
+   * own either way, which is what the sink's end is found by.
+   */
+  private async recordSetup(
+    directory: {
+      setupStarted(id: string, at: number): Promise<void>;
+      setupEnded(id: string, at: number, ms: number, end: SetupEnd): Promise<void>;
+    },
+    event: SetupEvent,
+  ): Promise<void> {
+    if (event.phase === "start") {
+      let key = event.at;
+      while ((await this.ctx.storage.get(setupRecordKey(key))) !== undefined) key++;
+      const id = setupRecordKey(key);
+      this.#setups.set(event.at, id);
+      await this.ctx.storage.put<SetupRecord>(id, { id, at: event.at, command: event.command, output: "", truncated: false });
+      await directory.setupStarted(this.sessionId, event.at);
+      return;
+    }
+    const id = this.#setups.get(event.at) ?? setupRecordKey(event.at);
+    this.#setups.delete(event.at);
+    const tail = setupTail(event.output);
+    await this.ctx.storage.put<SetupRecord>(id, {
+      id,
+      at: event.at,
+      ms: event.ms,
+      command: event.command,
+      ...("exit" in event.end ? { exit: event.end.exit } : { error: event.end.error }),
+      output: tail.output,
+      truncated: tail.truncated,
+      ...(event.cache === undefined ? {} : { cache: event.cache }),
+    });
+    await directory.setupEnded(this.sessionId, event.at, event.ms, event.end);
+    // The last twenty: a sheep that has rented fifty containers has its last twenty setups, and a log that wants more
+    // than that wants the home's own logs.
+    const keys = [...(await this.ctx.storage.list({ prefix: SETUP_KEY_PREFIX })).keys()];
+    if (keys.length > SETUP_KEPT) await this.ctx.storage.delete(keys.slice(0, keys.length - SETUP_KEPT));
+  }
+
+  /** This sheep's last setups, oldest first, as the keys sort: the transcript view's `setups`. */
+  private async setups(): Promise<SetupRecord[]> {
+    return [...(await this.ctx.storage.list<SetupRecord>({ prefix: SETUP_KEY_PREFIX })).values()];
+  }
+
   private async settleWhenCurrent(runtime: Runtime): Promise<void> {
     if (this.#runtime === undefined || (await this.#runtime) !== runtime) return;
     await this.settleAlarm(runtime);
@@ -599,7 +678,8 @@ export class SessionCell extends DurableObject<Env> {
     const handle = await runtime.lane.watch(BACKGROUND_CONTEXT);
     try {
       const { tipId, operation, configuration, transcript } = handle.snapshot;
-      return { id: this.sessionId, tipId, operation, model: configuration.model, serverId: runtime.serverId, entries: transcript };
+      // Bleat phase 0: the setups beside the entries, never among them — they are sheep's own rows, and no model reads them.
+      return { id: this.sessionId, tipId, operation, model: configuration.model, serverId: runtime.serverId, entries: transcript, setups: await this.setups() };
     } finally {
       handle.unsubscribe();
     }

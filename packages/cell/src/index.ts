@@ -25,6 +25,9 @@
  * Fold phase 1: `GET /p/<name>/` carries `cache`, the pasture's cache as
  * its object's row says it (size, files, the `setup.sh` it is for, when,
  * by whom, and whether that script is the tree's now), or `null`.
+ * Bleat phase 0: `GET /sessions/<id>` is one sheep's row, the Directory's
+ * and never a cell's, so a dog can ask what a sheep is waiting on while
+ * the cell is held by the very setup it is waiting on.
  */
 import { type Budget, mintSecrets, unknownPasture, unknownSession } from "./directory.ts";
 import { hasEyes } from "./eyes/eyes.ts";
@@ -101,6 +104,8 @@ export async function homeReport(env: Env): Promise<HomeReport> {
 }
 
 const PEN_DOOR = /^\/s\/([^/]+)\/pen$/;
+/** Bleat phase 0: one sheep's Directory row, beside the list. */
+const SESSION_ROW = /^\/sessions\/([^/]+)$/;
 const PASTURE = /^\/p\/([^/]+)(\/.*)?$/;
 
 /** A pasture's routes, after the name is known to the Directory. */
@@ -192,6 +197,15 @@ export default {
     if (url.pathname === "/sessions" && request.method === "GET") {
       const pasture = url.searchParams.get("pasture");
       return Response.json(pasture === null ? await directory.list() : await directory.herd(pasture));
+    }
+    // Bleat phase 0: one sheep's row, the Directory's and never a cell's. A dog asking what its sheep is waiting on is
+    // answered in a millisecond whatever the cell is doing, which is the whole reason the live setup state lives here.
+    const one = SESSION_ROW.exec(url.pathname);
+    if (one && request.method === "GET") {
+      const id = decodeURIComponent(one[1]!);
+      const summary = await directory.get(id);
+      if (summary === undefined) return new Response(unknownSession(id), { status: 404 });
+      return Response.json(summary);
     }
     if (url.pathname === "/home" && request.method === "GET") return Response.json(await homeReport(env));
     if (url.pathname === "/faux" && request.method === "POST" && env.SHEEP_PROVIDER === "faux") {

@@ -75,6 +75,7 @@ export const CI_RINGS = RING_NAMES.filter((ring) => RING_ON_CI[ring]);
 export const RINGS = {
   checkout: [
     "packages/cell/test/birth.test.ts",
+    "packages/cell/test/bleat.test.ts",
     "packages/cell/test/broker.test.ts",
     "packages/cell/test/build.test.ts",
     "packages/cell/test/cell.test.ts",

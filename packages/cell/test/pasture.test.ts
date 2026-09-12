@@ -212,10 +212,10 @@ describe("pasture phase 0: the object, and the verbs", () => {
       const directory = new Directory(state, env);
 
       const columnsAfter = sql.exec<{ name: string }>("PRAGMA table_info(sessions)").toArray().map((column) => column.name);
-      expect(columnsAfter).toEqual(["id", "name", "created_at", "state", "pasture", "task"]);
+      expect(columnsAfter).toEqual(["id", "name", "created_at", "state", "pasture", "task", "setup"]);
       expect(directory.list()).toEqual([
-        { id: "old-2", name: null, createdAt: 2000, state: "running", pasture: null, task: null, secrets: [] },
-        { id: "old-1", name: "docs", createdAt: 1000, state: "idle", pasture: null, task: null, secrets: [] },
+        { id: "old-2", name: null, createdAt: 2000, state: "running", pasture: null, task: null, secrets: [], setup: null },
+        { id: "old-1", name: "docs", createdAt: 1000, state: "idle", pasture: null, task: null, secrets: [], setup: null },
       ]);
       // The constructor made the secrets table with IF NOT EXISTS, so the old rows carry none and a mint can write some.
       expect(sql.exec<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session_secrets'").toArray().length).toBe(1);

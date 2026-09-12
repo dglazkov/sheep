@@ -238,7 +238,7 @@ describe("earmark phase 0: journey 1 in the cell's terms", () => {
     // Step 1: the mint. The answer is the row with the names; the Directory holds the value; the cell holds no table.
     const earmarked = await mintedInto("earmarked", "herd", repoScript, { PROBE: SHEEP_PROBE });
     const sibling = await mintedInto("sibling", "herd", repoScript);
-    expect(earmarked.summary).toEqual({ id: earmarked.id, name: "earmarked", createdAt: expect.any(Number), state: "idle", pasture: "herd", task: null, secrets: ["PROBE"] });
+    expect(earmarked.summary).toEqual({ id: earmarked.id, name: "earmarked", createdAt: expect.any(Number), state: "idle", pasture: "herd", task: null, secrets: ["PROBE"], setup: null });
     expect(sibling.summary).toMatchObject({ name: "sibling", pasture: "herd", secrets: [] });
     expect(JSON.stringify(earmarked.summary)).not.toContain(SHEEP_PROBE);
     expect(await tablesOf(earmarked.id)).toEqual([]);
@@ -354,7 +354,7 @@ describe("earmark phase 0: journey 1 in the cell's terms", () => {
     const body = await response.text();
     for (const value of VALUES) expect(body).not.toContain(value);
     const summary = JSON.parse(body) as SessionSummary;
-    expect(summary).toEqual({ id: expect.stringMatching(/^[0-9a-f-]{36}$/), name: "two", createdAt: expect.any(Number), state: "idle", pasture: "pair", task: null, secrets: ["A", "B"] });
+    expect(summary).toEqual({ id: expect.stringMatching(/^[0-9a-f-]{36}$/), name: "two", createdAt: expect.any(Number), state: "idle", pasture: "pair", task: null, secrets: ["A", "B"], setup: null });
     const { id } = summary;
     // The one rule of the mint: the Directory and nothing else. `sqlite_master` is read before anything is asked of the cell.
     expect(await tablesOf(id)).toEqual([]);

@@ -17,6 +17,14 @@
  * The herd of a pasture is a query here, and the refusal of a birth that
  * cannot happen is here too, before any cell exists.
  *
+ * Bleat phase 0 adds a third column on `sessions`: `setup`, what the
+ * pasture's `setup.sh` is doing in that sheep's container. It is here and
+ * not in the cell because a sheep's first prompt is what rents the
+ * container, and a cell's first boot is where the birth runs: `state()`
+ * awaits `runtime()`, and during a birth that promise is the boot, which
+ * is held by the very setup the dog is asking about. This row answers in a
+ * millisecond whatever the cell is doing.
+ *
  * Earmark phase 0 adds a sheep's own secrets: `session_secrets`, a name and
  * a value per row beside the sheep's row, written by `create` at the mint
  * and deleted by `remove` at the end. Their names are on every summary;
@@ -25,6 +33,8 @@
  */
 import { uuidv7 } from "@earendil-works/pi-ai";
 import { DurableObject } from "cloudflare:workers";
+import { type SetupState, setupEndedState, setupEvictedState, setupStartedState, setupStateOf } from "./bleat.ts";
+import type { SetupEnd } from "./env/execution-env.ts";
 import type { FauxProgram } from "./models.ts";
 import { badPastureName, isPastureName, isSecretName, SETUP_EXCLUDED_SECRET } from "./pasture.ts";
 
@@ -42,6 +52,13 @@ export interface SessionSummary {
   task: string | null;
   /** The names of the secrets this sheep was minted with, sorted; never a value (earmark phase 0). */
   secrets: string[];
+  /**
+   * Bleat phase 0: what the pasture's `setup.sh` is doing in this sheep's
+   * container, or how it last ended; `null` for a sheep no setup has ever
+   * run for. The cell reports it at a setup's start and at its end, and
+   * this row is what answers while the cell itself cannot.
+   */
+  setup: SetupState | null;
 }
 
 export interface PastureSummary {
@@ -119,6 +136,8 @@ export class Directory extends DurableObject<Env> {
     // Homes deployed before pasture phase 0 have neither the pasture nor the task column.
     if (!columns.some((column) => column.name === "pasture")) ctx.storage.sql.exec("ALTER TABLE sessions ADD COLUMN pasture TEXT");
     if (!columns.some((column) => column.name === "task")) ctx.storage.sql.exec("ALTER TABLE sessions ADD COLUMN task TEXT");
+    // Homes deployed before bleat phase 0 have no setup column; every sheep on one has never had a setup reported, which is `null`.
+    if (!columns.some((column) => column.name === "setup")) ctx.storage.sql.exec("ALTER TABLE sessions ADD COLUMN setup TEXT");
     ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS pastures (name TEXT PRIMARY KEY, created_at INTEGER NOT NULL)");
     ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
     // The containers running now, one per session at most; the ones that stopped are summed into meta.
@@ -192,7 +211,7 @@ export class Directory extends DurableObject<Env> {
       sql.exec("INSERT INTO sessions (id, name, created_at, state, pasture) VALUES (?, ?, ?, 'idle', ?)", id, name, createdAt, pasture);
       for (const [key, value] of Object.entries(checked.secrets)) sql.exec("INSERT INTO session_secrets (session_id, name, value) VALUES (?, ?, ?)", id, key, value);
     });
-    return { id, name, createdAt, state: "idle", pasture, task: null, secrets: Object.keys(checked.secrets).sort() };
+    return { id, name, createdAt, state: "idle", pasture, task: null, secrets: Object.keys(checked.secrets).sort(), setup: null };
   }
 
   /**
@@ -282,6 +301,40 @@ export class Directory extends DurableObject<Env> {
   }
 
   /**
+   * Bleat phase 0. The cell's report that `setup.sh` has started in one of
+   * this sheep's containers: the row says `running` from now, and `at` is
+   * what every surface counts the elapsed time from. An `UPDATE`, never an
+   * upsert, as `setState` is: a report that arrives after `remove`
+   * resurrects nothing.
+   */
+  setupStarted(id: string, at: number): void {
+    this.writeSetup(id, setupStartedState(at));
+  }
+
+  /** The cell's report that it ended, however it ended: `ok` for exit 0, `failed` for any other code and for one that could not run. */
+  setupEnded(id: string, at: number, ms: number, end: SetupEnd): void {
+    this.writeSetup(id, setupEndedState(at, ms, end));
+  }
+
+  /**
+   * A boot that found this row saying `running`: the incarnation that held
+   * the container's socket is gone, so the setup has no ending coming and
+   * the row is ended here with the sentence for an eviction. Only a row
+   * that says `running` is written — a setup that ended while this boot was
+   * on its way keeps its own ending, and a sheep with no setup gains none.
+   */
+  setupInterrupted(id: string): void {
+    const row = this.ctx.storage.sql.exec<{ setup: string | null }>("SELECT setup FROM sessions WHERE id = ?", id).toArray()[0];
+    const setup = row === undefined ? undefined : setupStateOf(row.setup);
+    if (setup?.state !== "running") return;
+    this.writeSetup(id, setupEvictedState(setup.at));
+  }
+
+  private writeSetup(id: string, setup: SetupState): void {
+    this.ctx.storage.sql.exec("UPDATE sessions SET setup = ? WHERE id = ?", JSON.stringify(setup), id);
+  }
+
+  /**
    * The removal (end phase 0): the session's row goes, and its container
    * row is closed now, so a container the platform is still stopping has
    * its minutes counted and `containerMinutes` stops growing for this
@@ -312,10 +365,19 @@ export class Directory extends DurableObject<Env> {
   }
 }
 
-type SessionRow = { id: string; name: string | null; created_at: number; state: string | null; pasture: string | null; task: string | null };
+type SessionRow = { id: string; name: string | null; created_at: number; state: string | null; pasture: string | null; task: string | null; setup: string | null };
 
 function toSummary(row: SessionRow, names: ReadonlyMap<string, string[]>): SessionSummary {
-  return { id: row.id, name: row.name, createdAt: row.created_at, state: toLaneState(row.state), pasture: row.pasture ?? null, task: row.task ?? null, secrets: names.get(row.id) ?? [] };
+  return {
+    id: row.id,
+    name: row.name,
+    createdAt: row.created_at,
+    state: toLaneState(row.state),
+    pasture: row.pasture ?? null,
+    task: row.task ?? null,
+    secrets: names.get(row.id) ?? [],
+    setup: setupStateOf(row.setup) ?? null,
+  };
 }
 
 function toLaneState(value: string | null): LaneState {

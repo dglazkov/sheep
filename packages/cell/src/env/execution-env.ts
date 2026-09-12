@@ -109,6 +109,26 @@ export const NO_CONTAINER_NOTICE = "this home has no container";
 export type SetupEnd = { exit: number } | { error: string };
 
 /**
+ * Bleat phase 0: what the env says about a setup run, once when it starts
+ * and once when it ends. `at` is the same millisecond in both, so the two
+ * are one setup to whoever listens, and the end says every way a setup can
+ * end — the secrets unreadable, the container gone, an abort, a kill, a
+ * code — with the whole output it printed and what the cache came to.
+ */
+export type SetupEvent =
+  | { phase: "start"; at: number; command: string }
+  | { phase: "end"; at: number; command: string; ms: number; end: SetupEnd; output: string; cache?: CacheOutcome };
+
+/**
+ * The sink (bleat phase 0): the one call the env makes at a setup's start
+ * and at its end. Awaited both times, so a row that says `running` is
+ * written before the script runs and replaced before the caller has its
+ * result; a sink that throws is logged and changes nothing about setup,
+ * which is the sheep's work and not the log's.
+ */
+export type SetupSink = (event: SetupEvent) => void | Promise<void>;
+
+/**
  * What the pasture's cache came to around one setup (fold phase 1), as a
  * birth's entry keeps it: `warm` when the cache for this `setup.sh` was put
  * back first, with its size and how long the put-back took; `cold` when
@@ -304,6 +324,12 @@ export interface CellExecutionEnvOptions {
    * returning nothing, the shell has no `look` and `home.eyes` is false.
    */
   eyes?: (files: FilesTable) => Eyes | undefined;
+  /**
+   * Bleat phase 0: told at the start of every setup run and at its end,
+   * whatever the ending. Absent, nothing outside `warm()` learns that
+   * setup ran, which is what every home was before this project.
+   */
+  onSetup?: SetupSink;
 }
 
 /** How a command ended, before the capture is settled. */
@@ -319,6 +345,9 @@ interface Ran {
 
 /** How a setup run went: nothing to run, or how it ended, with the `Ran` a tool call returns in the command's place when it did not exit 0, and the cache around it. */
 type Warmed = { skipped: true } | { skipped: false; end: SetupEnd; failed?: Ran; cache?: CacheOutcome };
+
+/** A setup that ran: what `runSetup` returns, and what the sink hears the end of. The skipped half is `warm`'s alone. */
+type Ended = Extract<Warmed, { skipped: false }>;
 
 /**
  * The record for one container socket: its checkout, its forward, and
@@ -368,6 +397,8 @@ export class CellExecutionEnv implements ExecutionEnv {
   private readonly isolate: Isolate | undefined;
   private readonly killTimeoutMs: number | undefined;
   private readonly serveReadyMs: number;
+  /** Bleat phase 0: who hears a setup start and end, or nobody. */
+  private readonly onSetup: SetupSink | undefined;
   /** The record for the container socket most recently rented; one per socket, so per container. */
   private lease: Lease | undefined;
   private runs = 0;
@@ -390,6 +421,7 @@ export class CellExecutionEnv implements ExecutionEnv {
     this.isolate = options.isolate;
     this.killTimeoutMs = options.killTimeoutMs;
     this.serveReadyMs = options.serveReadyMs ?? SERVE_READY_MS;
+    this.onSetup = options.onSetup;
     this.shellEnv = {
       HOME: this.homeDir,
       PATH: "/usr/local/bin:/usr/bin:/bin",
@@ -1257,12 +1289,59 @@ export class CellExecutionEnv implements ExecutionEnv {
    * Fold phase 1: after a setup that exits 0 and its sync-out, the
    * pasture's cache is kept (`keep`); every outcome carries what the cache
    * came to, warm or cold, for the birth's entry.
+   *
+   * Bleat phase 0: the sink is told once here, after the script is known to
+   * exist and before anything about this setup can fail, and once at the
+   * end whatever the ending — so the row says `running` for exactly as long
+   * as the dog waits, and says how it ended even when it ended badly. The
+   * three ways there is nothing to run — the socket already warmed, no
+   * pasture, no `setup.sh` in the tree — are no setup at all and say
+   * nothing, which is journey 3's quiet sheep.
    */
   private async warm(lease: Lease, tree: ManifestEntry[] | undefined, signal: AbortSignal | undefined, capture: OutputCapture, line: (exit: number) => string): Promise<Warmed> {
     const pasture = this.pasture;
     if (lease.warmed || pasture === undefined) return { skipped: true };
     const key = setupKey(tree);
     if (key === undefined) return { skipped: true };
+    const at = Date.now();
+    let output = "";
+    await this.tellSetup({ phase: "start", at, command: SETUP_COMMAND });
+    let ran: Ended;
+    try {
+      ran = await this.runSetup(lease, pasture, key, signal, capture, line, at, (data) => {
+        output += data;
+      }, () => output);
+    } catch (error) {
+      // Nothing in `runSetup` throws today; a future one that does still leaves no row saying `running`.
+      await this.tellSetup({ phase: "end", at, command: SETUP_COMMAND, ms: Date.now() - at, end: { error: messageOf(error) }, output });
+      throw error;
+    }
+    await this.tellSetup({ phase: "end", at, command: SETUP_COMMAND, ms: Date.now() - at, end: ran.end, output, ...(ran.cache === undefined ? {} : { cache: ran.cache }) });
+    return ran;
+  }
+
+  /** The sink, if there is one: a setup's start or end, awaited; one that throws is logged and changes nothing about setup. */
+  private async tellSetup(event: SetupEvent): Promise<void> {
+    if (this.onSetup === undefined) return;
+    try {
+      await this.onSetup(event);
+    } catch (error) {
+      console.error(`[pen] the setup sink failed at the ${event.phase}: ${messageOf(error)}`);
+    }
+  }
+
+  /** The setup run itself, from the secrets to the cache: every return is an ending the sink is told about. */
+  private async runSetup(
+    lease: Lease,
+    pasture: SetupSecrets & CacheStore,
+    key: string,
+    signal: AbortSignal | undefined,
+    capture: OutputCapture,
+    line: (exit: number) => string,
+    started: number,
+    onData: (data: string) => void,
+    full: () => string,
+  ): Promise<Ended> {
     const { checkout } = lease;
     // Warm only when what was put back was for this script: a `setup.sh` changed since the socket's first sync-in runs on it as on a cold one.
     const found: CacheOutcome = lease.putBack !== undefined && lease.putBack.key === key
@@ -1276,13 +1355,12 @@ export class CellExecutionEnv implements ExecutionEnv {
           read: lease.putBack.readMs,
         }
       : { found: "cold", bytes: 0, files: 0, ms: 0 };
-    let output = "";
     const failed = (outcome: Outcome): Ran => {
-      const full = "error" in outcome ? output : `${line(outcome.exitCode)}\n${output}`;
-      capture.push(full);
-      return { full, outcome };
+      const text = "error" in outcome ? full() : `${line(outcome.exitCode)}\n${full()}`;
+      capture.push(text);
+      return { full: text, outcome };
     };
-    const unavailable = (message: string, cause?: Error): Warmed => ({ skipped: false, end: { error: message }, failed: failed({ error: new ExecutionError("shell_unavailable", message, cause) }), cache: found });
+    const unavailable = (message: string, cause?: Error): Ended => ({ skipped: false, end: { error: message }, failed: failed({ error: new ExecutionError("shell_unavailable", message, cause) }), cache: found });
 
     let secrets: SetupEnvironment;
     try {
@@ -1293,15 +1371,12 @@ export class CellExecutionEnv implements ExecutionEnv {
     }
     const { PATH: _path, HOME: _home, ...runEnv } = this.shellEnv;
     const id = `setup-${++this.runs}`;
-    const started = Date.now();
     const frame = await this.runFrame(
       lease.socket,
       { id, command: SETUP_COMMAND, cwd: WORKSPACE_ROOT, env: { ...runEnv, ...secrets.environment, PWD: WORKSPACE_ROOT }, timeout: SETUP_TIMEOUT_S },
       signal,
-      (data) => {
-        output += data;
-      },
-      () => output,
+      onData,
+      full,
     );
     if ("failed" in frame) {
       const { outcome } = frame.failed;
@@ -1320,7 +1395,7 @@ export class CellExecutionEnv implements ExecutionEnv {
       const message = end.killed === "timeout" ? `setup ran for ${SETUP_TIMEOUT_S} s without ending and was killed` : `the container ended setup: ${end.killed}`;
       return { skipped: false, end: { error: message }, failed: failed({ error: new ExecutionError(end.killed === "timeout" ? "timeout" : "unknown", message) }), cache: found };
     }
-    console.info(`[pen] setup exit ${end.exit} after ${Date.now() - started} ms, ${output.length} bytes of output`);
+    console.info(`[pen] setup exit ${end.exit} after ${Date.now() - started} ms, ${full().length} bytes of output`);
     if (end.exit !== 0) return { skipped: false, end: { exit: end.exit }, failed: failed({ exitCode: end.exit }), cache: found };
     lease.warmed = true;
     return { skipped: false, end: { exit: 0 }, cache: await this.keep(lease, key, secrets.own, found) };

@@ -22,12 +22,14 @@ detail.
 
 ---
 
-**Where we are: bleat is planned, 11 September 2026. Nothing built.**
-Written from the shepherd's issue #4 the day spool closed. The next thing
-to do is **bleat phase 0**, the sink, the row, and the record, proved in
-workerd against the fake container; then bleat phase 1 is the dog's three
-surfaces, the docs, the rings, and the walk on a home with Docker.
-Nothing waits on a person until bleat phase 1's account ring.
+**Where we are: bleat phase 0 is CLOSED, 11 September 2026; bleat phase 1
+is next.** A setup now says itself twice — once to the sheep's Directory row, which answers in a
+millisecond whatever the cell is doing, and once to the cell's own record,
+which carries the output's tail beside the transcript's entries. The next
+thing to do is **bleat phase 1**, the dog's three surfaces (`status`'s
+line, `log`'s block, the line on stderr), the docs, the command ring's
+fake home, and the walk on a home with Docker. Nothing waits on a person
+until bleat phase 1's ⚑ account ring.
 
 The order is dependency order. Phase 0 is the fact and where it is kept,
 which all three surfaces read. Phase 1 is the surfaces, the docs, and the
@@ -85,7 +87,24 @@ Falsified by at least two mutations: the sink called only at the end
 (journey 1 step 2's `running` fails), and the stale-running clear removed
 (journey 2 step 4 fails). **⚑** none.
 
-**Status: NOT STARTED.**
+**Status: CLOSED.** 2026-09-11. Journeys 1 to 3 hold in the cell's terms
+against the fake container: a setup the test holds open says `running` on
+the sheep's row with its `at` and `ok` with its `ms` after, the record
+exists for the whole of the wait and carries the output's tail at the end,
+a failed setup is `failed` on the row with pasture phase 4's tool result
+unchanged in front of the model, a birth's setup leaves a record and the
+`birth` entry as it was, twenty-one setups leave twenty records, an
+eviction leaves no `running` behind, and a sheep with no `setup.sh` says
+nothing. `pnpm test` exits 0 across all three rings; falsified by two
+mutations.
+
+**Findings:**
+
+- **2026-09-11 — The row answers in 1 ms while setup holds the cell.** Measured in the checkout ring from inside the cell, mid-setup: `GET /sessions/<id>` is the Directory's alone, and the cell's own routes would have waited out the whole setup.
+- **2026-09-11 — `warm()` had eleven return paths and one accumulating `output`.** Wrapping it, rather than editing each return, is what makes "the sink is told whatever the ending" a property of the shape instead of a checklist a later ending could miss.
+- **2026-09-11 — A record keyed by its start millisecond needs a collision bump.** Twenty-one back-to-back setups through the fake container are fast enough that two could share a millisecond and become one record; a taken key moves the next one on.
+- **2026-09-11 — The test seam `evict()` is not the platform.** It drops `#runtime` but leaves the abandoned incarnation's `warm()` alive in this isolate, so the eviction case must hold its setup open forever and stop the fake last; a real eviction takes the isolate with it.
+- **2026-09-11 — Open: an evicted setup's record still says `running`.** Only the row is mended at boot, so a block would print as still going. Bleat phase 1 renders the block from the record with the row's ending beside it; nothing else waits on this.
 
 ## Phase 1: The dog hears it
 
@@ -97,7 +116,10 @@ Falsified by at least two mutations: the sink called only at the end
 first and prints the `setup:` line in the design's four forms, with the
 two-second deadline on the lane read and the short form when it passes;
 `runLog` merges the setups into what it prints by time and renders the
-`[setup]` block, with `--json` giving each `"type": "setup"`; a watcher
+`[setup]` block, with `--json` giving each `"type": "setup"`; a record
+with no `ms` is `running (…)`, unless the row's `setup` for that same
+`at` has ended, in which case the block says what the row says (bleat
+phase 0's open finding: an eviction mends the row and not the record); a watcher
 used by every path that holds a prompt — `runPrompt` and `detach` —
 asking the row every 10 s from the moment the command starts, saying
 `setup running (…)` on first sight and every 30 s after, and one line
