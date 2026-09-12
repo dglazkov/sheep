@@ -340,6 +340,29 @@
  * token beyond the Cloudflare one, so it has no skip; the save's ms and the
  * chunk count are lines of the station's log, which no verb reads, and are
  * named among what was not checked.
+ *
+ * Spool phase 1 gives the account ring `f2`, after f1 (spool's journey 3
+ * step 3), for the same reason f1 is after n1: the ends before it destroyed
+ * every container, so f2's two births fit under the station's
+ * `max_instances`. A pasture named `spool-<sha7>` on the same public
+ * repository, whose `setup.sh` writes `SPOOL_FILE_BYTES` of random bytes
+ * into `/cache` beside a small tool of its own, guarded by `command -v` as
+ * f1's is. The file is larger than the agent could once have held: the shape
+ * before this project cost about two and a half times a file's size at its
+ * peak (measured in the command ring), and this one taken whole is past the
+ * station instance's 1 GiB. One sheep born cold and one born warm, each
+ * scripted by the faux provider to run the tool, stat the file, and read
+ * `VmHWM` from `/proc/1/status` — the agent is PID 1 in the container, so
+ * that line is its own peak, and it is the number this project exists for.
+ * Both turns end normally, both birth entries say the cache (cold and kept,
+ * then warm with the same bytes and files), and the peak is printed with
+ * them and checked against the file it was carrying: far below it, where the
+ * old shape would have been above it and dead. The chunks are checked to
+ * have travelled undeflated to within a few per cent, since gzip cannot
+ * shrink noise — a cheap proof that the record really carried the file. The
+ * step ends both sheep with n1's check, each counted minted and ended, so a6
+ * still lists `sessions: 0`. It needs no token beyond the Cloudflare one, so
+ * it has no skip.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
@@ -3045,6 +3068,11 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     // every container, so f1's two births fit under the cap; f1 ends its own two with n1's check.
     await journeyFold(ring, station);
 
+    // Spool phase 1, f2 (spool's journey 3 step 3): the same again with a file no agent before this project could have held,
+    // and the agent's own peak read from `/proc/1/status` in each container. After f1, and for f1's reason: every container
+    // the steps before rented is destroyed by the ends they make, so f2's two births fit under the station's cap.
+    await journeySpool(ring, station);
+
     // Step 6: the delete, the name on stdin: the listing first (station phase 3), counted against what the walk minted and did not
     // end (end phase 1: none); then the account listed, the last lines.
     const { deleted, after, left } = await deleteStation(ring, api, station, token);
@@ -3779,6 +3807,187 @@ async function journeyFold(ring, station, { step = "f1" } = {}) {
   const afterRm = JSON.parse((await ring.sheep(["ls", "--json"])).stdout);
   const stillListed = afterRm.filter((row) => row.id === ids.cold || row.id === ids.warm).map((row) => row.id);
   if (stillListed.length > 0) ring.fail(step, "sheep ls --json (after rm)", { stdout: JSON.stringify(afterRm), stderr: `expected neither of f1's sheep listed; still there: ${stillListed.join(", ")}`, code: 1 });
+  ring.ok(step, `sheep rm ${ids.cold}; sheep rm ${ids.warm}; sheep ls --json`, "each ended with its one line; neither listed after");
+}
+
+/**
+ * f2's file: 640 MiB of `/dev/urandom` in `/cache`. Larger than the agent
+ * could once have held — the shape before spool allocated a file twice over
+ * and peaked at about 2.4 times its size (the command ring's process test
+ * measures 1934 MiB against a 768 MiB file), so this one whole is past the
+ * station instance's 1 GiB — and inside `CACHE_MAX_BYTES`, so the cache is
+ * one a pasture keeps rather than one it refuses. Random, so the chunks
+ * cannot hide it: what travels and what the object holds is the file's own
+ * size, and the walk pays for every byte of it, as journey 3 asks.
+ */
+const SPOOL_FILE_BYTES = 640 * 1024 * 1024;
+/** f2's tool: a script of setup's own, so the step installs nothing from a registry and the file is the only large thing in the cache. */
+const SPOOL_TOOL = { bin: "spool-tool", said: "spool-tool 1.0" };
+
+/**
+ * Spool's journey 3 step 3 on the station (spool phase 1, f2), after f1 and
+ * with the same faux provider: a pasture on the same public repository whose
+ * `setup.sh` writes `SPOOL_FILE_BYTES` of random bytes beside a small tool,
+ * guarded by `command -v` so a warm container's setup finds both and writes
+ * `found`. `cold` is minted and asked first — its setup writes the file and
+ * the save keeps it — and `warm` after, into a container of its own, where
+ * the record is put back before setup runs. Each turn runs the tool, stats
+ * the file, and reads `VmHWM` from `/proc/1/status`: the agent is PID 1, so
+ * that is the agent's own peak over everything the container has done,
+ * which for `cold` includes the save and for `warm` the put-back. The step
+ * checks the two birth entries as f1 does, the file's size and mode after
+ * the put-back, and the peak against the file it was carrying; it prints the
+ * peaks, which are the finding journey 3 asks every walk for. Both sheep are
+ * ended with n1's check. No skip: it needs nothing but the station.
+ */
+async function journeySpool(ring, station, { step = "f2" } = {}) {
+  const { home, token: stationToken } = station;
+  const pasture = `spool-${ring.stamp.commit.slice(0, 7)}`;
+  const file = `$NPM_CONFIG_PREFIX/lib/${SPOOL_TOOL.bin}.bin`;
+  const setup = [
+    "set -e",
+    "started=$(date +%s%3N)",
+    `if command -v ${SPOOL_TOOL.bin} >/dev/null; then said=found; else`,
+    '  mkdir -p "$NPM_CONFIG_PREFIX/bin" "$NPM_CONFIG_PREFIX/lib"',
+    `  printf '#!/bin/sh\\necho ${SPOOL_TOOL.said}\\n' > "$NPM_CONFIG_PREFIX/bin/${SPOOL_TOOL.bin}"`,
+    `  chmod 755 "$NPM_CONFIG_PREFIX/bin/${SPOOL_TOOL.bin}"`,
+    `  head -c ${SPOOL_FILE_BYTES} /dev/urandom > "${file}"`,
+    // A mode of its own, so what the put-back restores is read off a file the umask would not have made.
+    `  chmod 640 "${file}"`,
+    "  said=made",
+    "fi",
+    'echo "$said $(( $(date +%s%3N) - started )) ms" > .setup-said',
+    "",
+  ].join("\n");
+  const setupFile = join(ring.dir, "spool-setup.sh");
+  writeFileSync(setupFile, setup);
+  const setupHash = createHash("sha256").update(setup).digest("hex");
+  const names = ["cold", "warm"];
+  const ids = {};
+  const births = {};
+  const said = {};
+  const seen = {};
+  const started = Date.now();
+
+  // The pasture, its `setup.sh`, and no cache yet.
+  const made = await ring.sheep(["pasture", "new", pasture, "--repo", FOLD_REPO.url, "--branch", FOLD_REPO.branch]);
+  if (made.code !== 0 || made.stdout !== `${pasture}\t${FOLD_REPO.url}\t${FOLD_REPO.branch}\n`) ring.fail(step, `sheep pasture new ${pasture} --repo ${FOLD_REPO.url} --branch ${FOLD_REPO.branch}`, made);
+  station.pastures.push(pasture);
+  const put = await ring.sheep(["pasture", "put", pasture, "setup.sh", setupFile]);
+  if (put.code !== 0) ring.fail(step, `sheep pasture put ${pasture} setup.sh ${setupFile}`, put);
+  const empty = await ring.sheep(["pasture", pasture, "--json"]);
+  if (empty.code !== 0 || JSON.parse(empty.stdout).cache !== null) ring.fail(step, `sheep pasture ${pasture} --json (before any birth)`, { ...empty, stderr: `${empty.stderr}\nexpected "cache": null before any sheep was born` });
+
+  // One at a time: the warm birth needs the cold one's cache committed, which it is by the end of the cold sheep's first turn.
+  for (const name of names) {
+    const minted = await ring.sheep(["new", "--pasture", pasture, "--name", name, "--detach"]);
+    const id = /^([0-9a-f-]{36})\n$/.exec(minted.stdout)?.[1];
+    if (minted.code !== 0 || !id || minted.stderr !== "") ring.fail(step, `sheep new --pasture ${pasture} --name ${name} --detach`, { ...minted, stderr: `${minted.stderr}\nexpected exit 0, the id alone on stdout, nothing on stderr` });
+    ids[name] = id;
+    station.minted.push(id);
+    // The turn: the tool, the file as the put-back left it, and the agent's own high-water mark, which is PID 1's.
+    const command = `${SPOOL_TOOL.bin} && stat -c '%s %a' "${file}" && cat .setup-said && grep VmHWM /proc/1/status`;
+    const program = { steps: [{ tool: { name: "bash", args: { command } } }, { text: `ran ${SPOOL_TOOL.bin}` }] };
+    const posted = await fetch(`${home}/s/${encodeURIComponent(id)}/faux`, { method: "POST", headers: { authorization: `Bearer ${stationToken}`, "content-type": "application/json" }, body: JSON.stringify(program), signal: AbortSignal.timeout(30_000) });
+    if (posted.status !== 200) ring.fail(step, `POST /s/${id}/faux`, { stdout: await posted.text(), stderr: `status ${posted.status}`, code: 1 });
+    const asked = await ring.sheep(["attach", id, "--detach", "--", `run ${SPOOL_TOOL.bin} and stat its file`]);
+    if (asked.code !== 0 || asked.stdout !== `${id}\n`) ring.fail(step, `sheep attach ${id} --detach -- "run ${SPOOL_TOOL.bin} and stat its file"`, asked);
+    // Longer than f1's: this birth carries two thirds of a gigabyte over the link, which is the point of the step.
+    const waited = await ring.sheep(["wait", "--timeout", "900", id]);
+    if (waited.code !== 0 || waited.stdout !== `${id}\tran ${SPOOL_TOOL.bin}\n`) ring.fail(step, `sheep wait --timeout 900 ${id}`, { ...waited, stderr: `${waited.stderr}\nexpected "${id}\\tran ${SPOOL_TOOL.bin}"` });
+
+    const logged = await ring.sheep(["log", id, "--json"]);
+    if (logged.code !== 0) ring.fail(step, `sheep log ${id} --json`, logged);
+    const entries = logged.stdout.trimEnd().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+    const birth = entries.find((entry) => entry.type === "custom" && entry.customType === "birth")?.data;
+    if (logged.stdout.includes("no container could be rented")) ring.fail(step, `sheep log ${id} --json`, { ...logged, stderr: `${logged.stderr}\n${name}'s commands found no container (the station's max_instances against containers still idle): the cache was not exercised` });
+    if (birth === undefined || birth.exit !== 0 || birth.setup?.exit !== 0) {
+      ring.fail(step, `sheep log ${id} --json`, { ...logged, stderr: `${logged.stderr}\nexpected a birth entry whose clone and setup.sh exited 0; got ${JSON.stringify(birth === undefined ? null : { exit: birth.exit, error: birth.error, setup: birth.setup })}` });
+    }
+    births[name] = birth.cache;
+    const results = entries.filter((entry) => entry.type === "message" && entry.message?.role === "toolResult").map((entry) => {
+      const content = entry.message.content;
+      return typeof content === "string" ? content : content.filter((part) => part.type === "text").map((part) => part.text).join("");
+    });
+    const result = results.at(-1) ?? "";
+    const word = /^(made|found) (\d+) ms$/m.exec(result);
+    const stat = /^(\d+) (\d+)$/m.exec(result);
+    const peak = /^VmHWM:\s+(\d+) kB$/m.exec(result);
+    if (!result.startsWith(`${SPOOL_TOOL.said}\n`) || stat === null || word === null || peak === null) {
+      ring.fail(step, `sheep log ${id} --json (the tool result)`, { stdout: result, stderr: `expected ${SPOOL_TOOL.said} on the first line, then the file's size and mode from stat, setup's own word from .setup-said, and VmHWM from /proc/1/status`, code: 1 });
+    }
+    if (Number(stat[1]) !== SPOOL_FILE_BYTES || stat[2] !== "640") {
+      ring.fail(step, `sheep log ${id} --json (the file after ${name === "cold" ? "setup" : "the put-back"})`, { stdout: stat[0], stderr: `expected ${SPOOL_FILE_BYTES} bytes and mode 640 at ${file}`, code: 1 });
+    }
+    seen[name] = { peak: Number(peak[1]) * 1024 };
+    said[name] = { word: word[1], ms: Number(word[2]) };
+  }
+
+  // Cold and kept, then warm with the same record put back; setup's own word saying which container it ran in.
+  const { cold, warm } = births;
+  if (said.cold.word !== "made") ring.fail(step, `sheep log ${ids.cold} --json (setup's word)`, { stdout: JSON.stringify(said.cold), stderr: "expected the cold setup to have made the tool and its file", code: 1 });
+  if (said.warm.word !== "found") ring.fail(step, `sheep log ${ids.warm} --json (setup's word)`, { stdout: JSON.stringify(said.warm), stderr: "expected the warm setup to have found the tool on PATH, put back from the cache, and not made it again", code: 1 });
+  if (cold?.found !== "cold" || cold.kept !== true || cold.refused !== undefined || !(cold.bytes > SPOOL_FILE_BYTES) || !(cold.files >= 2)) {
+    ring.fail(step, `sheep log ${ids.cold} --json (the birth's cache)`, { stdout: JSON.stringify(cold ?? null), stderr: `expected found: cold, kept: true, and a record of more than ${SPOOL_FILE_BYTES} bytes in at least 2 files`, code: 1 });
+  }
+  // gzip cannot shrink noise: what travelled is the record's own size, to within a few per cent, which is what makes this walk cost what it costs.
+  if (!(cold.chunks > SPOOL_FILE_BYTES / (8 * 1024 * 1024)) || !(cold.stored > cold.bytes * 0.95)) {
+    ring.fail(step, `sheep log ${ids.cold} --json (the birth's cache)`, { stdout: JSON.stringify(cold), stderr: `expected more than ${Math.floor(SPOOL_FILE_BYTES / (8 * 1024 * 1024))} chunks and stored bytes within a few per cent of the record's ${cold.bytes}: random bytes do not deflate`, code: 1 });
+  }
+  if (warm?.found !== "warm" || warm.kept !== undefined || warm.refused !== undefined || warm.bytes !== cold.bytes || warm.files !== cold.files || typeof warm.ms !== "number") {
+    ring.fail(step, `sheep log ${ids.warm} --json (the birth's cache)`, { stdout: JSON.stringify(warm ?? null), stderr: `expected found: warm, the cold one's ${cold.bytes} bytes and ${cold.files} files put back, its ms, and neither kept nor refused (setup changed nothing)`, code: 1 });
+  }
+  if (warm.chunks !== cold.chunks || warm.stored !== cold.stored || typeof warm.read !== "number" || warm.read > warm.ms) {
+    ring.fail(step, `sheep log ${ids.warm} --json (the birth's cache)`, { stdout: JSON.stringify(warm), stderr: `expected the same ${cold.chunks} chunks and ${cold.stored} stored bytes put back, and a read within the put-back's ${warm.ms} ms`, code: 1 });
+  }
+
+  // The number the project is for, from the container itself. Far below the file each container was carrying: the shape before
+  // spool held the file whole, which at this size is more than the instance has, and the turn would have been an interruption.
+  for (const name of names) {
+    if (!(seen[name].peak > 0) || !(seen[name].peak < SPOOL_FILE_BYTES / 2)) {
+      ring.fail(step, `sheep log ${ids[name]} --json (VmHWM from /proc/1/status)`, {
+        stdout: `${name}: ${seen[name].peak} bytes`,
+        stderr: `expected the agent's peak below half the ${SPOOL_FILE_BYTES}-byte file it was carrying; the record streams a chunk at a time and the peak must not follow the file`,
+        code: 1,
+      });
+    }
+  }
+
+  // The pasture names the cache: for the `setup.sh` put, kept by the cold sheep, current.
+  const viewed = await ring.sheep(["pasture", pasture, "--json"]);
+  const cache = viewed.code === 0 ? JSON.parse(viewed.stdout).cache : undefined;
+  if (cache == null || cache.setup !== setupHash || cache.by !== ids.cold || cache.current !== true || cache.bytes !== cold.bytes || cache.files !== cold.files) {
+    ring.fail(step, `sheep pasture ${pasture} --json`, { ...viewed, stderr: `${viewed.stderr}\nexpected "cache" for setup.sh ${setupHash.slice(0, 7)}, by ${ids.cold}, current, ${cold.bytes} bytes and ${cold.files} files` });
+  }
+  const seconds = ((Date.now() - started) / 1000).toFixed(0);
+  const mb = (bytes) => `${(bytes / 1e6).toFixed(1)} MB`;
+  const mib = (bytes) => `${(bytes / 1024 / 1024).toFixed(0)} MiB`;
+  ring.ok(
+    step,
+    `sheep pasture new ${pasture} --repo ${FOLD_REPO.url}; sheep pasture put ${pasture} setup.sh (${mb(SPOOL_FILE_BYTES)} of /dev/urandom, guarded); sheep new --pasture ${pasture} --detach (cold, then warm); sheep attach --detach; sheep wait`,
+    `${seconds}s; ${SPOOL_TOOL.bin} answered in both turns, setup ${said.cold.word} in ${said.cold.ms} ms cold and ${said.warm.word} in ${said.warm.ms} ms warm, and its file is ${SPOOL_FILE_BYTES} bytes, mode 640, in the warm container as in the cold one`,
+  );
+  ring.ok(
+    step,
+    `sheep log ${ids.cold} --json; sheep log ${ids.warm} --json (the birth entries)`,
+    `cold: kept, ${cold.bytes} bytes in ${cold.files} files, ${cold.chunks} chunks, ${mb(cold.stored)} stored (noise does not deflate); warm: the same record put back in ${warm.ms} ms (${warm.read} ms of it reading the object)`,
+  );
+  // The finding journey 3 asks every walk for: the peak, and the largest file it was carrying.
+  console.log(
+    `  ${step} the peak, from /proc/1/status in the container: cold ${mib(seen.cold.peak)} at the save, warm ${mib(seen.warm.peak)} at the put-back, each carrying a ${mib(SPOOL_FILE_BYTES)} file (fold phase 3 measured 470 MiB against a 155 MB one)`,
+  );
+  ring.ok(step, `sheep log ${ids.cold} --json; sheep log ${ids.warm} --json (VmHWM in the turn's tool result)`, `cold ${mib(seen.cold.peak)}, warm ${mib(seen.warm.peak)}, both below half the ${mib(SPOOL_FILE_BYTES)} file`);
+  ring.unchecked.push(`spool journey 3 ${step}: the doubled file (journey 3 step 2), which is the local home's walk with Docker; the account ring walks the one size`);
+
+  // The step runs after n1, so it ends its own two with n1's check, each then ended as well as minted; neither listed after.
+  for (const name of names) {
+    const removed = await ring.sheep(["rm", ids[name]]);
+    if (removed.code !== 0 || removed.stdout !== `${ids[name]}\tended\n` || removed.stderr !== "") ring.fail(step, `sheep rm ${ids[name]}`, { ...removed, stderr: `${removed.stderr}\nexpected exit 0, exactly "${ids[name]}\\tended" on stdout, nothing on stderr` });
+    station.ended.push(ids[name]);
+  }
+  const afterRemoved = JSON.parse((await ring.sheep(["ls", "--json"])).stdout);
+  const listed = afterRemoved.filter((row) => row.id === ids.cold || row.id === ids.warm).map((row) => row.id);
+  if (listed.length > 0) ring.fail(step, "sheep ls --json (after rm)", { stdout: JSON.stringify(afterRemoved), stderr: `expected neither of f2's sheep listed; still there: ${listed.join(", ")}`, code: 1 });
   ring.ok(step, `sheep rm ${ids.cold}; sheep rm ${ids.warm}; sheep ls --json`, "each ended with its one line; neither listed after");
 }
 

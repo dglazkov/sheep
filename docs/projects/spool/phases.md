@@ -23,16 +23,14 @@ of the code.
 
 ---
 
-**Where we are: spool phase 0 closed, 11 Sep 2026.** Next is spool
-phase 1, the image, the memory, and the walk, NOT STARTED, and it waits
-on the shepherd: the walk needs a local home with Docker and a real
-model, and journey 3 step 3 is the account ring's one ⚑. What phase 0
-left standing: the record moves in slices both ways behind optional
-handles on `Disk`, the cap is asked of the listing before a file is
-opened, and a put-back that is dropped closes the file it was in the
-middle of — proved in workerd over a disk that throws for any whole
-file, and byte for byte the same record as the disk with no handles at
-all. Nothing waits on work.
+**Where we are: spool phase 1 part-done, 11 Sep 2026.** Everything is
+built and every proof but one has run: `nodeDisk` has the handles, the
+command ring measures the agent's resident set, and journey 3 steps 1
+and 2 are walked on the local home with Docker and a real model — a
+600 MB file costs the same peak as a 300 MB one. What is left is
+journey 3 step 3, the account ring's `f2`, which needs a release whose
+image CI has built: the shepherd has authorized it, so it waits on the
+build and not on a person. Phase 0 is closed.
 
 The order is dependency order. Phase 0 is the record in slices, which is
 all of the mechanism. Phase 1 is the image, the walk where the memory is
@@ -132,4 +130,17 @@ doubled and the peak unmoved. **⚑** journey 3 step 3: `pnpm hermetic
 deployed and deleted on the shepherd's account, a few container minutes
 and one deploy.
 
-**Status: NOT STARTED.**
+**Status: PART-DONE, 11 Sep 2026.** The handles are in `nodeDisk`, the
+command ring reads the agent's peak, and the local home's walks hold;
+the account ring's `f2` is written and waits on CI's image for this
+commit.
+
+**Findings:**
+
+- **2026-09-11 — The handles cut the real agent's peak from 1920 MiB to 274 MiB** at a save of a 768 MiB file, and 981 to 196 at the put-back, `ps` on the child's pid in the command ring. The conductor ran the mutation; the file itself was the difference, twice.
+- **2026-09-11 — The walk, on the local home with Docker and a real model:** a 300 MB file saves at 285 MiB and puts back at 272; a 600 MB one at 295 and 271. Fold phase 3 spent 470 and 354 to 376 on a 155 MB file.
+- **2026-09-11 — Doubling the largest file moved the peak by 10 MiB, and the put-back's by minus one.** That is journey 3 step 2, and it is the whole claim: the peak is a constant, flat in the file, made of a slice and a chunk.
+- **2026-09-11 — The peak is the baseline plus some 180 MiB, not plus a chunk,** so journey 1 step 3's prediction moved (`93418a6`); the acceptance criterion it serves never did, and it passed.
+- **2026-09-11 — A hard-linked pair survives the real disk:** 600 MB under two names came back one inode with a link count of 2, and the record carried 629 MB in 4 files, not 1.2 GB.
+- **2026-09-11 — `open(path, "w", mode)` is a creation's mode, and the umask narrows it,** so the writing handle unlinks first and `fchmod`s the open file — widening what the umask took, never the reverse.
+- **2026-09-11 — Only a line with a program outside the registry reaches the container.** `grep /proc/1/status` alone runs in the cell's bash and finds no `/proc`; `tool && grep …` is how a walk reads the agent's peak.

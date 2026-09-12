@@ -23,7 +23,7 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import type { Dirent } from "node:fs";
-import { chmod, link, lstat, mkdir, mkdtemp, readdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, link, lstat, mkdir, mkdtemp, open, readdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { createServer as createSocketServer } from "node:net";
 import { constants as osConstants, tmpdir } from "node:os";
@@ -73,6 +73,13 @@ export function dialCell(address: string): WebSocket {
  * umask never has a say. Fold phase 2: `list` says each entry's size and
  * mtime, and, for a file with more than one name, its device and inode as
  * the identity its names share; `link` makes a hard link.
+ *
+ * Spool phase 1: the record's two handles over `node:fs` file handles, so
+ * the agent in the image passes a file through itself rather than into
+ * itself. Without them `record.ts` reaches its fallback on every real
+ * container and the agent holds one whole file at its peak, which is the
+ * debt this project is paying; `read` and `write` stay exactly as they
+ * were, for everything that is not a record's file.
  */
 export function nodeDisk(root: string): Disk {
   const at = (path: string) => join(root, path);
@@ -86,6 +93,67 @@ export function nodeDisk(root: string): Disk {
       await rm(at(path), { force: true });
       await writeFile(at(path), bytes);
       if (options?.mode !== undefined) await chmod(at(path), options.mode);
+    },
+    /**
+     * Spool phase 1: the file read in slices, each one a fresh buffer the
+     * caller may keep, and an empty slice at the end of the file — a short
+     * read is the file ending, which is what `streamFile` reads it as. The
+     * position is the handle's own, so the slices are the file in order.
+     */
+    async openRead(path) {
+      const handle = await open(at(path), "r");
+      let closed = false;
+      return {
+        async read(length) {
+          if (length <= 0) return new Uint8Array(0);
+          // `allocUnsafeSlow`: never from Buffer's shared pool, so what is handed back is the caller's and nothing else's.
+          const buffer = Buffer.allocUnsafeSlow(length);
+          const { bytesRead } = await handle.read(buffer, 0, length, null);
+          return new Uint8Array(buffer.buffer, buffer.byteOffset, bytesRead);
+        },
+        async close() {
+          if (closed) return;
+          closed = true;
+          await handle.close();
+        },
+      };
+    },
+    /**
+     * Spool phase 1: the file written in slices, with its mode at the open.
+     * What is at the path is removed first, for the reason `write` removes
+     * it — a read-only file or a symlink there would refuse or redirect the
+     * bytes — and because `open(path, "w", mode)` is the creation's mode and
+     * says nothing about a file that is already there. The mode is then set
+     * on the open file, since the umask has a say in what `open` creates and
+     * none here; it can only widen what the umask narrowed, so the file is
+     * never briefly readable by more than `mode`.
+     */
+    async openWrite(path, mode) {
+      await mkdir(dirname(at(path)), { recursive: true });
+      await rm(at(path), { force: true });
+      const handle = await open(at(path), "w", mode);
+      let closed = false;
+      try {
+        await handle.chmod(mode);
+      } catch (error) {
+        await handle.close();
+        throw error;
+      }
+      return {
+        async append(bytes) {
+          // One `write` may take fewer bytes than it was given; the slice is not appended until all of it is.
+          let written = 0;
+          while (written < bytes.byteLength) {
+            const { bytesWritten } = await handle.write(bytes, written, bytes.byteLength - written);
+            written += bytesWritten;
+          }
+        },
+        async close() {
+          if (closed) return;
+          closed = true;
+          await handle.close();
+        },
+      };
     },
     async mkdir(path, mode) {
       await mkdir(at(path), { recursive: true });

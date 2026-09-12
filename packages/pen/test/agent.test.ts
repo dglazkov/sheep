@@ -45,9 +45,22 @@
  * sends and, on the put-back, reads off the agent's own `need`s. `/cache`
  * here is five chunks: a binary of random bytes gzip cannot shrink, and a
  * file of one letter it takes to nothing.
+ *
+ * Spool phase 1 adds the number the project is for, and reads it off the
+ * agent rather than off the code: a real `/cache` whose largest file is
+ * ninety-six chunks, described and put back through `nodeDisk`, with the
+ * agent child's resident set sampled throughout both. The highest sample is
+ * far below that file — about a third of it, and the same reading whatever
+ * the file's size, since what is allocated is a slice and a chunk over and
+ * over — where the shape before this project allocated the file itself, once
+ * to read it into the record and once to take it out. The sample is
+ * `ps -o rss=` on the child's pid, since this ring's host is the shepherd's
+ * laptop and has no `/proc`; `VmHWM` in `/proc/1/status` is the same number
+ * in the container, and journey 3's walks read it there.
  */
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { gunzipSync } from "node:zlib";
 import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
@@ -66,6 +79,45 @@ function exited(child: ChildProcess): Promise<number | null> {
 
 function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+/** One file's bytes hashed without holding them: the file may be hundreds of megabytes, and this process is not the one under test. */
+async function hashOf(path: string): Promise<string> {
+  const hash = createHash("sha256");
+  for await (const slice of createReadStream(path)) hash.update(slice as Buffer);
+  return hash.digest("hex");
+}
+
+/**
+ * Spool phase 1: a process's resident set while it works, polled on its pid
+ * until `stop`. `ps -o rss=` says KiB on this host and on Linux, and it is
+ * what the ring has: the laptop has no `/proc`, where the container reads
+ * `VmHWM` instead. `peak` is the highest sample in bytes, and `samples` says
+ * how many were taken, so a window that caught nothing cannot pass for a low
+ * peak.
+ */
+function resident(pid: number, everyMs = 20): { stop: () => Promise<{ peak: number; samples: number }> } {
+  let peak = 0;
+  let samples = 0;
+  let going = true;
+  const polled = (async () => {
+    while (going) {
+      const said = spawnSync("ps", ["-o", "rss=", "-p", String(pid)], { encoding: "utf8" });
+      const kib = Number(said.stdout.trim());
+      if (Number.isFinite(kib) && kib > 0) {
+        samples++;
+        if (kib > peak) peak = kib;
+      }
+      await new Promise((resolve) => setTimeout(resolve, everyMs));
+    }
+  })();
+  return {
+    async stop() {
+      going = false;
+      await polled;
+      return { peak: peak * 1024, samples };
+    },
+  };
 }
 
 /** Messages from the agent, in order: frames decoded, bytes as they are. */
@@ -681,6 +733,174 @@ describe("pen-agent, the process", () => {
     expect(stderr.join("")).toBe("");
     await new Promise<void>((resolve) => server.close(() => resolve()));
     // The first container's `/cache` still has its `0555` directory; the owner may write it again before it goes.
+    for (const path of made) {
+      spawnSync("chmod", ["-R", "u+w", path]);
+      await rm(path, { recursive: true, force: true });
+    }
+  });
+
+  it("spool phase 1: passes a file of ninety-six chunks through a real disk, and the agent's resident set never follows it", { timeout: 300_000 }, async () => {
+    /**
+     * The largest file: 96 chunks, and the record with it still inside `CACHE_MAX_BYTES`, so this is a cache a pasture could
+     * keep. It is this large because the peak is the thing being measured: the agent's own working set while it cuts chunks
+     * is a couple of hundred MiB whatever the file, and "far below the largest file" is only a fact if the file is well
+     * above that. Its bytes are NULs, which gzip takes to nothing: what the agent holds does not depend on how they deflate,
+     * and making the bytes random here would cost the test a minute and this process 800 MiB to hold what it sends back.
+     */
+    const big = 768 * 1024 * 1024;
+    /** A second file gzip cannot shrink, so deflating a chunk of noise is in the peak too, as it is in the walk's. */
+    const noise = 12 * 1024 * 1024;
+    /**
+     * What the peak may be above the baseline it started from: measured over four runs at 161 to 172 MiB saving and 105 to
+     * 107 MiB putting back on the laptop, and flat — the same work on a 128 MiB file, a 256 MiB one, and a 1 GiB one settles
+     * at the same resident set, because what is allocated is a slice and a chunk over and over and never a file. Without the
+     * handles the same two readings are 1819 MiB and 895 MiB above their baselines: the file itself, and the garbage of
+     * having held it. So the bound is loose enough for a laptop under load and two hundred MiB away from the mutation.
+     */
+    const near = 256 * 1024 * 1024;
+
+    const server = new WebSocketServer({ port: 0 });
+    const port = (server.address() as { port: number }).port;
+    const made: string[] = [];
+    const dir = async (prefix: string) => {
+      const path = await mkdtemp(join(tmpdir(), prefix));
+      made.push(path);
+      return path;
+    };
+    const stderr: string[] = [];
+    const container = async (): Promise<{ socket: WebSocket; next: () => Promise<Frame | Uint8Array>; child: ChildProcess; cache: string }> => {
+      const [workspace, home, cache, tmp] = [await dir("pen-ws-"), await dir("pen-home-"), await dir("pen-cache-"), await dir("pen-tmp-")];
+      const connection = new Promise<WebSocket>((resolve) => server.once("connection", (socket) => resolve(socket)));
+      const child = spawn(process.execPath, [entry], {
+        env: {
+          ...process.env,
+          [CELL_URL_ENV]: `ws://127.0.0.1:${port}/pen`,
+          [TOKEN_ENV]: "minted",
+          PEN_WORKSPACE: workspace,
+          PEN_HOME: home,
+          PEN_CACHE: cache,
+          HOME: home,
+          TMPDIR: tmp,
+          NPM_CONFIG_PREFIX: cache,
+          PATH: `${cache}/bin:${process.env.PATH ?? ""}`,
+        },
+        stdio: ["ignore", "ignore", "pipe"],
+      });
+      child.stderr!.on("data", (chunk: Buffer) => stderr.push(chunk.toString()));
+      const socket = await connection;
+      return { socket, next: inbox(socket), child, cache };
+    };
+
+    // The first container: a real bash writes `/cache`, as setup would.
+    const first = await container();
+    const born = await resident(first.child.pid!).stop();
+    first.socket.send(encodeFrame({ type: "manifest", id: "in-0", entries: [] }));
+    expect(await first.next()).toEqual({ type: "need", id: "in-0", hashes: [] });
+    expect(await first.next()).toEqual({ type: "checkout", id: "in-0" });
+    const install = [
+      "set -e",
+      "umask 022",
+      'mkdir -p "$NPM_CONFIG_PREFIX/bin" "$NPM_CONFIG_PREFIX/lib"',
+      "printf '#!/bin/sh\\necho tool 1.0\\n' > \"$NPM_CONFIG_PREFIX/bin/tool\"",
+      'chmod 755 "$NPM_CONFIG_PREFIX/bin/tool"',
+      `head -c ${noise} /dev/urandom > "$NPM_CONFIG_PREFIX/lib/noise.bin"`,
+      `head -c ${big} /dev/zero > "$NPM_CONFIG_PREFIX/lib/big.bin"`,
+      // A mode of its own, so the put-back's mode is read off a file the umask would not have made.
+      'chmod 640 "$NPM_CONFIG_PREFIX/lib/big.bin"',
+      "tool",
+    ].join("\n");
+    first.socket.send(encodeFrame({ type: "run", id: "setup", command: install, cwd: "/workspace", env: {} }));
+    expect(await first.next()).toEqual({ type: "stdout", id: "setup", data: "tool 1.0\n" });
+    expect(await first.next()).toEqual({ type: "exit", id: "setup", code: 0 });
+    expect(await first.next()).toEqual({ type: "changed", id: "setup", entries: [], deleted: [] });
+    first.socket.send(encodeFrame({ type: "need", id: "setup", hashes: [] }));
+    first.socket.send(encodeFrame({ type: "synced", id: "setup", refused: [] }));
+    expect((await lstat(join(first.cache, "lib/big.bin"))).size).toBe(big);
+    const before = { big: await hashOf(join(first.cache, "lib/big.bin")), noise: await hashOf(join(first.cache, "lib/noise.bin")) };
+
+    // The save, with the child's resident set polled from the frame that asks for it to the one that lets the scratch go.
+    const idle = await resident(first.child.pid!).stop();
+    const saving = resident(first.child.pid!);
+    first.socket.send(encodeFrame({ type: "cache", id: "save" }));
+    const described = (await first.next()) as { type: string; id: string; hash: string; chunks: string[]; files: number; bytes: number };
+    expect(described).toMatchObject({ type: "cache", id: "save", files: 3 });
+    expect(described.bytes).toBeGreaterThan(big + noise);
+    expect(described.chunks.length).toBeGreaterThan(big / (8 * 1024 * 1024));
+    /** The chunks as they travel, deflated, by the hash of their plain bytes. */
+    const chunks = new Map<string, Uint8Array>();
+    for (let at = 0; at < described.chunks.length; at += CACHE_NEED_CHUNKS) {
+      const asked = described.chunks.slice(at, at + CACHE_NEED_CHUNKS);
+      first.socket.send(encodeFrame({ type: "need", id: "save", hashes: asked }));
+      for (const hash of asked) {
+        const announced = (await first.next()) as { type: string; hash: string; size: number };
+        expect(announced).toMatchObject({ type: "blob", hash });
+        const bytes = (await first.next()) as Uint8Array;
+        expect(bytes.byteLength).toBe(announced.size);
+        chunks.set(hash, bytes);
+      }
+    }
+    first.socket.send(encodeFrame({ type: "synced", id: "save", refused: [] }));
+    first.socket.send(encodeFrame({ type: "ping", id: "after-save" }));
+    expect(await first.next()).toEqual({ type: "pong", id: "after-save" });
+    const save = await saving.stop();
+    first.socket.close(1000, "the container is forgotten");
+    expect(await exited(first.child)).toBe(0);
+
+    // A fresh container with empty disks: the same record put back, three chunks per `need`, polled the same way.
+    const fresh = await container();
+    const settled = await resident(fresh.child.pid!).stop();
+    const putting = resident(fresh.child.pid!);
+    const ref = { hash: described.hash, chunks: described.chunks };
+    fresh.socket.send(encodeFrame({ type: "manifest", id: "in-1", entries: [], cache: ref }));
+    expect(await fresh.next()).toEqual({ type: "need", id: "in-1", hashes: [] });
+    for (let at = 0; at < described.chunks.length; at += CACHE_NEED_CHUNKS) {
+      const asked = described.chunks.slice(at, at + CACHE_NEED_CHUNKS);
+      expect(await fresh.next()).toEqual({ type: "need", id: "in-1", hashes: asked });
+      for (const hash of asked) {
+        const bytes = chunks.get(hash)!;
+        fresh.socket.send(encodeFrame({ type: "blob", hash, size: bytes.byteLength }));
+        fresh.socket.send(bytes);
+      }
+    }
+    expect(await fresh.next()).toEqual({ type: "checkout", id: "in-1" });
+    const putBack = await putting.stop();
+
+    // Its bytes and its mode, right afterwards: the same file, whole, and not the umask's mode.
+    expect((await lstat(join(fresh.cache, "lib/big.bin"))).size).toBe(big);
+    expect((await lstat(join(fresh.cache, "lib/big.bin"))).mode & 0o7777).toBe(0o640);
+    expect(await hashOf(join(fresh.cache, "lib/big.bin"))).toBe(before.big);
+    expect(await hashOf(join(fresh.cache, "lib/noise.bin"))).toBe(before.noise);
+    expect((await lstat(join(fresh.cache, "bin/tool"))).mode & 0o7777).toBe(0o755);
+    fresh.socket.send(encodeFrame({ type: "run", id: "warm", command: "tool", cwd: "/workspace", env: {} }));
+    expect(await fresh.next()).toEqual({ type: "stdout", id: "warm", data: "tool 1.0\n" });
+    expect(await fresh.next()).toEqual({ type: "exit", id: "warm", code: 0 });
+    expect(await fresh.next()).toEqual({ type: "changed", id: "warm", entries: [], deleted: [] });
+    fresh.socket.send(encodeFrame({ type: "need", id: "warm", hashes: [] }));
+    fresh.socket.send(encodeFrame({ type: "synced", id: "warm", refused: [] }));
+
+    // The number the phase is for, on both sides of the record.
+    const mib = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(0)} MiB`;
+    // Written rather than logged: vitest keeps a passing case's `console.log` to itself, and this line is the phase's result.
+    process.stdout.write(
+      `  spool: largest file ${mib(big)}, record ${mib(described.bytes)} in ${described.chunks.length} chunks; the agent at ${mib(born.peak)} newly connected; peak ${mib(save.peak)} saving (from ${mib(idle.peak)}, ${save.samples} samples), ${mib(putBack.peak)} putting back (from ${mib(settled.peak)}, ${putBack.samples} samples)\n`,
+    );
+    for (const [what, sampled, from] of [
+      ["the save", save, idle],
+      ["the put-back", putBack, settled],
+    ] as const) {
+      // A window that sampled nothing would be a peak of zero and no proof at all.
+      expect(sampled.samples).toBeGreaterThan(10);
+      expect(from.peak).toBeGreaterThan(0);
+      // The one rule: the peak does not follow the largest file. Half of it is a wide margin around a number that is a fifth.
+      expect({ what, peak: sampled.peak < big / 2 }).toEqual({ what, peak: true });
+      // And it is the baseline plus a few chunks, which is what "does not follow" means when the file is this much larger.
+      expect({ what, near: sampled.peak - from.peak < near }).toEqual({ what, near: true });
+    }
+
+    fresh.socket.close(1000, "cell done");
+    expect(await exited(fresh.child)).toBe(0);
+    expect(stderr.join("")).toBe("");
+    await new Promise<void>((resolve) => server.close(() => resolve()));
     for (const path of made) {
       spawnSync("chmod", ["-R", "u+w", path]);
       await rm(path, { recursive: true, force: true });
