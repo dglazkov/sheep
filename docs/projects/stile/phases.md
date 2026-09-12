@@ -24,24 +24,17 @@ tool, has built a facade.
 
 ---
 
-**Where we are: stile phase 0 is CLOSED, phases 1 and 2 PART-DONE, 12
-September 2026.** The next thing to do is **stile phase 2**, re-cut: the
-join by a KV store per station instead of a Worker secret, since a secret
-put restarts running turns (issue #10). Stile phase 1 waits on issue #9, the screen
-the shepherd's walk found bare; the package, dog,
-and ⚑ account rings all hold on release `b227c2d`, run with the
-checkout's keys at the shepherd's word, and `sheep-2` is upgraded to it.
-
-Both phases are green in the inner rings. Stile phase 0 is the dog's half:
-`credentials.ts`, deploy and delete reading what the machine keeps, `Stop`
-in two parts, the key left when the Worker holds one, the midway message,
-and setup making no kennel where a home is reachable; its walk upgraded
-`sheep-2` from the release with an empty environment, nothing asked. Stile
-phase 1 is the stile: the flow, the screen over pi-tui, the words, the
-fence and its guard, the two halves of the README, and the ring steps,
-all of which have run. Two ⚑ steps in the project, both the account
-ring's: `t1` in stile phase 1 and `t2` in stile phase 2, each a station
-deployed and deleted on the shepherd's account.
+**Where we are: stile phases 0 and 2 are CLOSED and phase 1 PART-DONE, 12
+September 2026.** The next thing to do is **stile phase 1**'s screen, issue
+#9, which the shepherd's walk found bare and confusing and chose to keep
+out of this project; every other proof of every phase has held. Stile
+phase 0 gave the dog what the shepherd keeps: `~/.sheep/credentials`,
+deploy and delete reading it, the stop in two parts, and `sheep-2`
+upgraded with nothing in the environment. Stile phase 1 gave the
+shepherd the stile, green in every ring on the real account. Stile phase
+2 gave a second machine the join, by a KV store per station after a
+secret put proved to restart running turns (issue #10), walked on
+`sheep-2` and held in the account ring. No ⚑ step is left.
 
 The order is dependency order. Phase 0 is the mechanism under the flow,
 provable against the fakes with nothing on a screen, so the stile in
@@ -277,12 +270,11 @@ container minutes. Then the walk, journey 3 steps 1 to 3: this laptop
 joining `sheep-2` from a scratch kennel under a fresh `HOME`, after
 `sheep-2` is upgraded to carry the binding.
 
-**Status: PART-DONE, 12 September 2026.** Re-cut to the KV store and green
-in the inner rings: `pnpm test`, `pnpm -r typecheck`, and `pnpm bundle`
-exit 0, and both named mutations falsified their tests — `/join`
-answering a bearer whose key is absent fails three workerd cases, and the
-join key left in the store fails three of journey 3's. The join walked on
-`sheep-2` with no version change; the ⚑ account ring's `t2` is Open.
+**Status: CLOSED, 12 September 2026.** The join on a KV store holds: the
+inner rings, typecheck, and bundle exit 0 and both mutations falsified;
+the ⚑ account ring held 51 lines, `a7` the stile joining from a container
+and `t2` a turn across the join ending whole; journey 3 walked from this
+laptop to `sheep-2`, whose Worker version the join left unchanged.
 
 **Findings:**
 
@@ -306,8 +298,10 @@ join key left in the store fails three of journey 3's. The join walked on
 - **2026-09-12 — `t2` stalled on `a3`'s container sheep, not the join.**
   Fresh sheep held 240 s turns idle, polled, and right after a redeploy;
   `t2` now mints its own. The container case is a lead on issue #10.
-- **2026-09-12 — Open: the ⚑ account ring's `t2` on a fresh sheep.** It
-  runs against release `0885ad0` with the checkout's ring.
+- **2026-09-12 — The account ring held with `t2` on its own sheep.** 51
+  lines on release `0885ad0`: the turn started before the join ran
+  across it and ended whole, the store held no join key, and a6 counted
+  16 sheep minted and 16 ended.
 
 **Formerly: the join by a Worker secret (built 12 Sep 2026, commit
 6e64cb9).** The join token was put as `SHEEP_JOIN` with `wrangler secret
