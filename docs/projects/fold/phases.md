@@ -176,7 +176,7 @@ kept; every chunk sent for the first `need`. **⚑** none.
 - **2026-09-11 — A save claims every chunk it names, present ones too;** a commit deletes only what no kept save names and no claim under an hour holds, and refuses if a named chunk is gone.
 - **2026-09-11 — An empty `/cache` is not kept,** and a save is refused when `setup.sh` changed after a cache was put back into that container.
 - **2026-09-11 — Mutations:** the key ignored fails three cases, an earmarked cache kept one (rerun by the conductor), every chunk on the first `need` two. Under the last the restore still landed whole: only the frame list catches it. Put back.
-- **2026-09-11 — Open: the record's writer and reader hold a whole file in memory,** since `Disk` has no append or ranged read; a binary of hundreds of MB, once on each side, against the instance's 1 GiB. Fold phase 2's walk with wrangler's `workerd` measures it.
+- **2026-09-11 — Open: the record's writer and reader hold a whole file in memory,** since `Disk` has no append or ranged read; a binary of hundreds of MB, once on each side, against the instance's 1 GiB. Fold phase 2's walk with wrangler's `workerd` measures it. Paid by spool phase 1.
 - **2026-09-11 — Open: the inner rings time out under load.** The first full run failed `deploy.test.ts`'s retry and journey 5 on timeouts, the CLI ring taking 767 s; the rerun took 72 s and passed. Beside phase 0's `flock.test.ts`.
 
 ## Phase 2: The image, the verbs, and the walk
@@ -241,7 +241,7 @@ deploy; no token beyond the Cloudflare one.
 - **2026-09-11 — `ws` is pen's second dependency (8.21.0), offering no `Sec-WebSocket-Extensions`,** and an untouched warm cache is never re-described: a fresh container left the row's `by` and `keptAt` alone.
 - **2026-09-11 — The scratch is made before the dial:** `mkdtemp` between it and `serveAgent` could drop a manifest, and hung the process test once.
 - **2026-09-11 — Open: two tier-2 commands in one turn collide on the checkout's one sync** (pen phase 1's rule); the collision re-saved an identical record, moving the row's `by`. Pen's to fix.
-- **2026-09-11 — Open: the agent peaks at 512 MiB on a cold save,** holding one whole file; wrangler fits the instance's 1 GiB and a larger binary would not.
+- **2026-09-11 — Open: the agent peaks at 512 MiB on a cold save,** holding one whole file; wrangler fits the instance's 1 GiB and a larger binary would not. Paid by spool phase 1: 227 MiB on a 640 MiB file.
 - **2026-09-11 — The account ring is green on release 76809e8, `ok f1` among its steps:** the station kept wrangler's 239 MB cold, put it back for a second sheep, and named it; 11 sheep minted and ended, the station deleted.
 - **2026-09-11 — Open: on the station the put-back is 31.3 s against a 38.9 s cold install,** 239 MB at about 7.6 MB/s where the laptop takes 1.8 s. Journey 3 calls that a finding against the design, not a pass; fold phase 3 answers it.
 
