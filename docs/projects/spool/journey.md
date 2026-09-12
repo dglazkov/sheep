@@ -45,9 +45,11 @@ than the agent could hold beside its own baseline.
    `sheep pasture <p>` names it.
 2. A second sheep's birth finds it warm: the cache is put back, setup
    finds the tool, and the tool runs in the turn.
-3. The agent's peak, in both containers, is near its baseline plus a
-   chunk, and nowhere near the largest file. The largest file is whole
-   and right on the disk afterwards: its bytes hash as they did before.
+3. The agent's peak, in both containers, is a constant: some way above
+   its baseline, the same however large the tool, and nowhere near the
+   largest file. What makes it is the slice, the chunk, and what gzip
+   churns — never a file. The largest file is whole and right on the
+   disk afterwards: its bytes hash as they did before.
 4. A file's mode and its hard links survive as they did in fold: an
    executable is executable, and a file with two names is one file.
 
