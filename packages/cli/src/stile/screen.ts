@@ -218,7 +218,7 @@ class Sheet implements Component {
       // rather than cut, since a path or the sentence to say is no use with its end missing.
       const said = this.progress.get(step) ?? [];
       const last = this.finished && step === "next";
-      const text = last ? (said[0] ?? "") : at === reached ? this.cursorText() : at < reached ? (this.lines.get(step) ?? "") : "";
+      const text = last ? (said[0] ?? "") : at === reached ? this.cursorText(this.room(step, width)) : at < reached ? (this.lines.get(step) ?? "") : "";
       out.push(this.row(mark, step, text, at === reached, width));
       // The words are the cursor's alone: a done step is one line, what it settled on, whether or not its words were open.
       if (at === reached && this.open.has(step)) for (const line of wordsAt(step, width)) out.push(line);
@@ -230,13 +230,35 @@ class Sheet implements Component {
     return out;
   }
 
-  /** The cursor row's text: its prompt, its options, or what it last said while it works. */
-  private cursorText(): string {
+  /** How many columns the cursor row has for its text, between the step's name and the hint. */
+  private room(step: StepName, width: number): number {
+    const hint = this.open.has(step) ? HINT_CLOSE : HINT_OPEN;
+    return Math.max(0, width - `${GUTTER}${MARKS.cursor} ${step.padEnd(NAME_WIDTH)}${GUTTER}`.length - hint.length - 5);
+  }
+
+  /**
+   * The cursor row's text: its prompt, its options, or what it last said
+   * while it works. Options that do not fit (a station step on an account
+   * with several sheep homes, stile phase 2) are a window that always holds
+   * the selected one, with `…` on the side where more are, so an arrow key
+   * never moves the selection out of sight.
+   */
+  private cursorText(room: number): string {
     const waiting = this.waiting;
     // Working, with nothing asked: the row is the step's name alone, and what it says is under it.
     if (waiting === undefined) return "";
     if (waiting.kind === "ask") return `${waiting.prompt}: ${waiting.hidden ? hiddenShown(waiting.buffer.length) : waiting.buffer}`;
-    return waiting.options.map((option, index) => (index === waiting.at ? `[${option.label}]` : option.label)).join("  ·  ");
+    const labels = waiting.options.map((option, index) => (index === waiting.at ? `[${option.label}]` : option.label));
+    const shown = (first: number, last: number) => `${first > 0 ? "…  " : ""}${labels.slice(first, last + 1).join("  ·  ")}${last < labels.length - 1 ? "  …" : ""}`;
+    if (shown(0, labels.length - 1).length <= room) return shown(0, labels.length - 1);
+    let first = waiting.at;
+    let last = waiting.at;
+    for (;;) {
+      if (last < labels.length - 1 && shown(first, last + 1).length <= room) last++;
+      else if (first > 0 && shown(first - 1, last).length <= room) first--;
+      else break;
+    }
+    return shown(first, last);
   }
 
   private row(mark: string, step: StepName, text: string, isCursor: boolean, width: number): string {

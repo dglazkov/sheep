@@ -13,8 +13,11 @@
  * read after every keystroke, a Free account held at `plan` until the
  * fake account is put on Workers Paid, the deploy, the key put after it,
  * the credentials file mode 600, and the count — with a frame snapshot at
- * every step. The frames are written out by hand below, from the
- * design's mock, and are not recorded from a run: a snapshot that is
+ * every step. Journey 3 is walked the same way (stile phase 2): the
+ * station step listing the account's sheep homes, the join chosen with an
+ * arrow and Enter, the join's put, asks, and delete read back from the fake
+ * wrangler's log and the fake station's, and `key` asking nothing. The
+ * frames are written out by hand below, from the design's mock, and are not recorded from a run: a snapshot that is
  * whatever the code printed cannot fail.
  *
  * Every world is its own `HOME`, a temporary directory: the machine this
@@ -25,7 +28,7 @@ import { spawn } from "node:child_process";
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { hiddenShown, wordsAt } from "../src/stile/screen.js";
 import { STEPS, THINGS, WORDS } from "../src/stile/words.js";
@@ -58,7 +61,7 @@ interface World {
   /** The command in `blog` with no terminal at all: stdin and stdout pipes, and the seam unset. */
   piped: (args: string[]) => Promise<Result>;
   keep: (values: Record<string, string>) => Promise<void>;
-  wrangler: () => { args: string[]; stdin: string; env: { tokenInArgs: boolean } }[];
+  wrangler: () => { args: string[]; stdin: string; env: { token: boolean; tokenInArgs: boolean } }[];
   close: () => Promise<void>;
 }
 
@@ -67,7 +70,7 @@ afterAll(async () => {
   for (const world of worlds) await world.close();
 });
 
-async function world(state: FakeState = fresh(), options: { linkedHome?: boolean } = {}): Promise<World> {
+async function world(state: FakeState = fresh(), options: { linkedHome?: boolean; station?: Partial<StationState>; env?: Record<string, string> } = {}): Promise<World> {
   const root = realpathSync(await mkdtemp(join(tmpdir(), "sheep-stile-")));
   // A HOME reached through a symlink, as macOS's /var is: HOME names the link, and the working directory is a real path.
   const home = options.linkedHome === true ? `${root}-link` : root;
@@ -77,18 +80,24 @@ async function world(state: FakeState = fresh(), options: { linkedHome?: boolean
   const blog = join(root, "blog");
   await mkdir(blog, { recursive: true });
   const account = await fakeAccount(state);
-  const stationState: StationState = { token: "t".repeat(48), sessions: [], pastures: [] };
+  const stationState: StationState = { token: "t".repeat(48), sessions: [], pastures: [], account: state, ...options.station };
   const station = await fakeStation([], stationState);
   const log = join(logs, "wrangler.log");
+  // No `sheep` of this machine's on PATH: the command step reads a checkout, whatever the machine running this has installed.
+  // Node's own directory is not enough, since a version manager installs a global `sheep` beside `node`; so PATH's first
+  // directory holds `node` alone.
+  const nodeOnly = join(logs, "bin");
+  await mkdir(nodeOnly);
+  await symlink(process.execPath, join(nodeOnly, "node"));
   const env = (): Record<string, string | undefined> => ({
-    // No `sheep` of this machine's on PATH: the command step reads a checkout, whatever the machine running this has installed.
-    PATH: `${dirname(process.execPath)}:/usr/bin:/bin`,
+    PATH: `${nodeOnly}:/usr/bin:/bin`,
     HOME: home,
     NODE_NO_WARNINGS: "1",
     SHEEP_TEST_ACCOUNT_API: account.url,
     SHEEP_TEST_WRANGLER: fakeWrangler,
     SHEEP_TEST_WRANGLER_LOG: log,
     SHEEP_TEST_STATION_URL: station.url,
+    ...options.env,
   });
   const made: World = {
     root,
@@ -390,6 +399,186 @@ describe("the stile: journey 1, the first sitting", () => {
     await run.exited;
     expect(JSON.parse(readFileSync(join(w.root, ".sheep", "credentials"), "utf8"))).toEqual({ cloudflare: TOKEN });
     expect(run.leaks()).toEqual([]);
+  });
+});
+
+/** The home's own token on the fake station a join finds: made of no word on any screen, and sharing no run of eight with either fake value. */
+const STATION_TOKEN = "hT3wQ8zK5nV1pR7mX2cL9bJ4fD6gS0yA";
+
+/** A second laptop's world: the account already has `sheep`, deployed from the first, with its secrets, and the fake station is that Worker. */
+async function secondLaptop(options: { env?: Record<string, string>; joinLag?: number; worker?: string } = {}) {
+  const state = fresh();
+  const worker = options.worker ?? "sheep";
+  if (!state.workers.includes(worker)) state.workers.push(worker);
+  state.secrets[worker] = ["SHEEP_TOKEN", "SHEEP_ANTHROPIC_API_KEY", "PEN_CELL_ORIGIN"];
+  const log: NonNullable<StationState["log"]> = [];
+  const w = await world(state, { station: { token: STATION_TOKEN, worker, joinLag: options.joinLag ?? 1, log }, env: options.env });
+  return { w, log };
+}
+
+/** The join token, as the put carried it on wrangler's stdin: the one place the test can learn it. */
+const joinTokenOf = (w: World): string => {
+  const put = w.wrangler().find((call) => call.args.slice(0, 3).join(" ") === "secret put SHEEP_JOIN");
+  expect(put, "a secret put SHEEP_JOIN in the wrangler log").toBeDefined();
+  return put!.stdin.replace(/\n$/, "");
+};
+
+describe("the stile: journey 3, the second laptop", () => {
+  it("lists the account's sheep homes after new, joins sheep with the join token alone, keeps the home's token, deletes the join secret, and asks no key", { timeout: 120_000 }, async () => {
+    const { w, log } = await secondLaptop();
+    const run = w.stile([], [STATION_TOKEN]);
+    await run.waitFor("› where");
+    await run.press(ENTER);
+    await run.waitFor("› account");
+    // account asks for the token, since this machine has never held one, and keeps it.
+    await typeHidden(run, "Cloudflare API token", TOKEN);
+    await run.press(ENTER);
+
+    // station lists what the account already has: new sheep-2 first, then sheep, found because it answers as a sheep home.
+    // learner and sheep-pen are Workers on the account too, and answer as something else.
+    expect(await run.waitFor("› station")).toBe(
+      frame(
+        "  ✓ command   sheep 0.0.0-checkout, from a checkout",
+        "  ✓ where     everywhere on this machine",
+        "  ✓ account   Fake's Account",
+        "  ✓ plan      Workers Paid, 5 USD a month",
+        cursor("station", "[new sheep-2]  ·  join sheep"),
+        "    key",
+        "    next",
+      ),
+    );
+    // The listing asked every Worker on the account at its address, with no bearer, and nothing else yet.
+    expect(log.map((entry) => `${entry.method} ${entry.path} ${entry.auth ?? "(no bearer)"}`).sort()).toEqual(["GET / (no bearer)", "GET / (no bearer)", "GET / (no bearer)"]);
+    expect(w.wrangler()).toEqual([]);
+    await run.press(DOWN);
+    expect(run.frame()).toContain(`${cursor("station", "new sheep-2  ·  [join sheep]")}\n`);
+    await run.press(ENTER);
+
+    const exit = await run.exited;
+    expect(exit).toEqual({ code: 0, stderr: "" });
+    // After the join the Worker has no SHEEP_JOIN, which is what the account ring reads from the account: not in the
+    // account's listing of the Worker's secrets, and not in the env the Worker is handed.
+    expect(w.state.secrets.sheep).toEqual(["SHEEP_TOKEN", "SHEEP_ANTHROPIC_API_KEY", "PEN_CELL_ORIGIN"]);
+    expect(w.state.env.sheep?.SHEEP_JOIN).toBeUndefined();
+    // The sentence the command prints after the screen stops, taken by the emulator before the buffer is read.
+    await run.waitFor((text) => text.endsWith("\n\nsheep is set up on this machine; run `sheep --agent-help` and herd."), { whole: true, timeoutMs: 5_000 });
+    expect(run.buffer()).toBe(
+      `${frame(
+        "  ✓ command   sheep 0.0.0-checkout, from a checkout",
+        "  ✓ where     everywhere on this machine",
+        "  ✓ account   Fake's Account",
+        "  ✓ plan      Workers Paid, 5 USD a month",
+        "  ✓ station   https://sheep.fake.workers.dev, joined",
+        "  ✓ key       the station holds its own; nothing asked",
+        "  ✓ next      home: https://sheep.fake.workers.dev",
+        "              credentials: ~/.sheep/credentials",
+        "              config: ~/.sheep/config",
+        "              say to your agent: sheep is set up on this machine; run `sheep",
+        "              --agent-help` and herd.",
+      )}\n\nsheep is set up on this machine; run \`sheep --agent-help\` and herd.`,
+    );
+    // key asked nothing: one prompt in the whole sitting, the token's.
+    expect(run.output()).not.toContain("API key:");
+    expect(new Set(run.output().match(/(Cloudflare API token|Anthropic API key):/g) ?? [])).toEqual(new Set(["Cloudflare API token:"]));
+
+    // The join's wrangler calls, in order: the put, then the delete, and nothing deployed; the join token on the put's
+    // stdin and in no argument, and the account token in wrangler's environment and in no argument.
+    const calls = w.wrangler();
+    expect(calls.map((call) => call.args.slice(0, 3).join(" "))).toEqual(["secret put SHEEP_JOIN", "secret delete SHEEP_JOIN"]);
+    const joinToken = joinTokenOf(w);
+    expect(joinToken).toMatch(/^[0-9a-f]{48}$/);
+    for (const call of calls) {
+      expect(call.env.token).toBe(true);
+      expect(call.env.tokenInArgs).toBe(false);
+      expect(call.args.some((arg) => arg.includes(joinToken) || arg.includes(TOKEN) || arg.includes(STATION_TOKEN))).toBe(false);
+    }
+    expect(calls[1]!.stdin).toBe("");
+
+    // The poll, between them: every POST /join came while SHEEP_JOIN was on the Worker, the first answered 404 as the
+    // version before the put does, and the last answered the token.
+    const joins = log.filter((entry) => entry.path === "/join");
+    expect(joins.length).toBe(2);
+    expect(joins.map((entry) => [entry.method, entry.joinSet, entry.status])).toEqual([
+      ["POST", true, 404],
+      ["POST", true, 200],
+    ]);
+    // The account token never reaches the home: the fake station's log holds the join token alone as a bearer, never the
+    // account token and never the home's own.
+    const bearers = new Set(log.map((entry) => entry.auth).filter((auth) => auth !== undefined));
+    expect([...bearers]).toEqual([`Bearer ${joinToken}`]);
+
+    // The config: the address and the home's token, no name, no local marker, mode 600, in ~/.sheep where `where` said.
+    const configPath = `${w.root}/.sheep/config`;
+    expect(JSON.parse(readFileSync(configPath, "utf8"))).toEqual({ home: "https://sheep.fake.workers.dev", token: STATION_TOKEN });
+    expect(statSync(configPath).mode & 0o777).toBe(0o600);
+    // The credentials: the account token, and no key, since none was asked.
+    const credentials = `${w.root}/.sheep/credentials`;
+    expect(JSON.parse(readFileSync(credentials, "utf8"))).toEqual({ cloudflare: TOKEN });
+
+    // Nothing that crossed: the join token on no screen and in no file; the home's token in the config alone; the account
+    // token in the credentials alone.
+    expect(run.leaks()).toEqual([]);
+    for (const piece of runsOf(joinToken)) {
+      expect(run.buffer().includes(piece), "the join token on the screen").toBe(false);
+      expect(run.output().includes(piece), "the join token in the output").toBe(false);
+    }
+    for (const path of filesUnder(w.root)) {
+      const text = readFileSync(path, "latin1");
+      expect(runsOf(joinToken).some((piece) => text.includes(piece)), `${path} holds the join token`).toBe(false);
+      if (path !== configPath) expect(runsOf(STATION_TOKEN).some((piece) => text.includes(piece)), `${path} holds the home's token`).toBe(false);
+      if (path !== credentials) expect(runsOf(TOKEN).some((piece) => text.includes(piece)), `${path} holds the account token`).toBe(false);
+    }
+  });
+
+  it("keeps the selected station in sight when the options are wider than the row: a window with … where more are", { timeout: 60_000 }, async () => {
+    const long = "sheep-hermetic-0123456-a-long-station-name";
+    const { w } = await secondLaptop({ worker: long });
+    await w.keep({ cloudflare: TOKEN });
+    const run = w.stile();
+    await run.waitFor("› where");
+    await run.press(ENTER);
+    expect(await run.waitFor("› station")).toContain(`${cursor("station", "[new sheep-2]  …")}\n`);
+    await run.press(DOWN);
+    expect(run.frame()).toContain(`${cursor("station", `…  [join ${long}]`)}\n`);
+    await run.press(ENTER);
+    expect((await run.exited).code).toBe(0);
+    expect(JSON.parse(readFileSync(`${w.root}/.sheep/config`, "utf8"))).toEqual({ home: `https://${long}.fake.workers.dev`, token: STATION_TOKEN });
+  });
+
+  it("deletes the join secret when the home never answers the join, keeps nothing, and says so", { timeout: 60_000 }, async () => {
+    const { w, log } = await secondLaptop({ joinLag: 1_000, env: { SHEEP_TEST_RETRY_MS: "5" } });
+    await w.keep({ cloudflare: TOKEN });
+    const run = w.stile();
+    await run.waitFor("› where");
+    await run.press(ENTER);
+    await run.waitFor("› station");
+    await run.press(DOWN);
+    await run.press(ENTER);
+    const exit = await run.exited;
+    expect(exit.code).not.toBe(0);
+    expect(exit.stderr).toContain("did not answer the join");
+    expect(exit.stderr).toContain("nothing was kept");
+    expect(w.wrangler().map((call) => call.args.slice(0, 3).join(" "))).toEqual(["secret put SHEEP_JOIN", "secret delete SHEEP_JOIN"]);
+    expect(log.filter((entry) => entry.path === "/join").length).toBe(60);
+    expect(w.state.secrets.sheep).not.toContain("SHEEP_JOIN");
+    expect(w.state.env.sheep?.SHEEP_JOIN).toBeUndefined();
+    expect(existsSync(`${w.root}/.sheep/config`)).toBe(false);
+  });
+
+  it("names the join secret left on the Worker when its delete fails, after keeping what the home answered", { timeout: 60_000 }, async () => {
+    const { w } = await secondLaptop({ env: { SHEEP_TEST_WRANGLER_FAIL: "secret-delete:SHEEP_JOIN" } });
+    await w.keep({ cloudflare: TOKEN });
+    const run = w.stile();
+    await run.waitFor("› where");
+    await run.press(ENTER);
+    await run.waitFor("› station");
+    await run.press(DOWN);
+    await run.press(ENTER);
+    const exit = await run.exited;
+    expect(exit.code).not.toBe(0);
+    expect(exit.stderr).toContain("the join secret SHEEP_JOIN is still on sheep");
+    expect(exit.stderr).not.toContain(joinTokenOf(w));
+    expect(w.state.secrets.sheep).toContain("SHEEP_JOIN");
   });
 });
 

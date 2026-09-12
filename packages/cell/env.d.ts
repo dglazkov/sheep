@@ -16,6 +16,11 @@ declare namespace Cloudflare {
     BROWSER?: Fetcher;
     /** Bearer token every request must carry. */
     SHEEP_TOKEN?: string;
+    /**
+     * Stile phase 2: the join token, a secret put by a machine joining this home and deleted by it straight after.
+     * While it is set, `POST /join` with it as the bearer answers the home's own token; unset, the route is a 404.
+     */
+    SHEEP_JOIN?: string;
     /** "1" allows requests with no token, for local use only. */
     SHEEP_ALLOW_ANONYMOUS?: string;
     /** "faux" runs pi-ai's scripted provider instead of a real one. */

@@ -36,7 +36,8 @@ usage:
   sheep config                              print the resolved home and this directory's kennel (never the token)
   sheep setup [--explain] [--no-install]    at a terminal: the sitting that readies this machine, seven steps that fill
                                             in — the command, where the settings go, the Cloudflare account token, the
-                                            plan, the home deployed, the model key, and where it all is. The two values
+                                            plan, the home deployed (or, on a second machine, a home the account already
+                                            has, joined), the model key, and where it all is. The two values
                                             are typed at a hidden prompt, kept in ~/.sheep/credentials (mode 600), and
                                             asked for once; --explain opens every step's words. With no terminal, or
                                             with --json, it asks nothing and is the report an agent reads: the command on
@@ -59,10 +60,6 @@ usage:
                                             it, the config), then waits for the name typed at a terminal (one line of
                                             stdin without one; anything else is exit 2 with nothing deleted); deletes
                                             all of it and clears the config
-  sheep home join <address> [--json]        a second machine's way in: the station's token is one line of stdin, piped,
-                                            never an argument; the home is asked to answer as a sheep home and to take the
-                                            token, then this kennel's config names it; prints the address, both stamps,
-                                            and the image
   sheep home                                which kennel, which home the config names, its station's name once minted,
                                             which credentials are kept and where (never a value),
                                             whether it answers, and its build stamp beside this command's, with one line

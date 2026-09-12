@@ -90,6 +90,7 @@ export const RINGS = {
     "packages/cell/test/fold-home.test.ts",
     "packages/cell/test/forward.test.ts",
     "packages/cell/test/isolate.test.ts",
+    "packages/cell/test/join.test.ts",
     "packages/cell/test/lease.test.ts",
     "packages/cell/test/look-command.test.ts",
     "packages/cell/test/mint.test.ts",

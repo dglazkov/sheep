@@ -18,9 +18,9 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import { createWriteStream, existsSync, readFileSync, realpathSync } from "node:fs";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { hiddenShown } from "../src/stile/screen.js";
 import { bin } from "./local-home.js";
@@ -60,7 +60,11 @@ async function underPty(args: string[]): Promise<Pty & { home: string }> {
   await mkdir(cwd);
   const command = [process.execPath, bin, ...args];
   const scriptArgs = flavour === "util-linux" ? ["-q", "-e", "-c", command.map(quote).join(" "), "/dev/null"] : ["-q", "/dev/null", ...command];
-  const env = { PATH: `${dirname(process.execPath)}:/usr/bin:/bin`, HOME: home, TERM: "xterm-256color", NODE_NO_WARNINGS: "1" };
+  // PATH's node alone: a version manager puts a global `sheep` beside `node`, and this is the checkout's command, not that one.
+  const nodeOnly = await mkdtemp(join(tmpdir(), "sheep-stile-tty-bin-"));
+  homes.push(nodeOnly);
+  await symlink(process.execPath, join(nodeOnly, "node"));
+  const env = { PATH: `${nodeOnly}:/usr/bin:/bin`, HOME: home, TERM: "xterm-256color", NODE_NO_WARNINGS: "1" };
   // BSD `script` asks its stdin for the terminal's settings, and refuses a socket there ("tcgetattr/ioctl: Operation not
   // supported on socket"): a child's piped stdin is a socket under Node on macOS, and so is a FIFO on macOS. A shell's
   // own `|` is a pipe, so the keys go into a FIFO, `cat` copies them onto a real pipe, and `script` reads that. What the

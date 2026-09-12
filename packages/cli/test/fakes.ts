@@ -52,11 +52,16 @@ export interface FakeState {
   deploys: { name: string; container: string; image: string; vars: string[] }[];
   /** Each Worker's secret names, as the fake wrangler's `secret put` registers them: never a value, as the real API answers. */
   secrets: Record<string, string[]>;
+  /**
+   * Each Worker's env as the platform hands it to the Worker (stile phase 2): a put secret's value, by name, removed by a
+   * `secret delete`. The account API never answers with it; the fake station reads it, as a Worker reads its own env.
+   */
+  env: Record<string, Record<string, string>>;
   requests: { method: string; path: string; auth: string | undefined }[];
 }
 
 export function fresh(): FakeState {
-  return { plan: "workers_paid", subdomain: "fake", subdomainPut: "ok", workers: ["learner", "sheep", "sheep-pen"], applications: [{ id: "a03d94e0-75b4-454d-b8c8-4882bfcad73d", name: "sheep-pen" }], deploys: [], secrets: {}, requests: [], health: "healthy", polls: 0, rollout: "none", rolloutPolls: 0 };
+  return { plan: "workers_paid", subdomain: "fake", subdomainPut: "ok", workers: ["learner", "sheep", "sheep-pen"], applications: [{ id: "a03d94e0-75b4-454d-b8c8-4882bfcad73d", name: "sheep-pen" }], deploys: [], secrets: {}, env: {}, requests: [], health: "healthy", polls: 0, rollout: "none", rolloutPolls: 0 };
 }
 
 const json = async (request: IncomingMessage): Promise<Record<string, unknown>> => {
@@ -94,16 +99,24 @@ export function fakeAccount(state: FakeState): Promise<{ server: Server; url: st
       return response.end("{}");
     }
     if (path === "/_fake/secret") {
-      const body = (await json(request)) as { name: string; secret: string };
+      const body = (await json(request)) as { name: string; secret: string; value?: string };
       const held = state.secrets[body.name] ?? [];
       if (!held.includes(body.secret)) held.push(body.secret);
       state.secrets[body.name] = held;
+      if (typeof body.value === "string") state.env[body.name] = { ...(state.env[body.name] ?? {}), [body.secret]: body.value };
+      return response.end("{}");
+    }
+    if (path === "/_fake/secret-delete") {
+      const body = (await json(request)) as { name: string; secret: string };
+      state.secrets[body.name] = (state.secrets[body.name] ?? []).filter((secret) => secret !== body.secret);
+      if (state.env[body.name] !== undefined) delete state.env[body.name]![body.secret];
       return response.end("{}");
     }
     if (path === "/_fake/delete") {
       const body = (await json(request)) as { name: string };
       state.workers = state.workers.filter((name) => name !== body.name);
       delete state.secrets[body.name];
+      delete state.env[body.name];
       return response.end("{}");
     }
     state.requests.push({ method: request.method ?? "", path, auth });
@@ -210,26 +223,56 @@ export interface StationState {
   token: string;
   sessions: { id: string; name: string | null; createdAt: number; state: string; pasture: string | null; task: string | null }[];
   pastures: { name: string; createdAt: number }[];
+  /**
+   * Stile phase 2: the Worker on the fake account this station is. A probe that names a Worker (`?worker=<name>`, where
+   * a hostname would have named it) is answered as a sheep home for this one and as something else for every other; a
+   * probe that names none is answered as a sheep home, as deploy's is. Unset, no named Worker is this station.
+   */
+  worker?: string;
+  /** The fake account whose `env[worker]` is this station's env: `POST /join` reads `SHEEP_JOIN` there and nowhere else. */
+  account?: FakeState;
+  /** How many `POST /join` asks, after `SHEEP_JOIN` is on the Worker, answer 404 still, as the version before the put does. */
+  joinLag?: number;
+  /** Every request, in order: method, path, the bearer it carried, and, for a join, whether `SHEEP_JOIN` was on the Worker when it came. */
+  log?: { method: string; path: string; auth: string | undefined; joinSet?: boolean; status: number }[];
 }
 
 /**
  * The station's door: `GET /` answers `sheep`, `GET /home` the stamp; the
  * listings need the station's bearer, a 401 otherwise (the home's
- * `admitted`); what bearer each request carried is kept.
+ * `admitted`); what bearer each request carried is kept. `POST /join` is
+ * the cell's (stile phase 2): the station's token to a bearer equal to the
+ * `SHEEP_JOIN` the fake account holds for this Worker, and a bare 404 when
+ * there is none, it differs, or the put is still `joinLag` asks away.
  */
 export function fakeStation(auths: (string | undefined)[], state: StationState): Promise<{ server: Server; url: string }> {
+  let joinAsks = 0;
   const server = createServer((request, response) => {
     auths.push(request.headers.authorization);
-    if (request.url === "/") return response.end("sheep\n");
-    if (request.url === "/home") return response.end(JSON.stringify({ serverId: "fake-station", container: true, build: STAMP }));
-    if (request.headers.authorization !== `Bearer ${state.token}`) {
-      response.statusCode = 401;
-      return response.end("unauthorized");
+    const url = new URL(request.url ?? "/", "http://fake");
+    const entry: NonNullable<StationState["log"]>[number] = { method: request.method ?? "", path: url.pathname, auth: request.headers.authorization, status: 200 };
+    state.log?.push(entry);
+    const answer = (status: number, body: string) => {
+      entry.status = status;
+      response.statusCode = status;
+      response.end(body);
+    };
+    const named = url.searchParams.get("worker");
+    if (url.pathname === "/" && request.method === "GET") return named === null || named === state.worker ? answer(200, "sheep\n") : answer(200, "<!doctype html><title>another Worker</title>");
+    if (url.pathname === "/join" && request.method === "POST") {
+      const join = state.worker === undefined || named !== state.worker ? undefined : state.account?.env[state.worker]?.SHEEP_JOIN;
+      entry.joinSet = join !== undefined;
+      if (join === undefined || join === "") return answer(404, "not found");
+      joinAsks++;
+      if (joinAsks <= (state.joinLag ?? 0)) return answer(404, "not found");
+      if (request.headers.authorization !== `Bearer ${join}`) return answer(404, "not found");
+      return answer(200, JSON.stringify({ token: state.token }));
     }
-    if (request.url === "/sessions") return response.end(JSON.stringify(state.sessions));
-    if (request.url === "/pastures") return response.end(JSON.stringify(state.pastures));
-    response.statusCode = 404;
-    response.end("no");
+    if (url.pathname === "/home") return answer(200, JSON.stringify({ serverId: "fake-station", container: true, build: STAMP }));
+    if (request.headers.authorization !== `Bearer ${state.token}`) return answer(401, "unauthorized");
+    if (url.pathname === "/sessions") return answer(200, JSON.stringify(state.sessions));
+    if (url.pathname === "/pastures") return answer(200, JSON.stringify(state.pastures));
+    answer(404, "no");
   });
   return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve({ server, url: `http://127.0.0.1:${(server.address() as { port: number }).port}` })));
 }

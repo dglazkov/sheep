@@ -93,8 +93,9 @@ describe("the fence: the shepherd's surface names nothing of the rig", () => {
     }
   });
 
-  it("keeps `sheep home join`'s line in --help until stile phase 2 withdraws it", () => {
-    expect(USAGE).toContain("  sheep home join <address> [--json]        a second machine's way in: the station's token is one line of stdin, piped,");
+  it("lists no `sheep home join`: stile phase 2 withdrew it, and setup joins a second machine", () => {
+    for (const [name, text] of Object.entries(surface())) expect(text.includes("home join"), `${name} names sheep home join`).toBe(false);
+    expect(USAGE).not.toMatch(/\bjoin <address>/);
   });
 
   it("names sheep setup in every one of the four", () => {

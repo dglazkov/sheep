@@ -73,7 +73,7 @@ export const WORDS: Record<StepName, Words> = {
   },
   station: {
     what: "your home: one Worker and its container application, on the account, where every sheep lives.",
-    where: "deployed from this package by sheep itself; nothing to fetch and nothing to copy.",
+    where: "deployed from this package by sheep itself, or on a second machine one the account has, joined; nothing to copy.",
     cost: "the plan above, and container minutes only while a sheep is working; an idle home costs nothing.",
     does: "sheep deploys it, generates the home's own token, and keeps that token in this kennel's config, mode 600.",
   },

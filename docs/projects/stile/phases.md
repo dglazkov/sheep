@@ -24,9 +24,10 @@ tool, has built a facade.
 
 ---
 
-**Where we are: stile phase 0 is CLOSED and phase 1 PART-DONE, 12 September
-2026.** The next thing to do is **stile phase 2**, the join. Stile phase 1
-waits on issue #9, the screen the shepherd's walk found bare; the package, dog,
+**Where we are: stile phase 0 is CLOSED, phases 1 and 2 PART-DONE, 12
+September 2026.** Phase 2 is PART-DONE: the next thing to do is **stile phase 2**'s
+account ring and join walk. Stile phase 1 waits on issue #9, the screen
+the shepherd's walk found bare; the package, dog,
 and ⚑ account rings all hold on release `b227c2d`, run with the
 checkout's keys at the shepherd's word, and `sheep-2` is upgraded to it.
 
@@ -247,7 +248,7 @@ fake-wrangler.mjs` and the fake station: the put recorded, `/join`
 answering only after it, the delete recorded.
 
 Tests: `stile.test.ts` gains journey 3 through the harness: the listing,
-the join's three wrangler calls in order, the fake station's request
+the join's put, ask, and delete in order, the fake station's request
 log holding the join token alone, the config written, `key` skipped.
 `join.test.ts` in the command ring becomes the one refusal. `scripts/
 hermetic.mjs`: the account ring's a7 becomes the stile in the second
@@ -260,13 +261,37 @@ read whole after it.
 **Proof:** `pnpm test` exits 0 across all three inner rings; `pnpm -r
 typecheck` exits 0. Falsified by at least one mutation: `/join`
 answering a home with no `SHEEP_JOIN` (the workerd test fails), and the
-join secret left on the Worker (journey 3's case in `stile.test.ts` fails
+join secret left on the Worker (journey 3's cases in `stile.test.ts` fail
 against the fakes, as `t2` would on the account). **⚑**
 `pnpm hermetic --ring account --yes <sha>` with a7 as the stile and
 `t2`: a station deployed and deleted on the shepherd's account, a few
 container minutes. Then the walk, journey 3 steps 1 to 3, by hand: this
 laptop joining `sheep-2` from a scratch kennel under a fresh `HOME`.
 
-**Status: NOT STARTED.**
+**Status: PART-DONE, 12 September 2026.** The join is built and green in
+the inner rings: `pnpm test`, `pnpm -r typecheck`, and `pnpm bundle` exit
+0, and both named mutations falsified their tests — `/join` answering a
+home with no `SHEEP_JOIN` fails two workerd cases, and the join secret
+left on the Worker fails three of journey 3's. The ⚑ account ring and the
+join walk from this laptop are Open.
 
 **Findings:**
+
+- **2026-09-12 — The join is two wrangler calls and an ask between.** A
+  put and a delete, with `POST /join` over plain HTTP in the middle; the
+  test proves the order by recording, at each ask, whether `SHEEP_JOIN`
+  was on the Worker.
+- **2026-09-12 — The delete runs on every path after the put.** A poll
+  that times out or a config write that throws still deletes; a failed
+  delete names the secret left behind. A Ctrl-C mid-poll leaves one no
+  process holds, and the next join overwrites it.
+- **2026-09-12 — The station row could not show two homes.** With the
+  walk's station and `sheep-2` on the account the options passed the
+  row's width and hid the join; the row is now a window holding the
+  selected option.
+- **2026-09-12 — A global `sheep` beside `node` broke setup's tests.**
+  The shepherd's taste test installed one, as journey 1 step 1 does; the
+  command step then read "on PATH". The tests now build their own PATH.
+- **2026-09-12 — Open: the ⚑ account ring with a7 as the stile and `t2`,
+  and the join walk from this laptop to `sheep-2`.** Both need a release
+  with `/join`, and `sheep-2` upgraded to it.

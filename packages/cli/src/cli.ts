@@ -1,11 +1,10 @@
 import { kennelDir, loadConfig, sheepDir, type SheepConfig } from "./config.js";
 import { credentialsLine, credentialsReport, machineCredentialsPath } from "./credentials.js";
-import { deleteStation, deploy, Refusal, Stop, stopJson, stopText } from "./deploy.js";
+import { deleteStation, deploy, JOIN_WITHDRAWN, Refusal, Stop, stopJson, stopText } from "./deploy.js";
 import { earmarks } from "./earmark.js";
 import { writeSessionFile } from "./export.js";
 import { runAbort, runEnd, runLog, runPrompt, runStatus, runWait, watchSetup } from "./herd.js";
 import { Home, type PromptResponse } from "./home.js";
-import { join } from "./join.js";
 import { type BuildSide, cliBuild, describeBuild, describeImage, eyesSentence, isRefused, localStatus, readStamp, skewLine, startLocalHome, stopLocalHome, whoAnswers } from "./local.js";
 import { PASTURE_NAME, runPasture } from "./pasture.js";
 import { runPiClient } from "./pi.js";
@@ -250,9 +249,10 @@ async function dispatch(command: string, parsed: Parsed, config: SheepConfig, ou
  * The report names states and paths, never a value from the secrets file.
  * Station phase 0: a home that answers is asked its build stamp, printed
  * beside this command's (`--json`: `build: { home, cli }`), and skew is one
- * line on stderr, never a refusal. Station phase 2: `sheep home join
- * <address>` (`join.ts`), the token on stdin, exit 2 for every refusal;
- * and the image the home reports beside the stamps (`--json`: `image`).
+ * line on stderr, never a refusal. Station phase 2: the image the home
+ * reports beside the stamps (`--json`: `image`). Stile phase 2 withdrew
+ * `sheep home join`: a second machine joins in `sheep setup`, and the verb,
+ * with any arguments, is one sentence saying so and exit 2.
  * Every form says one line on stderr first when git tracks the kennel: a
  * token is in the repository, and the command goes on regardless.
  * Station phase 4: `sheep home local` rents a container when Docker
@@ -371,26 +371,10 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
       if (parsed.json) output.out(`${JSON.stringify(report)}\n`);
       return 0;
     }
-    if (sub === "join") {
-      const address = parsed.rest[2];
-      if (address === undefined) return fail("join needs the station's address: sheep home join https://<worker>.<subdomain>.workers.dev, with the token on stdin");
-      const report = await join({ address, extra: parsed.rest.slice(3), say: output.err });
-      if (report.skew !== null) output.err(report.skew);
-      if (parsed.json) {
-        output.out(`${JSON.stringify(report)}\n`);
-        return 0;
-      }
-      output.out(
-        `home: ${report.home} (joined; answers)\n` +
-          `kennel: ${report.kennel}\n` +
-          `config: ${report.config.path} names the station; no name, since it was deployed from another kennel\n` +
-          `home build: ${describeBuild(report.build.home)}\ncli build: ${describeBuild(report.build.cli)}\n` +
-          (report.image === null ? "image: (the home reports none)\n" : `image: ${describeImage(report.image)}\n`) +
-          "next: sheep ls\n",
-      );
-      return 0;
-    }
-    if (sub !== undefined) return fail(`unknown home command: ${sub}; sheep home [local [--faux] | stop | deploy [--name <worker>] [--subdomain <name>] | delete [--name <worker>] | join <address>]`);
+    // Withdrawn (stile phase 2): the join is a choice in `sheep setup`'s station step, which proves the account and needs no token
+    // carried by hand. Any arguments, `--json` included, get the one sentence, and nothing is read or asked.
+    if (sub === "join") return fail(JOIN_WITHDRAWN);
+    if (sub !== undefined) return fail(`unknown home command: ${sub}; sheep home [local [--faux] | stop | deploy [--name <worker>] [--subdomain <name>] | delete [--name <worker>]]`);
 
     // Which home the config names, and whether it answers. The station's name (kennel phase 1) is the config's record of the
     // first deploy from this kennel: null in JSON until there is one, and a `name:` line in prose only when there is.

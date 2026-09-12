@@ -52,8 +52,10 @@
  * `SHEEP_TEST_ACCOUNT_API` stands in for `https://api.cloudflare.com/client/v4`;
  * `SHEEP_TEST_WRANGLER` is a script run under node in wrangler's place;
  * `SHEEP_TEST_STATION_URL` is asked `GET /` and `GET /home` in place of
- * the station's address; `SHEEP_TEST_RETRY_MS` shortens the gap between
- * a wait's retried reads. The tests under `test/deploy.test.ts` drive the
+ * the station's address, and, with `?worker=<name>` where a hostname would
+ * say which, the listing's `GET /` and the join's `POST /join` (stile
+ * phase 2); `SHEEP_TEST_RETRY_MS` shortens the gap between a wait's
+ * retried reads, and between the join's asks. The tests under `test/deploy.test.ts` drive the
  * five steps and the refusals through them against a fake account and a
  * fake wrangler, touching no account; the account ring walks the real one.
  */
@@ -849,6 +851,156 @@ export async function putModelKey(options: { name: string; key: string; token: s
   const bin = wranglerBin(stamp, say);
   const derived = writeDerivedConfig(options.name, stamp);
   await putSecret({ bin, config: derived.path, cwd: dirname(derived.path), secret: KEY_SECRET, value: options.key, token: options.token, accountId: options.accountId });
+}
+
+/* The join (stile phase 2). */
+
+/** What `sheep home join`, withdrawn, answers with any arguments: one sentence, exit 2, naming the command that does it now. */
+export const JOIN_WITHDRAWN = "sheep home join is withdrawn; `sheep setup`, at the shepherd's own terminal, joins this machine to a station the account already has, and no token is carried by hand";
+
+/** The Worker secret a joining machine puts, asks the home with, and deletes: the proof that it can write this Worker's secrets. */
+export const JOIN_SECRET = "SHEEP_JOIN";
+
+/**
+ * How long the join asks `POST /join` for: up to a minute, as deploy
+ * polls the stamp, a second apart (`SHEEP_TEST_RETRY_MS` shortens the gap
+ * in tests, and every ring strips it). A put is a new version of the
+ * Worker, and the version before it answers 404 until it is replaced.
+ */
+const JOIN_WAIT_MS = 60_000;
+const JOIN_POLLS = 60;
+const joinPollMs = (): number => {
+  const seam = Number(process.env.SHEEP_TEST_RETRY_MS);
+  return process.env.SHEEP_TEST_RETRY_MS !== undefined && Number.isFinite(seam) && seam >= 0 ? seam : 1_000;
+};
+
+/**
+ * Where a request meant for one Worker's address goes. The address
+ * itself, or under `SHEEP_TEST_STATION_URL` the fake station, told which
+ * Worker was asked with `?worker=<name>` in the place a hostname would
+ * have told a real one: the seam stands in for the network, and the fake
+ * answers as that Worker would, a sheep home or not.
+ */
+export function stationProbe(name: string, home: string, path = "/"): string {
+  const seam = process.env.SHEEP_TEST_STATION_URL;
+  if (seam === undefined || seam === "") return new URL(path, home).toString();
+  const url = new URL(path, seam);
+  url.searchParams.set("worker", name);
+  return url.toString();
+}
+
+/** A sheep home the account already has: a Worker on its subdomain whose `GET /` answers `sheep`. */
+export interface StationFound {
+  name: string;
+  home: string;
+}
+
+/**
+ * The account's sheep homes (the stile's station step): every Worker it
+ * lists, asked `GET /` at its `workers.dev` address at once, and those that
+ * answer `sheep`, in the listing's order. An account with no subdomain has
+ * no address to ask, and so none. Every request is a GET with no bearer.
+ */
+export async function findStations(api: AccountApi, accountId: string, workers: string[]): Promise<StationFound[]> {
+  const subdomain = await api.subdomain(accountId);
+  if (subdomain === undefined) return [];
+  const asked = await Promise.all(
+    workers.map(async (name) => {
+      const home = address(name, subdomain);
+      return { name, home, answers: await whoAnswers(stationProbe(name, home)) };
+    }),
+  );
+  return asked.filter((station) => station.answers === "sheep").map(({ name, home }) => ({ name, home }));
+}
+
+export interface JoinOptions {
+  /** The Worker's name on the account, and its address. */
+  name: string;
+  home: string;
+  /** The account token, which goes to wrangler's environment and never to the home. */
+  token: string;
+  accountId: string;
+  /** Keeps what the home answered: the config write. Called before the join secret is deleted, and the delete follows it whatever it does. */
+  keep: (homeToken: string) => void;
+  say?: (text: string) => void;
+}
+
+export interface JoinReport {
+  home: string;
+  /** How many times `POST /join` was asked before it answered. */
+  polls: number;
+  seconds: number;
+}
+
+/**
+ * The join (design, "The second machine"): a join token generated here
+ * and put on the Worker as `SHEEP_JOIN` through wrangler's stdin, with the
+ * account token in wrangler's environment, through deploy's own `putSecret`;
+ * `POST /join` asked with it as the bearer until the new version answers,
+ * up to a minute; the home's token handed to `keep`; and `SHEEP_JOIN`
+ * deleted with `wrangler secret delete`.
+ *
+ * **Once the put has succeeded, the delete happens on every path out**: a
+ * poll that times out, a `keep` that throws, and a join that worked. A join
+ * secret left on a Worker is a door left open, so a delete that fails is
+ * its own failure, named, whatever else happened.
+ */
+export async function joinStation(options: JoinOptions): Promise<JoinReport> {
+  const say = options.say ?? (() => {});
+  const stamp = readStamp();
+  const bin = wranglerBin(stamp, say);
+  const derived = writeDerivedConfig(options.name, stamp);
+  const cwd = dirname(derived.path);
+  const joinToken = randomBytes(24).toString("hex");
+  say(`sheep: putting a join token on ${options.name}\n`);
+  await putSecret({ bin, config: derived.path, cwd, secret: JOIN_SECRET, value: joinToken, token: options.token, accountId: options.accountId });
+
+  let failure: unknown;
+  let report: JoinReport | undefined;
+  try {
+    say(`sheep: asking ${options.home} for its token\n`);
+    const started = Date.now();
+    const url = stationProbe(options.name, options.home, "/join");
+    let homeToken: string | undefined;
+    let polls = 0;
+    while (polls < JOIN_POLLS && Date.now() - started < JOIN_WAIT_MS) {
+      polls++;
+      homeToken = await askToJoin(url, joinToken);
+      if (homeToken !== undefined) break;
+      await sleep(joinPollMs());
+    }
+    if (homeToken === undefined) {
+      throw new Error(`${options.home} did not answer the join in ${Math.round((Date.now() - started) / 1000)}s (${polls} asks); nothing was kept. A home deployed before this release has no join: \`sheep home deploy\` from the machine that deployed it upgrades it`);
+    }
+    options.keep(homeToken);
+    report = { home: options.home, polls, seconds: Math.round((Date.now() - started) / 1000) };
+  } catch (error) {
+    failure = error;
+  }
+
+  say(`sheep: deleting the join token from ${options.name}\n`);
+  const removed = await wrangler(bin, ["secret", "delete", JOIN_SECRET, "--config", derived.path, "--env", "pen"], { token: options.token, accountId: options.accountId, cwd });
+  if (removed.code !== 0) {
+    const before = failure === undefined ? "" : `${failure instanceof Error ? failure.message : String(failure)}\n`;
+    throw new Error(`${before}the join secret ${JOIN_SECRET} is still on ${options.name}, and while it is, anyone holding it can ask the home for its token: wrangler secret delete ${JOIN_SECRET} --config ${derived.path} --env pen exited ${removed.code}:\n${tail(removed)}`);
+  }
+  if (failure !== undefined) throw failure;
+  return report!;
+}
+
+/** One `POST /join`: the home's token when it answers one, `undefined` for a 404, a refusal, or no answer, which the poll asks again. */
+async function askToJoin(url: string, joinToken: string): Promise<string | undefined> {
+  try {
+    const response = await fetch(url, { method: "POST", headers: { authorization: `Bearer ${joinToken}` }, signal: AbortSignal.timeout(5_000) });
+    if (!response.ok) {
+      await response.body?.cancel();
+      return undefined;
+    }
+    const body = (await response.json()) as { token?: unknown };
+    return typeof body.token === "string" && body.token !== "" ? body.token : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** The five steps of a deploy, in the order they happen, as the midway message names them. */

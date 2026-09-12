@@ -15,6 +15,13 @@
  * through here at all: it is `setup()` in `setup.ts`, unchanged, and
  * `cli.ts` forks on the tty.
  *
+ * **The second machine** (stile phase 2): the station step lists the
+ * account's sheep homes after `new`, and choosing one is the join,
+ * `joinStation` in `deploy.ts` beside the deploy it shares its put with.
+ * The account token goes to wrangler's environment to put a join token on
+ * the Worker, the join token goes to the home, and the home's own token
+ * comes back into the config; the account token never reaches the home.
+ *
  * **The rule about values.** A value the shepherd types is read at a
  * hidden prompt and goes to exactly two places: `~/.sheep/credentials`,
  * mode 600, and — for the model key — the home's own secret, over
@@ -25,9 +32,9 @@
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { configPath, isMachineKennel, readConfigFile, realPath, samePath, sheepDir } from "../config.js";
+import { configPath, isMachineKennel, readConfigFile, realPath, samePath, sheepDir, writeConfigFile } from "../config.js";
 import { CREDENTIAL_ENV, machineCredentialsPath, modelKey, readCredentials, writeCredentials } from "../credentials.js";
-import { type Account, AccountApi, deploy, type DeployReport, KEY_SECRET, PLAN, plansPage, putModelKey, Refusal, validateName } from "../deploy.js";
+import { type Account, AccountApi, deploy, type DeployReport, findStations, joinStation, KEY_SECRET, PLAN, plansPage, putModelKey, Refusal, validateName } from "../deploy.js";
 import { whoAnswers } from "../local.js";
 import { kennelName, mintName } from "../name.js";
 import { checkoutRoot, installSkill, type KennelReport, makeKennel, setupCli, type SkillReport } from "../setup.js";
@@ -103,9 +110,12 @@ export interface FlowReport {
   skill: SkillReport | { checkout: string };
   kennelMade: KennelReport | null;
   account: Account;
-  /** The station: its name, its address, and whether this sitting deployed it or found it answering. */
-  station: { name: string; home: string; state: "deployed" | "redeployed" | "found" };
-  /** What happened to the model key: put by the deploy from what was kept, put by the key step after it, or left as the home holds it. */
+  /**
+   * The station: its name, its address, and whether this sitting deployed it, found it answering, or joined it (stile
+   * phase 2). A station found by a joined kennel's config has no name there, and is `null` here.
+   */
+  station: { name: string | null; home: string; state: "deployed" | "redeployed" | "found" | "joined" };
+  /** What happened to the model key: put by the deploy from what was kept, put by the key step after it, or left as the home holds it (a joined station always). */
   key: "put" | "put-after" | "left";
   /** The paths, for the last step's line: never a value. */
   credentials: string;
@@ -235,31 +245,57 @@ export async function runFlow(options: FlowOptions): Promise<FlowReport> {
   }
 
   // 5. station. A kennel whose config already names a station that still answers is filled in and nothing is deployed;
-  // otherwise `new <name>`, minted for the kennel as kennel's rule says, and Enter takes it. Join is stile phase 2's.
+  // otherwise `new <name>`, minted for the kennel as kennel's rule says, first and the default, then every sheep home the
+  // account already has, found as the Workers whose `GET /` answers `sheep` (stile phase 2): joining one is the second
+  // machine's way in. A joined kennel's config names the home with no name, and is found the same way.
   const existing = readConfigFile();
   const recorded = typeof existing?.name === "string" ? existing.name : undefined;
   const recordedHome = typeof existing?.home === "string" ? existing.home : undefined;
+  const recordedToken = typeof existing?.token === "string" && existing.token !== "" ? existing.token : undefined;
   let station: FlowReport["station"];
   let deployed: DeployReport | undefined;
-  if (recorded !== undefined && recordedHome !== undefined && (await whoAnswers(recordedHome)) === "sheep") {
-    station = { name: recorded, home: recordedHome, state: "found" };
+  // The developer's rig writes `local: true` beside its address and token; that home is never a station, found or joined.
+  if (recordedHome !== undefined && existing?.local !== true && (recorded !== undefined || recordedToken !== undefined) && (await whoAnswers(recordedHome)) === "sheep") {
+    station = { name: recorded ?? null, home: recordedHome, state: recorded === undefined ? "joined" : "found" };
     driver.say("station", recordedHome);
   } else {
     const taken = await api.taken(account.id);
     const names = new Set([...taken.workers, ...taken.applications.map((application) => application.name)]);
     const minted = recorded ?? mintName(kennelName(dir), names, options.name);
-    await driver.choose("station", [{ value: "new", label: `new ${minted}` }]);
-    count.defaults++;
-    deployed = await deploy({
-      name: minted,
-      subdomain: options.subdomain,
-      faux: options.faux,
-      // The key is the next step's, and on a first sitting nothing keeps one yet: deploy is told so rather than stopping.
-      keyLater: modelKey() === undefined,
-      say: (text) => driver.say("station", text.replace(/^sheep: /, "").trim()),
-    });
-    station = { name: deployed.name, home: deployed.home, state: deployed.state };
-    driver.say("station", deployed.home);
+    const homes = await findStations(api, account.id, taken.workers);
+    const chosen = await driver.choose("station", [{ value: "new", label: `new ${minted}` }, ...homes.map((home) => ({ value: `join:${home.name}`, label: `join ${home.name}` }))]);
+    const joining = homes.find((home) => chosen === `join:${home.name}`);
+    if (joining === undefined) {
+      count.defaults++;
+      deployed = await deploy({
+        name: minted,
+        subdomain: options.subdomain,
+        faux: options.faux,
+        // The key is the next step's, and on a first sitting nothing keeps one yet: deploy is told so rather than stopping.
+        keyLater: modelKey() === undefined,
+        say: (text) => driver.say("station", text.replace(/^sheep: /, "").trim()),
+      });
+      station = { name: deployed.name, home: deployed.home, state: deployed.state };
+      driver.say("station", deployed.home);
+    } else {
+      count.yes++;
+      // The join: the home's own token, for proof that this machine can write the Worker's secrets. The config is the
+      // address and that token, with no name and no local marker, the rest kept, as `sheep home join` wrote it; the join
+      // secret is deleted after the write whatever the write did.
+      await joinStation({
+        name: joining.name,
+        home: joining.home,
+        token: accountToken,
+        accountId: account.id,
+        keep: (homeToken) => {
+          const { local: _local, name: _name, home: _home, token: _token, ...rest } = readConfigFile() ?? {};
+          writeConfigFile({ ...rest, home: joining.home, token: homeToken });
+        },
+        say: (text) => driver.say("station", text.replace(/^sheep: /, "").trim()),
+      });
+      station = { name: joining.name, home: joining.home, state: "joined" };
+      driver.say("station", `${joining.home}, joined`);
+    }
   }
 
   // 6. key. The Anthropic key at a hidden prompt, kept, then put on the home as its secret through wrangler's stdin, as
@@ -269,10 +305,14 @@ export async function runFlow(options: FlowOptions): Promise<FlowReport> {
   let keyState: FlowReport["key"];
   const keptKey = modelKey();
   if (keptKey !== undefined && keptKey.from === "environment") count.variables.push(CREDENTIAL_ENV.anthropic);
-  if (deployed?.key === "put") {
+  if (station.state === "joined") {
+    // A joined station holds its own key: it was put by the machine that deployed it, and nothing is asked or put here.
+    keyState = "left";
+    driver.say("key", "the station holds its own; nothing asked");
+  } else if (deployed?.key === "put") {
     keyState = "put";
     driver.say("key", "put on the home as its secret");
-  } else if (keptKey === undefined && deployed?.state !== "deployed" && (await api.secrets(account.id, station.name)).includes(KEY_SECRET)) {
+  } else if (keptKey === undefined && deployed?.state !== "deployed" && station.name !== null && (await api.secrets(account.id, station.name)).includes(KEY_SECRET)) {
     keyState = "left";
     driver.say("key", "the home holds its own; nothing asked");
   } else {
@@ -287,7 +327,8 @@ export async function runFlow(options: FlowOptions): Promise<FlowReport> {
     }
     if (keptKey === undefined) writeCredentials({ anthropic: value });
     driver.say("key", "putting it on the home as its secret");
-    await putModelKey({ name: station.name, key: value, token: accountToken, accountId: account.id, say: (text) => driver.say("key", text.replace(/^sheep: /, "").trim()) });
+    // Only a joined station has no name, and a joined station never reaches here.
+    await putModelKey({ name: station.name!, key: value, token: accountToken, accountId: account.id, say: (text) => driver.say("key", text.replace(/^sheep: /, "").trim()) });
     keyState = deployed === undefined ? "put" : "put-after";
     driver.say("key", "put on the home as its secret");
   }

@@ -32,9 +32,18 @@ async function gitDir(): Promise<string> {
   return dir;
 }
 
+/**
+ * The shell's PATH without any directory that holds a `sheep`: a version manager installs a global one beside `node`, and
+ * setup's first question is whether `sheep` is on PATH, so a machine with the release installed would answer for the checkout.
+ */
+const pathWithoutSheep = (process.env.PATH ?? "")
+  .split(":")
+  .filter((dir) => dir !== "" && !existsSync(join(dir, "sheep")))
+  .join(":");
+
 /** The checkout's CLI, run in `cwd` with an empty HOME and no home in the environment. */
 function sheep(cwd: string, args: string[], extra: Record<string, string> = {}): Promise<Result> {
-  const env = { ...process.env, HOME: isolatedHome, ...extra };
+  const env = { ...process.env, PATH: pathWithoutSheep, HOME: isolatedHome, ...extra };
   delete env.SHEEP_HOME;
   delete env.SHEEP_TOKEN;
   delete env.NODE_NO_WARNINGS;

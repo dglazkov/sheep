@@ -8,8 +8,9 @@
  * fake account API's `_fake` routes: `deploy` reads the derived config it
  * was given and registers the Worker and the container application it
  * names; `secret put` registers the secret's name on the Worker, which is
- * what the account's secrets listing answers with (stile phase 0);
- * `delete` removes the Worker. `SHEEP_TEST_WRANGLER_FAIL=deploy`
+ * what the account's secrets listing answers with (stile phase 0), and its
+ * value on the Worker, which is what the fake station reads as its env;
+ * `secret delete` removes both (stile phase 2); `delete` removes the Worker. `SHEEP_TEST_WRANGLER_FAIL=deploy`
  * makes the deploy exit 1 with wrangler's kind of message, and
  * `secret:<NAME>` does the same to that one secret put, which is a deploy
  * that failed after the Worker went live.
@@ -88,8 +89,18 @@ if (args[0] === "dev") {
   }
   // The account's side of a secret put (stile phase 0): the Worker's secret names are what `deploy` reads when no model key
   // is kept here, so the listing has to be what the puts actually made rather than a fixture.
-  await fetch(`${api}/_fake/secret`, { method: "POST", body: JSON.stringify({ name: config.env.pen.name, secret: args[2] }) });
+  // The value goes to the Worker's env, as the platform hands a secret to the Worker it is put on (stile phase 2): the fake
+  // station answers `POST /join` from that env and from nothing else. Wrangler reads the value from stdin, a line.
+  await fetch(`${api}/_fake/secret`, { method: "POST", body: JSON.stringify({ name: config.env.pen.name, secret: args[2], value: stdin.replace(/\r?\n$/, "") }) });
   console.log(`🌀 Creating the secret for the Worker "${config.env.pen.name}" \n✨ Success! Uploaded secret ${args[2]}`);
+} else if (args[0] === "secret" && args[1] === "delete") {
+  if (process.env.SHEEP_TEST_WRANGLER_FAIL === `secret-delete:${args[2]}`) {
+    console.error(`✘ [ERROR] A request to the Cloudflare API (/accounts/x/workers/scripts/${config.env.pen.name}/secrets/${args[2]}) failed.\n\n  the fake refused this delete [code: 10000]`);
+    process.exit(1);
+  }
+  // Stile phase 2: the name gone from the listing and the value from the Worker's env, so a join asked after it is refused.
+  await fetch(`${api}/_fake/secret-delete`, { method: "POST", body: JSON.stringify({ name: config.env.pen.name, secret: args[2] }) });
+  console.log(`? Are you sure you want to permanently delete the secret ${args[2]} on the Worker ${config.env.pen.name}?\n🌀 Deleting the secret ${args[2]} on the Worker ${config.env.pen.name}\n✨ Success! Deleted secret ${args[2]}`);
 } else if (args[0] === "delete") {
   await fetch(`${api}/_fake/delete`, { method: "POST", body: JSON.stringify({ name: config.env.pen.name }) });
   console.log(`Successfully deleted ${config.env.pen.name}`);

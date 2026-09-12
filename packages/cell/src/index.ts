@@ -28,6 +28,12 @@
  * Bleat phase 0: `GET /sessions/<id>` is one sheep's row, the Directory's
  * and never a cell's, so a dog can ask what a sheep is waiting on while
  * the cell is held by the very setup it is waiting on.
+ * Stile phase 2: `POST /join` is the second machine's way in, and the one
+ * route the home's token does not guard. A machine that can write this
+ * Worker's secrets owns the account: it puts a join token as `SHEEP_JOIN`
+ * and asks here with it as the bearer, and the home answers `{ token }`,
+ * its own. Anything else — no `SHEEP_JOIN`, an empty one, another bearer —
+ * is the same bare 404 as a route that does not exist, saying nothing.
  */
 import { type Budget, mintSecrets, unknownPasture, unknownSession } from "./directory.ts";
 import { hasEyes } from "./eyes/eyes.ts";
@@ -52,6 +58,33 @@ function admitted(request: Request, env: Env): Response | undefined {
   const token = header.startsWith("Bearer ") ? header.slice("Bearer ".length) : new URL(request.url).searchParams.get("token");
   if (token !== env.SHEEP_TOKEN) return unauthorized("bad or missing token");
   return undefined;
+}
+
+/** Two strings compared in time that depends on their lengths alone, never on where they first differ: the join bearer is a secret. */
+function sameSecret(a: string, b: string): boolean {
+  const left = new TextEncoder().encode(a);
+  const right = new TextEncoder().encode(b);
+  let differs = left.length ^ right.length;
+  const length = Math.max(left.length, right.length);
+  for (let i = 0; i < length; i++) differs |= (left[i] ?? 0) ^ (right[i] ?? 0);
+  return differs === 0;
+}
+
+/**
+ * `POST /join` (stile phase 2): the home's token to the bearer that equals a
+ * set, non-empty `SHEEP_JOIN`; `undefined` otherwise, which the router
+ * answers as it answers any route it does not have. The account token
+ * never comes here: writing the secret is the proof, and the join token is
+ * all that travels.
+ */
+export function joinAnswer(request: Request, env: Env): Response | undefined {
+  const join = env.SHEEP_JOIN;
+  const token = env.SHEEP_TOKEN;
+  if (join === undefined || join === "" || token === undefined || token === "") return undefined;
+  const header = request.headers.get("authorization") ?? "";
+  if (!header.startsWith("Bearer ")) return undefined;
+  if (!sameSecret(header.slice("Bearer ".length), join)) return undefined;
+  return Response.json({ token }, { headers: { "cache-control": "no-store" } });
 }
 
 /** `GET /home`'s `build`: what `scripts/bundle.mjs` defined at release, or the checkout's value when nothing was defined. */
@@ -173,6 +206,10 @@ export default {
       inner.pathname = "/pen";
       return env.SESSION_CELL.getByName(id).fetch(new Request(inner, request));
     }
+
+    // The join (stile phase 2), before the home's door: the one route the home's token does not guard. Refused, it is the
+    // router's own bare 404, so a prober learns nothing of whether a join is open.
+    if (url.pathname === "/join" && request.method === "POST") return joinAnswer(request, env) ?? new Response("not found", { status: 404 });
 
     const refused = admitted(request, env);
     if (refused) return refused;
