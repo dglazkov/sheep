@@ -34,6 +34,10 @@ container: a sheep's `~` as rows beside its workspace, and a pasture's
 file rather than hold one: the record is read and written in slices, so
 a cache whose largest file is hundreds of megabytes costs a chunk of
 memory and not a file's worth.
+[Project bleat](docs/projects/bleat/design.md) makes a sheep say what it
+is waiting on: a pasture's setup running in a container is a row the home
+answers at once, a block of its own in the dog's log, and a line on
+stderr while the dog holds a prompt.
 Setup and usage are in [README.md](README.md).
 Read a project's `phases.md` for where its work stands and what the next
 phase is; [docs/projects/README.md](docs/projects/README.md) lists them.
