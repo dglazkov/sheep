@@ -30,6 +30,10 @@ value on stdin, laid over its pasture's by name and ended with it.
 [Project fold](docs/projects/fold/design.md) keeps what outlives the
 container: a sheep's `~` as rows beside its workspace, and a pasture's
 `/cache`, put back before setup and kept after it.
+[Project spool](docs/projects/spool/design.md) makes the agent pass a
+file rather than hold one: the record is read and written in slices, so
+a cache whose largest file is hundreds of megabytes costs a chunk of
+memory and not a file's worth.
 Setup and usage are in [README.md](README.md).
 Read a project's `phases.md` for where its work stands and what the next
 phase is; [docs/projects/README.md](docs/projects/README.md) lists them.
