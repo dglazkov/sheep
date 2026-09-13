@@ -66,8 +66,7 @@ usage:
                                             which credentials are kept and where (never a value),
                                             whether it answers, and its build stamp beside this command's, with one line
                                             on stderr when they differ; the pen image its config named, when it says;
-                                            whether it has eyes (a station deployed before they existed says no until
-                                            \`sheep home deploy\` upgrades it)
+                                            whether it has eyes
 
   sheep pasture new <name> [--repo <url> | --repo .] [--branch <branch>]
                                             make a pasture: a shared tree, a repository or none, and the sheep born into it;
@@ -114,4 +113,7 @@ queued behind the running turn, as pi queues a prompt typed mid-turn; sheep prin
 Without a prompt, sheep attaches pi's interactive terminal. wait exits 124 on timeout, with what had finished.
 A held prompt, wait, or abort whose connection drops (the home restarted) attaches again and says so once on
 stderr; a home that does not answer for two minutes is exit 2.
+
+Any verb says on stderr, once, that a newer build is out, and once that the home's build and this command's
+differ (sheep home says it every time): npm install -g ${INSTALL_SPEC} updates the command, sheep home deploy the home.
 `;

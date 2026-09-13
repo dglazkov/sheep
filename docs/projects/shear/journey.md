@@ -1,8 +1,8 @@
 ---
-status: planned
+status: partial
 since: 2026-09-13
 see: shear
-note: "written 13 Sep 2026 after the shepherd asked for the upgrade story and liked codex's shape: `npm install -g` and the old copy says it is out of date. Sheep takes that shape for the command and adds the half codex lacks, the home. A command hears once from the release branch's tip that a newer build is out; the home says its build on every response, so any command says once that one side is older; `sheep home deploy` refuses while sheep are mid-turn unless told `--now`; and a verb a too-old home cannot answer is refused with the sentence that fixes it, by a floor the command carries. The skew rule stops calling two builds of one commit skew. Nothing is fetched, installed, or deployed on its own. Two phases: the notice and the header; the floor and the guard, walked in the account ring's `--older` upgrade."
+note: "written 13 Sep 2026 after the shepherd asked for the upgrade story and liked codex's shape: `npm install -g` and the old copy says it is out of date. Sheep takes that shape for the command and adds the half codex lacks, the home. A command hears once from the release branch's tip that a newer build is out; the home says its build on every response, so any command says once that one side is older; `sheep home deploy` refuses while sheep are mid-turn unless told `--now`; and a verb a too-old home cannot answer is refused with the sentence that fixes it, by a floor the command carries. The skew rule stops calling two builds of one commit skew. Nothing is fetched, installed, or deployed on its own. Two phases: the notice and the header, built 13 Sep 2026 and held in the inner rings against the fakes, its walk on a release waiting on the workflow; the floor and the guard, walked in the account ring's `--older` upgrade."
 ---
 
 # Shear — the journeys

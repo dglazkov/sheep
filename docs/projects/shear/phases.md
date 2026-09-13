@@ -19,8 +19,11 @@ finding and a stop, not a feature.
 
 ---
 
-**Where we are: planned, 13 September 2026. Nothing built.** shear
-phase 0 is next.
+**Where we are: shear phase 0 PART-DONE, 13 September 2026.** The
+notice and the header hold in all three inner rings; the walk waits on
+the release the workflow builds from the phase's commit, and then on
+nobody. shear phase 1 is next after it, and its account walk is under
+the shepherd's standing authorization.
 
 Two phases, because the notice and the header are lines a command
 says, provable against the fakes alone, and the floor and the guard are
@@ -83,7 +86,8 @@ carries the header, `GET /` and a 404 among them.
 **Proof:** `pnpm test` exits 0 across all three inner rings, the new
 files in their rings; `pnpm --filter @sheep/cli typecheck` exits 0.
 Falsified by at least two mutations: the header dropped from the Worker
-(the skew cases fail), and the said file never written (the once cases
+(the cell's header case and the local home's fail; the command ring's
+skew cases talk to the fake station), and the said file never written (the once cases
 print twice). Then the walk, once the release workflow has built a
 release from the phase's commit (a checkout's command has no stamp, so
 it never says the notice): that release installed into a scratch prefix
@@ -91,9 +95,19 @@ and HOME, `sheep ls` twice from a scratch kennel against its own local
 home with `SHEEP_TIP` at a manifest the walk serves on localhost with a
 newer stamp: the notice once, by eye; with `SHEEP_TIP=0`, nothing.
 
-**Status: NOT STARTED.**
+**Status: PART-DONE, 2026-09-13.** `pnpm test` exits 0 on all three
+inner rings with both mutations caught; the walk waits on the release
+built from this commit.
 
 **Findings:**
+
+- **2026-09-13 — A dropped Worker header fails the cell's header case and the local home's, not the skew cases:** those run against the fake station, which sends its own; `build.test.ts` said `expected null to be '0.0.0-checkout'`.
+- **2026-09-13 — The said file never written fails four of seven `shear.test.ts` cases;** the notice for a moved tip and both skew lines print on the second run. An unaborted fetch fails the hanging tip: 2225 ms against 533.
+- **2026-09-13 — workerd refuses a Worker module exporting a string** ("not of type 'function or ExportedHandler'") while the vitest pool accepts it; only the home ring caught `BUILD_HEADER` exported from the cell.
+- **2026-09-13 — Node's WebSocket shows no handshake headers,** so the command hears the header from `GET /home`, which every socket verb asks first; the Worker still stamps the 101, rebuilt around the socket, since a stub's response headers are immutable.
+- **2026-09-13 — The notice is said in the same run only when the tip answers before the verb ends;** the command test holds `/sessions` 300 ms, as a far station does. `SHEEP_TEST_CLI_BUILD` names the command's build in `cliBuild`.
+- **2026-09-13 — The release workflow flaked on this project's docs-only commit 49788e8:** bleat's `setup running (0.x s)` read `1.0 s` on the runner, the second time that test has failed a release.
+- **2026-09-13 — Open: a route that throws answers workerd's 500 with no header.** shear phase 1's floor would call a current home one from before the header; the Worker's catch should stamp it.
 
 ---
 

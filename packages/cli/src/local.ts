@@ -159,8 +159,19 @@ export interface BuildSide {
   builtAt: string | null;
 }
 
-/** This command's build as `sheep home` reports it: the manifest's stamp, or the checkout's value. */
+/**
+ * This command's build as `sheep home` reports it: the manifest's stamp, or
+ * the checkout's value. Shear phase 0: the notice and the skew line read
+ * it here, so a command-ring test names a stamped build through
+ * `SHEEP_TEST_CLI_BUILD=<commit> <builtAt>`, which every ring strips; never
+ * in `readStamp`, which also chooses the local home's wrangler and config.
+ */
 export function cliBuild(): BuildSide {
+  const seam = process.env.SHEEP_TEST_CLI_BUILD;
+  if (seam) {
+    const [commit, builtAt] = seam.split(" ");
+    if (commit) return { commit, builtAt: builtAt || null };
+  }
   const stamp = readStamp();
   return stamp === undefined ? { commit: "0.0.0-checkout", builtAt: null } : { commit: stamp.commit, builtAt: stamp.builtAt };
 }
@@ -181,10 +192,15 @@ export function describeImage(image: string): string {
  * home is the package's own Worker from the moment it started, so the fix
  * there is a restart; a station's is a deploy from the newer package; an
  * older command's is the install. Unstamped sides are reported, not
- * warned about, and equal stamps say nothing.
+ * warned about, and equal stamps say nothing. Shear phase 0: nor do two
+ * sides of one commit with no `-dirty` marker, whatever their times, since
+ * a release and a checkout's deploy of one commit are one tree (smit's
+ * walk); a dirty side is compared by time, since two dirty builds of one
+ * commit are two trees.
  */
 export function skewLine(home: BuildSide, cli: BuildSide, local: boolean): string | undefined {
   if (home.builtAt === null || cli.builtAt === null || home.builtAt === cli.builtAt) return undefined;
+  if (home.commit === cli.commit && !home.commit.endsWith("-dirty")) return undefined;
   if (home.builtAt < cli.builtAt) {
     const fix = local ? "`sheep home stop`; the next command restarts it from this package" : "`sheep home deploy` from this package updates it";
     return `sheep: the home's build ${describeBuild(home)} is older than this command's ${describeBuild(cli)}; ${fix}\n`;

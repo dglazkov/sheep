@@ -164,10 +164,30 @@ export interface HomeStamp {
   eyes: boolean | null;
 }
 
+/** The header a home from shear on sends on every response (shear phase 0): `<commit> <builtAt>`, the commit alone where it has no time. */
+export const BUILD_HEADER = "x-sheep-build";
+
+/** The build a `x-sheep-build` value names; undefined for no header, or one that names no commit. */
+export function parseBuildHeader(value: string | null): HomeBuild | undefined {
+  if (value === null) return undefined;
+  const [commit, builtAt] = value.trim().split(/\s+/);
+  return commit ? { commit, builtAt: builtAt || null } : undefined;
+}
+
 /** The home's HTTP face: the door, the directory, and one cell's routes. */
 export class Home {
   readonly url: URL;
   readonly token: string | undefined;
+  /**
+   * The home's build as the first response's header named it (shear phase
+   * 0): undefined until a response comes back, and after one from a home
+   * that sends no header. Read at the command's end for the skew line.
+   * Every socket a verb opens is preceded by `GET /home` (`serverId`),
+   * which is where a socket-only verb's header is read: Node's WebSocket
+   * does not expose the upgrade's headers.
+   */
+  homeBuild: HomeBuild | undefined;
+  private heard = false;
 
   constructor(config: SheepConfig) {
     if (config.home === undefined) throw new Error("no home configured; pass --home <url>, set SHEEP_HOME, or run `sheep home local` to write this kennel's config");
@@ -175,10 +195,19 @@ export class Home {
     this.token = config.token;
   }
 
+  /** The first response's `x-sheep-build`, kept; every later response passes through untouched. */
+  private hear(response: Response): Response {
+    if (!this.heard) {
+      this.heard = true;
+      this.homeBuild = parseBuildHeader(response.headers.get(BUILD_HEADER));
+    }
+    return response;
+  }
+
   private async request(path: string, init: RequestInit = {}): Promise<Response> {
     const headers = new Headers(init.headers);
     if (this.token !== undefined) headers.set("authorization", `Bearer ${this.token}`);
-    const response = await fetch(new URL(path, this.url), { ...init, headers });
+    const response = this.hear(await fetch(new URL(path, this.url), { ...init, headers }));
     if (!response.ok) throw new Error(`${init.method ?? "GET"} ${path}: ${response.status} ${await response.text()}`);
     return response;
   }
@@ -191,7 +220,7 @@ export class Home {
   private async ask(path: string, init: RequestInit = {}): Promise<Response> {
     const headers = new Headers(init.headers);
     if (this.token !== undefined) headers.set("authorization", `Bearer ${this.token}`);
-    const response = await fetch(new URL(path, this.url), { ...init, headers });
+    const response = this.hear(await fetch(new URL(path, this.url), { ...init, headers }));
     if (response.ok) return response;
     const body = await response.text();
     if (response.status >= 400 && response.status < 500 && body.length > 0 && response.status !== 401) throw new Sentence(body, response.status);

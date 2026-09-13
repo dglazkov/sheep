@@ -295,6 +295,18 @@ export interface StationState {
   joinLag?: number;
   /** Every request, in order: method, path, the bearer it carried, the status, and, for a join, whether a join key was in the store when it came. */
   log?: { method: string; path: string; auth: string | undefined; keyed?: boolean; status: number }[];
+  /** Shear phase 0: the build this station is, for `GET /home` and the header both; unset, the account's last deploy's or `STAMP`, as before. */
+  build?: { commit: string; builtAt: string | null };
+  /** Shear phase 0: the `x-sheep-build` every response carries, when it is not `build`'s; null for none, a home from before shear. */
+  header?: string | null;
+  /**
+   * Shear phase 0: the release branch's manifest, served at `GET /_tip/package.json` for `SHEEP_TIP` to name: its `sheep`
+   * stamp; `"hang"` for a route that takes the request and never answers. Unset, a 404. `tipAsks` counts the requests.
+   */
+  tip?: { commit: string; builtAt: string } | "hang";
+  tipAsks?: number;
+  /** Shear phase 0: `GET /sessions` held back this many milliseconds, a verb that takes as long as a station far away does. */
+  sessionsDelayMs?: number;
 }
 
 /**
@@ -305,12 +317,25 @@ export interface StationState {
  * looked up in the fake account's `<worker>-join` namespace and deleted,
  * and the station's token answered; a bare 404 when the key is not there,
  * there is no namespace, or the write is still `joinLag` asks from the edge.
+ * Shear phase 0: every answer carries `x-sheep-build`, the station's build
+ * as the Worker sends it (or `header`, or none), and `GET /_tip/package.json`
+ * is the manifest `SHEEP_TIP` names, answered from `tip`.
  */
 export function fakeStation(auths: (string | undefined)[], state: StationState): Promise<{ server: Server; url: string }> {
   let joinAsks = 0;
-  const server = createServer((request, response) => {
-    auths.push(request.headers.authorization);
+  const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://fake");
+    // The tip is GitHub's, not the station's: counted on its own, and in neither the bearers nor the log.
+    if (url.pathname === "/_tip/package.json") {
+      state.tipAsks = (state.tipAsks ?? 0) + 1;
+      if (state.tip === "hang") return;
+      if (state.tip === undefined) return void response.writeHead(404).end("no tip");
+      return void response.writeHead(200, { "content-type": "text/plain; charset=utf-8" }).end(JSON.stringify({ name: "sheep", sheep: { ...state.tip, wrangler: "4.0.0" } }));
+    }
+    auths.push(request.headers.authorization);
+    const build = state.build ?? state.account?.deploys.at(-1)?.build ?? STAMP;
+    const header = state.header !== undefined ? state.header : build.builtAt === null ? build.commit : `${build.commit} ${build.builtAt}`;
+    if (header !== null) response.setHeader("x-sheep-build", header);
     const entry: NonNullable<StationState["log"]>[number] = { method: request.method ?? "", path: url.pathname, auth: request.headers.authorization, status: 200 };
     state.log?.push(entry);
     const answer = (status: number, body: string) => {
@@ -339,9 +364,12 @@ export function fakeStation(auths: (string | undefined)[], state: StationState):
       state.account?.events.push("ask 200");
       return answer(200, JSON.stringify({ token: state.token }));
     }
-    if (url.pathname === "/home") return answer(200, JSON.stringify({ serverId: "fake-station", container: true, build: state.account?.deploys.at(-1)?.build ?? STAMP }));
+    if (url.pathname === "/home") return answer(200, JSON.stringify({ serverId: "fake-station", container: true, build }));
     if (request.headers.authorization !== `Bearer ${state.token}`) return answer(401, "unauthorized");
-    if (url.pathname === "/sessions") return answer(200, JSON.stringify(state.sessions));
+    if (url.pathname === "/sessions") {
+      if (state.sessionsDelayMs !== undefined && state.sessionsDelayMs > 0) await new Promise((resolveDelay) => setTimeout(resolveDelay, state.sessionsDelayMs));
+      return answer(200, JSON.stringify(state.sessions));
+    }
     if (url.pathname === "/pastures") return answer(200, JSON.stringify(state.pastures));
     answer(404, "no");
   });

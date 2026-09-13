@@ -113,6 +113,7 @@ export const RINGS = {
     "packages/cli/test/rings.test.ts",
     "packages/cli/test/settle.test.ts",
     "packages/cli/test/surface.test.ts",
+    "packages/cli/test/tip.test.ts",
   ],
   command: [
     "packages/cli/test/bleat.test.ts",
@@ -123,6 +124,7 @@ export const RINGS = {
     "packages/cli/test/kennel.test.ts",
     "packages/cli/test/local.test.ts",
     "packages/cli/test/setup.test.ts",
+    "packages/cli/test/shear.test.ts",
     "packages/cli/test/smit.test.ts",
     "packages/cli/test/stile-tty.test.ts",
     "packages/cli/test/stile.test.ts",

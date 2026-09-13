@@ -396,6 +396,19 @@ describe("the two stamps (station phase 0)", () => {
     expect(skewLine(newer, CHECKOUT, true)).toBeUndefined();
     expect(skewLine(CHECKOUT, CHECKOUT, true)).toBeUndefined();
   });
+
+  it("says nothing for one commit with no -dirty on either side, whatever the times; a dirty side is compared by time (shear phase 0)", () => {
+    const release = { commit: "5511bf9", builtAt: "2026-09-13T18:26:23Z" };
+    const checkoutDeploy = { commit: "5511bf9", builtAt: "2026-09-13T20:02:11Z" };
+    expect(skewLine(checkoutDeploy, release, false)).toBeUndefined();
+    expect(skewLine(release, checkoutDeploy, false)).toBeUndefined();
+    expect(skewLine(release, checkoutDeploy, true)).toBeUndefined();
+    const dirty = { commit: "5511bf9-dirty", builtAt: "2026-09-13T20:02:11Z" };
+    const dirtier = { commit: "5511bf9-dirty", builtAt: "2026-09-13T21:40:00Z" };
+    expect(skewLine(dirty, dirtier, false)).toBe("sheep: the home's build 5511bf9-dirty (2026-09-13T20:02:11Z) is older than this command's 5511bf9-dirty (2026-09-13T21:40:00Z); `sheep home deploy` from this package updates it\n");
+    expect(skewLine(release, dirty, false)).toContain("is older than this command's 5511bf9-dirty");
+    expect(skewLine(dirty, release, false)).toContain("this command's build 5511bf9 (2026-09-13T18:26:23Z) is older than the home's 5511bf9-dirty");
+  });
 });
 
 describe.skipIf(!existsSync(cellWrangler))("sheep home local, in a checkout", () => {
@@ -438,7 +451,10 @@ describe.skipIf(!existsSync(cellWrangler))("sheep home local, in a checkout", ()
 
     // The home holds the token from the file: the door admits it and refuses without it.
     expect((await fetch(`${url}/sessions`)).status).toBe(401);
-    expect((await fetch(`${url}/sessions`, { headers: { authorization: `Bearer ${token}` } })).status).toBe(200);
+    const listed = await fetch(`${url}/sessions`, { headers: { authorization: `Bearer ${token}` } });
+    expect(listed.status).toBe(200);
+    // The real Worker's header (shear phase 0), the commit alone from a checkout, which has no time.
+    expect(listed.headers.get("x-sheep-build")).toBe("0.0.0-checkout");
 
     // A second call reports the running home; --json carries the same address and the wrangler it ran.
     const again = JSON.parse((await w.sheep("home", "local", "--faux", "--no-container", "--json")).stdout) as { home: string; state: string; pid: number; wrangler: { version: string } };

@@ -10,6 +10,7 @@ import { PASTURE_NAME, runPasture } from "./pasture.js";
 import { runPiClient } from "./pi.js";
 import { formatSetup, INSTALL_SPEC, kennelTracked, readGuide, setup, trackedWarning } from "./setup.js";
 import { atTerminal, stile } from "./stile/screen.js";
+import { sayAtExit, startTip } from "./tip.js";
 import { USAGE } from "./usage.js";
 
 /**
@@ -105,6 +106,33 @@ export async function main(argv: readonly string[]): Promise<number> {
     process.stdout.write(`${version()}\n`);
     return 0;
   }
+  // The tip and the lines at the end (shear phase 0): the fetch starts beside the verb and is never waited on; setup is the
+  // shepherd's sitting and the dog's report, and says neither. At the end, the notice and the skew line, each once, on stderr.
+  if (command === "setup") return await run(command, parsed, { heard() {} });
+  const tip = startTip();
+  let home: Home | undefined;
+  let local = false;
+  try {
+    return await run(command, parsed, {
+      heard(used, config) {
+        home = used;
+        local = config.local === true;
+      },
+    });
+  } finally {
+    tip.stop();
+    const said = sayAtExit(home?.homeBuild, local);
+    if (said !== "") process.stderr.write(said);
+  }
+}
+
+/** Where a verb hands back the `Home` it talked through, so the end of the command can read the header it heard (shear phase 0). */
+interface Heard {
+  heard(home: Home, config: SheepConfig): void;
+}
+
+/** Every verb after the version: the config, `home`, `setup`, and the verbs that talk to a home. */
+async function run(command: string, parsed: Parsed, heard: Heard): Promise<number> {
   const config = await loadConfig({ home: parsed.home });
   if (command === "config") {
     process.stdout.write(`home: ${config.home ?? "(none)"}\ntoken: ${config.token ? "set" : "(none)"}\nkennel: ${sheepDir()}\n`);
@@ -140,7 +168,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   if ("refused" in earmarked) return fail(earmarked.refused);
   parsed.secrets = earmarked.secrets;
   try {
-    return await dispatch(command, parsed, config, output);
+    return await dispatch(command, parsed, config, output, heard);
   } catch (error) {
     // Started on demand: the configured home is the local one and nobody answered, so start it, say so, and go on once.
     if (!(config.local === true && isRefused(error))) return fail(error instanceof Error ? error.message : String(error));
@@ -148,7 +176,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     try {
       const started = await startLocalHome({ say: output.err });
       process.stderr.write(`sheep: local home at ${started.url}\n`);
-      return await dispatch(command, parsed, await loadConfig({ home: parsed.home }), output);
+      return await dispatch(command, parsed, await loadConfig({ home: parsed.home }), output, heard);
     } catch (again) {
       return fail(again instanceof Error ? again.message : String(again));
     }
@@ -158,8 +186,9 @@ export async function main(argv: readonly string[]): Promise<number> {
 type Output = Parameters<typeof runPrompt>[4];
 
 /** Every verb that talks to a home. A rejection is thrown to `main`, which prints it as a sentence, or starts the local home first. */
-async function dispatch(command: string, parsed: Parsed, config: SheepConfig, output: Output): Promise<number> {
+async function dispatch(command: string, parsed: Parsed, config: SheepConfig, output: Output, heard: Heard): Promise<number> {
   const home = new Home(config);
+  heard.heard(home, config);
   switch (command) {
     case "ls": {
       const sessions = await home.list(parsed.pasture);

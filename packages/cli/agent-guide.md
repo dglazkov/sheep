@@ -12,9 +12,11 @@ build you run.
 
 `sheep --version` says which build this is. If the command is missing,
 `npx github:dglazkov/sheep#release setup` installs it and puts the skill
-here. Upgrading is `npm install -g github:dglazkov/sheep#release` again,
-then `sheep home deploy`, which `sheep home` asks for while the home is
-older; it asks nobody anything, and every session is kept.
+here. A verb says on stderr, once, that a newer build is out, and once
+that the home's build and this command's differ; `sheep home` says the
+second every time. `npm install -g github:dglazkov/sheep#release` updates
+the command, then `sheep home deploy` the home, asking nobody anything and
+keeping every session. `SHEEP_TIP=0` stops the looking for a newer build.
 
 Every verb talks to a **home**: the shepherd's station on their
 Cloudflare account, where every sheep lives with a container to clone,

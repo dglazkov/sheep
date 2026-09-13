@@ -968,6 +968,9 @@ class Ring {
       npm_config_fund: "false",
       npm_config_audit: "false",
       npm_config_progress: "false",
+      // No ring reaches GitHub for the tip (shear phase 0): the notice is off in every ring's command. Shear phase 1 lifts it
+      // for the account ring's older release alone, the one place the real tip is read against a real command.
+      SHEEP_TIP: "0",
     };
   }
 

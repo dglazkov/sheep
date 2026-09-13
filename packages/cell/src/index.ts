@@ -37,6 +37,9 @@
  * bearer, a bearer whose key is not there — is the same bare 404 as a
  * route that does not exist, saying nothing. A KV write is not a Worker
  * version, so nothing running here restarts (issue #10).
+ * Shear phase 0: every response the Worker returns carries
+ * `x-sheep-build: <commit> <builtAt>`, set once where `fetch` returns, so
+ * any command hears which build answered it; a WebSocket's 101 too.
  */
 import { type Budget, mintSecrets, unknownPasture, unknownSession } from "./directory.ts";
 import { hasEyes } from "./eyes/eyes.ts";
@@ -121,6 +124,38 @@ export function homeBuild(): HomeBuild {
   return CHECKOUT_BUILD;
 }
 
+/**
+ * The header every response carries (shear phase 0), so any command hears the home's build without asking `GET /home`.
+ * Not exported: workerd reads every export of the Worker's module as a handler or a class, and refuses a string.
+ */
+const BUILD_HEADER = "x-sheep-build";
+
+/** The header's value: the stamp's commit and time separated by a space; the commit alone where there is no time (a checkout). */
+export function buildHeader(build: HomeBuild = homeBuild()): string {
+  return build.builtAt === null ? build.commit : `${build.commit} ${build.builtAt}`;
+}
+
+/**
+ * A response with the header set (shear phase 0), in the one place the
+ * Worker's `fetch` hands a response back. A response from a Durable
+ * Object's stub has immutable headers, so it is made again around the same
+ * body; a WebSocket upgrade's 101 is made again around the same socket,
+ * which is the only way a 101 can be built.
+ */
+export function stamped(response: Response): Response {
+  const value = buildHeader();
+  try {
+    response.headers.set(BUILD_HEADER, value);
+    return response;
+  } catch {
+    // immutable headers: a stub's response
+  }
+  const headers = new Headers(response.headers);
+  headers.set(BUILD_HEADER, value);
+  if (response.webSocket) return new Response(null, { status: response.status, statusText: response.statusText, webSocket: response.webSocket, headers });
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
 /** `GET /home`'s body: what this home has, for `sheep home` to print. */
 export interface HomeReport extends Budget {
   serverId: string;
@@ -194,7 +229,8 @@ async function pastureRoute(request: Request, env: Env, name: string, path: stri
   return new Response("not found", { status: 404 });
 }
 
-export default {
+/** Every route the Worker has; the default export's `fetch` stamps what it answers. */
+const router = {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname === "/" && request.method === "GET") return new Response("sheep\n");
@@ -294,5 +330,11 @@ export default {
       return cell.fetch(new Request(inner, request));
     }
     return new Response("not found", { status: 404 });
+  },
+} satisfies ExportedHandler<Env>;
+
+export default {
+  async fetch(request, env): Promise<Response> {
+    return stamped(await router.fetch(request, env));
   },
 } satisfies ExportedHandler<Env>;
