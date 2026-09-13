@@ -33,9 +33,8 @@ the station the account already has.
 ## The kennel
 
 The **kennel** is `.sheep/` at or above the working directory, found the
-way git finds `.git`, and `~/.sheep` when there is none, which is usually
-where the shepherd's home is named, so you find it wherever you stand;
-`cd` is how you switch. Your `sheep setup` makes a kennel only where no
+way git finds `.git`, and `~/.sheep` when there is none; `cd` is how you
+switch. Your `sheep setup` makes a kennel only where no
 home is reachable. If the command says `.sheep` is tracked, tell the
 shepherd a token is in their repository; do not fix it yourself.
 
@@ -68,7 +67,8 @@ stderr as `sheep: …` with exit 2.
 - `sheep wait [--timeout <seconds>] <id>...` blocks until every named
   sheep is idle and prints each one's last assistant message,
   `<id>\t<message>`. Exit 124 on timeout, with what finished. Read several
-  in one call; do not poll.
+  in one call; do not poll. A held `wait`, prompt, or `abort` survives the
+  home's restart: it attaches again and says so once on stderr.
 - `sheep abort <id>` stops the open turn and prints `<id>\taborted <op>`,
   or `<id>\tidle` with none.
 - `sheep rm <id>` ends a sheep and prints `<id>\tended`: its turn aborted,
@@ -76,9 +76,9 @@ stderr as `sheep: …` with exit 2.
 - `sheep log [--since <entry id | ISO time>] [--last <n>] <id>` prints the
   transcript, oldest first, tool calls and results included, with a
   `[setup]` block where each `setup.sh` ran: how it ended and the tail of
-  what it printed.
+  what it printed. A model call a restart cut off ends `[error] <why>`.
 - `sheep export <id> [file]` writes the session as a pi SQLite file
-  (`<id>.sqlite` by default) and prints its table counts.
+  (`<id>.sqlite` by default).
 
 A sheep has pi's tools: `read`, `write`, and `edit` on a workspace in its
 cell, and `bash` with the usual text tools. With a container the

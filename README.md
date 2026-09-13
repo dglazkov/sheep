@@ -342,8 +342,11 @@ sheep --home <url> ...                    # a different home for one command
 shell if you like. With a prompt after `--` the reply streams and the
 command exits; without one you get pi's full terminal. Under `--json` the
 held turn's entries stream as they land, one pi entry per line, tool calls
-and results included, and the last assistant entry is still the last line,
-so a program that reads only that line reads what it read before.
+and results included, and the last assistant entry is still the last line.
+A held turn, `sheep wait`, and `sheep abort` hold through the home's
+restart (a deploy, a secret put): the dropped socket is attached again,
+said once on stderr, and the model call the restart cut off reads
+`[error] Assistant request was interrupted. …` in `sheep log`.
 
 A pasture's secrets (`sheep pasture secret set <name> <KEY>`, the value on
 stdin) are setup's environment for every sheep born into it, and its
