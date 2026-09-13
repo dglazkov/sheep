@@ -48,10 +48,12 @@ usage:
   sheep --agent-help                        the guide for an agent: what sheep is, the verbs, the home, what needs a person
   sheep --version
 
-  sheep home deploy [--name <worker>] [--subdomain <name>] [--json]
+  sheep home deploy [--name <worker>] [--subdomain <name>] [--now] [--json]
                                             the station: this package's home on the shepherd's Cloudflare account, a
                                             container beside every cell. Without the account token and the model key
                                             kept on this machine, it prints what it needs and costs and exits 2.
+                                            While a sheep is mid-turn it lists them and exits 2, since a deploy
+                                            restarts their turns; --now deploys anyway and reports interrupted: <n>.
                                             The name is the kennel's, minted at the first deploy and
                                             recorded in the config; run again, it redeploys the same Worker from this
                                             package and keeps its secrets. From a checkout, the home's build is the

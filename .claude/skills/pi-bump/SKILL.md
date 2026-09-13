@@ -123,6 +123,8 @@ done
 `clean` first: `build` does not remove files, and a stale `dist/` can hide
 that the build stopped producing something the cell resolves.
 
+A bump that moves pi's wire (`PROTOCOL_VERSION`) or a route's shape moves the floor too: `OLDEST_HOME` in `packages/cli/src/home.ts` becomes the `builtAt` of the release that ships the bump.
+
 Then push the branch and record the new pin in the superproject:
 
 ```sh

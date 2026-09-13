@@ -698,6 +698,83 @@ describe("the smit: a checkout's deploy marks its station (smit phase 0)", () =>
   });
 });
 
+describe("the guard: a redeploy over sheep mid-turn (shear phase 1)", () => {
+  const MID = "44444444-4444-4444-8444-444444444444";
+  const row = (id: string, state: string, task: string | null) => ({ id, name: null, createdAt: 1_757_000_000_000, state, pasture: null, task });
+  /** A world whose station this kennel deployed once, idle, admitting the token the deploy kept; the rows are set after, as the herd turns. */
+  const deployedOnce = async () => {
+    const w = await world();
+    const first = await w.sheep(["home", "deploy", "--faux", "--json"]);
+    expect(first.code, first.stderr).toBe(0);
+    // A first deploy has no station to ask.
+    expect((JSON.parse(first.stdout) as { interrupted: unknown }).interrupted).toBeNull();
+    w.stationState.token = (await readConfig(w.config)).token as string;
+    return w;
+  };
+
+  it("refuses with exit 2, the id and task on stderr and the sentence, having run no wrangler and touched no join store; --json says the same (journey 3 step 2)", async () => {
+    const w = await deployedOnce();
+    w.stationState.sessions = [row("55555555-5555-4555-8555-555555555555", "idle", "done already"), row(MID, "running", "write the tests for the floor")];
+    w.stationState.log = [];
+    const calls = (await w.calls()).length;
+    const asked = w.state.requests.length;
+    const refused = await w.sheep(["home", "deploy", "--faux"]);
+    expect(refused.code).toBe(2);
+    expect(refused.stdout).toBe("");
+    const sentence = `these sheep are mid-turn at ${address("blog", "fake")}: a deploy restarts their turns and runs their interrupted calls again, so nothing was deployed; \`sheep home deploy --now\` deploys anyway`;
+    expect(refused.stderr.endsWith(`${MID}  write the tests for the floor\nsheep: ${sentence}\n`), refused.stderr).toBe(true);
+    expect(refused.stderr).not.toContain("55555555-5555-4555-8555-555555555555");
+    // Nothing run and no join store read or made: the guard asked before both, with the kept token.
+    expect(await w.calls()).toHaveLength(calls);
+    expect(w.state.requests.slice(asked).filter((request) => request.path.includes("/storage/kv"))).toEqual([]);
+    expect(w.stationState.log.find((entry) => entry.path === "/sessions")?.auth).toBe(`Bearer ${(await readConfig(w.config)).token}`);
+
+    const asJson = await w.sheep(["home", "deploy", "--faux", "--json"]);
+    expect(asJson.code).toBe(2);
+    expect(JSON.parse(asJson.stdout)).toEqual({ refused: sentence, midTurn: [{ id: MID, task: "write the tests for the floor", state: "running" }] });
+    expect(await w.calls()).toHaveLength(calls);
+  });
+
+  it("deploys with --now, and the report says interrupted: 1 in prose and --json (journey 3 step 3)", async () => {
+    const w = await deployedOnce();
+    w.stationState.sessions = [row(MID, "waiting", null)];
+    const calls = (await w.calls()).length;
+    const now = await w.sheep(["home", "deploy", "--faux", "--now", "--json"]);
+    expect(now.code, now.stderr).toBe(0);
+    expect(JSON.parse(now.stdout)).toMatchObject({ state: "redeployed", interrupted: 1, stamp: { moved: true } });
+    expect((await w.calls()).slice(calls).map((call) => call.args[0])).toEqual(["deploy", "secret", "secret", "secret"]);
+    const prose = await w.sheep(["home", "deploy", "--faux", "--now"]);
+    expect(prose.code, prose.stderr).toBe(0);
+    expect(prose.stdout).toContain("stamp: moved (0s)\ninterrupted: 1\nnext: ");
+    expect(prose.stderr).not.toContain("mid-turn");
+  });
+
+  it("deploys an idle station without a word about it, and one whose door or listing does not answer (journey 3 step 4)", { timeout: 30_000 }, async () => {
+    const w = await deployedOnce();
+    w.stationState.sessions = [row(MID, "idle", "done")];
+    const idle = await w.sheep(["home", "deploy", "--faux"]);
+    expect(idle.code, idle.stderr).toBe(0);
+    expect(idle.stdout).toContain("stamp: moved (0s)\nnext: ");
+    expect(`${idle.stdout}${idle.stderr}`).not.toMatch(/interrupted|mid-turn/);
+    const idleJson = await w.sheep(["home", "deploy", "--faux", "--json"]);
+    expect(JSON.parse(idleJson.stdout)).toMatchObject({ interrupted: 0 });
+
+    // A lane running, and the door down at the guard's ask: the recovery path deploys, and nothing was counted.
+    w.stationState.sessions = [row(MID, "running", "still going")];
+    w.stationState.doorDown = 1;
+    const down = await w.sheep(["home", "deploy", "--faux", "--json"]);
+    expect(down.code, down.stderr).toBe(0);
+    expect(JSON.parse(down.stdout)).toMatchObject({ state: "redeployed", answers: true, interrupted: null });
+    // The door answers and the listing refuses the kept token: the guard cannot know, and the deploy goes on.
+    const kept = w.stationState.token;
+    w.stationState.token = "not-the-kept-token";
+    const refusedToken = await w.sheep(["home", "deploy", "--faux", "--json"]);
+    w.stationState.token = kept;
+    expect(refusedToken.code, refusedToken.stderr).toBe(0);
+    expect(JSON.parse(refusedToken.stdout)).toMatchObject({ interrupted: null });
+  });
+});
+
 describe("the name, meeting the account", () => {
   it("mints past a taken name, over Workers and container applications alike", async () => {
     const w = await world({ ...fresh(), workers: ["blog", "sheep"], applications: [{ id: "x", name: "blog-2" }] });

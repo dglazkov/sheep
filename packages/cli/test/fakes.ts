@@ -307,6 +307,10 @@ export interface StationState {
   tipAsks?: number;
   /** Shear phase 0: `GET /sessions` held back this many milliseconds, a verb that takes as long as a station far away does. */
   sessionsDelayMs?: number;
+  /** Shear phase 1: how many `GET /` asks answer 503 before the door answers `sheep`: a station that does not answer the guard's ask. */
+  doorDown?: number;
+  /** Shear phase 1: a path answered with this status and body, before any other route: a route that threw, a verb refused. */
+  routes?: Record<string, { status: number; body: string }>;
 }
 
 /**
@@ -319,7 +323,9 @@ export interface StationState {
  * there is no namespace, or the write is still `joinLag` asks from the edge.
  * Shear phase 0: every answer carries `x-sheep-build`, the station's build
  * as the Worker sends it (or `header`, or none), and `GET /_tip/package.json`
- * is the manifest `SHEEP_TIP` names, answered from `tip`.
+ * is the manifest `SHEEP_TIP` names, answered from `tip`. Shear phase 1:
+ * `doorDown` and `routes`, a door that does not answer and a route's own
+ * status; a lane `running` is a session row with that state.
  */
 export function fakeStation(auths: (string | undefined)[], state: StationState): Promise<{ server: Server; url: string }> {
   let joinAsks = 0;
@@ -344,6 +350,12 @@ export function fakeStation(auths: (string | undefined)[], state: StationState):
       response.end(body);
     };
     const named = url.searchParams.get("worker");
+    const routed = state.routes?.[url.pathname];
+    if (routed !== undefined) return answer(routed.status, routed.body);
+    if (url.pathname === "/" && request.method === "GET" && (state.doorDown ?? 0) > 0) {
+      state.doorDown = state.doorDown! - 1;
+      return answer(503, "the door is down");
+    }
     if (url.pathname === "/" && request.method === "GET") return named === null || named === state.worker ? answer(200, "sheep\n") : answer(200, "<!doctype html><title>another Worker</title>");
     if (url.pathname === "/join" && request.method === "POST") {
       const store = state.worker === undefined || named !== state.worker ? undefined : state.account?.kv.find((namespace) => namespace.title === `${state.worker}-join`);

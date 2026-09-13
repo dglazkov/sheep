@@ -19,14 +19,13 @@ finding and a stop, not a feature.
 
 ---
 
-**Where we are: shear phase 0 PART-DONE, 13 September 2026.** The
-notice and the header hold in all three inner rings, and the walk on
-release fdca17c said the notice once; it also found the tip's fetch
-never lands for a fast verb, so the fetch moves to a detached child
-(design.md, "The notice") and the walk is walked again on that release.
-shear phase 1 is being built beside it; its account walk upgrades from
-the release that carries the child, under the shepherd's standing
-authorization.
+**Where we are: shear phase 0 and shear phase 1 PART-DONE, 13 September
+2026.** Both hold in all three inner rings. shear phase 0's walk on
+release fdca17c said the notice once and found the tip's fetch never
+lands for a fast verb, so the fetch moves to a detached child (design.md,
+"The notice"), built next and walked on its release; shear phase 1's
+account walk then upgrades from that release, under the shepherd's
+standing authorization. Nothing waits on a person.
 
 Two phases, because the notice and the header are lines a command
 says, provable against the fakes alone, and the floor and the guard are
@@ -113,7 +112,7 @@ on its build, and the walk on its release.
 - **2026-09-13 — A dropped Worker header fails the cell's header case and the local home's, not the skew cases:** those run against the fake station, which sends its own; `build.test.ts` said `expected null to be '0.0.0-checkout'`.
 - **2026-09-13 — The said file never written fails four of seven `shear.test.ts` cases;** the notice for a moved tip and both skew lines print on the second run. An unaborted fetch fails the hanging tip: 2225 ms against 533.
 - **2026-09-13 — workerd refuses a Worker module exporting a string** ("not of type 'function or ExportedHandler'") while the vitest pool accepts it; only the home ring caught `BUILD_HEADER` exported from the cell.
-- **2026-09-13 — Node's WebSocket shows no handshake headers,** so the command hears the header from `GET /home`, which every socket verb asks first; the Worker still stamps the 101, rebuilt around the socket, since a stub's response headers are immutable.
+- **2026-09-13 — Node's WebSocket shows no handshake headers;** socket verbs hear the header from the `GET /home` they ask first. The Worker stamps the 101 anyway, rebuilt, since a stub's headers are immutable.
 - **2026-09-13 — The walk on release fdca17c held:** its local home sent `x-sheep-build: fdca17c 2026-09-13T19:16:16Z`; `sheep ls` against a served newer manifest said the notice once in 101 ms, the second run nothing, `SHEEP_TIP=0` nothing, stdout byte-equal.
 - **2026-09-13 — The in-process fetch never lands for a fast verb:** against the real tip `sheep ls` ended in 114–135 ms, GitHub answers Node in 71–82 after its start, and `tip.json` was never written, run after run.
 - **2026-09-13 — The release workflow flaked on this project's docs-only commit 49788e8:** bleat's `setup running (0.x s)` read `1.0 s` on the runner, the second time that test has failed a release.
@@ -164,6 +163,14 @@ account, one station named `sheep-hermetic-<sha>`, deployed twice,
 walked, deleted, under the shepherd's standing authorization to run
 account walks.
 
-**Status: NOT STARTED.**
+**Status: PART-DONE, 2026-09-13.** `pnpm test` exits 0 on all three
+inner rings with both mutations caught; the account walk waits on the
+release that carries shear phase 0's child.
 
 **Findings:**
+
+- **2026-09-13 — `OLDEST_HOME` is `2026-09-13T19:16:16Z`,** the stamp of release f425667, built from fdca17c; the account ring refuses an `--older` from before fdca17c at usage, since its command says no notice.
+- **2026-09-13 — Mutations held:** the guard's count never read failed the refusal case, `expected +0 to be 2`, the deploy made; the floor's sentence dropped failed both floor cases in `shear.test.ts`, bare `sheep: no`.
+- **2026-09-13 — The floor cannot tell a verb a home lacks from a row it lacks:** an older home's own 404 gains the sentence too; `bleat.test.ts`'s headerless fake failed on it until it sent a checkout's header.
+- **2026-09-13 — A header with no time is a checkout's home,** running the checkout's own code, so the floor leaves it alone, as it does a 5xx and a 401.
+- **2026-09-13 — The account ring's `--dry-run` needs the token,** so sh1 to sh4 were held by reading and `node --check` until the walk.

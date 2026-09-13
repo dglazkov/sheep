@@ -432,6 +432,21 @@
  * with `<id>\t<reply>`, having said the drop on stderr, within seconds of
  * the reply; `sheep log` must carry pi's interruption as an `[error]` line.
  * The sheep is ended with n1's check, counted minted and ended.
+ *
+ * Shear phase 1 gives the account ring four steps around the upgrade
+ * (shear's journey 5 step 2), and refuses an `--older` from before shear
+ * phase 0, whose command says no notice and whose home sends no header.
+ * `sh1`, after a2b: the older release's `sheep ls` with `SHEEP_TIP` unset,
+ * the real tip, prints the notice in one of up to three runs (the fetch
+ * never holds the verb, so a lost race says nothing and keeps nothing) and
+ * nothing in the run after. `sh2`, after the install: the newer's `sheep
+ * ls` prints the skew line once, from the older home's header. `sh3`: a
+ * sheep minted with a two-minute faux turn and a `sheep wait` held on it;
+ * `sheep home deploy`, prose and `--json`, exits 2 naming it, and the home
+ * still reports the older build. The upgrade's own deploy then runs with
+ * `--now` and must report `interrupted: 1`; `sh4`: the held wait returns
+ * the reply, saying nothing but tether's reattach line. The guard's sheep
+ * is ended with n1's.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
@@ -969,7 +984,7 @@ class Ring {
       npm_config_audit: "false",
       npm_config_progress: "false",
       // No ring reaches GitHub for the tip (shear phase 0): the notice is off in every ring's command. Shear phase 1 lifts it
-      // for the account ring's older release alone, the one place the real tip is read against a real command.
+      // for the account ring's older release's `sheep ls` alone (sh1), the one place the real tip is read against a real command.
       SHEEP_TIP: "0",
     };
   }
@@ -2788,6 +2803,9 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
   } catch (error) {
     usage(error.message);
   }
+  // Shear phase 1: the walk reads the notice from the older's `sheep ls` and the skew line from its home's header, which a
+  // release from before shear phase 0 has neither of; refused before the account is asked anything.
+  if (!releaseCarries(older, SHEAR_SINCE, "shear phase 0's notice and header")) usage(`--older ${older.ref} is ${older.stamp.commit}, from before shear phase 0 (${SHEAR_SINCE}): its command says no notice and its home sends no header, which the walk reads; name shear phase 0's release or a later one`);
   const api = accountApi(token);
   // The second machine is a container (station phase 2): Docker is needed for the walk, and its absence is known before anything is made.
   const docker = spawnSync("docker", ["version", "--format", "{{.Server.Version}} {{.Server.Os}}/{{.Server.Arch}}"], { encoding: "utf8" });
@@ -3184,6 +3202,18 @@ function releaseCarriesStop(release) {
   throw new Error(`cannot tell whether the release built from ${release.stamp.commit} carries stile phase 0's stop: git merge-base --is-ancestor ${STOP_SINCE} ${release.stamp.commit} exited ${done.status}: ${(done.stderr || "").trim()}`);
 }
 
+/** The commit on main shear phase 0 built (the notice and the header): an older release built from it or after says both (shear phase 1). */
+const SHEAR_SINCE = "fdca17c";
+
+/** Whether a release was built from `since` or a commit after it on main, asked of git as `releaseCarriesStop` asks. */
+function releaseCarries(release, since, what) {
+  const gitDir = release.git("rev-parse", "--absolute-git-dir");
+  const done = spawnSync("git", ["--git-dir", gitDir, "merge-base", "--is-ancestor", since, release.stamp.commit], { encoding: "utf8" });
+  if (done.status === 0) return true;
+  if (done.status === 1) return false;
+  throw new Error(`cannot tell whether the release built from ${release.stamp.commit} carries ${what}: git merge-base --is-ancestor ${since} ${release.stamp.commit} exited ${done.status}: ${(done.stderr || "").trim()}`);
+}
+
 /** What is wrong with a two-part stop for a missing account token, prose and `--json`, or undefined when it holds. */
 function deployStopWrong(prose, json) {
   const [dogLine, ...rest] = prose.stderr.split("\n");
@@ -3305,6 +3335,36 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     if (olderPastures.code !== 0 || !olderPastures.stdout.split("\n").some((line) => line.startsWith("older\t"))) ring.fail("a2b", "sheep pasture ls (in blog)", olderPastures);
     ring.ok("a2b", 'sheep new --name older-sheep -- "hello"; sheep pasture new older; sheep ls; sheep pasture ls (on the older release)', `${FAUX_REPLY}; ${olderSheep} (older-sheep) listed; the pasture older listed, ${olderPasture.stdout.trim().split("\t")[2]} branch, no repository`);
 
+    // sh1 (shear phase 1, shear's journey 5 step 2 for journey 1): the older release's `sheep ls` with the tip on, the one place
+    // a ring reads the real tip, the release branch's manifest on GitHub, against a real command. The fetch never holds the verb,
+    // so a run whose fetch lost the race says nothing and keeps nothing; up to three runs, the notice said in exactly one, and
+    // a run after it says nothing, since the said file keeps the tip and the commit it was said for.
+    const tipOn = { ...ring.env() };
+    delete tipOn.SHEEP_TIP;
+    delete tipOn.CI;
+    const saidPath = join(ring.home, ".sheep", "tip.json");
+    let noticed;
+    let noticeRuns = 0;
+    const noticeRunsSeen = [];
+    while (noticed === undefined && noticeRuns < 3) {
+      noticeRuns++;
+      const listed = await ring.sheep(["ls"], { env: tipOn });
+      noticeRunsSeen.push(listed);
+      if (listed.code !== 0 || !listed.stdout.includes(olderSheep)) ring.fail("sh1", `sheep ls (the older release ${older.stamp.commit}, the tip on; run ${noticeRuns})`, { ...listed, stderr: `${listed.stderr}\nexpected exit 0 and ${olderSheep} listed` });
+      if (listed.stderr !== "") noticed = listed;
+    }
+    const said = existsSync(saidPath) ? JSON.parse(readFileSync(saidPath, "utf8")) : undefined;
+    const tip = said?.tip;
+    if (noticed === undefined || typeof tip?.commit !== "string" || typeof tip?.builtAt !== "string") {
+      ring.fail("sh1", `sheep ls ×${noticeRuns} (the older release ${older.stamp.commit}, the tip on); cat ~/.sheep/tip.json`, { stdout: JSON.stringify(said ?? null), stderr: `expected the notice on stderr within three runs and the tip kept in ${saidPath}; the runs' stderr: ${JSON.stringify(noticeRunsSeen.map((one) => one.stderr))}`, code: 1 });
+    }
+    if (tip.commit === older.stamp.commit || !(older.stamp.builtAt < tip.builtAt)) ring.fail("sh1", "cat ~/.sheep/tip.json", { stdout: JSON.stringify(said), stderr: `the release branch's tip is ${tip.commit} (${tip.builtAt}), not a build newer than the older ${older.stamp.commit} (${older.stamp.builtAt}): the walk needs a newer release published`, code: 1 });
+    const notice = `sheep: a newer build ${tip.commit} (${tip.builtAt}) is out; this command is ${older.stamp.commit} (${older.stamp.builtAt}); \`npm install -g github:dglazkov/sheep#release\` updates it\n`;
+    if (noticed.stderr !== notice || said.noticed !== tip.commit) ring.fail("sh1", `sheep ls (the older release, the tip on; run ${noticeRuns})`, { ...noticed, stderr: `${noticed.stderr}\nexpected exactly the notice ${JSON.stringify(notice)}, and the said file's noticed ${tip.commit}; it has ${JSON.stringify(said.noticed)}` });
+    const quiet = await ring.sheep(["ls"], { env: tipOn });
+    if (quiet.code !== 0 || quiet.stderr !== "") ring.fail("sh1", "sheep ls (the older release, the tip on, after the notice)", { ...quiet, stderr: `${quiet.stderr}\nexpected exit 0 and nothing on stderr: the notice is said once` });
+    ring.ok("sh1", `sheep ls ×${noticeRuns + 1} (the older release ${older.stamp.commit}, SHEEP_TIP unset, the real tip)`, `the notice said once, on run ${noticeRuns}: the tip ${tip.commit} (${tip.builtAt}) against ${older.stamp.commit}; ~/.sheep/tip.json keeps it; the run after said nothing`);
+
     // The upgrade (journey 4 step 1): the newer package into the same prefix; the command names it; sheep home warns; the redeploy moves the stamp and keeps every row.
     const upStarted = Date.now();
     const upgraded = await run("npm", ["install", "-g", newer.spec], { env: ring.env(), cwd: ring.blog });
@@ -3332,8 +3392,15 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     const expectedVersion = `sheep ${stamp.commit} (${stamp.builtAt})\n`;
     if (version.code !== 0 || version.stdout !== expectedVersion || version.stderr !== "") ring.fail("up", "sheep --version", { ...version, stderr: `${version.stderr}\nexpected ${JSON.stringify(expectedVersion)} and an empty stderr` });
     // The skew line: the home is the older build, this command the newer, and the fix named is the deploy.
-    const skewed = await ring.sheep(["home"]);
     const skewLine = `sheep: the home's build ${older.stamp.commit} (${older.stamp.builtAt}) is older than this command's ${stamp.commit} (${stamp.builtAt}); \`sheep home deploy\` from this package updates it\n`;
+    // sh2 (shear phase 1, journey 2 step 2): any verb says it once, from the header on the older home's answer; the next says nothing.
+    const skewOnce = await ring.sheep(["ls"]);
+    const skewAfter = await ring.sheep(["ls"]);
+    if (skewOnce.code !== 0 || skewOnce.stderr !== skewLine || skewAfter.code !== 0 || skewAfter.stderr !== "") {
+      ring.fail("sh2", "sheep ls; sheep ls (the newer command against the older home)", { stdout: `${skewOnce.stdout}--- the second ---\n${skewAfter.stdout}`, stderr: `first: ${JSON.stringify(skewOnce.stderr)}; second: ${JSON.stringify(skewAfter.stderr)}\nexpected the skew line ${JSON.stringify(skewLine)} on the first alone`, code: skewOnce.code || skewAfter.code });
+    }
+    ring.ok("sh2", "sheep ls; sheep ls (the newer command against the older home)", `the skew line once, from the header: the home ${older.stamp.commit} older than the command ${stamp.commit}; the second said nothing`);
+    const skewed = await ring.sheep(["home"]);
     if (skewed.code !== 0 || skewed.stderr !== skewLine || !skewed.stdout.includes(`home build: ${older.stamp.commit} (${older.stamp.builtAt})\ncli build: ${stamp.commit} (${stamp.builtAt})\n`)) {
       ring.fail("up", "sheep home (in blog, the newer command against the older home)", { ...skewed, stderr: `${skewed.stderr}\nexpected exactly the skew line on stderr: ${JSON.stringify(skewLine)}` });
     }
@@ -3345,10 +3412,50 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     chmodSync(keptPath, 0o600);
     const upEnv = ring.env();
     if (Object.keys(upEnv).some((name) => name.startsWith("CLOUDFLARE_") || name === "ANTHROPIC_API_KEY")) ring.fail("up", "the upgrade's environment", { stdout: Object.keys(upEnv).filter((name) => name.startsWith("CLOUDFLARE_") || name === "ANTHROPIC_API_KEY").join("\n"), stderr: "expected the environment stripped of every credential", code: 1 });
+    // sh3 (shear phase 1, journey 3 steps 1 and 2): a sheep mid-turn, a faux turn longer than two refusals, and a wait held on it;
+    // the newer command's deploy refuses, prose and --json, naming it, and nothing is deployed: the home still reports the older.
+    const guardStarted = Date.now();
+    const guardMinted = await ring.sheep(["new", "--name", "shear-guard", "--detach"]);
+    const guardId = /^([0-9a-f-]{36})\n$/.exec(guardMinted.stdout)?.[1];
+    if (guardMinted.code !== 0 || !guardId) ring.fail("sh3", "sheep new --name shear-guard --detach", { ...guardMinted, stderr: `${guardMinted.stderr}\nexpected exit 0 and the id alone on stdout` });
+    station.minted.push(guardId);
+    const guardPosted = await fetch(`${home}/s/${encodeURIComponent(guardId)}/faux`, { method: "POST", headers: { authorization: `Bearer ${station.token}`, "content-type": "application/json" }, body: JSON.stringify(SHEAR_GUARD_PROGRAM), signal: AbortSignal.timeout(30_000) });
+    if (guardPosted.status !== 200) ring.fail("sh3", `POST /s/${guardId}/faux`, { stdout: await guardPosted.text(), stderr: `status ${guardPosted.status}`, code: 1 });
+    const guardDetached = await ring.sheep(["attach", guardId, "--detach", "--", SHEAR_GUARD_TASK]);
+    if (guardDetached.code !== 0 || guardDetached.stdout !== `${guardId}\n`) ring.fail("sh3", `sheep attach ${guardId} --detach -- "${SHEAR_GUARD_TASK}"`, guardDetached);
+    const guardRunningBy = Date.now() + 60_000;
+    for (;;) {
+      const rows = JSON.parse((await ring.sheep(["ls", "--json"])).stdout || "[]");
+      if (rows.find((row) => row.id === guardId)?.state === "running") break;
+      if (Date.now() > guardRunningBy) ring.fail("sh3", "sheep ls --json (the guard's turn running)", { stdout: JSON.stringify(rows), stderr: `expected ${guardId} running within a minute of the detached prompt`, code: 1 });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    const guardWaiting = ring.sheep(["wait", "--timeout", "900", guardId]);
+    const guardSentence = `these sheep are mid-turn at ${home}: a deploy restarts their turns and runs their interrupted calls again, so nothing was deployed; \`sheep home deploy --now\` deploys anyway`;
+    const guardRefused = await ring.sheep(["home", "deploy", "--faux"], { env: upEnv });
+    if (guardRefused.code !== 2 || guardRefused.stdout !== "" || !guardRefused.stderr.endsWith(`${guardId}  ${SHEAR_GUARD_TASK}\nsheep: ${guardSentence}\n`)) {
+      ring.fail("sh3", "sheep home deploy --faux (the newer command, a sheep mid-turn)", { ...guardRefused, stderr: `${guardRefused.stderr}\nexpected exit 2, nothing on stdout, and stderr ending "${guardId}  ${SHEAR_GUARD_TASK}" then "sheep: ${guardSentence}"` });
+    }
+    const guardRefusedJson = await ring.sheep(["home", "deploy", "--faux", "--json"], { env: upEnv });
+    let guardJson;
+    try {
+      guardJson = JSON.parse(guardRefusedJson.stdout);
+    } catch {
+      guardJson = undefined;
+    }
+    if (guardRefusedJson.code !== 2 || guardJson?.refused !== guardSentence || JSON.stringify(guardJson?.midTurn) !== JSON.stringify([{ id: guardId, task: SHEAR_GUARD_TASK, state: "running" }])) {
+      ring.fail("sh3", "sheep home deploy --faux --json (the newer command, a sheep mid-turn)", { ...guardRefusedJson, stderr: `${guardRefusedJson.stderr}\nexpected exit 2 and {refused: the sentence, midTurn: [{id: ${guardId}, task, state: running}]}` });
+    }
+    const guardHome = parse("sh3", "sheep home --json (after the refusals)", await ring.sheep(["home", "--json"]));
+    if (JSON.stringify(guardHome.build?.home) !== JSON.stringify({ commit: older.stamp.commit, builtAt: older.stamp.builtAt })) ring.fail("sh3", "sheep home --json (after the refusals)", { stdout: JSON.stringify(guardHome), stderr: `expected the home still ${older.stamp.commit} (${older.stamp.builtAt}): the refused deploys deployed nothing`, code: 1 });
+    ring.ok("sh3", `sheep new --name shear-guard --detach; POST /s/${guardId}/faux; sheep attach --detach; sheep wait (held); sheep home deploy --faux [--json] (the newer command)`, `${((Date.now() - guardStarted) / 1000).toFixed(0)}s; exit 2 twice, "${guardId}  ${SHEAR_GUARD_TASK}" and the sentence, --json {refused, midTurn}; the home still ${older.stamp.commit}`);
+
+    // The upgrade itself, with --now (shear phase 1, journey 3 step 3): the guard's sheep is still mid-turn, so without it the deploy refuses.
     const upDeployStarted = Date.now();
-    const upDeployed = await ring.sheep(["home", "deploy", "--faux", "--json"], { env: upEnv });
+    const upDeployed = await ring.sheep(["home", "deploy", "--faux", "--now", "--json"], { env: upEnv });
     const upDeploySeconds = ((Date.now() - upDeployStarted) / 1000).toFixed(0);
-    const upReport = parse("up", "sheep home deploy --faux --json (the newer package)", upDeployed);
+    const upReport = parse("up", "sheep home deploy --faux --now --json (the newer package)", upDeployed);
+    if (upDeployed.code !== 0 || upReport.interrupted !== 1) ring.fail("sh4", "sheep home deploy --faux --now --json (the newer package, the guard's sheep mid-turn)", { ...upDeployed, stderr: `${upDeployed.stderr}\nexpected exit 0 and interrupted: 1; got ${JSON.stringify(upReport.interrupted)}` });
     if (upDeployed.code !== 0 || upReport.name !== name || upReport.home !== home || upReport.state !== "redeployed" || upReport.answers !== true || JSON.stringify(upReport.build?.home) !== JSON.stringify(build) || JSON.stringify(upReport.build?.cli) !== JSON.stringify(build) || upReport.image !== station.image || !(upReport.containers?.healthy >= 1)) {
       ring.fail("up", "sheep home deploy --faux --json (the newer package)", { ...upDeployed, stderr: `${upDeployed.stderr}\nexpected the same name and home, state redeployed, answers true, build.home = build.cli = ${JSON.stringify(build)}, image ${station.image}, a healthy container instance` });
     }
@@ -3400,6 +3507,15 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     ring.ok("up", `npm install -g <newer spec>; sheep --version; sheep home; sheep home deploy --faux --json (in blog, nothing in the environment, the credentials kept)`, `${upSeconds}s to install ${stamp.commit} over ${older.stamp.commit}; sheep home warned on stderr that the home ${older.stamp.commit} is older and named \`sheep home deploy\`; redeployed ${name} in ${upDeploySeconds}s, stamp ${older.stamp.commit} → ${build.commit} (${build.builtAt}), image ${station.image}, containers ${upReport.containers.healthy} healthy after ${upReport.containers.seconds}s, ${rolloutNote}, the stamp moved in ${upReport.stamp.seconds}s; the warning stopped`);
     ring.ok("up", `GET /accounts/${account.id.slice(0, 6)}…/storage/kv/namespaces; cat <blog>/.sheep/deploy/wrangler.jsonc (after the upgrade)`, `the join store ${name}-join (${upStore.id}) ${upStoreState} by the upgrade and bound as JOIN in the pen environment`);
     ring.ok("up", `sheep ls --json; sheep pasture ls; sheep log ${olderSheep} (after the upgrade)`, `${olderSheep} (older-sheep) and the pasture older still listed; the log still holds "hello" → "${FAUX_REPLY}": a redeploy of the same tags over the same names kept the rows`);
+
+    // sh4 (shear phase 1, journey 3 step 3): the wait held across the upgrade returns the guard's sheep's reply (tether's reattach).
+    const guardWaited = await guardWaiting;
+    const reattached = `sheep: ${guardId}: the connection dropped; attached again`;
+    const guardSaid = guardWaited.stderr.split("\n").filter(Boolean);
+    if (guardWaited.code !== 0 || guardWaited.stdout !== `${guardId}\t${SHEAR_GUARD_REPLY}\n` || guardSaid.some((one) => one !== reattached)) {
+      ring.fail("sh4", `sheep wait --timeout 900 ${guardId} (held across sheep home deploy --now)`, { ...guardWaited, stderr: `${guardWaited.stderr}\nexpected exit 0, "${guardId}\\t${SHEAR_GUARD_REPLY}" on stdout, and on stderr nothing but "${reattached}"` });
+    }
+    ring.ok("sh4", `sheep home deploy --faux --now --json; sheep wait ${guardId} (held across it)`, `interrupted: 1, the stamp moved in ${upReport.stamp.seconds}s; the wait returned "${SHEAR_GUARD_REPLY}" with ${guardSaid.length} reattach line${guardSaid.length === 1 ? "" : "s"}`);
 
     // st (stile phase 1, journey 2 step 4 and its first criterion): the stop, on the newer release. The upgrade above read the
     // credentials the ring kept; for this one command there are none — the file set aside, the environment stripped — as on a
@@ -5066,6 +5182,11 @@ async function journeyBell(ring, station, { step = "b2" } = {}) {
   if (afterRemoved.some((one) => one.id === id)) ring.fail(step, "sheep ls --json (after rm)", { stdout: JSON.stringify(afterRemoved), stderr: `expected ${id} not listed after the end`, code: 1 });
   ring.ok(step, `sheep rm ${id}; sheep ls --json`, "ended with its one line; not listed after");
 }
+
+/** sh3's turn (shear phase 1): one text step after two minutes, longer than the two refused deploys and the `--now` deploy's guard ask. */
+const SHEAR_GUARD_TASK = "hold a turn across the upgrade";
+const SHEAR_GUARD_REPLY = "the guard held";
+const SHEAR_GUARD_PROGRAM = { steps: [{ text: SHEAR_GUARD_REPLY, delayMs: 120_000 }] };
 
 /** r1's turn: one text step after more than a minute, so both version changes land inside it and the reply comes after them. */
 const TETHER_DELAY_MS = 75_000;

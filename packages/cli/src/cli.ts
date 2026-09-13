@@ -1,6 +1,6 @@
 import { kennelDir, loadConfig, sheepDir, type SheepConfig } from "./config.js";
 import { credentialsLine, credentialsReport, machineCredentialsPath } from "./credentials.js";
-import { deleteStation, deploy, JOIN_WITHDRAWN, Refusal, Stop, stopJson, stopText } from "./deploy.js";
+import { deleteStation, deploy, JOIN_WITHDRAWN, MidTurn, midTurnJson, midTurnText, Refusal, Stop, stopJson, stopText } from "./deploy.js";
 import { earmarks } from "./earmark.js";
 import { writeSessionFile } from "./export.js";
 import { runAbort, runEnd, runLog, runPrompt, runStatus, runWait, watchSetup } from "./herd.js";
@@ -42,6 +42,8 @@ interface Parsed {
   noContainer: boolean;
   /** `--explain` with setup at a terminal: the stile opens every step's words as it reaches it. */
   explain: boolean;
+  /** `--now` with home deploy (shear phase 1): deploy over sheep mid-turn. */
+  now: boolean;
   since?: string;
   last?: string;
   timeout?: string;
@@ -54,7 +56,7 @@ interface Parsed {
 
 function parse(argv: readonly string[]): Parsed {
   const args = [...argv];
-  const parsed: Parsed = { rest: [], secretNames: [], json: false, detach: false, wait: false, faux: false, noInstall: false, noContainer: false, explain: false };
+  const parsed: Parsed = { rest: [], secretNames: [], json: false, detach: false, wait: false, faux: false, noInstall: false, noContainer: false, explain: false, now: false };
   const valued: Record<string, (value: string | undefined) => void> = {
     "--home": (value) => (parsed.home = value),
     "--name": (value) => (parsed.name = value),
@@ -83,6 +85,7 @@ function parse(argv: readonly string[]): Parsed {
     else if (arg === "--no-install") parsed.noInstall = true;
     else if (arg === "--no-container") parsed.noContainer = true;
     else if (arg === "--explain") parsed.explain = true;
+    else if (arg === "--now") parsed.now = true;
     else parsed.rest.push(arg);
   }
   return parsed;
@@ -294,6 +297,8 @@ async function dispatch(command: string, parsed: Parsed, config: SheepConfig, ou
  * for a home that does not say, a station from before eyes phase 1, which
  * the prose calls `no`); and `sheep home local` says the home has eyes
  * and where the first look fetches its Chrome.
+ * Shear phase 1: `sheep home deploy --now` passes the guard, and a deploy
+ * the guard refuses prints the sheep mid-turn and exits 2.
  */
 async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Promise<number> {
   const sub = parsed.rest[1];
@@ -344,7 +349,7 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
       return 0;
     }
     if (sub === "deploy") {
-      const report = await deploy({ name: parsed.name, subdomain: parsed.subdomain, faux: parsed.faux, say: output.err });
+      const report = await deploy({ name: parsed.name, subdomain: parsed.subdomain, faux: parsed.faux, now: parsed.now, say: output.err });
       if (parsed.json) {
         output.out(`${JSON.stringify(report)}\n`);
         return 0;
@@ -390,6 +395,8 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
           containersLine +
           rolloutLine +
           stampLine +
+          // The guard's count (shear phase 1): a line only when `--now` deployed over sheep mid-turn.
+          (report.interrupted !== null && report.interrupted > 0 ? `interrupted: ${report.interrupted}\n` : "") +
           `next: ${report.next}\n`,
       );
       return 0;
@@ -402,7 +409,7 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
     // Withdrawn (stile phase 2): the join is a choice in `sheep setup`'s station step, which proves the account and needs no token
     // carried by hand. Any arguments, `--json` included, get the one sentence, and nothing is read or asked.
     if (sub === "join") return fail(JOIN_WITHDRAWN);
-    if (sub !== undefined) return fail(`unknown home command: ${sub}; sheep home [local [--faux] | stop | deploy [--name <worker>] [--subdomain <name>] | delete [--name <worker>]]`);
+    if (sub !== undefined) return fail(`unknown home command: ${sub}; sheep home [local [--faux] | stop | deploy [--name <worker>] [--subdomain <name>] [--now] | delete [--name <worker>]]`);
 
     // Which home the config names, and whether it answers. The station's name (kennel phase 1) is the config's record of the
     // first deploy from this kennel: null in JSON until there is one, and a `name:` line in prose only when there is.
@@ -473,6 +480,13 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
     if (error instanceof Stop) {
       if (parsed.json) output.out(`${JSON.stringify(stopJson(error))}\n`);
       else output.err(stopText(error));
+      return 2;
+    }
+    // The guard (shear phase 1): the sheep mid-turn, `<id>  <task>` one per line, then the sentence; `--json` the same as
+    // `refused` and `midTurn`, on stdout. Exit 2, since nothing was deployed.
+    if (error instanceof MidTurn) {
+      if (parsed.json) output.out(`${JSON.stringify(midTurnJson(error))}\n`);
+      else output.err(midTurnText(error));
       return 2;
     }
     // A deploy or delete that failed after the account was touched is exit 1, so a dog can tell it from a refusal that made nothing.

@@ -174,6 +174,37 @@ export function parseBuildHeader(value: string | null): HomeBuild | undefined {
   return commit ? { commit, builtAt: builtAt || null } : undefined;
 }
 
+/**
+ * The floor (shear phase 1): the `builtAt` of the oldest home whose routes
+ * and wire this command speaks, an ISO time. It starts at shear phase 0's
+ * release, the first to send the header, and moves by hand, to the release
+ * that shipped the change, when a route is added, a route's answer changes
+ * shape, or the pi pin moves (`/pi-bump` says to look at it).
+ */
+export const OLDEST_HOME = "2026-09-13T19:16:16Z";
+
+/**
+ * The sentence a refusal gains from a home below the floor (shear phase
+ * 1), or undefined: only a 4xx other than 401, a verb the home may lack,
+ * and only when the response's header is absent (a home from before the
+ * header) or names a time older than the floor. A 5xx is a route that
+ * failed, and workerd's own 500 carries no header; a 401 is the token; a
+ * header with no time is a checkout's home, the checkout's own code.
+ */
+export function floorSentence(response: Response): string | undefined {
+  if (response.status < 400 || response.status >= 500 || response.status === 401) return undefined;
+  const build = parseBuildHeader(response.headers.get(BUILD_HEADER));
+  if (build !== undefined && (build.builtAt === null || !(Date.parse(build.builtAt) < Date.parse(OLDEST_HOME)))) return undefined;
+  const named = build === undefined ? "(a build from before the header)" : `${build.commit} (${build.builtAt})`;
+  return `the home's build ${named} is older than this command speaks to; \`sheep home deploy\` from this package updates it`;
+}
+
+/** A refusal's text with the floor's sentence after it, when the response is below the floor: still one line. */
+function withFloor(text: string, response: Response): string {
+  const floor = floorSentence(response);
+  return floor === undefined ? text : `${text.replace(/\s+$/, "")}; ${floor}`;
+}
+
 /** The home's HTTP face: the door, the directory, and one cell's routes. */
 export class Home {
   readonly url: URL;
@@ -208,7 +239,7 @@ export class Home {
     const headers = new Headers(init.headers);
     if (this.token !== undefined) headers.set("authorization", `Bearer ${this.token}`);
     const response = this.hear(await fetch(new URL(path, this.url), { ...init, headers }));
-    if (!response.ok) throw new Error(`${init.method ?? "GET"} ${path}: ${response.status} ${await response.text()}`);
+    if (!response.ok) throw new Error(withFloor(`${init.method ?? "GET"} ${path}: ${response.status} ${await response.text()}`, response));
     return response;
   }
 
@@ -223,8 +254,8 @@ export class Home {
     const response = this.hear(await fetch(new URL(path, this.url), { ...init, headers }));
     if (response.ok) return response;
     const body = await response.text();
-    if (response.status >= 400 && response.status < 500 && body.length > 0 && response.status !== 401) throw new Sentence(body, response.status);
-    throw new Error(`${init.method ?? "GET"} ${path}: ${response.status} ${body}`);
+    if (response.status >= 400 && response.status < 500 && body.length > 0 && response.status !== 401) throw new Sentence(withFloor(body, response), response.status);
+    throw new Error(withFloor(`${init.method ?? "GET"} ${path}: ${response.status} ${body}`, response));
   }
 
   /**

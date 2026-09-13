@@ -10,6 +10,12 @@
  * `readStamp` never sees it. Each world is a scratch kennel whose `HOME` is
  * its own, so the said file is the world's; `CI` is taken out of every
  * run's environment, since a runner sets it and it silences both lines.
+ *
+ * Shear phase 1: the floor (journey 4 steps 1 and 2, and journey 5 step 1
+ * for it), from the same station: a verb it has no route for, `sheep
+ * pasture ls <name>` asking a tree the fake never serves, refused with the
+ * floor's sentence when the header is absent or older than `OLDEST_HOME`,
+ * and bare at the floor, for a 500, and for a 401.
  */
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
@@ -17,6 +23,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import { OLDEST_HOME } from "../src/home.js";
 import { skewLine } from "../src/local.js";
 import { fakeStation, type StationState } from "./fakes.js";
 import { bin } from "./local-home.js";
@@ -175,5 +182,37 @@ describe("the skew line from the header (journey 2 step 2)", () => {
     const ci = await world({ build: OLDER });
     expect(await ci.sheep(["ls"], { ...off, CI: "1" })).toMatchObject({ code: 0, stderr: "" });
     expect(existsSync(join(same.dir, ".sheep", "tip.json"))).toBe(false);
+  });
+});
+
+describe("the floor (journey 4)", () => {
+  const off = { SHEEP_TIP: "0" };
+  const floor = (named: string) => `the home's build ${named} is older than this command speaks to; \`sheep home deploy\` from this package updates it`;
+
+  it("answers ls as before with no skew line from a home that sends no header, and a verb it 404s carries the floor's sentence", { timeout: 60_000 }, async () => {
+    const { sheep } = await world({ build: OLDER, header: null });
+    const listed = await sheep(["ls"], off);
+    expect(listed).toMatchObject({ code: 0, stderr: "" });
+    expect(listed.stdout).toContain(SESSIONS[0]!.id);
+    const refused = await sheep(["pasture", "ls", "fold"], off);
+    expect(refused).toMatchObject({ code: 2, stdout: "", stderr: `sheep: no; ${floor("(a build from before the header)")}\n` });
+  });
+
+  it("carries the sentence from a header older than the floor, and none from a header at the floor", { timeout: 60_000 }, async () => {
+    const below = { commit: "a2b17e7", builtAt: new Date(Date.parse(OLDEST_HOME) - 1_000).toISOString().replace(/\.\d{3}Z$/, "Z") };
+    const older = await world({ build: below });
+    const refused = await older.sheep(["pasture", "ls", "fold"], off);
+    expect(refused).toMatchObject({ code: 2, stdout: "", stderr: `sheep: no; ${floor(`${below.commit} (${below.builtAt})`)}\n${skewLine(below, CLI, false) ?? ""}` });
+
+    const at = await world({ build: { commit: "f00d000", builtAt: OLDEST_HOME } });
+    const bare = await at.sheep(["pasture", "ls", "fold"], off);
+    expect(bare).toMatchObject({ code: 2, stdout: "", stderr: `sheep: no\n${skewLine({ commit: "f00d000", builtAt: OLDEST_HOME }, CLI, false) ?? ""}` });
+  });
+
+  it("leaves a 500 with no header bare, as workerd answers a route that threw, and a 401 too", { timeout: 60_000 }, async () => {
+    const { sheep, dir } = await world({ build: OLDER, header: null, routes: { "/p/fold/tree": { status: 500, body: "boom" } } });
+    expect(await sheep(["pasture", "ls", "fold"], off)).toMatchObject({ code: 2, stdout: "", stderr: "sheep: GET /p/fold/tree: 500 boom\n" });
+    await writeFile(join(dir, ".sheep", "config"), JSON.stringify({ home: JSON.parse(readFileSync(join(dir, ".sheep", "config"), "utf8")).home, token: "not-the-token" }));
+    expect(await sheep(["ls"], off)).toMatchObject({ code: 2, stdout: "", stderr: "sheep: GET /sessions: 401 unauthorized\n" });
   });
 });

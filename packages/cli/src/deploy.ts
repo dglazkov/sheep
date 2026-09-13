@@ -38,6 +38,13 @@
  * cell's `homeBuild()` reads it unchanged. A checkout git cannot mark is
  * refused before the account is asked anything.
  *
+ * The guard (shear phase 1): a redeploy of the station this kennel
+ * recorded asks it `GET /sessions` with the kept token before the join
+ * store and wrangler, and refuses (`MidTurn`, exit 2) while any sheep's
+ * lane is `running` or `waiting`, since a new Worker version restarts
+ * those turns; `--now` deploys anyway and the report counts them as
+ * `interrupted`. A station that does not answer is deployed.
+ *
  * The join store (stile phase 2): every station has a KV namespace titled
  * `<worker>-join`, bound as `JOIN` in the `pen` environment. The deploy
  * finds it by title or makes it through the account API before wrangler
@@ -106,6 +113,37 @@ const WORKER_NAME = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
 /** A refusal: the command made nothing, and exits 2 with this sentence. */
 export class Refusal extends Error {}
+
+/** One sheep the guard found mid-turn (shear phase 1): its id, what it was asked, and its lane. */
+export interface MidTurnSheep {
+  id: string;
+  task: string | null;
+  state: "running" | "waiting";
+}
+
+/**
+ * The guard's refusal (shear phase 1): the station answered, and some of
+ * its sheep are mid-turn, which a deploy would restart. Exit 2 with the
+ * rows and the sentence; nothing was deployed, and `--now` deploys anyway.
+ */
+export class MidTurn extends Refusal {
+  constructor(
+    readonly home: string,
+    readonly sheep: MidTurnSheep[],
+  ) {
+    super(`these sheep are mid-turn at ${home}: a deploy restarts their turns and runs their interrupted calls again, so nothing was deployed; \`sheep home deploy --now\` deploys anyway`);
+  }
+}
+
+/** The guard's refusal as `cli.ts` prints it: `<id>  <task>` one per line, then the sentence. */
+export function midTurnText(refusal: MidTurn): string {
+  return `${refusal.sheep.map((one) => `${one.id}  ${one.task ?? "(no task reported yet)"}\n`).join("")}sheep: ${refusal.message}\n`;
+}
+
+/** The guard's refusal as `--json` carries it: the sentence as `refused`, as every refusal's is, and the rows. */
+export function midTurnJson(refusal: MidTurn): { refused: string; midTurn: MidTurnSheep[] } {
+  return { refused: refusal.message, midTurn: refusal.sheep };
+}
 
 /** What a stop wants of a person: an account token, a model key, or a terminal to type at. */
 export type Need = "account" | "key" | "terminal";
@@ -635,6 +673,8 @@ export interface DeployOptions {
    * with no key kept and a home holding none is the stop it always was.
    */
   keyLater?: boolean;
+  /** `--now` (shear phase 1): deploy over sheep mid-turn, which the guard otherwise refuses; the report counts them. */
+  now?: boolean;
   /** Where progress goes; never a secret. */
   say?: (text: string) => void;
 }
@@ -716,6 +756,13 @@ export interface DeployReport {
    * minute ran out.
    */
   stamp: { moved: boolean; seconds: number };
+  /**
+   * The guard's count (shear phase 1): the sheep whose lane was `running`
+   * or `waiting` when the deploy asked, which with `--now` it restarted; 0
+   * for an idle herd; null when nothing was asked, a first deploy or a
+   * station that did not answer.
+   */
+  interrupted: number | null;
   next: string;
 }
 
@@ -1180,6 +1227,14 @@ export async function deploy(options: DeployOptions = {}): Promise<DeployReport>
     say(`sheep: no model key is kept on this machine; the home keeps its own, and this deploy leaves it\n`);
   }
 
+  // 2''. The guard (shear phase 1): a station this kennel deployed, that answers, is asked who is mid-turn with the kept
+  // token, before the join store and wrangler. Any, and the deploy is refused unless `--now`; a station that does not answer
+  // is deployed, since that is the recovery path.
+  const keptToken = recorded !== undefined && typeof existing?.token === "string" && existing.token !== "" ? existing.token : undefined;
+  const busy = state === "redeployed" && keptToken !== undefined ? await midTurn(process.env.SHEEP_TEST_STATION_URL ?? home, keptToken) : undefined;
+  if (busy !== undefined && busy.length > 0 && options.now !== true) throw new MidTurn(home, busy);
+  const interrupted = busy === undefined ? null : busy.length;
+
   // 3. The deploy: wrangler over the derived config, the token in its environment. First the join store (stile phase 2): the
   // station's `<worker>-join` namespace, found by its title or made, so a redeploy reuses it and a station from before stores
   // gets one at its upgrade; its id is the derived config's `JOIN` binding.
@@ -1275,11 +1330,26 @@ export async function deploy(options: DeployOptions = {}): Promise<DeployReport>
       containers,
       rollout,
       stamp: stampReport,
+      interrupted,
       next: 'sheep new -- "…"',
     };
   } catch (error) {
     throw new Error(`${midway(name, home, reached)}\n${error instanceof Error ? error.message : String(error)}`);
   }
+}
+
+/**
+ * The guard's ask (shear phase 1): the station's sheep whose lane is
+ * `running` or `waiting`, from `GET /sessions` with the kept token, once
+ * `GET /` answers as a sheep home; undefined when it does not, or the
+ * listing fails (a 401, a 5xx, the ten seconds out), since then the guard
+ * cannot know and the deploy goes on.
+ */
+async function midTurn(home: string, token: string): Promise<MidTurnSheep[] | undefined> {
+  if ((await whoAnswers(home)) !== "sheep") return undefined;
+  const rows = await Promise.race([new Home({ home, token }).list().catch(() => undefined), new Promise<undefined>((resolveTimeout) => setTimeout(() => resolveTimeout(undefined), LISTING_TIMEOUT_MS).unref())]);
+  if (!Array.isArray(rows)) return undefined;
+  return rows.filter((row) => row.state === "running" || row.state === "waiting").map((row) => ({ id: row.id, task: row.task ?? null, state: row.state as MidTurnSheep["state"] }));
 }
 
 /* Delete. */

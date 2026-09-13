@@ -74,6 +74,9 @@ beforeAll(async () => {
   server = createServer((request, response) => {
     const path = request.url ?? "";
     asked.push(`${request.method} ${path}`);
+    // A checkout's home, as the rig's `wrangler dev` names itself (shear phase 1): a header with no time, which the floor
+    // leaves alone, so a refusal here reads as the home's own sentence and not as a home from before the header.
+    response.setHeader("x-sheep-build", "0.0.0-checkout");
     // pi's client refuses a serverId that is not a canonical lowercase UUIDv4, so the fake home has one.
     if (path === "/home") return response.end(JSON.stringify({ serverId: SERVER_ID }));
     if (path === "/sessions") return response.end(JSON.stringify([...sheepdom.keys()].map(row)));
