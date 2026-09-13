@@ -27,9 +27,9 @@ tool, has built a facade.
 **Where we are: stile phases 0 and 2 are CLOSED and phase 1 PART-DONE, 12
 September 2026.** The screen of issue #9 is built to the approved
 mockups, green in the inner rings and the package ring on release
-`084cc74`, and what is left of **stile phase 1** waits on a person: the
-⚑ account ring on that release, and the shepherd's walk at their own
-terminal. Stile phase 0
+`084cc74`, and the shepherd's first walk found two faults, both fixed; what is
+left of **stile phase 1** waits on a person: the ⚑ account ring and a
+second walk on the release with the fixes. Stile phase 0
 gave the dog what the shepherd keeps: `~/.sheep/credentials`, deploy and
 delete reading it, the stop in two parts, and `sheep-2` upgraded with
 nothing in the environment. Stile phase 1 gave the shepherd the stile,
@@ -230,8 +230,10 @@ closing, the cursor step without its colour, the pixel sheep under
 `NO_COLOR`), and the conductor looked at every state rendered through
 the harness. The first cut held in every ring on release `b227c2d`, the
 account ring typing the real token and key through its own terminal.
-The package ring held on release `084cc74`. Owed: the ⚑ account ring on
-that release, and the shepherd's walk.
+The package ring held on release `084cc74`; the shepherd's walk on it
+found the arrows dead under the kitty protocol and a blank first frame,
+both fixed. Owed: the ⚑ account ring and a second walk on the release
+with the fixes.
 
 **Findings:**
 
@@ -256,14 +258,20 @@ that release, and the shepherd's walk.
 - **2026-09-12 — Styling is proved from the emulator's cells.** pi-tui
   appends a bare reset to every line, so `NO_COLOR` is read cell by cell.
 - **2026-09-12 — The fakes never showed a spinner** until `healthDelayMs`
-  held their listings back; the cell ring's lease test flaked under the
-  loaded run (0.015 minutes against 0.01) and passed alone.
+  held their listings back; the cell ring's lease test flaked under a
+  loaded run and passed alone.
 - **2026-09-12 — The package ring held on release `084cc74`**, `t0`
   walking the new stile whole; the ring reads the checkout's local
   `release` branch, fast-forwarded first.
-- **2026-09-12 — Open: the ⚑ account ring and the walk on `084cc74`.**
-  `t1` and `a7` read the new frames, on the shepherd's yes; the walk is
-  theirs.
+- **2026-09-12 — The shepherd's walk found two faults the harness
+  cannot.** Ghostty answers pi-tui's kitty negotiation and sends an
+  arrow as `CSI 1;1 B`, which a byte comparison missed: keys are matched
+  by name now. And a synchronous `npm install -g` ran before the first
+  frame, a blank screen for its length: the first frame is drawn at
+  once and the install awaited behind the spinner.
+- **2026-09-12 — Open: the ⚑ account ring and a second walk on the
+  release with the fixes.** `t1` and `a7` on the shepherd's yes; the
+  walk is theirs.
 
 ---
 

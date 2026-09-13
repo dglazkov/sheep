@@ -48,7 +48,7 @@ import { hiddenShown, TAGLINE, wordsAt } from "../src/stile/screen.js";
 import { STEPS, THINGS, WORDS } from "../src/stile/words.js";
 import { ACCOUNT, type FakeState, fakeAccount, fakeStation, fresh, KEY, type StationState, TOKEN } from "./fakes.js";
 import { bin, type Result } from "./local-home.js";
-import { DOWN, driveStile, ENTER, runsOf, type StileRun, type StyledRow } from "./screen.js";
+import { DOWN, DOWN_KITTY, DOWN_SS3, driveStile, ENTER, runsOf, type StileRun, type StyledRow, UP_KITTY } from "./screen.js";
 
 const fakeWrangler = new URL("./fake-wrangler.mjs", import.meta.url).pathname;
 
@@ -115,7 +115,15 @@ afterAll(async () => {
   for (const world of worlds) await world.close();
 });
 
-async function world(state: FakeState = fresh(), options: { linkedHome?: boolean; station?: Partial<StationState>; env?: Record<string, string> } = {}): Promise<World> {
+/**
+ * A slow `npm`, first on PATH (stile phase 1, second cut): `install` sleeps this long and then leaves a `sheep` beside
+ * itself, so the command step has an install to wait for; `prefix -g` answers the directory above it; anything else nothing.
+ */
+const SLOW_NPM_MS = 1_500;
+const slowNpm = (bin: string): string =>
+  ["#!/bin/sh", `case "$1" in`, `  install) sleep ${SLOW_NPM_MS / 1000}; printf '#!/bin/sh\\necho sheep\\n' > "${bin}/sheep"; chmod +x "${bin}/sheep";;`, `  prefix) echo "${join(bin, "..")}";;`, "esac", "exit 0", ""].join("\n");
+
+async function world(state: FakeState = fresh(), options: { linkedHome?: boolean; station?: Partial<StationState>; env?: Record<string, string>; slowNpm?: boolean } = {}): Promise<World> {
   const root = realpathSync(await mkdtemp(join(tmpdir(), "sheep-stile-")));
   // A HOME reached through a symlink, as macOS's /var is: HOME names the link, and the working directory is a real path.
   const home = options.linkedHome === true ? `${root}-link` : root;
@@ -134,6 +142,7 @@ async function world(state: FakeState = fresh(), options: { linkedHome?: boolean
   const nodeOnly = join(logs, "bin");
   await mkdir(nodeOnly);
   await symlink(process.execPath, join(nodeOnly, "node"));
+  if (options.slowNpm === true) await writeFile(join(nodeOnly, "npm"), slowNpm(nodeOnly), { mode: 0o755 });
   const env = (): Record<string, string | undefined> => ({
     PATH: `${nodeOnly}:/usr/bin:/bin`,
     HOME: home,
@@ -541,6 +550,58 @@ describe("the stile: journey 1, the first sitting", () => {
     run.kill();
     await run.exited;
     expect(JSON.parse(readFileSync(join(w.root, ".sheep", "credentials"), "utf8"))).toEqual({ cloudflare: TOKEN });
+    expect(run.leaks()).toEqual([]);
+  });
+});
+
+describe("the stile: the keys a terminal sends", () => {
+  it("moves the choice on an arrow in application mode (SS3) and under the kitty keyboard protocol, not only the legacy form", { timeout: 60_000 }, async () => {
+    const w = await world();
+    const run = w.stile();
+    await run.waitFor("› where");
+    const rows = () => under(run.frame(), "where").slice(0, 2);
+    const everywhere = [chosen("everywhere on this machine", "~/.sheep, the usual answer"), other("this directory", ".sheep/ here, git-ignored")];
+    const here = [other("everywhere on this machine", "~/.sheep, the usual answer"), chosen("this directory", ".sheep/ here, git-ignored")];
+    expect(rows()).toEqual(everywhere);
+    // vim-era application mode: ESC O B.
+    await run.press(DOWN_SS3);
+    expect(rows(), "an SS3 down arrow did not move the choice").toEqual(here);
+    // The kitty keyboard protocol, which pi-tui negotiates and Ghostty answers: CSI 1 ; 1 B for a plain down arrow.
+    await run.press(DOWN_KITTY);
+    expect(rows(), "a kitty down arrow did not move the choice").toEqual(everywhere);
+    await run.press(DOWN_KITTY);
+    expect(rows()).toEqual(here);
+    await run.press(UP_KITTY);
+    expect(rows(), "a kitty up arrow did not move the choice").toEqual(everywhere);
+    // A kitty key release, which the protocol reports too, is not a press: nothing moves.
+    await run.press("\x1b[1;1:3B");
+    expect(rows()).toEqual(everywhere);
+    await run.press(DOWN);
+    expect(rows()).toEqual(here);
+    run.kill();
+    await run.exited;
+    expect(run.leaks()).toEqual([]);
+  });
+});
+
+describe("the stile: the first frame and the install", () => {
+  it("draws the sheep before the command step does anything, then the install behind the spinner with the clock while npm runs", { timeout: 60_000 }, async () => {
+    // No sheep on PATH and a slow npm first on it: the command step installs, which takes a second and a half here.
+    const w = await world(fresh(), { slowNpm: true, env: { SHEEP_TEST_INSTALL: "1" } });
+    const run = w.stile();
+    // The first frame, at once: the sheep, and the command row saying what it is doing, before the install runs.
+    const first = await run.waitFor((text) => text.startsWith(`${SHEEP_TOP}\n`), { timeoutMs: SLOW_NPM_MS - 500 });
+    expect(first).toContain("\n  › command   checking for sheep on PATH\n");
+    // While npm runs: the install as a stage behind the spinner, with the elapsed time, under the row; a stage is cut to
+    // the row with `…`, and the spec's tail is what goes.
+    const installing = await run.waitFor((text) => under(text, "command").some((line) => /^ {14}[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] installing sheep \(npm install -g github:dglazkov\/sheep#.*…  \dm \d+s$/.test(line)), { timeoutMs: SLOW_NPM_MS - 500 });
+    expect(installing).toContain("\n  › command   checking for sheep on PATH\n");
+    expect(installing).not.toContain("› where");
+    // Then the command step settles on the install, and the where step's choices follow.
+    expect(await run.waitFor("› where")).toContain(`\n${done("command", "sheep, installed")}\n`);
+    expect(existsSync(join(w.root, ".sheep"))).toBe(false);
+    run.kill();
+    await run.exited;
     expect(run.leaks()).toEqual([]);
   });
 });

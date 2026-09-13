@@ -35,7 +35,7 @@
  * `packages/cli/agent-guide.md` in a checkout. Upgrading the command
  * upgrades the words; the skill is a doorway that says to read them.
  */
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -249,20 +249,38 @@ function versionOfBin(bin: string): string | null {
   }
 }
 
+/**
+ * `npm install -g <spec>`, awaited rather than blocked on: the stile's screen draws on a timer while it runs (stile phase 1,
+ * second cut), and the dog's report is the same either way. Its status, and what it wrote, for the line said when it fails.
+ */
+function npmInstall(spec: string): Promise<{ status: number | null; output: string }> {
+  return new Promise((resolveInstall) => {
+    const child = spawn("npm", ["install", "-g", spec], { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, npm_config_update_notifier: "false", npm_config_fund: "false", npm_config_audit: "false" } });
+    const out: Buffer[] = [];
+    const err: Buffer[] = [];
+    child.stdout.on("data", (chunk: Buffer) => out.push(chunk));
+    child.stderr.on("data", (chunk: Buffer) => err.push(chunk));
+    child.once("error", (error) => resolveInstall({ status: null, output: error.message }));
+    child.once("close", (status) => resolveInstall({ status, output: (Buffer.concat(err).toString("utf8") || Buffer.concat(out).toString("utf8")).trim() }));
+  });
+}
+
 /** The command on PATH: found, installed, or left to the next sentence. The stile's first step is this one (stile phase 1). */
-export function setupCli(options: { install: boolean; say: (text: string) => void }): SetupReport["cli"] {
+export async function setupCli(options: { install: boolean; say: (text: string) => void }): Promise<SetupReport["cli"]> {
   const spec = installSpec();
   const found = findOnPath("sheep");
   if (found !== undefined) return { state: "on-path", path: found, version: versionOfBin(found), spec };
-  if (readStamp() === undefined) {
+  // `SHEEP_TEST_INSTALL=1` makes a checkout's command act as an installed one here, so the command ring can drive the
+  // install with a fake npm on PATH; every ring strips it, and nothing else reads it.
+  if (readStamp() === undefined && process.env.SHEEP_TEST_INSTALL !== "1") {
     // This copy is a checkout: `packages/cli/bin/sheep.js`, run by path. Nothing is installed over a developer's tree.
     return { state: "checkout", path: join(codeDir, "..", "bin", "sheep.js"), version: "sheep 0.0.0-checkout", spec };
   }
   if (!options.install) return { state: "not-installed", path: null, version: null, spec };
-  options.say(`sheep: installing the command (npm install -g ${spec})\n`);
-  const done = spawnSync("npm", ["install", "-g", spec], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, npm_config_update_notifier: "false", npm_config_fund: "false", npm_config_audit: "false" } });
+  options.say(`sheep: installing sheep (npm install -g ${spec})\n`);
+  const done = await npmInstall(spec);
   if (done.status !== 0) {
-    options.say(`sheep: npm install -g ${spec} exited ${done.status}:\n${(done.stderr || done.stdout || "").trim()}\n`);
+    options.say(`sheep: npm install -g ${spec} exited ${done.status}:\n${done.output}\n`);
     return { state: "failed", path: null, version: null, spec };
   }
   const installed = findOnPath("sheep");
@@ -322,7 +340,7 @@ function reachableHome(dir: string): { kennel: string; home: string } | undefine
  * and says nothing was made; not found, the kennel is made as it always was.
  */
 export async function setup(options: SetupOptions): Promise<SetupReport> {
-  const cli = setupCli(options);
+  const cli = await setupCli(options);
   const checkout = checkoutRoot(options.dir) ?? (cli.state === "checkout" ? checkoutRoot(cli.path!) ?? null : null);
   const skill: SetupReport["skill"] =
     checkoutRoot(options.dir) !== undefined

@@ -37,7 +37,7 @@
  * on the steps that draw a box or a link under them), so a step with its
  * words open is still one screen.
  */
-import { type Component, ProcessTerminal, type Terminal, TuiMainScreen } from "@earendil-works/pi-tui";
+import { type Component, isKeyRelease, matchesKey, ProcessTerminal, type Terminal, TuiMainScreen } from "@earendil-works/pi-tui";
 import { Refusal } from "../deploy.js";
 import { AGENT_SENTENCE, type Driver, type FlowOptions, type FlowReport, type Option, runFlow, tilde } from "./flow.js";
 import { colourLevel, Paint, padTo, width as widthOf } from "./paint.js";
@@ -593,9 +593,14 @@ export async function stile(options: Omit<FlowOptions, "driver"> & { explain?: b
     draw();
   };
 
+  // The keys are matched by name, not by byte (issue #9's walk): pi-tui's `ProcessTerminal` negotiates the kitty keyboard
+  // protocol, and a terminal that answers (Ghostty) sends a plain down arrow as `CSI 1 ; 1 B`, a vim-era one sends `ESC O B`,
+  // and the harness sends `CSI B`; `matchesKey` knows all three. The protocol reports releases too, and a release is not a
+  // press.
   tui.addInputListener((data) => {
     for (const key of keysOf(data)) {
-      if (key === "\x03") {
+      if (isKeyRelease(key)) continue;
+      if (key === "\x03" || matchesKey(key, "ctrl+c")) {
         const stop = refuse;
         answer = undefined;
         refuse = undefined;
@@ -618,7 +623,7 @@ export async function stile(options: Omit<FlowOptions, "driver"> & { explain?: b
           toggle();
           continue;
         }
-        if (key === "\r" || key === "\n") {
+        if (matchesKey(key, "enter")) {
           const value = waiting.buffer;
           const give = answer;
           sheet.waiting = undefined;
@@ -628,7 +633,7 @@ export async function stile(options: Omit<FlowOptions, "driver"> & { explain?: b
           give?.(value);
           continue;
         }
-        if (key === "\x7f" || key === "\b") {
+        if (key === "\x7f" || key === "\b" || matchesKey(key, "backspace")) {
           waiting.buffer = waiting.buffer.slice(0, -1);
           draw();
           continue;
@@ -643,17 +648,17 @@ export async function stile(options: Omit<FlowOptions, "driver"> & { explain?: b
         toggle();
         continue;
       }
-      if (key === "\x1b[A" || key === "\x1b[D") {
+      if (matchesKey(key, "up") || matchesKey(key, "left")) {
         waiting.at = (waiting.at + waiting.options.length - 1) % waiting.options.length;
         draw();
         continue;
       }
-      if (key === "\x1b[B" || key === "\x1b[C" || key === "\t") {
+      if (matchesKey(key, "down") || matchesKey(key, "right") || matchesKey(key, "tab")) {
         waiting.at = (waiting.at + 1) % waiting.options.length;
         draw();
         continue;
       }
-      if (key === "\r" || key === "\n") {
+      if (matchesKey(key, "enter")) {
         const chosen = waiting.options[waiting.at]!.value;
         if (sheet.cursor === "station") sheet.joining = chosen.startsWith("join:");
         const give = answer;
@@ -715,6 +720,9 @@ export async function stile(options: Omit<FlowOptions, "driver"> & { explain?: b
 
   tui.start();
   if (options.explain === true) sheet.open.add("command");
+  // The first frame at once, before the flow does anything: the renderer draws on a timer, and the command step's install
+  // would otherwise be the first thing a shepherd waits on, with the cursor hidden and nothing on screen (issue #9's walk).
+  tui.renderNow();
   let stopped = false;
   try {
     const report = await runFlow({ ...options, driver });

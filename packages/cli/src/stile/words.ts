@@ -61,7 +61,7 @@ export const shown = (url: string): string => url.replace(/^https?:\/\//, "");
 
 /** What a step's row says while it waits for its answer, before it has said anything: one line, short enough for the row beside the hint. */
 export const QUESTIONS: Record<StepName, string> = {
-  command: "the command on this machine's PATH",
+  command: "checking for sheep on PATH",
   where: "where should this machine keep its settings?",
   account: "the Cloudflare account your home lives on",
   plan: "the plan your home's containers need",

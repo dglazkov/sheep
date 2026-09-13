@@ -133,7 +133,7 @@ export interface FlowReport {
 export const AGENT_SENTENCE = "sheep is set up on this machine; run `sheep --agent-help` and herd.";
 
 /** The command step's line, as short as the mock's: the version and which of the states `setupCli` came back with. */
-function commandLine(cli: ReturnType<typeof setupCli>): string {
+function commandLine(cli: Awaited<ReturnType<typeof setupCli>>): string {
   const version = cli.version?.replace(/ \(.*\)$/, "") ?? "sheep";
   if (cli.state === "on-path") return `${version}, on PATH`;
   if (cli.state === "installed") return cli.bin === undefined ? `${version}, installed` : `${version}, installed; open a new terminal for PATH`;
@@ -161,8 +161,10 @@ export async function runFlow(options: FlowOptions): Promise<FlowReport> {
   const count: Count = { typed: 0, defaults: 0, yes: 0, askedTwice: 0, variables: [] };
   if (options.name !== undefined) validateName(options.name);
 
-  // 1. command. Setup's first thing as collar built it; nothing asked.
-  const cli = setupCli({ install: options.install, say: (text) => driver.say("command", text.replace(/^sheep: /, "").trim()) });
+  // 1. command. Setup's first thing as collar built it; nothing asked. The first line is the row while it works, and what
+  // `setupCli` says (an install running) is the stage behind the spinner under it.
+  driver.say("command", "checking for sheep on PATH");
+  const cli = await setupCli({ install: options.install, say: (text) => driver.say("command", text.replace(/^sheep: /, "").trim()) });
   driver.say("command", commandLine(cli));
 
   // 2. where. `npx skills add`'s question, and it decides where the kennel is. A directory already inside a kennel says

@@ -308,3 +308,9 @@ export const ENTER = "\r";
 /** The arrow keys, as a terminal without application mode sends them. */
 export const DOWN = "\x1b[B";
 export const UP = "\x1b[A";
+/** The same arrows in application mode (SS3), as vim-era terminals send them. */
+export const DOWN_SS3 = "\x1bOB";
+export const UP_SS3 = "\x1bOA";
+/** The same arrows under the kitty keyboard protocol pi-tui negotiates, as Ghostty sends them: `CSI 1 ; 1 B`, no modifier. */
+export const DOWN_KITTY = "\x1b[1;1B";
+export const UP_KITTY = "\x1b[1;1A";
