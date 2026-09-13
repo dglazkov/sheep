@@ -94,12 +94,14 @@ setting up for this directory gives that directory a kennel and a station
 of its own, with `.sheep/` added to the `.gitignore` in a git work tree.
 `sheep config` and `sheep home` print which kennel they found.
 
-**After the first sitting, nothing asks you for anything.** Upgrading is
-`npm install -g github:dglazkov/sheep#release`; `sheep home` then says the
-home is older, and `sheep home deploy` reads the token and the key that
-were kept, redeploys, and moves the home's stamp with every session and
-pasture kept. `CLOUDFLARE_API_TOKEN` and `ANTHROPIC_API_KEY` in the
-environment take precedence over what is kept, and nothing requires them.
+**After the first sitting, nothing asks you for anything.** A command
+says once on stderr that a newer build is out, and once that the home's
+build and its own differ, which `sheep home` says every time.
+`npm install -g github:dglazkov/sheep#release` updates the command, and
+`sheep home deploy` reads the token and the key that were kept and
+redeploys the home, every session and pasture kept.
+`CLOUDFLARE_API_TOKEN` and `ANTHROPIC_API_KEY` in the environment take
+precedence over what is kept, and nothing requires them.
 When a command does need you — the credentials file is gone, say, on a new
 laptop — it stops with a paragraph that begins `for the shepherd:` and
 names the one command to type at your terminal, `sheep setup`; your agent
@@ -284,12 +286,10 @@ the directory's, records it in the kennel's config (`.sheep/config`, or
 `~/.sheep/config` outside a kennel) with the address and the token it
 generated, and sets the secrets through `wrangler secret put` on stdin;
 run again, it redeploys the same Worker from the package it runs from and
-keeps them. That is the upgrade: after `npm install -g` of a newer
-release, `sheep home` says on stderr that the home is older, and `sheep
-home deploy` moves its stamp, every session and pasture kept. From a
-checkout the stamp is the checkout's commit, `-dirty` when `git status`
-has anything to say, and the deploy's time, so a redeploy moves it too; a
-checkout git cannot name a commit for is refused.
+keeps them. That is the home's upgrade, every session and pasture kept.
+From a checkout the stamp is the checkout's commit, `-dirty` when `git
+status` has anything to say, and the deploy's time, so a redeploy moves it
+too; a checkout git cannot name a commit for is refused.
 `--subdomain` registers a `workers.dev` subdomain when the account has
 none.
 

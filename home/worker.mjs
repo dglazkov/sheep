@@ -125588,19 +125588,37 @@ __name(joinAnswer, "joinAnswer");
 var CHECKOUT_BUILD = { commit: "0.0.0-checkout", builtAt: null };
 function homeImage() {
   if (false) return null;
-  return true ? "docker.io/dglazkov2/sheep-pen@sha256:4b33a197ed33e8191ce0474e69901926d7035cd0844e051c21894f6ff89837c9" : null;
+  return true ? "docker.io/dglazkov2/sheep-pen@sha256:028160371859835be49bbbae0f9926630ce322856225d6de6426ae44257451db" : null;
 }
 __name(homeImage, "homeImage");
 function homeBuild() {
   if (false) return CHECKOUT_BUILD;
   try {
-    const parsed = JSON.parse('{"commit":"08326ed","builtAt":"2026-09-13T18:43:43Z"}');
+    const parsed = JSON.parse('{"commit":"fdca17c","builtAt":"2026-09-13T19:16:16Z"}');
     if (typeof parsed.commit === "string" && parsed.commit !== "") return { commit: parsed.commit, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
   } catch {
   }
   return CHECKOUT_BUILD;
 }
 __name(homeBuild, "homeBuild");
+var BUILD_HEADER = "x-sheep-build";
+function buildHeader(build = homeBuild()) {
+  return build.builtAt === null ? build.commit : `${build.commit} ${build.builtAt}`;
+}
+__name(buildHeader, "buildHeader");
+function stamped(response) {
+  const value3 = buildHeader();
+  try {
+    response.headers.set(BUILD_HEADER, value3);
+    return response;
+  } catch {
+  }
+  const headers = new Headers(response.headers);
+  headers.set(BUILD_HEADER, value3);
+  if (response.webSocket) return new Response(null, { status: response.status, statusText: response.statusText, webSocket: response.webSocket, headers });
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+__name(stamped, "stamped");
 async function homeReport(env) {
   const directory = env.DIRECTORY.getByName("home");
   const budget = await directory.budget();
@@ -125656,7 +125674,7 @@ async function pastureRoute(request, env, name, path4) {
   return new Response("not found", { status: 404 });
 }
 __name(pastureRoute, "pastureRoute");
-var index_default = {
+var router = {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === "/" && request.method === "GET") return new Response("sheep\n");
@@ -125736,18 +125754,25 @@ var index_default = {
     return new Response("not found", { status: 404 });
   }
 };
+var index_default = {
+  async fetch(request, env) {
+    return stamped(await router.fetch(request, env));
+  }
+};
 export {
   CHECKOUT_BUILD,
   Directory,
   Pasture,
   PenContainer,
   SessionCell,
+  buildHeader,
   index_default as default,
   homeBuild,
   homeImage,
   homeReport,
   joinAnswer,
-  joinKey
+  joinKey,
+  stamped
 };
 /*! Bundled license information:
 
