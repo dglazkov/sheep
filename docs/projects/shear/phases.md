@@ -19,8 +19,8 @@ finding and a stop, not a feature.
 
 ---
 
-**Where we are: planned, 13 September 2026. Nothing built.** Phase 0 is
-next.
+**Where we are: planned, 13 September 2026. Nothing built.** shear
+phase 0 is next.
 
 Two phases, because the notice and the header are lines a command
 says, provable against the fakes alone, and the floor and the guard are
@@ -53,7 +53,13 @@ the header read from the first response and kept on the instance
 (`Home.homeBuild`), through `request`, `ask`, and the WebSocket upgrade's
 101 where it can be read. `packages/cli/src/local.ts`: `skewLine` says
 nothing for one commit with no `-dirty` on either side. `sheep home`
-prints the skew line as now, every time. `packages/cli/agent-guide.md`,
+prints the skew line as now, every time. `scripts/hermetic.mjs`:
+`SHEEP_TIP=0` in every ring's environment, so no ring reaches GitHub
+(shear phase 1 lifts it for the account ring's older release alone). A
+command-ring test needs a stamped command, and a checkout's has none: a
+`SHEEP_TEST_*` seam names the command's build where the notice and the
+skew line read it, never in `readStamp`, which also chooses the local
+home's wrangler and config. `packages/cli/agent-guide.md`,
 `README.md`, `packages/cli/src/usage.ts`: the paragraph on upgrading
 says the three lines and the two commands, paid for by cutting.
 
@@ -78,11 +84,14 @@ carries the header, `GET /` and a 404 among them.
 files in their rings; `pnpm --filter @sheep/cli typecheck` exits 0.
 Falsified by at least two mutations: the header dropped from the Worker
 (the skew cases fail), and the said file never written (the once cases
-print twice). Then, from a scratch kennel with the built command against
-the local home, `sheep ls` twice with `SHEEP_TIP` at a file the walk
-wrote: the notice once, by eye.
+print twice). Then the walk, once the release workflow has built a
+release from the phase's commit (a checkout's command has no stamp, so
+it never says the notice): that release installed into a scratch prefix
+and HOME, `sheep ls` twice from a scratch kennel against its own local
+home with `SHEEP_TIP` at a manifest the walk serves on localhost with a
+newer stamp: the notice once, by eye; with `SHEEP_TIP=0`, nothing.
 
-**Status: PLANNED.**
+**Status: NOT STARTED.**
 
 **Findings:**
 
@@ -131,6 +140,6 @@ account, one station named `sheep-hermetic-<sha>`, deployed twice,
 walked, deleted, under the shepherd's standing authorization to run
 account walks.
 
-**Status: PLANNED.**
+**Status: NOT STARTED.**
 
 **Findings:**
