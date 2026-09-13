@@ -21,14 +21,12 @@ a patch.
 
 ---
 
-**Where we are: smit phase 0 is PART-DONE, 13 September 2026.** A
-checkout's `sheep home deploy` defines its smit into the Worker, waits
-for `GET /home` to report it, and refuses a checkout git cannot name a
-commit for; `pnpm test` holds with journeys 1 and 2 against the fakes,
-and the checkout's wrangler dry run emits a Worker carrying the smit.
-What waits is a person: journey 3 step 2, three checkout deploys and a
-delete of `sheep-smit-<sha>` on the shepherd's account, typed by the
-shepherd. Nothing waits on work.
+**Where we are: smit is done, 13 September 2026. Its one phase is
+CLOSED.** A checkout's `sheep home deploy` defines its smit into the
+Worker, waits for `GET /home` to report it, and refuses a checkout git
+cannot name a commit for; the command ring holds journeys 1 and 2, and
+journey 1 was walked on the shepherd's account as `sheep-smit-a2b17e7`,
+deleted after. Nothing waits.
 
 One phase, because the mark, the wait that sees it, and the refusal are
 one function and one branch of `runDeploy`, and one walk proves them.
@@ -99,14 +97,15 @@ checkout's `sheep home deploy --name sheep-smit-<sha>` three times and
 image built here and pushed by wrangler, a few container minutes, typed
 by the shepherd.
 
-**Status: PART-DONE.** 2026-09-13. Every inner ring holds with the smit defined, waited for, and refused without a commit; the walk on the shepherd's account waits on the shepherd.
+**Status: CLOSED.** 2026-09-13. Every inner ring holds, and the walk on the shepherd's account saw a clean, a dirty, and a reverted deploy each move the stamp, the release warn of skew, and the delete end it.
 
 **Findings:**
 
-- **2026-09-13 — The dry run needs no account and marks the Worker.** `wrangler deploy --dry-run --env pen --define SHEEP_BUILD:…` from the checkout built the pen image with local Docker and emitted `homeBuild()` as `if (false)` then `JSON.parse('{"commit":"c761651-dirty",…}')`.
-- **2026-09-13 — `smit.test.ts` is in the command ring, not checkout.** The guard counts any `spawnSync(` as spawning, and the test spawns git over scratch repositories, as pen's `git.test.ts` does; the guard accepts it there.
-- **2026-09-13 — A clean checkout with `vendor/pi` built is not dirty.** `git status --porcelain --ignore-submodules=none` printed nothing on c761651 after the pi build, so a committed tree deploys as its bare commit.
-- **2026-09-13 — The smit costs about 35 ms of blocking git before the account read,** which lost a race the stile's spinner tests always ran with 60 to 80 ms spare; those two tests now hold the fake wrangler's deploy four seconds. Main passed the suite, the change failed it twice.
-- **2026-09-13 — The fake station answers the last deploy's define at `/home`.** Without it every checkout redeploy in the command ring polled the full minute against the fixed stamp; a station with no linked account still answers `STAMP`, as the release's does.
-- **2026-09-13 — Mutations held:** the define dropped failed seven deploy tests, four by the stamp wait's timeout; `-dirty` never appended failed three of five smit tests. Cost: 22 minutes of a subagent and 23 on the race, 60 of verification.
-- **2026-09-13 — Open: journey 3 step 2, the walk on the shepherd's account.** Three checkout deploys (clean, a tracked edit, reverted), `sheep home`, the release's `sheep home` against it, and a delete of `sheep-smit-<sha>` from a scratch kennel; typed by the shepherd.
+- **2026-09-13 — The dry run needs no account and marks the Worker:** `wrangler deploy --dry-run --env pen --define SHEEP_BUILD:…` built the pen image with Docker and emitted `homeBuild()` folded to `JSON.parse('{"commit":"c761651-dirty",…}')`.
+- **2026-09-13 — `smit.test.ts` is in the command ring:** the guard counts any `spawnSync(` as spawning, and it spawns git over scratch repositories, as pen's `git.test.ts` does.
+- **2026-09-13 — A clean checkout with `vendor/pi` built is not dirty;** `git status --porcelain --ignore-submodules=none` printed nothing, so a committed tree deploys as its bare commit.
+- **2026-09-13 — The smit's ~35 ms of blocking git lost a race** the stile's spinner tests ran with 60 to 80 ms spare; they now hold the fake wrangler's deploy four seconds. Main passed, the change failed twice.
+- **2026-09-13 — Mutations held:** the define dropped failed seven deploy tests, four by the stamp wait's timeout; `-dirty` never appended failed three of five smit tests.
+- **2026-09-13 — The walk held on `sheep-smit-a2b17e7`:** deploy 97 s, `a2b17e7 (18:17:44Z)` moved in 1 s; dirty 13 s, `a2b17e7-dirty`; reverted 11 s, `a2b17e7 (18:19:36Z)`; the delete took the Worker, application, and join store.
+- **2026-09-13 — The release's skew line misleads on one commit:** its `sheep home` said build `a2b17e7 (18:14:51Z)` is older than the home's `a2b17e7 (18:19:36Z)` and that `npm install -g` updates it, which it cannot.
+- **2026-09-13 — The release's deploy was not walked;** its path adds no define and compares the same stamp as before, held by reading. Cost: 45 minutes of a subagent, 70 of verification, 2 of walk.
