@@ -92,6 +92,8 @@ true.
 side with no time is reported and not warned about, and two times are
 compared. A release command's `sheep home` against a checkout station
 therefore warns, with the times, the way it warns between two releases.
+(Shear phase 0 since: two sides of one commit with no `-dirty` are not
+skew, whatever their times.)
 
 ## What does not change
 

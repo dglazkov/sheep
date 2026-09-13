@@ -19,11 +19,9 @@ finding and a stop, not a feature.
 
 ---
 
-**Where we are: shear phase 0 CLOSED, shear phase 1 PART-DONE, 13
-September 2026.** The notice and the header were walked on release
-6261bfc, the tip's fetch in a detached child. shear phase 1 holds in all
-three inner rings; its account walk upgrades from that release under the
-shepherd's standing authorization, and waits on nobody.
+**Where we are: done, 13 September 2026.** shear phase 0 and shear
+phase 1 are CLOSED; the account ring upgraded release 6261bfc to e75eda3
+on the shepherd's account and held every line. Nothing is next.
 
 Two phases, because the notice and the header are lines a command
 says, provable against the fakes alone, and the floor and the guard are
@@ -161,14 +159,16 @@ account, one station named `sheep-hermetic-<sha>`, deployed twice,
 walked, deleted, under the shepherd's standing authorization to run
 account walks.
 
-**Status: PART-DONE, 2026-09-13.** `pnpm test` exits 0 on all three
-inner rings with both mutations caught; the account walk waits on the
-release that carries shear phase 0's child.
+**Status: CLOSED, 2026-09-13.** Every inner ring holds, and the account
+ring upgraded release 6261bfc to e75eda3 with sh1 to sh4 held and the
+station deleted.
 
 **Findings:**
 
-- **2026-09-13 — `OLDEST_HOME` is `2026-09-13T19:16:16Z`,** the stamp of release f425667, built from fdca17c; the account ring refuses an `--older` from before fdca17c at usage, since its command says no notice.
+- **2026-09-13 — `OLDEST_HOME` is `2026-09-13T19:16:16Z`,** release f425667's stamp (fdca17c); the account ring refuses an `--older` without the tip's child, asking git for `ASK_FRESH_MS` in its `tip.ts`.
 - **2026-09-13 — Mutations held:** the guard's count never read failed the refusal case, `expected +0 to be 2`, the deploy made; the floor's sentence dropped failed both floor cases in `shear.test.ts`, bare `sheep: no`.
 - **2026-09-13 — The floor cannot tell a verb a home lacks from a row it lacks:** an older home's own 404 gains the sentence too; `bleat.test.ts`'s headerless fake failed on it until it sent a checkout's header.
 - **2026-09-13 — A header with no time is a checkout's home,** running the checkout's own code, so the floor leaves it alone, as it does a 5xx and a 401.
-- **2026-09-13 — The account ring's `--dry-run` needs the token,** so sh1 to sh4 were held by reading and `node --check` until the walk.
+- **2026-09-13 — The account ring's `--dry-run` needs the token,** so sh1 to sh4 were held by reading until the walk.
+- **2026-09-13 — The first account ring failed at `up` on the network:** `wrangler secret put` said `fetch failed` after the upload; sh1 to sh3 had held, and the ring deleted its station whole.
+- **2026-09-13 — The second held, 58 lines:** the child kept GitHub's tip 0.2 s after the ask and the next run said the notice; the skew line once; two refusals in 4 s; `--now` redeployed in 74 s, `interrupted: 1`; the held wait returned after three reattaches.

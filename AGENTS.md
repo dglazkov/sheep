@@ -52,6 +52,11 @@ model call the restart cut off reads as interrupted in `sheep log`.
 from a checkout with the checkout's commit, `-dirty` when the tree has
 uncommitted changes, and the deploy's time, so `sheep home` names what
 it runs; a checkout with no commit is refused.
+[Project shear](docs/projects/shear/design.md) is the upgrade: a command
+hears once that a newer build is out, any verb says once that the home's
+build and its own differ, `sheep home deploy` refuses while sheep are
+mid-turn unless told `--now`, and a verb a too-old home lacks is refused
+with the sentence that fixes it; nothing is installed or deployed on its own.
 Setup and usage are in [README.md](README.md).
 Read a project's `phases.md` for where its work stands and what the next
 phase is; [docs/projects/README.md](docs/projects/README.md) lists them.

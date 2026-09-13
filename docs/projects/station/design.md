@@ -154,7 +154,9 @@ release time, the same commit and time the manifest carries; a checkout's
 `wrangler dev` sees `0.0.0-checkout`. `GET /home` adds `build`. The CLI's
 `sheep home` compares it to its own and says which is older. Nothing
 refuses on skew: the wire is private, but a warning is enough until a
-walk shows it is not.
+walk shows it is not. (Shear since: every response names its build, any
+verb warns once, and a 4xx from a home older than the command's floor
+carries the sentence that fixes it; still no refusal on skew alone.)
 
 ## The image
 

@@ -1,6 +1,6 @@
 # Shear — the design
 
-**13 September 2026.** Design. Nothing built. The project's status lives
+**13 September 2026.** Design; built and walked the same day, with the tip's fetch moved to a detached child ("The notice"). The project's status lives
 in [journey.md](journey.md)'s front matter. The journeys are the
 acceptance suite, this doc is the argument, and [phases.md](phases.md)
 is the walk.
