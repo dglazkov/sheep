@@ -29,7 +29,9 @@ September 2026.** The screen of issue #9 is built to the approved
 mockups, green in the inner rings and the package ring on release
 `084cc74`, the shepherd's first walk found two faults, both fixed, and their
 second walk on release `752761e` was flawless; what is left of **stile
-phase 1** is the ⚑ account ring on that release, on the shepherd's yes. Stile phase 0
+phase 1** is the ⚑ account ring on that release through `t1`: one run
+held a7 and t2 and failed at a8's pushes to the playground, a token
+lead, before t1 ran. Stile phase 0
 gave the dog what the shepherd keeps: `~/.sheep/credentials`, deploy and
 delete reading it, the stop in two parts, and `sheep-2` upgraded with
 nothing in the environment. Stile phase 1 gave the shepherd the stile,
@@ -233,38 +235,40 @@ account ring typing the real token and key through its own terminal.
 The package ring held on release `084cc74`; the shepherd's walk on it
 found the arrows dead under the kitty protocol and a blank first frame,
 both fixed, the package ring green again on `752761e`, and the shepherd's
-second walk on it flawless, a station deployed. Owed: the ⚑ account ring.
+second walk on it flawless, a station deployed. The account ring on it held a7 and t2 and failed at a8's pushes before
+t1, a token lead. Owed: the ⚑ account ring again, through t1.
 
 **Findings:**
 
-- **2026-09-12 — A first sitting deploys before it has a key.** `deploy()`
-  stops without one, so the stile passes `keyLater` and its `key` step
-  puts the key through `putModelKey`, shared with deploy: one put.
-- **2026-09-12 — The plan's yes exists only off Workers Paid**, so `t1`
-  counts none and `t0` counts it against a Free fake; and a symlinked
-  `HOME` split `~/.sheep` in two until kennel checks compared real paths.
+- **2026-09-12 — A first sitting deploys before it has a key**: the stile
+  passes `keyLater` and its `key` step puts it through `putModelKey`. The
+  plan's yes exists only off Workers Paid, so `t1` counts none; a
+  symlinked `HOME` split `~/.sheep` until kennel checks compared real paths.
 - **2026-09-12 — The shepherd's walk refused the first screen**: plain
-  text, "fish on legs", bracketed choices, every proof green. Issue #9;
-  the second cut was settled as mockups first.
+  text, "fish on legs", bracketed choices. Issue #9; the second cut was
+  settled as mockups first.
 - **2026-09-12 — pi-tui's main-screen stop writes a space before its
   newline**, which wraps on a full-width last row; the stile stops with
   `preserveScreen` and writes its own.
 - **2026-09-12 — Styling is proved from the emulator's cells**, since
-  pi-tui appends a bare reset to every line; the fakes showed no spinner
-  until `healthDelayMs` held their listings back.
-- **2026-09-12 — The package ring held on releases `084cc74` and
-  `752761e`**, `t0` walking the stile whole; the ring reads the local
-  `release` branch, and a global `sheep` a walk installed fools it.
+  pi-tui appends a bare reset to every line; `healthDelayMs` makes the
+  fakes show a spinner.
+- **2026-09-12 — The package ring held on `084cc74` and `752761e`**; it
+  reads the local `release` branch, and a global `sheep` a walk installed
+  fools it.
 - **2026-09-12 — Ghostty sends an arrow as `CSI 1;1 B`** under the kitty
-  protocol pi-tui negotiates; a byte comparison missed it. Keys are
-  matched by name now, releases skipped.
+  protocol pi-tui negotiates; keys are matched by name now.
 - **2026-09-12 — A synchronous `npm install -g` ran before the first
   frame**, a blank screen for its length; the first frame is drawn at
   once and the install awaited.
 - **2026-09-12 — The shepherd walked journey 1 on `752761e`**: arrows,
   sheep first, a station in 1m 20s, "flawlessly". Issue #9 closed.
-- **2026-09-12 — Open: the ⚑ account ring on release `752761e`.** `t1`
-  and `a7` read the new frames, on the shepherd's yes.
+- **2026-09-12 — The account ring on `752761e` held a7 and t2, then
+  failed at a8**: the pushes to the playground never landed and the
+  ring's own deletes were refused alike; the faux program says "pushed"
+  unconditionally. t1 never ran. The token is the lead, not the screen.
+- **2026-09-12 — Open: the ⚑ account ring again on `752761e`, through
+  t1**, once the playground token is checked; on the shepherd's yes.
 
 ---
 
