@@ -45,6 +45,9 @@ lands, from the events the attached client was already being given.
 sitting at a terminal: `sheep setup` asks for the account token and the
 model key the first time and keeps them, and every command the dog runs
 after reads what was kept; the local home becomes the developer's rig.
+[Project tether](docs/projects/tether/design.md) holds a dog's wait
+through the home's restart: a dropped socket is attached again, and the
+model call the restart cut off reads as interrupted in `sheep log`.
 Setup and usage are in [README.md](README.md).
 Read a project's `phases.md` for where its work stands and what the next
 phase is; [docs/projects/README.md](docs/projects/README.md) lists them.
