@@ -81,7 +81,10 @@ a phase cost.
   says when a phase waits on another project's phase (pen phase 3 waits
   on lamb phase 5). If so, conduct that phase of the other project
   first, under the same rules, then come back. Say so in the report;
-  do not stop for it.
+  do not stop for it. A phase a project places in another repository
+  (collie phase 0 is isocan's) is conducted in that checkout under its
+  own conventions, its record kept there, and this repository's docs
+  record the commit that closed it.
 - **⚑ provision steps are asked, not done.** Each one creates a cloud
   resource, spends money, or needs a login. Before the phase starts,
   list them to the user with the price, and get a yes for each. A step
@@ -109,7 +112,9 @@ guess:
 ## What you own
 Files under <paths the phase names>. Nothing under docs/projects/: the
 conductor writes the record. Nothing in vendor/ unless the phase says a
-pi commit is the work, and then per /pi-bump. No other project's code.
+pi commit is the work, and then per /pi-bump; nothing under
+node_modules/isocan, ever, and the pin moves per /isocan-bump. No other
+project's code.
 
 ## Where you stop
 - At each ⚑ step without a yes above: build up to it, report.

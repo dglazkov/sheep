@@ -57,6 +57,11 @@ hears once that a newer build is out, any verb says once that the home's
 build and its own differ, `sheep home deploy` refuses while sheep are
 mid-turn unless told `--now`, and a verb a too-old home lacks is refused
 with the sentence that fixes it; nothing is installed or deployed on its own.
+[Project collie](docs/projects/collie/design.md) hosts isocan's rc: a
+second command in this package, `collie`, built from `sheep`'s parts,
+deploys a Worker of its own beside the station that runs isocan's rc
+room as a module, `isocan/rc`, and prompts sheep over the station's
+routes; the station and `sheep` are untouched.
 Setup and usage are in [README.md](README.md).
 Read a project's `phases.md` for where its work stands and what the next
 phase is; [docs/projects/README.md](docs/projects/README.md) lists them.
@@ -89,6 +94,17 @@ by the conductor, recorded, committed whole.
   difference. A change sheep needs in pi is one commit on that branch, named
   in phases.md. Never copy a pi file into `packages/`. `/pi-bump` checks,
   rebases, and verifies.
+- **Isocan is a dependency, never a copy.** `packages/collie` alone
+  depends on `github:dglazkov/isocan` at a pinned commit; nothing under
+  `node_modules/isocan` is edited, a change the collie's brain needs is a
+  commit in isocan under its own conventions, and `/isocan-bump` checks,
+  moves, and verifies the pin. Nothing that decides what a summons is or
+  what a line says is written here.
+- **A complement of sheep's is a bin in this repository, not a
+  repository.** `collie` spent an afternoon in one (13 Sep 2026) and
+  would have had to grow the kennel, the credentials, the stile, the
+  deploy, the rig, the rings, and the release again. What is built from
+  sheep's parts shares them here.
 - **Nothing in the cloud without a token the user provided.** Steps marked
   ⚑ provision in phases.md are asked out loud first.
 - **Findings are one dated line, one claim, about forty words.** The
