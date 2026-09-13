@@ -34,7 +34,8 @@ upgraded with nothing in the environment. Stile phase 1 gave the
 shepherd the stile, green in every ring on the real account. Stile phase
 2 gave a second machine the join, by a KV store per station after a
 secret put proved to restart running turns (issue #10), walked on
-`sheep-2` and held in the account ring. No ⚑ step is left.
+`sheep-2` and held in the account ring. No ⚑ step is left. Issue #8 is
+closed; checkout deploys left unstamped are issue #11.
 
 The order is dependency order. Phase 0 is the mechanism under the flow,
 provable against the fakes with nothing on a screen, so the stile in
