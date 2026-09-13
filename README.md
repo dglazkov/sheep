@@ -98,8 +98,8 @@ of its own, with `.sheep/` added to the `.gitignore` in a git work tree.
 says once on stderr that a newer build is out, and once that the home's
 build and its own differ, which `sheep home` says every time.
 `npm install -g github:dglazkov/sheep#release` updates the command, and
-`sheep home deploy` reads the token and the key that were kept and
-redeploys the home, every session and pasture kept.
+`sheep home deploy` redeploys the home from what was kept, every session
+and pasture kept; while a sheep is mid-turn it refuses, and `--now` deploys.
 `CLOUDFLARE_API_TOKEN` and `ANTHROPIC_API_KEY` in the environment take
 precedence over what is kept, and nothing requires them.
 When a command does need you — the credentials file is gone, say, on a new

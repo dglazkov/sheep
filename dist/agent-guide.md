@@ -15,8 +15,9 @@ build you run.
 here. A verb says on stderr, once, that a newer build is out, and once
 that the home's build and this command's differ; `sheep home` says the
 second every time. `npm install -g github:dglazkov/sheep#release` updates
-the command, then `sheep home deploy` the home, asking nobody anything and
-keeping every session. `SHEEP_TIP=0` stops the looking for a newer build.
+the command, then `sheep home deploy` the home, keeping every session; it
+refuses while a sheep is mid-turn, since a deploy restarts the turn, and
+`--now` deploys anyway. `SHEEP_TIP=0` stops the looking for a newer build.
 
 Every verb talks to a **home**: the shepherd's station on their
 Cloudflare account, where every sheep lives with a container to clone,
