@@ -147,32 +147,65 @@ serves two callers, and it is `gh`'s rule too: a tty gets the login, a
 pipe gets the report.
 
 **The screen.** pi-tui's main-screen renderer, so the flow scrolls like
-a checklist filling in and leaves its lines in the scrollback. A small
-sheep, then seven steps, one line each:
+a checklist filling in and leaves its lines in the scrollback. It is a
+TUI of Claude Code's grade, not a form: colour carries the state, a
+real selector takes a choice, a secret goes into a box, a deploy shows
+its progress, and the sheep is a sheep. The frames are drawn in
+[`screen/mock.mjs`](screen/mock.mjs), which prints them for a terminal
+(`frames.ans`) and for a page, and the shepherd approved them on
+12 September 2026 after five rounds (the storyboard is at
+`https://claude.ai/code/artifact/37797586-f125-4ea5-bf3b-d76714cb06ae`).
+The mock is the target; the screen matches it to the cell.
 
-```
-      __  _
-   ,-'  `' \_          sheep
-  (  o   ) . _)        a home for coding agents that herd coding agents
-   `-.__.-'
-     ||  ||
+The banner is seven rows: the sheep, and beside it `sheep` in bold amber
+with one dim line under it, `a home for agents that herd agents`. The
+sheep is a picture, not typed art: a 35 by 14 pixel canvas rasterised
+from ellipses and rectangles, printed two pixels per cell with the
+half-block glyphs in 256 colours, the wool shaded from white on top to
+shadow at the belly, a dark face nestled into the body's front looking
+at you with two eyes, a domed tuft of wool on the head, pink ears and
+nose, four legs, and a row of green grass that is the rule under the
+banner. Where there is no colour the picture cannot exist, and a
+line-art sheep of the same size stands in. One blank line, then the
+seven steps.
 
-  ✓ command   sheep 601b4df, installed
-  › where     everywhere on this machine  ·  this directory     ? explain
-    account
-    plan
-    station
-    key
-    next
-```
+Six meanings have six colours, and nothing else is coloured: amber for
+the step the cursor is on, its `›`, the chosen row's `❯` and the caret;
+green for a settled step's `✓`; red for a refusal's `✗` and its line;
+cyan, underlined, for an address; dim for the steps not reached, the
+hints, the key line, and paths; bold white for the sentence to say. At
+256 colours the four are 179, 114, 167, and 74; at sixteen they are
+yellow, green, red, and cyan; under `NO_COLOR` or `TERM=dumb` there is
+none, and the glyphs alone carry the meaning: `✓`, `›`, `❯`, `✗`, `│`.
+The screen decides its own level, since its output may be a pipe the
+seam names as a terminal.
 
-The art is a draft and is the shepherd's to change. The cursor step has
-its prompt and nothing else. `?` opens the step's words under it, four
-things in at most eight lines: what this is for, where to get it, what
-it costs, and what sheep will and will not do with it. `?` again closes
-them. `--explain` opens every step's words as it is reached. A done step
-is one line: what it settled on. The whole fits 80 by 24 with nothing
-open, and narrower terminals wrap the words, never the checklist.
+A step row is `  › where     ` and its text. A done step's text is what
+it settled on, its name dim. The cursor step's name is bold amber and
+its text is the step's one-line question (`where should this machine
+keep its settings?`) until the step says something, then the first
+thing it said; the hint `? explain` or `? close` sits dim at the right.
+Under the cursor step, in a column at fourteen: a choice is a vertical
+list, `❯` and bold on the chosen row, a dim description beside each
+label; a secret is a rounded box with the prompt dim inside it, a `•`
+per character, the count past sixteen, and an amber caret, with the
+address to make the value at on the line under the box; a refusal is
+`✗` and the reason in red, then the box again, empty; the plan not on
+the account is its line on the row, the plans page as a link under it,
+and the one action as the chosen row; the deploy is the stages it has
+said as green ticks, the current one behind a braille spinner with the
+elapsed time dim beside it, a stage that repeats (a rollout's count)
+replacing its line rather than stacking. `?` opens the step's words as
+a panel under the row: a dim `│` down the left, the four labels bold,
+each thing wrapped to the panel. The finish is seven green rows, then
+`credentials`, `config`, and `skill` with their paths, then
+`say to your agent` and the sentence in a box across the screen; no
+path breaks mid-token and nothing prints twice. Row 24 is a dim key
+line: `↑↓ choose   Enter take   ? explain   Ctrl-C leave`, as the step
+allows. The banner and the checklist fit 80 by 24 with nothing open;
+when the words are open on a step with choices the screen is one row
+over, and the key line and the blank line under the grass give way
+until the words close.
 
 **The steps.**
 

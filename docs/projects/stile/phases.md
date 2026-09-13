@@ -171,6 +171,33 @@ Code runs and reading the transcript for the rig's words; the account
 ring's `t1` and the `up` step run with the environment stripped and
 the credentials written by the ring. `rings.mjs` lists the new files.
 
+**The second cut, issue #9 (12 September 2026).** The screen as first
+built was plain text and the shepherd's walk refused it. This cut is
+the screen of `design.md`'s "The screen", matched to
+`docs/projects/stile/screen/mock.mjs` to the cell: `stile/screen.ts`
+redrawn with colour at a level it decides itself (256, sixteen, or
+none under `NO_COLOR` and `TERM=dumb`), the pixel sheep rasterised
+from shapes with a line-art stand-in where there is no colour, the
+vertical selector with `❯`, the boxed secret prompt with its address
+under it, refusals in red, the deploy's stages as ticks behind a
+spinner with the elapsed time, the `?` panel with its rule, the finish
+with the sentence in a box, the key line on row 24, and the blank line
+under the grass and the key line giving way when the words are open on
+a choice. `stile/words.ts` gains each step's one-line question, and the
+`made at` address for the two secrets. `stile/flow.ts` changes only
+where the screen cannot do without it: an `Option` may carry a
+`description`, and `say` may mark a line as a refusal, so the screen
+knows red from progress; the count, the values' rule, and the steps
+stay. The `[brackets]` that existed for the snapshots go.
+`packages/cli/test/screen.ts` learns to read a cell's attributes from
+the emulator, and `stile.test.ts` asserts on the ones that carry
+meaning: the cursor step's name bold amber, a settled `✓` green, the
+chosen row's `❯` amber, a refusal red, the box and the panel drawn, the
+sheep drawn in pixels, and the whole of it plain but present under
+`NO_COLOR`. `scripts/hermetic.mjs`'s `t0`, `t1`, and `a7` read the new
+frames. `design.md`'s "The screen" says what the screen looks like, so a
+reader can refuse a draft before a walk does.
+
 **Not this phase:** No join: `station` offers `new` alone, and `sheep
 home join` stays as station made it for one more phase.
 
@@ -185,7 +212,11 @@ at this laptop's terminal against a scratch kennel, never the checkout,
 which is the one walk a person does, since the screen is for one. **⚑**
 `pnpm hermetic --ring account --yes <sha>` with `t1`: a second station
 deployed and deleted on the shepherd's account, a few container minutes
-and one more deploy per run.
+and one more deploy per run. For the second cut, the same proof again,
+and two more mutations falsified: the cursor step drawn without its
+colour (the attribute test fails), and the pixel sheep drawn under
+`NO_COLOR` (the plain test fails); the conductor looks at the frames
+rendered, as a newcomer would, before the shepherd walks it.
 
 **Status: PART-DONE, 12 September 2026.** The stile is built and green in
 the inner rings: `pnpm test`, `pnpm -r typecheck`, and `pnpm bundle` exit
