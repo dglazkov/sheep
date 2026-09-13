@@ -55,7 +55,7 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -125,6 +125,32 @@ export function readStamp(): BuildStamp | undefined {
     // no manifest beside the code
   }
   return undefined;
+}
+
+/**
+ * The smit (smit phase 0): a checkout's mark for the station it deploys,
+ * since its manifest carries no stamp. The seven-character HEAD, `-dirty`
+ * when `git status --porcelain` prints anything (untracked files and a
+ * moved submodule count, ignored files do not: git's own line), and the
+ * deploy's time `now` in the manifest's shape, ISO seconds. One `git
+ * rev-parse --show-toplevel HEAD` answers both that `root` is a work tree's
+ * top, not a directory inside another repository, and its commit; any
+ * failure, or a top that is not `root`, is undefined, and a deploy refuses.
+ */
+export function checkoutStamp(root: string, now: Date): BuildSide | undefined {
+  const git = (...args: string[]) => spawnSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  try {
+    const parsed = git("rev-parse", "--show-toplevel", "HEAD");
+    if (parsed.error !== undefined || parsed.status !== 0) return undefined;
+    const [top, head] = parsed.stdout.trim().split("\n");
+    if (top === undefined || head === undefined || !/^[0-9a-f]{40,64}$/.test(head) || realpathSync(top) !== realpathSync(root)) return undefined;
+    // Git's own line, whatever this machine's config says: untracked files listed, submodules compared.
+    const status = git("status", "--porcelain", "--untracked-files=normal", "--ignore-submodules=none");
+    if (status.error !== undefined || status.status !== 0) return undefined;
+    return { commit: `${head.slice(0, 7)}${status.stdout.trim() === "" ? "" : "-dirty"}`, builtAt: now.toISOString().replace(/\.\d{3}Z$/, "Z") };
+  } catch {
+    return undefined;
+  }
 }
 
 /** One side of `sheep home`'s build report: a stamp's commit and time, or the checkout's value with no time. */

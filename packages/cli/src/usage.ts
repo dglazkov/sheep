@@ -50,11 +50,12 @@ usage:
 
   sheep home deploy [--name <worker>] [--subdomain <name>] [--json]
                                             the station: this package's home on the shepherd's Cloudflare account, a
-                                            container beside every cell. Nothing without the account token and the model
-                                            key, kept on this machine: absent, it prints what it needs and
-                                            costs and exits 2. The name is the kennel's, minted at the first deploy and
+                                            container beside every cell. Without the account token and the model key
+                                            kept on this machine, it prints what it needs and costs and exits 2.
+                                            The name is the kennel's, minted at the first deploy and
                                             recorded in the config; run again, it redeploys the same Worker from this
-                                            package and keeps its secrets
+                                            package and keeps its secrets. From a checkout, the home's build is the
+                                            checkout's commit (-dirty when uncommitted) and the deploy's time
   sheep home delete [--name <worker>] [--json]
                                             end the station: lists what goes (the Worker at its address, its Durable
                                             Objects, its container application, how many sessions and pastures are in

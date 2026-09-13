@@ -1,8 +1,8 @@
 ---
-status: planned
+status: partial
 since: 2026-09-13
 see: smit
-note: "written 13 Sep 2026 from the shepherd's issue #11: a station deployed from a checkout says `home build: 0.0.0-checkout (unstamped)` before and after every redeploy, so neither the dog nor the shepherd can tell what it runs. The issue offers stamp or refuse; smit stamps. A checkout deploy marks the Worker with the checkout's commit, a `-dirty` marker when the tree has uncommitted changes, and the deploy's time, through the same define the release's bundle uses; a checkout with no commit is refused. One phase: the mark, the wait that sees it move, the tests, and a walk on the shepherd's account."
+note: "written 13 Sep 2026 from the shepherd's issue #11: a station deployed from a checkout says `home build: 0.0.0-checkout (unstamped)` before and after every redeploy, so neither the dog nor the shepherd can tell what it runs. The issue offers stamp or refuse; smit stamps. A checkout deploy marks the Worker with the checkout's commit, a `-dirty` marker when the tree has uncommitted changes, and the deploy's time, through the same define the release's bundle uses; a checkout with no commit is refused. One phase: the mark, the wait that sees it move, the tests, and a walk on the shepherd's account. Smit phase 0 built it the same day: `checkoutStamp` beside `readStamp`, the define on the deploy call and its retry, the stamp wait comparing the home to the mark, and the refusal before the account is asked anything. The command ring reads the smit off the fake wrangler's call and the fake station's `/home` and refuses a `GIT_DIR` pointing nowhere, falsified by the define dropped and the marker never appended; the dry run emitted a marked Worker. Part-done: the walk on the account waits on the shepherd."
 ---
 
 # Smit — the journeys

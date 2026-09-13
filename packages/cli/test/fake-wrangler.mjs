@@ -8,12 +8,17 @@
  * fake account API's `_fake` routes: `deploy` reads the derived config it
  * was given and registers the Worker and the container application it
  * names, and the KV namespaces its `pen` environment binds (stile phase 2,
- * the join store); `secret put` registers the secret's name on the Worker, which is
+ * the join store), and the build a checkout's deploy defines into the
+ * Worker (smit phase 0: `--define SHEEP_BUILD:<json>`, read back the way
+ * esbuild substitutes it and the cell's `homeBuild()` parses it), which the
+ * fake station answers at `/home`; `secret put` registers the secret's name on the Worker, which is
  * what the account's secrets listing answers with (stile phase 0);
  * `delete` removes the Worker. `SHEEP_TEST_WRANGLER_FAIL=deploy`
  * makes the deploy exit 1 with wrangler's kind of message, and
  * `secret:<NAME>` does the same to that one secret put, which is a deploy
- * that failed after the Worker went live.
+ * that failed after the Worker went live. `SHEEP_TEST_WRANGLER_DEPLOY_MS`
+ * holds a `deploy` open that long before it registers anything, so a
+ * screen harness has a stage that cannot end between two of its reads.
  *
  * Station phase 4: `dev` plays the local home's daemon for
  * `test/local.test.ts`: it listens on `--port` until SIGTERM, answering
@@ -79,8 +84,14 @@ if (args[0] === "dev") {
     console.error("✘ [ERROR] Could not deploy container application as durable object was not found in list of bindings");
     process.exit(1);
   }
+  // A deploy that takes a while, as a real upload does: the stage behind the stile's spinner stays up this long.
+  const hold = Number(process.env.SHEEP_TEST_WRANGLER_DEPLOY_MS);
+  if (Number.isFinite(hold) && hold > 0) await new Promise((resolveHold) => setTimeout(resolveHold, hold));
   const pen = config.env.pen;
-  await fetch(`${api}/_fake/deploy`, { method: "POST", body: JSON.stringify({ name: pen.name, container: pen.containers[0].name, image: pen.containers[0].image, vars: args.filter((arg, i) => args[i - 1] === "--var"), kv: pen.kv_namespaces ?? [] }) });
+  // The define as the bundler takes it: a JSON expression after the key, here a string, whose value the Worker parses as JSON.
+  const defined = args.filter((arg, i) => args[i - 1] === "--define" && arg.startsWith("SHEEP_BUILD:")).map((arg) => JSON.parse(JSON.parse(arg.slice("SHEEP_BUILD:".length))));
+  const build = defined.length === 0 ? null : { commit: defined.at(-1).commit, builtAt: defined.at(-1).builtAt };
+  await fetch(`${api}/_fake/deploy`, { method: "POST", body: JSON.stringify({ name: pen.name, container: pen.containers[0].name, image: pen.containers[0].image, vars: args.filter((arg, i) => args[i - 1] === "--var"), kv: pen.kv_namespaces ?? [], build }) });
   console.log(`Total Upload: 1234.56 KiB / gzip: 234.56 KiB\nUploaded ${pen.name} (2.34 sec)\nDeployed ${pen.name} triggers (1.23 sec)\n  https://${pen.name}.fake.workers.dev\nCurrent Version ID: 00000000-0000-0000-0000-000000000000`);
 } else if (args[0] === "secret" && args[1] === "put") {
   if (process.env.SHEEP_TEST_WRANGLER_FAIL === `secret:${args[2]}`) {

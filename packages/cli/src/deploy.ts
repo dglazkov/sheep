@@ -26,9 +26,17 @@
  * the Worker's. It is plain JSON, rewritten on every deploy, and carries
  * no secret; every wrangler call here, deploy, secret put, and delete,
  * runs `--config <that file> --env pen`. In a checkout the base is
- * `packages/cell/wrangler.jsonc`, so the code path is one, and the
- * command typechecks and is testable; a deploy from a checkout is not a
- * supported path.
+ * `packages/cell/wrangler.jsonc`, so the code path is one: wrangler
+ * bundles the cell from source and builds the pen image with Docker.
+ *
+ * The mark (smit phase 0): what a deploy defines into the Worker and waits
+ * to see at `GET /home`. Under the release it is the manifest's stamp,
+ * already inside the bundled Worker; under a checkout it is the smit
+ * (`checkoutStamp` in `local.ts`: the checkout's commit, `-dirty` when git
+ * has anything to say, and this deploy's time), handed to wrangler as
+ * `--define SHEEP_BUILD:<json>` in `scripts/bundle.mjs`'s encoding, so the
+ * cell's `homeBuild()` reads it unchanged. A checkout git cannot mark is
+ * refused before the account is asked anything.
  *
  * The join store (stile phase 2): every station has a KV namespace titled
  * `<worker>-join`, bound as `JOIN` in the `pen` environment. The deploy
@@ -74,8 +82,9 @@ import { fileURLToPath } from "node:url";
 import { configPath, readConfigFile, sheepDir, writeConfigFile } from "./config.js";
 import { accountToken, modelKey } from "./credentials.js";
 import { Home } from "./home.js";
-import { type BuildSide, type BuildStamp, cliBuild, ensureWrangler, readStamp, whoAnswers } from "./local.js";
+import { type BuildSide, type BuildStamp, checkoutStamp, cliBuild, ensureWrangler, readStamp, whoAnswers } from "./local.js";
 import { kennelName, mintName } from "./name.js";
+import { checkoutRoot, INSTALL_SPEC } from "./setup.js";
 
 /** The package root: `packages/cli/` in a checkout and the installed package otherwise. */
 const packageDir = fileURLToPath(new URL("..", import.meta.url));
@@ -662,7 +671,8 @@ export interface DeployReport {
   joinStore: { id: string; title: string; state: "made" | "kept" };
   config: { path: string; wrangler: string };
   kennel: string;
-  build: { home: BuildSide | null; cli: BuildSide };
+  /** `deployed` is the mark (smit phase 0): the manifest's stamp under the release, the smit under a checkout; what `home` is waited for to equal. */
+  build: { home: BuildSide | null; cli: BuildSide; deployed: BuildSide };
   /**
    * The container application's instances when the wait ended: a station
    * can rent a container once one is healthy, and right after a deploy or
@@ -699,11 +709,11 @@ export interface DeployReport {
     from: string | null;
   };
   /**
-   * Whether the home's stamp is this command's after the waits (station
-   * phase 3): a deployment takes seconds to propagate, so a redeploy polls
-   * `GET /home` until the stamp moved, up to a minute; a first deploy reads
-   * it once. `moved` is false when the command is unstamped (a checkout),
-   * the home did not answer, or the minute ran out.
+   * Whether the home's stamp is the mark after the waits (station phase 3,
+   * smit phase 0): a deployment takes seconds to propagate, so a redeploy
+   * polls `GET /home` until the stamp moved, up to a minute; a first deploy
+   * reads it once. `moved` is false when the home did not answer or the
+   * minute ran out.
    */
   stamp: { moved: boolean; seconds: number };
   next: string;
@@ -724,7 +734,7 @@ const ROLLOUT_POLL_MS = 5_000;
 const ROLLOUT_SAY_MS = 30_000;
 /** A rollout's statuses that mean it will not complete. */
 const ROLLOUT_FAILED = new Set(["failed", "reverted", "rolled_back"]);
-/** How long a redeploy waits for `GET /home` to report this command's stamp. */
+/** How long a redeploy waits for `GET /home` to report the mark. */
 const STAMP_WAIT_MS = 60_000;
 const STAMP_POLL_MS = 2_000;
 /** A read that throws (the network, a timeout, a 5xx) is retried this many times, this far apart; `SHEEP_TEST_RETRY_MS` shortens the gap in tests, and every ring strips it. */
@@ -1102,6 +1112,21 @@ function midway(name: string, home: string, done: number): string {
 }
 
 /**
+ * The mark a deploy defines and waits for (smit phase 0): the manifest's
+ * commit and time under the release; under a checkout, the smit of the
+ * checkout's root at `now`, or a `Refusal` when git cannot give one.
+ */
+function markFor(stamp: BuildStamp | undefined, now: Date): BuildSide {
+  if (stamp !== undefined) return { commit: stamp.commit, builtAt: stamp.builtAt };
+  const root = checkoutRoot(packageDir);
+  const smit = root === undefined ? undefined : checkoutStamp(root, now);
+  if (smit === undefined) {
+    throw new Refusal(`this checkout (${root ?? packageDir}) has no commit to mark the station with, since git there cannot answer for its HEAD, so nothing was made; the release, \`npm install -g ${INSTALL_SPEC}\`, deploys a station marked with its own build`);
+  }
+  return smit;
+}
+
+/**
  * `sheep home deploy`. Throws a `Refusal` (exit 2, nothing made) before the
  * account is touched, and an `Error` (exit 1) after: a deploy that failed
  * midway is run again, and the redeploy finishes it.
@@ -1112,6 +1137,10 @@ export async function deploy(options: DeployOptions = {}): Promise<DeployReport>
   // keeps none can still upgrade a home that already holds one, which is what a second machine that joined is (step 3').
   const token = accountToken()?.value;
   if (token === undefined) throw STOPS.deployAccount();
+  // The mark (smit phase 0): the manifest's stamp under the release; under a checkout, the smit, or a refusal before the
+  // account is asked anything, since a station that answers `unstamped` cannot be told from the one it replaced.
+  const stamp = readStamp();
+  const mark = markFor(stamp, new Date());
   const key = modelKey()?.value;
   if (options.name !== undefined) validateName(options.name);
   const existing = readConfigFile();
@@ -1158,7 +1187,6 @@ export async function deploy(options: DeployOptions = {}): Promise<DeployReport>
   const kept = await api.kvNamespace(account.id, title);
   const joinStore: DeployReport["joinStore"] = kept === undefined ? { ...(await api.createKvNamespace(account.id, title)), state: "made" } : { ...kept, state: "kept" };
   if (joinStore.state === "made") say(`sheep: made the join store ${title} (${joinStore.id})\n`);
-  const stamp = readStamp();
   const bin = wranglerBin(stamp, say);
   const derived = writeDerivedConfig(name, stamp, joinStore.id);
   const cwd = dirname(derived.path);
@@ -1166,7 +1194,9 @@ export async function deploy(options: DeployOptions = {}): Promise<DeployReport>
   // Before a redeploy, the application as it is: a new image makes the deploy a rollout, and this is what it rolls from.
   const before = taken.applications.some((application) => application.name === name) ? await api.applicationState(account.id, name) : undefined;
   say(`sheep: ${state === "deployed" ? "deploying" : "redeploying"} ${name} as ${home} with the image ${derived.image}${faux ? " and the faux provider" : ""}\n`);
-  const deployArgs = ["deploy", "--config", derived.path, "--env", "pen", ...(faux ? ["--var", "SHEEP_PROVIDER:faux"] : [])];
+  // Under a checkout the mark is defined into the Worker wrangler bundles; the release's Worker carries its own already.
+  const define = stamp === undefined ? ["--define", `SHEEP_BUILD:${JSON.stringify(JSON.stringify(mark))}`] : [];
+  const deployArgs = ["deploy", "--config", derived.path, "--env", "pen", ...define, ...(faux ? ["--var", "SHEEP_PROVIDER:faux"] : [])];
   let deployed = await wrangler(bin, deployArgs, { token, accountId: account.id, cwd });
   let deployRetried = false;
   if (deployed.code !== 0 && `${deployed.stdout}\n${deployed.stderr}`.includes(CONTAINER_ATTACH_LINE)) {
@@ -1198,8 +1228,8 @@ export async function deploy(options: DeployOptions = {}): Promise<DeployReport>
     if (before !== undefined && before.image !== derived.configured) say(`sheep: waiting for the rollout of ${derived.configured} to ${name}\n`);
     const rollout = await waitForRollout(api, account.id, name, derived.configured, before, waitStarted + ROLLOUT_WAIT_MS, say);
     // The address, then the stamp: after the waits, since a deployment takes seconds to propagate and a redeploy's `GET /home`
-    // answered the old build when read right after wrangler (station phase 3). A redeploy polls until the stamp is this
-    // command's, up to a minute; a first deploy, or an unstamped command, reads it once.
+    // answered the old build when read right after wrangler (station phase 3). A redeploy polls until the stamp is the
+    // mark, up to a minute; a first deploy reads it once.
     const probe = process.env.SHEEP_TEST_STATION_URL ?? home;
     const deadline = Date.now() + 60_000;
     let answers = false;
@@ -1220,9 +1250,9 @@ export async function deploy(options: DeployOptions = {}): Promise<DeployReport>
       for (;;) {
         const read = await retried("the home", () => client.build(), say);
         homeBuild = read.ok ? read.value : null;
-        stampReport.moved = homeBuild !== null && homeBuild.commit === cli.commit && homeBuild.builtAt === cli.builtAt;
+        stampReport.moved = homeBuild !== null && homeBuild.commit === mark.commit && homeBuild.builtAt === mark.builtAt;
         stampReport.seconds = Math.round((Date.now() - stampStarted) / 1000);
-        if (!read.ok || stampReport.moved || state === "deployed" || cli.builtAt === null || Date.now() >= stampDeadline) break;
+        if (!read.ok || stampReport.moved || state === "deployed" || Date.now() >= stampDeadline) break;
         await sleep(STAMP_POLL_MS);
       }
     }
@@ -1241,7 +1271,7 @@ export async function deploy(options: DeployOptions = {}): Promise<DeployReport>
       joinStore,
       config: { path: configPath(), wrangler: derived.path },
       kennel: sheepDir(),
-      build: { home: homeBuild, cli },
+      build: { home: homeBuild, cli, deployed: mark },
       containers,
       rollout,
       stamp: stampReport,

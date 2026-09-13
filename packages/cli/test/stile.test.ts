@@ -288,7 +288,10 @@ function expectPixelBanner(run: StileRun): void {
 
 describe("the stile: journey 1, the first sitting", () => {
   it("walks the seven steps: two values typed at hidden prompts, one yes, two defaults, and nothing typed anywhere but the credentials", { timeout: 120_000 }, async () => {
-    const w = await world({ ...fresh(), plan: "free" });
+    // The fake wrangler's deploy is held open for longer than a key's settle can take (`KEY_WAIT_MS`, three seconds), so the
+    // stage behind the spinner is still up when Enter returns: a fake that answers in tens of milliseconds made the frame
+    // below a race the screen's reads could lose, and did once a checkout's deploy asked git first (smit phase 0).
+    const w = await world({ ...fresh(), plan: "free" }, { env: { SHEEP_TEST_WRANGLER_DEPLOY_MS: "4000" } });
     const run = w.stile();
 
     // Step 1: the sheep and the checklist of seven; command filled in at once; the cursor on where, everywhere the default,
@@ -1009,7 +1012,8 @@ describe("the stile: where the settings go, and a station already there", () => 
 
 describe("the stile: the words", () => {
   it("--explain opens every step's words as it is reached, each at most eight lines, and each step's frame one screen with the banner still on it", { timeout: 120_000 }, async () => {
-    const w = await world();
+    // The deploy held open past a key's settle, as in journey 1's sitting: the frame with its spinner is read after Enter returns.
+    const w = await world(fresh(), { env: { SHEEP_TEST_WRANGLER_DEPLOY_MS: "4000" } });
     const run = w.stile(["--explain"]);
     const seen: Record<string, string[]> = {};
     const read = async (step: string) => {

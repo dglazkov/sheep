@@ -8,19 +8,63 @@
  * seams `deploy.ts` reads from its environment. Nothing here touches an
  * account; the account ring (`scripts/hermetic.mjs --ring account`) walks
  * the real one.
+ *
+ * Smit phase 0 (journey 3 step 1): this command runs from this checkout,
+ * so every deploy here is marked with the smit, read off the fake
+ * wrangler's recorded `--define` and the fake station's `/home` and judged
+ * against what this test's own git says about the checkout.
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { address, deriveConfig, STOPS } from "../src/deploy.js";
-import { ACCOUNT, type FakeState, fakeAccount, fakeStation, fresh, KEY, MIRRORED, type StationState, STAMP, TOKEN } from "./fakes.js";
+import { ACCOUNT, type FakeState, fakeAccount, fakeStation, fresh, KEY, MIRRORED, type StationState, TOKEN } from "./fakes.js";
 import { bin, type Result } from "./local-home.js";
 
 const fakeWrangler = new URL("./fake-wrangler.mjs", import.meta.url).pathname;
 const cellConfig = new URL("../../cell/wrangler.jsonc", import.meta.url).pathname;
+const repoRoot = new URL("../../../", import.meta.url).pathname;
+
+/** What this checkout's git says now, asked by the test and not by the command: the seven-character HEAD and whether `git status --porcelain` prints anything. */
+function checkoutGit(): { head: string; dirty: boolean } {
+  const run = (...args: string[]) => {
+    const done = spawnSync("git", args, { cwd: repoRoot, encoding: "utf8" });
+    if (done.status !== 0) throw new Error(`git ${args.join(" ")} exited ${done.status}: ${done.stderr}`);
+    return done.stdout;
+  };
+  return { head: run("rev-parse", "HEAD").trim().slice(0, 7), dirty: run("status", "--porcelain").trim() !== "" };
+}
+
+/** The time as the smit carries it, ISO seconds: what a window around a deploy is compared in. */
+const isoSeconds = (date: Date): string => date.toISOString().replace(/\.\d{3}Z$/, "Z");
+
+/**
+ * A window around a deploy: the smit it should carry is this checkout's commit, `-dirty` exactly when this test's own git
+ * status prints anything, and a time no earlier than the second the window opened and no later than the one it closed.
+ */
+function smitWindow(): { close: () => void; expectSmit: (build: { commit: string; builtAt: string | null } | null | undefined) => void } {
+  const opened = isoSeconds(new Date());
+  let closed: string | undefined;
+  return {
+    close: () => void (closed = isoSeconds(new Date())),
+    expectSmit: (build) => {
+      const git = checkoutGit();
+      expect(build?.commit).toBe(`${git.head}${git.dirty ? "-dirty" : ""}`);
+      expect(build?.builtAt).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
+      expect(build!.builtAt! >= opened, `${build?.builtAt} is before the window opened at ${opened}`).toBe(true);
+      expect(build!.builtAt! <= (closed ?? isoSeconds(new Date())), `${build?.builtAt} is after the window closed at ${closed}`).toBe(true);
+    },
+  };
+}
+
+/** The build a recorded `wrangler deploy` call defines: `--define SHEEP_BUILD:<json>` read back as the Worker reads it, or undefined without one. */
+function definedBuild(args: string[]): { commit: string; builtAt: string } | undefined {
+  const at = args.findIndex((arg, i) => args[i - 1] === "--define" && arg.startsWith("SHEEP_BUILD:"));
+  return at === -1 ? undefined : (JSON.parse(JSON.parse(args[at]!.slice("SHEEP_BUILD:".length)) as string) as { commit: string; builtAt: string });
+}
 
 
 interface World {
@@ -61,6 +105,8 @@ async function world(state: FakeState = fresh(), stationState: StationState = { 
   const log = join(root, "wrangler.log");
   const account = await fakeAccount(state);
   const stationAuths: (string | undefined)[] = [];
+  // The station answers `/home` with what the fake wrangler's last deploy defined into the Worker, as the cell does (smit phase 0).
+  stationState.account ??= state;
   const station = await fakeStation(stationAuths, stationState);
   const sheep: World["sheep"] = (args, options = {}) => {
     const env: Record<string, string | undefined> = {
@@ -255,7 +301,9 @@ describe("sheep home deploy: step 1, the credentials this machine keeps", () => 
 describe("sheep home deploy: steps 2 to 5 against the fake account", () => {
   it("asks the account, deploys over the derived config, puts the three secrets on stdin, writes the config, and reports", async () => {
     const w = await world();
+    const span = smitWindow();
     const result = await w.sheep(["home", "deploy", "--faux", "--json"]);
+    span.close();
     expect(result.code, result.stderr).toBe(0);
     const report = JSON.parse(result.stdout) as Record<string, any>;
     const home = address("blog", "fake");
@@ -271,13 +319,15 @@ describe("sheep home deploy: steps 2 to 5 against the fake account", () => {
     expect(report.key).toBe("put");
     expect(report.kennel).toBe(w.kennel);
     expect(report.config).toEqual({ path: w.config, wrangler: join(w.kennel, "deploy", "wrangler.jsonc") });
-    expect(report.build).toEqual({ home: STAMP, cli: { commit: "0.0.0-checkout", builtAt: null } });
+    // The mark is the smit (smit phase 0): this checkout's commit and the deploy's time, and the home reports it.
+    span.expectSmit(report.build.deployed);
+    expect(report.build).toEqual({ home: report.build.deployed, cli: { commit: "0.0.0-checkout", builtAt: null }, deployed: report.build.deployed });
     expect(report.containers).toEqual({ healthy: 2, starting: 0, scheduling: 0, failed: 0, seconds: 0 });
     // A first deploy is no rollout: nothing was there to roll from, and the rollouts were not asked for.
     expect(report.rollout).toEqual({ status: "none", step: null, healthy: null, seconds: 0, from: null });
     expect(w.state.requests.some((request) => request.path.endsWith("/rollouts"))).toBe(false);
-    // The stamp is read after the waits, once: this command is unstamped, so nothing moved and nothing was polled for.
-    expect(report.stamp).toEqual({ moved: false, seconds: 0 });
+    // The stamp is read after the waits, once, as a first deploy's is: the home reports the mark, so it moved.
+    expect(report.stamp).toEqual({ moved: true, seconds: 0 });
     expect(w.stationAuths.filter((auth) => auth === `Bearer ${config0(result)}`)).toHaveLength(1);
     expect(report.next).toBe('sheep new -- "…"');
     // Progress on stderr, and the skew line: the fake station is stamped and this checkout is not, so nothing is warned.
@@ -306,8 +356,9 @@ describe("sheep home deploy: steps 2 to 5 against the fake account", () => {
     // Step 3 and 4: four wrangler calls, the token and the account in each one's environment and in no argument.
     const calls = await w.calls();
     const derived = join(w.kennel, "deploy", "wrangler.jsonc");
+    const mark = JSON.stringify(JSON.stringify(report.build.deployed));
     expect(calls.map((call) => call.args)).toEqual([
-      ["deploy", "--config", derived, "--env", "pen", "--var", "SHEEP_PROVIDER:faux"],
+      ["deploy", "--config", derived, "--env", "pen", "--define", `SHEEP_BUILD:${mark}`, "--var", "SHEEP_PROVIDER:faux"],
       ["secret", "put", "SHEEP_TOKEN", "--config", derived, "--env", "pen"],
       ["secret", "put", "SHEEP_ANTHROPIC_API_KEY", "--config", derived, "--env", "pen"],
       ["secret", "put", "PEN_CELL_ORIGIN", "--config", derived, "--env", "pen"],
@@ -324,7 +375,7 @@ describe("sheep home deploy: steps 2 to 5 against the fake account", () => {
     expect(calls[3]!.stdin).toBe(`${home}\n`);
     // The account's side of the deploy: the Worker and the container application both named blog, the config's image.
     // And the join store bound to it as JOIN by the namespace's id, in the pen environment wrangler deployed (stile phase 2).
-    expect(w.state.deploys).toEqual([{ name: "blog", container: "blog", image: join(cellConfig, "..", "..", "pen", "Dockerfile"), vars: ["SHEEP_PROVIDER:faux"], kv: [{ binding: "JOIN", id: report.joinStore.id }] }]);
+    expect(w.state.deploys).toEqual([{ name: "blog", container: "blog", image: join(cellConfig, "..", "..", "pen", "Dockerfile"), vars: ["SHEEP_PROVIDER:faux"], kv: [{ binding: "JOIN", id: report.joinStore.id }], build: report.build.deployed }]);
 
     // The derived config: plain JSON, every name the Worker's, main absolute, no secret in it.
     const written = JSON.parse(await readFile(derived, "utf8")) as Record<string, any>;
@@ -366,15 +417,22 @@ describe("sheep home deploy: steps 2 to 5 against the fake account", () => {
     expect(again.stderr).toContain("sheep: redeploying blog");
 
     // Prose, the third time: the address, the name, the account, and the next sentence.
+    const proseSpan = smitWindow();
     const prose = await w.sheep(["home", "deploy", "--faux"]);
+    proseSpan.close();
     expect(prose.code).toBe(0);
+    const proseMark = definedBuild((await w.calls()).at(-4)!.args);
+    proseSpan.expectSmit(proseMark);
     expect(prose.stdout).toBe(
-      `home: ${home} (redeployed; answers)\nname: blog\naccount: ${ACCOUNT.name} (${ACCOUNT.id}), workers_paid Paid, 5 USD a month; subdomain fake\nimage: ../pen/Dockerfile; the faux provider answers every prompt, no model is spent\nkey: put on the home from what this machine keeps\nkennel: ${w.kennel}\nconfig: ${w.config} names the station\nhome build: 2b71e46 (2026-09-07T23:30:00Z)\ncli build: 0.0.0-checkout (unstamped)\ncontainers: 2 healthy (0s)\nrollout: none\nstamp: not compared (this command is unstamped)\nnext: sheep new -- "…"\n`,
+      `home: ${home} (redeployed; answers)\nname: blog\naccount: ${ACCOUNT.name} (${ACCOUNT.id}), workers_paid Paid, 5 USD a month; subdomain fake\nimage: ../pen/Dockerfile; the faux provider answers every prompt, no model is spent\nkey: put on the home from what this machine keeps\nkennel: ${w.kennel}\nconfig: ${w.config} names the station\nhome build: ${proseMark!.commit} (${proseMark!.builtAt})\ncli build: 0.0.0-checkout (unstamped)\ncontainers: 2 healthy (0s)\nrollout: none\nstamp: moved (0s)\nnext: sheep new -- "…"\n`,
     );
-    // Without --faux, no --var at all.
+    // Nowhere does a checkout's deploy say it was not compared, and its home is never unstamped (journey 1 step 1).
+    expect(`${prose.stdout}${prose.stderr}`).not.toContain("not compared");
+    expect(prose.stdout).not.toContain("home build: 0.0.0-checkout");
+    // Without --faux, no --var at all; the define still.
     const plain = await w.sheep(["home", "deploy", "--json"]);
     expect(plain.code).toBe(0);
-    expect((await w.calls()).at(-4)!.args).toEqual(["deploy", "--config", derived, "--env", "pen"]);
+    expect((await w.calls()).at(-4)!.args).toEqual(["deploy", "--config", derived, "--env", "pen", "--define", `SHEEP_BUILD:${JSON.stringify(JSON.stringify((JSON.parse(plain.stdout) as { build: { deployed: unknown } }).build.deployed))}`]);
   });
 
   it("keeps what else the config holds, and drops the local marker", async () => {
@@ -462,7 +520,7 @@ describe("sheep home deploy: steps 2 to 5 against the fake account", () => {
     const again = await rolling("progressing-then-completed");
     const prose = await again.sheep(["home", "deploy"]);
     expect(prose.code, prose.stderr).toBe(0);
-    expect(prose.stdout).toMatch(new RegExp(`\ncontainers: 2 healthy \\(0s\\)\nrollout: completed \\(\\d+s\\), from ${OLD.replace(/[.@]/g, "\\$&")}\nstamp: not compared \\(this command is unstamped\\)\nnext: `));
+    expect(prose.stdout).toMatch(new RegExp(`\ncontainers: 2 healthy \\(0s\\)\nrollout: completed \\(\\d+s\\), from ${OLD.replace(/[.@]/g, "\\$&")}\nstamp: moved \\(\\d+s\\)\nnext: `));
 
     // The last step under way with a healthy instance ends the wait as `rolling`: the platform finishes it, and the image has not moved yet.
     const stays = await rolling("rolling-stays");
@@ -553,6 +611,8 @@ describe("sheep home deploy: steps 2 to 5 against the fake account", () => {
     const calls = await w.calls();
     expect(calls.map((call) => call.args[0])).toEqual(["deploy", "deploy", "secret", "secret", "secret"]);
     expect(calls[0]!.args).toEqual(calls[1]!.args);
+    // The retried call carries the define too (smit phase 0): the Worker it registered is the one marked.
+    expect(definedBuild(calls[1]!.args)).toEqual((JSON.parse(result.stdout) as { build: { deployed: unknown } }).build.deployed);
     expect(w.state.deploys.length).toBe(1);
     expect(await readConfig(w.config)).toMatchObject({ name: "blog" });
     // A deploy that needed no retry says so.
@@ -568,6 +628,73 @@ describe("sheep home deploy: steps 2 to 5 against the fake account", () => {
     expect(result.stderr).toContain("wrangler deploy --config");
     expect(result.stderr).toContain("the fake refused this deploy [code: 10000]");
     expect(existsSync(w.config)).toBe(false);
+  });
+});
+
+describe("the smit: a checkout's deploy marks its station (smit phase 0)", () => {
+  it("defines the smit, waits for the home to report it, and a redeploy of the same tree moves it again (journey 1 steps 1 and 2)", { timeout: 30_000 }, async () => {
+    const w = await world();
+    const first = smitWindow();
+    const deployed = await w.sheep(["home", "deploy", "--json"]);
+    first.close();
+    expect(deployed.code, deployed.stderr).toBe(0);
+    const report = JSON.parse(deployed.stdout) as { state: string; build: { home: unknown; cli: unknown; deployed: { commit: string; builtAt: string } }; stamp: { moved: boolean } };
+    // The recorded call carries the define, and its build is the smit: this checkout's HEAD, dirty exactly when git says so.
+    const call = (await w.calls()).find((recorded) => recorded.args[0] === "deploy")!;
+    first.expectSmit(definedBuild(call.args));
+    expect(report.build.deployed).toEqual(definedBuild(call.args));
+    // The home answered what wrangler was handed, and the report says it moved.
+    expect(report.stamp.moved).toBe(true);
+    expect(report.build.home).toEqual(report.build.deployed);
+    expect(report.build.cli).toEqual({ commit: "0.0.0-checkout", builtAt: null });
+
+    // Step 2: `sheep home` prints the same `home build:` line, and `--json`'s build.commit is the same commit. The config names
+    // the station's workers.dev address, which only the seam reaches, so the status is pointed at the fake station with the
+    // token the deploy wrote; then the config is put back for the redeploy.
+    const written = await readFile(w.config, "utf8");
+    await writeFile(w.config, JSON.stringify({ ...JSON.parse(written), home: w.station }));
+    const status = await w.sheep(["home"]);
+    expect(status.code, status.stderr).toBe(0);
+    expect(status.stdout).toContain(`\nhome build: ${report.build.deployed.commit} (${report.build.deployed.builtAt})\ncli build: 0.0.0-checkout (unstamped)\n`);
+    const statusJson = JSON.parse((await w.sheep(["home", "--json"])).stdout) as { build: { home: { commit: string } } };
+    expect(statusJson.build.home.commit).toBe(report.build.deployed.commit);
+    await writeFile(w.config, written);
+
+    // A redeploy of the same tree, in a later second: the time moved, so the stamp moved, and the prose says so.
+    while (isoSeconds(new Date()) === report.build.deployed.builtAt) await new Promise((resolve) => setTimeout(resolve, 100));
+    const second = smitWindow();
+    const again = await w.sheep(["home", "deploy"]);
+    second.close();
+    expect(again.code, again.stderr).toBe(0);
+    const redeploy = (await w.calls()).filter((recorded) => recorded.args[0] === "deploy").at(-1)!;
+    const mark = definedBuild(redeploy.args)!;
+    second.expectSmit(mark);
+    expect(mark.builtAt > report.build.deployed.builtAt).toBe(true);
+    expect(again.stdout.startsWith(`home: ${address("blog", "fake")} (redeployed; answers)\n`), again.stdout).toBe(true);
+    expect(again.stdout).toContain(`\nhome build: ${mark.commit} (${mark.builtAt})\n`);
+    expect(again.stdout).toMatch(/\nstamp: moved \(\d+s\)\n/);
+    expect(again.stdout).not.toContain("not compared");
+    expect(again.stdout).not.toContain("home build: 0.0.0-checkout");
+  });
+
+  it("refuses a checkout git cannot answer for, with one sentence naming the release, and runs nothing (journey 2)", async () => {
+    const w = await world();
+    // Git made unable to answer for the spawned command alone: a GIT_DIR pointing nowhere, which nothing else here reads.
+    const nowhere = join(w.root, "no-git-here");
+    for (const json of [false, true]) {
+      const result = await w.sheep(["home", "deploy", ...(json ? ["--json"] : [])], { env: { GIT_DIR: nowhere } });
+      expect(result.code).toBe(2);
+      expect(result.stdout).toBe("");
+      const lines = result.stderr.trimEnd().split("\n");
+      expect(lines, result.stderr).toHaveLength(1);
+      expect(lines[0]).toMatch(/^sheep: this checkout \(.+\) has no commit to mark the station with, .*nothing was made; the release, `npm install -g github:dglazkov\/sheep#release`, deploys a station marked with its own build$/);
+    }
+    // Nothing deployed: no wrangler call, no request to the account (so no join store), no config, no derived config.
+    expect(await w.calls()).toEqual([]);
+    expect(w.state.requests).toEqual([]);
+    expect(w.state.kv).toEqual([]);
+    expect(existsSync(w.config)).toBe(false);
+    expect(existsSync(join(w.kennel, "deploy"))).toBe(false);
   });
 });
 

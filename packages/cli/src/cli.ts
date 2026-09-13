@@ -341,14 +341,13 @@ async function runHome(parsed: Parsed, config: SheepConfig, output: Output): Pro
               : rollout.status === "unknown"
                 ? "rollout: unknown (the account API did not answer)\n"
                 : `rollout: ${rollout.status} after ${rollout.seconds}s${atStep}; the old image${rollout.from === null ? "" : ` (${rollout.from})`} serves until it completes\n`;
+      // The stamp against the mark (smit phase 0): every deploy is marked, a checkout's with its smit, so every deploy compares.
       const stampLine =
-        report.build.cli.builtAt === null
-          ? "stamp: not compared (this command is unstamped)\n"
-          : report.build.home === null
-            ? "stamp: unknown (the home did not answer)\n"
-            : report.stamp.moved
-              ? `stamp: moved (${report.stamp.seconds}s)\n`
-              : `stamp: not moved after ${report.stamp.seconds}s; the home still reports ${describeBuild(report.build.home)}\n`;
+        report.build.home === null
+          ? "stamp: unknown (the home did not answer)\n"
+          : report.stamp.moved
+            ? `stamp: moved (${report.stamp.seconds}s)\n`
+            : `stamp: not moved after ${report.stamp.seconds}s; the home still reports ${describeBuild(report.build.home)}\n`;
       output.out(
         `home: ${report.home} (${report.state}; ${report.answers ? "answers" : "not answering yet; a fresh Worker takes a moment"})\n` +
           `name: ${report.name}\n` +

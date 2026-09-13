@@ -50,7 +50,8 @@ export interface FakeState {
    */
   rollout: "none" | "progressing-then-completed" | "mirrored" | "rolling-stays" | "failed" | "dies";
   rolloutPolls: number;
-  deploys: { name: string; container: string; image: string; vars: string[]; kv: { binding: string; id?: string }[] }[];
+  /** `build` is what the deploy defined into the Worker (smit phase 0), null when it defined none, as the release's deploy does. */
+  deploys: { name: string; container: string; image: string; vars: string[]; kv: { binding: string; id?: string }[]; build?: { commit: string; builtAt: string | null } | null }[];
   /** Each Worker's secret names, as the fake wrangler's `secret put` registers them: never a value, as the real API answers. */
   secrets: Record<string, string[]>;
   /**
@@ -99,7 +100,7 @@ export function fakeAccount(state: FakeState): Promise<{ server: Server; url: st
     const auth = request.headers.authorization;
     // The fake wrangler's side door: what a deploy or a delete does to the account.
     if (path === "/_fake/deploy") {
-      const body = (await json(request)) as { name: string; container: string; image: string; vars: string[]; kv: { binding: string; id?: string }[] };
+      const body = (await json(request)) as FakeState["deploys"][number];
       state.deploys.push(body);
       if (!state.workers.includes(body.name)) state.workers.push(body.name);
       const existing = state.applications.find((application) => application.name === body.container);
@@ -284,7 +285,11 @@ export interface StationState {
    * probe that names none is answered as a sheep home, as deploy's is. Unset, no named Worker is this station.
    */
   worker?: string;
-  /** The fake account whose namespace titled `<worker>-join` is this station's `JOIN` binding: `POST /join` reads it and nothing else. */
+  /**
+   * The fake account whose namespace titled `<worker>-join` is this station's `JOIN` binding: `POST /join` reads it. And
+   * `GET /home`'s build (smit phase 0): the build the account's last deploy defined into the Worker, as the cell answers
+   * what was defined into it; `STAMP`, a release's Worker, when there is no account or its last deploy defined none.
+   */
   account?: FakeState;
   /** How many `POST /join` asks, after the key is written, answer 404 still, as the edge does until the write reaches it. */
   joinLag?: number;
@@ -293,7 +298,7 @@ export interface StationState {
 }
 
 /**
- * The station's door: `GET /` answers `sheep`, `GET /home` the stamp; the
+ * The station's door: `GET /` answers `sheep`, `GET /home` the stamp (the last deploy's define, else `STAMP`); the
  * listings need the station's bearer, a 401 otherwise (the home's
  * `admitted`); what bearer each request carried is kept. `POST /join` is
  * the cell's (stile phase 2): the bearer hashed, its `join:<sha256>` key
@@ -334,7 +339,7 @@ export function fakeStation(auths: (string | undefined)[], state: StationState):
       state.account?.events.push("ask 200");
       return answer(200, JSON.stringify({ token: state.token }));
     }
-    if (url.pathname === "/home") return answer(200, JSON.stringify({ serverId: "fake-station", container: true, build: STAMP }));
+    if (url.pathname === "/home") return answer(200, JSON.stringify({ serverId: "fake-station", container: true, build: state.account?.deploys.at(-1)?.build ?? STAMP }));
     if (request.headers.authorization !== `Bearer ${state.token}`) return answer(401, "unauthorized");
     if (url.pathname === "/sessions") return answer(200, JSON.stringify(state.sessions));
     if (url.pathname === "/pastures") return answer(200, JSON.stringify(state.pastures));
