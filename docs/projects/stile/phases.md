@@ -239,39 +239,32 @@ with the fixes.
 
 - **2026-09-12 — A first sitting deploys before it has a key.** `deploy()`
   stops without one, so the stile passes `keyLater` and its `key` step
-  puts the key through `putModelKey`, which shares `putSecret` with
-  deploy: one put, not two.
-- **2026-09-12 — The plan's yes exists only on an account not on Workers
-  Paid.** The account ring requires Paid, so `t1` counts no yes; `t0`
-  counts the whole of it against a Free fake account.
-- **2026-09-12 — A symlinked `HOME` split `~/.sheep` in two.** Under
-  macOS's `/var` link `t0` minted `t0`, not `sheep-2`, while Linux CI
-  passed; kennel checks now compare real paths.
-- **2026-09-12 — The shepherd's walk refused the first screen.** Plain
-  text, "fish on legs", bracketed choices, every mechanical proof green.
-  Issue #9; the second cut was settled as mockups first, five rounds,
-  the sheep as pixels rasterised from shapes.
+  puts the key through `putModelKey`, shared with deploy: one put.
+- **2026-09-12 — The plan's yes exists only off Workers Paid**, so `t1`
+  counts none and `t0` counts it against a Free fake; and a symlinked
+  `HOME` split `~/.sheep` in two until kennel checks compared real paths.
+- **2026-09-12 — The shepherd's walk refused the first screen**: plain
+  text, "fish on legs", bracketed choices, every proof green. Issue #9;
+  the second cut was settled as mockups first.
 - **2026-09-12 — pi-tui's main-screen stop writes a space before its
-  newline.** On a last row that fills the width it wraps, and the finish
-  lost two rows of its top; the stile stops with `preserveScreen` and
-  writes its own newline.
-- **2026-09-12 — Styling is proved from the emulator's cells.** pi-tui
-  appends a bare reset to every line, so `NO_COLOR` is read cell by cell.
-- **2026-09-12 — The fakes never showed a spinner** until `healthDelayMs`
-  held their listings back; the cell ring's lease test flaked under a
-  loaded run and passed alone.
+  newline.** On a last row that fills the width it wraps and the finish
+  lost two rows; the stile stops with `preserveScreen` and writes its own.
+- **2026-09-12 — Styling is proved from the emulator's cells**, since
+  pi-tui appends a bare reset to every line; `NO_COLOR` is read cell by
+  cell. The fakes showed no spinner until `healthDelayMs` held their
+  listings back.
 - **2026-09-12 — The package ring held on release `084cc74`**, `t0`
   walking the new stile whole; the ring reads the checkout's local
   `release` branch, fast-forwarded first.
-- **2026-09-12 — The shepherd's walk found two faults the harness
-  cannot.** Ghostty answers pi-tui's kitty negotiation and sends an
-  arrow as `CSI 1;1 B`, which a byte comparison missed: keys are matched
-  by name now. And a synchronous `npm install -g` ran before the first
-  frame, a blank screen for its length: the first frame is drawn at
-  once and the install awaited behind the spinner.
+- **2026-09-12 — Ghostty sends an arrow as `CSI 1;1 B`** under the kitty
+  protocol pi-tui negotiates; a byte comparison missed it. Keys are
+  matched by name now, releases skipped.
+- **2026-09-12 — A synchronous `npm install -g` ran before the first
+  frame**, a blank screen for its length, since pi-tui draws on a timer.
+  The first frame is drawn at once and the install awaited.
 - **2026-09-12 — Open: the ⚑ account ring and a second walk on the
-  release with the fixes.** `t1` and `a7` on the shepherd's yes; the
-  walk is theirs.
+  release with the fixes.** `t1` and `a7` on the shepherd's yes; the walk
+  is theirs.
 
 ---
 
