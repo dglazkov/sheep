@@ -61,12 +61,15 @@ decision here.
 
 ## The notice
 
-A command run from the release, with a home to talk to, starts one
-fetch of the tip beside its verb: a two-second `AbortSignal.timeout`, no
-retry, and never waited for. If it answers before the verb ends, the
-said file gets the tip and the time; if it does not, the verb's exit is
-not delayed by a millisecond and the next command tries again. A tip in
-the said file less than a day old is not fetched again. At the end of a
+A command run from the release, with a home to talk to, hands one
+fetch of the tip to a child process it starts detached and never waits
+for: a two-second `AbortSignal.timeout`, no retry, the tip and the time
+written to the said file, and the child gone. The verb's exit is not
+delayed by a millisecond, and the notice is said by the first command to
+end after the tip is kept, most often the next. The command writes when
+it asked into the said file before it starts the child, and a tip less
+than a day old, or an ask less than ten minutes old, starts none, so an
+unreachable GitHub costs one child in ten minutes. At the end of a
 command, when the kept tip's time is newer than this command's stamp and
 the tip's commit is not the one the notice was last said for, stderr
 gets one line:
@@ -79,6 +82,13 @@ stdout is what it was. It is never said from a checkout (no stamp), by
 `SHEEP_TIP=0`; the rings set that, so no ring reaches GitHub, and the
 account ring alone leaves it on, since it installs an older release
 first and is the one place the real tip is read against a real command.
+
+Why a child and not a fetch in the command's own process: shear phase
+0's walk found that one, aborted at the exit so the exit never waits,
+never answered a verb against a local home, which ends in about 120 ms of
+which Node's start is half, and GitHub answered Node in about 75; the
+notice was never said. The child is the same kilobyte, started by the
+dog's command, and nothing else.
 
 Why the command fetches and not the home: a home deployed before shear
 would never say it, and a laptop that can reach GitHub for `npm

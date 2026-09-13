@@ -20,10 +20,13 @@ finding and a stop, not a feature.
 ---
 
 **Where we are: shear phase 0 PART-DONE, 13 September 2026.** The
-notice and the header hold in all three inner rings; the walk waits on
-the release the workflow builds from the phase's commit, and then on
-nobody. shear phase 1 is next after it, and its account walk is under
-the shepherd's standing authorization.
+notice and the header hold in all three inner rings, and the walk on
+release fdca17c said the notice once; it also found the tip's fetch
+never lands for a fast verb, so the fetch moves to a detached child
+(design.md, "The notice") and the walk is walked again on that release.
+shear phase 1 is being built beside it; its account walk upgrades from
+the release that carries the child, under the shepherd's standing
+authorization.
 
 Two phases, because the notice and the header are lines a command
 says, provable against the fakes alone, and the floor and the guard are
@@ -95,9 +98,15 @@ and HOME, `sheep ls` twice from a scratch kennel against its own local
 home with `SHEEP_TIP` at a manifest the walk serves on localhost with a
 newer stamp: the notice once, by eye; with `SHEEP_TIP=0`, nothing.
 
+**Formerly:** `startTip()` fetched in the command's own process and
+aborted the fetch at the exit (fdca17c). The walk found it never answered
+a verb against a local home; the child replaces it, and the command tests
+say the notice on the run after the tip is kept.
+
 **Status: PART-DONE, 2026-09-13.** `pnpm test` exits 0 on all three
-inner rings with both mutations caught; the walk waits on the release
-built from this commit.
+inner rings with both mutations caught, and the walk on release fdca17c
+said the notice once; the child that replaces the in-process fetch waits
+on its build, and the walk on its release.
 
 **Findings:**
 
@@ -105,7 +114,8 @@ built from this commit.
 - **2026-09-13 — The said file never written fails four of seven `shear.test.ts` cases;** the notice for a moved tip and both skew lines print on the second run. An unaborted fetch fails the hanging tip: 2225 ms against 533.
 - **2026-09-13 — workerd refuses a Worker module exporting a string** ("not of type 'function or ExportedHandler'") while the vitest pool accepts it; only the home ring caught `BUILD_HEADER` exported from the cell.
 - **2026-09-13 — Node's WebSocket shows no handshake headers,** so the command hears the header from `GET /home`, which every socket verb asks first; the Worker still stamps the 101, rebuilt around the socket, since a stub's response headers are immutable.
-- **2026-09-13 — The notice is said in the same run only when the tip answers before the verb ends;** the command test holds `/sessions` 300 ms, as a far station does. `SHEEP_TEST_CLI_BUILD` names the command's build in `cliBuild`.
+- **2026-09-13 — The walk on release fdca17c held:** its local home sent `x-sheep-build: fdca17c 2026-09-13T19:16:16Z`; `sheep ls` against a served newer manifest said the notice once in 101 ms, the second run nothing, `SHEEP_TIP=0` nothing, stdout byte-equal.
+- **2026-09-13 — The in-process fetch never lands for a fast verb:** against the real tip `sheep ls` ended in 114–135 ms, GitHub answers Node in 71–82 after its start, and `tip.json` was never written, run after run.
 - **2026-09-13 — The release workflow flaked on this project's docs-only commit 49788e8:** bleat's `setup running (0.x s)` read `1.0 s` on the runner, the second time that test has failed a release.
 - **2026-09-13 — A route that throws answers workerd's 500 with no header,** which a floor on every non-ok answer would call a home from before the header; the design now applies the floor to a 4xx other than 401 alone.
 

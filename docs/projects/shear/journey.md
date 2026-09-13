@@ -44,11 +44,11 @@ The dog runs the previous release, installed on this machine, against a
 station deployed from it; the tip is newer.
 
 1. `sheep ls` prints its list on stdout as it always has, and within the
-   day one stderr line:
+   day, from it or the command after it, one stderr line:
    `sheep: a newer build <tip commit> (<tip time>) is out; this command
    is <commit> (<time>); `npm install -g github:dglazkov/sheep#release`
    updates it`. The command took no longer than its verb.
-2. `sheep ls` again prints the list and no line.
+2. `sheep ls` after the line prints the list and no line.
 3. `sheep --version` prints the stamp and nothing else, before and after.
 4. `SHEEP_TIP=0 sheep ls`, and `sheep ls` from a checkout, and `sheep ls`
    with `CI` set, print no notice, ever.
