@@ -107,7 +107,7 @@ built from this commit.
 - **2026-09-13 — Node's WebSocket shows no handshake headers,** so the command hears the header from `GET /home`, which every socket verb asks first; the Worker still stamps the 101, rebuilt around the socket, since a stub's response headers are immutable.
 - **2026-09-13 — The notice is said in the same run only when the tip answers before the verb ends;** the command test holds `/sessions` 300 ms, as a far station does. `SHEEP_TEST_CLI_BUILD` names the command's build in `cliBuild`.
 - **2026-09-13 — The release workflow flaked on this project's docs-only commit 49788e8:** bleat's `setup running (0.x s)` read `1.0 s` on the runner, the second time that test has failed a release.
-- **2026-09-13 — Open: a route that throws answers workerd's 500 with no header.** shear phase 1's floor would call a current home one from before the header; the Worker's catch should stamp it.
+- **2026-09-13 — A route that throws answers workerd's 500 with no header,** which a floor on every non-ok answer would call a home from before the header; the design now applies the floor to a 4xx other than 401 alone.
 
 ---
 
@@ -117,9 +117,9 @@ built from this commit.
 
 **Work:** `packages/cli/src/home.ts`: `OLDEST_HOME`, the ISO time of the
 release that shipped phase 0's header, with the comment that says when
-it moves; in `request` and `ask`, a response that is not ok from a home
-whose header is absent or older than the floor throws with the floor's
-sentence appended. `packages/cli/src/deploy.ts`: before the join store
+it moves; in `request` and `ask`, a 4xx other than 401 from a home whose
+header is absent or older than the floor throws with the floor's
+sentence appended, and a 5xx or a 401 never does. `packages/cli/src/deploy.ts`: before the join store
 and before wrangler, when the config names a station that answers,
 `GET /sessions` with the kept token; rows `running` or `waiting` are
 listed on stderr as `<id>  <task>` and the deploy exits 2 with the
@@ -141,7 +141,7 @@ no wrangler call, no join store; `--now` deploys and the report says
 not answer deploys. `shear.test.ts` (command): a fake station sending no
 header answers `sheep ls` as before with no skew line, and a verb it
 404s carries the floor's sentence; a header older than the floor, the
-same; a header at the floor, the bare 404.
+same; a header at the floor, the bare 404; a 500 with no header, bare.
 
 **Not this phase:** Nothing open above.
 
@@ -149,7 +149,7 @@ same; a header at the floor, the bare 404.
 exits 0. Falsified by at least two mutations: the guard's count never
 read (the refusal case deploys), and the floor's sentence dropped (the
 404 case reads bare). **⚑** journey 5 step 2: `pnpm hermetic --ring
-account --older <the release before phase 0's>` on the shepherd's
+account --older <shear phase 0's release>` on the shepherd's
 account, one station named `sheep-hermetic-<sha>`, deployed twice,
 walked, deleted, under the shepherd's standing authorization to run
 account walks.

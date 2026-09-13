@@ -111,13 +111,16 @@ routes and wire this command speaks; it starts at the release that ships
 the header and moves by hand when a route is added, a route's answer
 changes shape, or the pi pin moves (`/pi-bump` says to look at it). It is
 applied where a refusal is already made into an error, in `Home.request`
-and `Home.ask`: a response that is not ok, from a home whose header is
-absent or older than the floor, throws with one more sentence appended:
+and `Home.ask`: a 4xx other than 401, from a home whose header is absent
+or older than the floor, throws with one more sentence appended:
 
     the home's build a2b17e7 (2026-09-13T18:14:51Z) is older than this command speaks to; `sheep home deploy` from this package updates it
 
-(`a build from before the header` where there is none). A response that
-is ok is never touched: an older home that still answers a verb keeps
+(`a build from before the header` where there is none). A 5xx is not a
+verb the home lacks but a route that failed, and a route that throws
+answers workerd's own 500 with no header (shear phase 0), so a current
+home would read as one from before the header; a 401 is the token. Neither
+gets the sentence. A response that is ok is never touched: an older home that still answers a verb keeps
 answering it, since nothing refuses on skew alone (station). The wire
 itself needs no floor here: pi's codec already refuses a
 `PROTOCOL_VERSION` that is not its own at attach, and a pi bump that

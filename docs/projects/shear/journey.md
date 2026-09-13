@@ -114,7 +114,7 @@ Acceptance criteria:
 Acceptance criteria:
 
 - The floor is one constant in the command, an ISO time, compared to the
-  header on responses that are not ok and nowhere else.
+  header on 4xx responses other than 401 and nowhere else.
 - `/pi-bump` names the floor as a thing to look at.
 
 ## Journey 5: The walk
