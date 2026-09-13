@@ -30,7 +30,8 @@ usage:
   sheep rm <id>                             end the session: its open turn aborted, its container and browser released, its
                                             rows gone, the pasture kept; prints <id>\\tended, with no undo (export first)
   sheep log [--since <entry id | ISO time>] [--last <n>] <id>   the transcript as text, oldest first, one block per entry,
-                                            and a [setup] block where each of this sheep's setup.sh runs happened, with
+                                            an assistant block that ended in error last saying [error] <why>, and a
+                                            [setup] block where each of this sheep's setup.sh runs happened, with
                                             how it ended and the tail of what it printed (the last twenty are kept)
   sheep export <id> [file]                  write the session as a pi SQLite file (default <id>.sqlite)
   sheep config                              print the resolved home and this directory's kennel (never the token)
@@ -110,4 +111,6 @@ nothing but the command, and cd is how you switch.
 With a prompt after --, the reply streams and sheep exits when the turn ends. A prompt to a busy session is
 queued behind the running turn, as pi queues a prompt typed mid-turn; sheep prints "queued <id>" and exits 0.
 Without a prompt, sheep attaches pi's interactive terminal. wait exits 124 on timeout, with what had finished.
+A held prompt, wait, or abort whose connection drops (the home restarted) attaches again and says so once on
+stderr; a home that does not answer for two minutes is exit 2.
 `;

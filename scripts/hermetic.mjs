@@ -419,6 +419,19 @@
  * local home with Docker and a real model, are the conductor's walk and
  * are named among what was not checked. It needs no token beyond the
  * Cloudflare one, so it has no skip.
+ *
+ * Tether phase 0 gives the account ring `r1`, after b2 and for b1's reason
+ * (tether's journey 5 step 2): a dog's wait held through the station's
+ * version changes. One sheep on no pasture, a faux turn of a minute and a
+ * quarter started with `--detach`, `sheep wait` held, and while it runs a
+ * `wrangler secret put` and a `wrangler secret delete` of a throwaway
+ * secret on the station's Worker — the ring's wrangler, `~/.sheep/tools`,
+ * over the derived config the deploy left in blog's kennel, the account
+ * token in that one child's environment — each a new Worker version, which
+ * resets the object holding the turn (issue #10). The wait must return 0
+ * with `<id>\t<reply>`, having said the drop on stderr, within seconds of
+ * the reply; `sheep log` must carry pi's interruption as an `[error]` line.
+ * The sheep is ended with n1's check, counted minted and ended.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
@@ -3562,6 +3575,11 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     // last assistant entry, the ids the log's. After b1, for b1's reason. It ends its own sheep with n1's check.
     await journeyBell(ring, station);
 
+    // Tether phase 0, r1 (tether's journey 5 step 2): a held `sheep wait` through a `wrangler secret put` and `wrangler
+    // secret delete` on the station's Worker while a faux turn of more than a minute runs; the wait returns 0 with the
+    // reply and `sheep log` shows the interruption. After b2, for b1's reason. It ends its own sheep with n1's check.
+    await journeyTether(ring, station, { token });
+
     // Stile phase 1, t1 (stile's journey 1 and journey 4 step 4): the ring plays the shepherd at the stile on a second, short
     // station of its own, then the dog with nothing in its environment; the station is gone before a6 compares the listing.
     await stileOnAccount(ring, api, station, { token, key });
@@ -5038,6 +5056,118 @@ async function journeyBell(ring, station, { step = "b2" } = {}) {
   ring.unchecked.push(`bell journey 4 steps 1 and 2 (${step}): the local home with Docker and a real model, one prompt and then two; the account ring walks the station with the faux provider`);
 
   // The step runs after n1, so it ends its own sheep with n1's check, counted ended as well as minted.
+  const removed = await ring.sheep(["rm", id]);
+  if (removed.code !== 0 || removed.stdout !== `${id}\tended\n` || removed.stderr !== "") ring.fail(step, `sheep rm ${id}`, { ...removed, stderr: `${removed.stderr}\nexpected exit 0, exactly "${id}\\tended" on stdout, nothing on stderr` });
+  station.ended.push(id);
+  const afterRemoved = JSON.parse((await ring.sheep(["ls", "--json"])).stdout);
+  if (afterRemoved.some((one) => one.id === id)) ring.fail(step, "sheep ls --json (after rm)", { stdout: JSON.stringify(afterRemoved), stderr: `expected ${id} not listed after the end`, code: 1 });
+  ring.ok(step, `sheep rm ${id}; sheep ls --json`, "ended with its one line; not listed after");
+}
+
+/** r1's turn: one text step after more than a minute, so both version changes land inside it and the reply comes after them. */
+const TETHER_DELAY_MS = 75_000;
+const TETHER_REPLY = "the tether held";
+const TETHER_PROGRAM = { steps: [{ text: TETHER_REPLY, delayMs: TETHER_DELAY_MS }] };
+/** The throwaway secret whose put and delete are the two version changes; nothing reads it. */
+const TETHER_SECRET = "SHEEP_TETHER_R1";
+/** How soon after the reply's timestamp the held wait must have exited: heard, not timed out. The station's clock is not this one, so it is loose. */
+const TETHER_PROMPTLY_MS = 20_000;
+
+/**
+ * Tether's journey 5 step 2 on the station (tether phase 0, r1). The
+ * home ring restarts a `wrangler dev`; this is the restart issue #10 saw,
+ * a Worker version change on a station, made twice while one turn runs.
+ *
+ * The version changes are wrangler's, as `sheep home deploy` makes them:
+ * the ring's wrangler from `~/.sheep/tools`, the derived config the deploy
+ * left at `<blog>/.sheep/deploy/wrangler.jsonc`, `--env pen`, the value on
+ * stdin, the account token and id in that child's environment alone.
+ * `secret delete` confirms by itself under `CI`.
+ *
+ * After b2, and for b1's reason. The sheep is ended here with n1's check,
+ * so it is counted minted and ended and the delete still lists `sessions: 0`.
+ */
+async function journeyTether(ring, station, { token, step = "r1" }) {
+  const { home, token: stationToken } = station;
+  const started = Date.now();
+  const config = join(ring.kennel(ring.blog), "deploy", "wrangler.jsonc");
+  const wranglerJs = join(ring.home, ".sheep", "tools", "node_modules", "wrangler", "bin", "wrangler.js");
+  for (const needed of [config, wranglerJs]) {
+    if (!existsSync(needed)) ring.fail(step, `ls ${needed}`, { stdout: "", stderr: `expected ${needed}: the deploy's derived config and the ring's wrangler, which the version changes are made with`, code: 1 });
+  }
+  const wrangler = (args, input) =>
+    run(process.execPath, [wranglerJs, ...args, "--config", config, "--env", "pen"], {
+      cwd: dirname(config),
+      input,
+      env: { ...ring.env(), CI: "1", WRANGLER_SEND_METRICS: "false", CLOUDFLARE_API_TOKEN: token, CLOUDFLARE_ACCOUNT_ID: station.account.id },
+    });
+
+  const minted = await ring.sheep(["new", "--name", "tether", "--detach"]);
+  const id = /^([0-9a-f-]{36})\n$/.exec(minted.stdout)?.[1];
+  if (minted.code !== 0 || !id || minted.stderr !== "") ring.fail(step, "sheep new --name tether --detach", { ...minted, stderr: `${minted.stderr}\nexpected exit 0, the id alone on stdout, nothing on stderr` });
+  station.minted.push(id);
+  const posted = await fetch(`${home}/s/${encodeURIComponent(id)}/faux`, { method: "POST", headers: { authorization: `Bearer ${stationToken}`, "content-type": "application/json" }, body: JSON.stringify(TETHER_PROGRAM), signal: AbortSignal.timeout(30_000) });
+  if (posted.status !== 200) ring.fail(step, `POST /s/${id}/faux`, { stdout: await posted.text(), stderr: `status ${posted.status}`, code: 1 });
+
+  // The turn, detached, and running before anything is held on it.
+  const detached = await ring.sheep(["attach", id, "--detach", "--", "hold through the tug"]);
+  if (detached.code !== 0 || detached.stdout !== `${id}\n`) ring.fail(step, `sheep attach ${id} --detach -- "hold through the tug"`, detached);
+  const runningBy = Date.now() + 60_000;
+  for (;;) {
+    const rows = JSON.parse((await ring.sheep(["ls", "--json"])).stdout || "[]");
+    if (rows.find((row) => row.id === id)?.state === "running") break;
+    if (Date.now() > runningBy) ring.fail(step, "sheep ls --json (the turn running)", { stdout: JSON.stringify(rows), stderr: `expected ${id} running within a minute of the detached prompt`, code: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+
+  // The wait, held, and the two version changes while it is.
+  const waitSpawned = Date.now();
+  let waitExited = 0;
+  const waiting = ring.sheep(["wait", "--timeout", "600", id], { onSpawn: (child) => child.once("exit", () => (waitExited = Date.now())) });
+  await new Promise((resolve) => setTimeout(resolve, 5_000));
+  const value = randomBytes(16).toString("hex");
+  const put = await wrangler(["secret", "put", TETHER_SECRET], `${value}\n`);
+  if (put.code !== 0) ring.fail(step, `wrangler secret put ${TETHER_SECRET} --config ${config} --env pen`, put);
+  const putAt = Date.now();
+  await new Promise((resolve) => setTimeout(resolve, 10_000));
+  const deleted = await wrangler(["secret", "delete", TETHER_SECRET]);
+  if (deleted.code !== 0) ring.fail(step, `wrangler secret delete ${TETHER_SECRET} --config ${config} --env pen`, deleted);
+  const deletedAt = Date.now();
+
+  const waited = await waiting;
+  const line = `sheep: ${id}: the connection dropped; attached again`;
+  const said = waited.stderr.split("\n").filter(Boolean);
+  if (waited.code !== 0 || waited.stdout !== `${id}\t${TETHER_REPLY}\n` || said.length === 0 || said.some((one) => one !== line)) {
+    ring.fail(step, `sheep wait --timeout 600 ${id} (held through a secret put and delete)`, { ...waited, stderr: `${waited.stderr}\nexpected exit 0, "${id}\\t${TETHER_REPLY}" on stdout, and on stderr only "${line}", at least once` });
+  }
+
+  // The transcript: pi's interruption, then the reply last, and the wait's exit within seconds of the reply.
+  const loggedLines = (await ring.sheep(["log", id, "--json"])).stdout.trimEnd().split("\n").filter(Boolean);
+  const entries = loggedLines.map((text) => JSON.parse(text));
+  const assistants = entries.filter((entry) => entry.message?.role === "assistant");
+  const interruptions = assistants.filter((entry) => entry.message.stopReason === "error" && /^Assistant request was interrupted\./.test(entry.message.errorMessage ?? ""));
+  const reply = assistants[assistants.length - 1];
+  if (interruptions.length === 0 || !JSON.stringify(reply?.message?.content ?? null).includes(TETHER_REPLY) || reply.message.errorMessage !== undefined) {
+    ring.fail(step, `sheep log ${id} --json`, { stdout: loggedLines.join("\n"), stderr: "expected at least one assistant entry with stopReason error and pi's interruption, and the reply as the last assistant entry", code: 1 });
+  }
+  const late = waitExited - reply.timestamp;
+  if (late > TETHER_PROMPTLY_MS) {
+    ring.fail(step, `sheep wait ${id} (when it exited)`, { stdout: `wait exited ${new Date(waitExited).toISOString()}; the reply's timestamp ${new Date(reply.timestamp).toISOString()}`, stderr: `expected the wait to exit within ${TETHER_PROMPTLY_MS / 1000}s of the reply: it heard the drop, and did not wait out its timeout`, code: 1 });
+  }
+  const text = await ring.sheep(["log", id]);
+  const errorLines = text.stdout.split("\n").filter((one) => one.startsWith("[error] Assistant request was interrupted."));
+  if (text.code !== 0 || errorLines.length !== interruptions.length) {
+    ring.fail(step, `sheep log ${id}`, { ...text, stderr: `${text.stderr}\nexpected one [error] line per interruption (${interruptions.length})` });
+  }
+
+  const seconds = ((Date.now() - started) / 1000).toFixed(0);
+  ring.ok(
+    step,
+    `sheep new --name tether --detach; POST /s/${id}/faux; sheep attach ${id} --detach; sheep wait ${id} (held); wrangler secret put|delete ${TETHER_SECRET} (--env pen)`,
+    `${seconds}s; the put at ${((putAt - waitSpawned) / 1000).toFixed(0)}s and the delete at ${((deletedAt - waitSpawned) / 1000).toFixed(0)}s into the wait; ${said.length} reattach line${said.length === 1 ? "" : "s"}; exit 0 with the reply ${(late / 1000).toFixed(1)}s after its timestamp`,
+  );
+  ring.ok(step, `sheep log ${id} (--json and text)`, `${interruptions.length} interruption${interruptions.length === 1 ? "" : "s"}, each an [error] line; the reply last`);
+
   const removed = await ring.sheep(["rm", id]);
   if (removed.code !== 0 || removed.stdout !== `${id}\tended\n` || removed.stderr !== "") ring.fail(step, `sheep rm ${id}`, { ...removed, stderr: `${removed.stderr}\nexpected exit 0, exactly "${id}\\tended" on stdout, nothing on stderr` });
   station.ended.push(id);

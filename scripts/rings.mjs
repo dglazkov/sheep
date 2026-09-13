@@ -129,7 +129,7 @@ export const RINGS = {
     "packages/pen/test/birth.test.ts",
     "packages/pen/test/git.test.ts",
   ],
-  home: ["packages/cli/test/bell.test.ts", "packages/cli/test/journey5.test.ts", "packages/cli/test/pasture-herd.test.ts", "packages/cli/test/pasture.test.ts"],
+  home: ["packages/cli/test/bell.test.ts", "packages/cli/test/journey5.test.ts", "packages/cli/test/pasture-herd.test.ts", "packages/cli/test/pasture.test.ts", "packages/cli/test/tether.test.ts"],
 };
 
 /** The ring a file is declared to be in, or `undefined` when it is in none. */

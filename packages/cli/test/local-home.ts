@@ -15,6 +15,13 @@
  * stdout read line by line while it runs rather than collected at its
  * exit, for the one thing a collected buffer cannot say — when a line was
  * written.
+ *
+ * Tether phase 0 adds `restartHome`: the spawned `wrangler dev` stopped and
+ * started again on the same port and the same `--persist-to`, which is a
+ * local home's restart — every socket to a cell closed by the process that
+ * held it, and the cells' state there when it comes back. A home this
+ * helper did not spawn cannot be restarted from here, and a file that needs
+ * it skips with that sentence.
  */
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -32,6 +39,9 @@ export interface LocalHome {
   /** The `wrangler dev` this helper spawned; absent for a home that was already up (`SHEEP_TEST_HOME`). */
   child?: ChildProcess;
   persist: string;
+  /** The ports the spawned home was given, kept so a restart comes back on the same ones; absent with `child`. */
+  port?: number;
+  inspector?: number;
 }
 
 async function freePort(): Promise<number> {
@@ -70,6 +80,17 @@ export async function startHome(token: string): Promise<LocalHome | string> {
     return `no port could be bound: ${error instanceof Error ? error.message : String(error)}`;
   }
   const persist = await mkdtemp(join(tmpdir(), "sheep-home-"));
+  const up = await spawnHome(token, port, inspector, persist);
+  if (typeof up === "string") {
+    await rm(persist, { recursive: true, force: true });
+    return up;
+  }
+  return { url: up.url, token, child: up.child, persist, port, inspector };
+}
+
+/** One `wrangler dev` over the state in `persist`, answered as a sheep home within ninety seconds, or the sentence saying why not. */
+async function spawnHome(token: string, port: number, inspector: number, persist: string): Promise<{ url: string; child: ChildProcess } | string> {
+  const wrangler = join(cellDir, "node_modules", "wrangler", "bin", "wrangler.js");
   const child = spawn(
     process.execPath,
     [
@@ -100,20 +121,52 @@ export async function startHome(token: string): Promise<LocalHome | string> {
     if (child.exitCode !== null) break;
     try {
       const response = await fetch(url, { signal: AbortSignal.timeout(1_000) });
-      if (response.ok && (await response.text()).startsWith("sheep")) return { url, token, child, persist };
+      if (response.ok && (await response.text()).startsWith("sheep")) return { url, child };
     } catch {
       // not up yet
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   child.kill("SIGTERM");
-  await rm(persist, { recursive: true, force: true });
   return `wrangler dev did not answer on ${url} (exit ${child.exitCode}): ${output.trim().split("\n").slice(-3).join(" | ")}`;
+}
+
+/**
+ * Why this home cannot be restarted from here, or nothing: only a home this
+ * helper spawned can be, since a restart is its process stopped and started
+ * again on the same state.
+ */
+export function unrestartable(home: LocalHome): string | undefined {
+  return home.child === undefined || home.port === undefined || home.inspector === undefined ? `the home at ${home.url} was not spawned by this helper (SHEEP_TEST_HOME), so it cannot be restarted` : undefined;
+}
+
+/**
+ * Stops the spawned `wrangler dev` (SIGTERM, and its exit waited for), so
+ * every socket to its cells closes; with `down: true` it stays down, the
+ * home that does not come back. Otherwise it is started again on the same
+ * port, inspector port, token, and `--persist-to`, and resolves when the
+ * home answers. Returns the milliseconds the home was not answering.
+ */
+export async function restartHome(home: LocalHome, options: { down?: boolean } = {}): Promise<number> {
+  const why = unrestartable(home);
+  if (why !== undefined) throw new Error(why);
+  const child = home.child!;
+  const stopped = Date.now();
+  if (child.exitCode === null && child.signalCode === null) {
+    const exited = new Promise((resolve) => child.once("exit", resolve));
+    child.kill("SIGTERM");
+    await exited;
+  }
+  if (options.down === true) return Date.now() - stopped;
+  const up = await spawnHome(home.token, home.port!, home.inspector!, home.persist);
+  if (typeof up === "string") throw new Error(up);
+  home.child = up.child;
+  return Date.now() - stopped;
 }
 
 export async function stopHome(home: LocalHome): Promise<void> {
   const { child } = home;
-  if (child !== undefined) {
+  if (child !== undefined && child.exitCode === null && child.signalCode === null) {
     child.kill("SIGTERM");
     await new Promise((resolve) => child.once("exit", resolve));
   }
@@ -130,6 +183,8 @@ export interface RunOptions {
   /** Bytes for the CLI's stdin; without it, stdin is closed at once. */
   stdin?: string | Uint8Array;
   cwd?: string;
+  /** Variables over the inherited environment, for a seam only a test sets (`SHEEP_TEST_TETHER_MS`). */
+  env?: Record<string, string>;
 }
 
 /**
@@ -139,7 +194,7 @@ export interface RunOptions {
  * environment, which outranks any config a working directory might find.
  */
 export async function runSheep(home: LocalHome, args: readonly string[], options: RunOptions = {}): Promise<Result> {
-  const env = { ...process.env, SHEEP_HOME: home.url, SHEEP_TOKEN: home.token, HOME: home.persist, NODE_NO_WARNINGS: "1" };
+  const env = { ...process.env, SHEEP_HOME: home.url, SHEEP_TOKEN: home.token, HOME: home.persist, NODE_NO_WARNINGS: "1", ...options.env };
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [bin, ...args], { env, cwd: options.cwd, stdio: ["pipe", "pipe", "pipe"] });
     const out: Buffer[] = [];
@@ -181,7 +236,7 @@ export interface Streamed extends Result {
  * is timed beside it; the proof is the gap between them.
  */
 export async function streamSheep(home: LocalHome, args: readonly string[], options: RunOptions = {}): Promise<Streamed> {
-  const env = { ...process.env, SHEEP_HOME: home.url, SHEEP_TOKEN: home.token, HOME: home.persist, NODE_NO_WARNINGS: "1" };
+  const env = { ...process.env, SHEEP_HOME: home.url, SHEEP_TOKEN: home.token, HOME: home.persist, NODE_NO_WARNINGS: "1", ...options.env };
   const started = Date.now();
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [bin, ...args], { env, cwd: options.cwd, stdio: ["pipe", "pipe", "pipe"] });

@@ -20,10 +20,13 @@ a second bug, which is a finding and a stop, not a patch.
 
 ---
 
-**Where we are: tether is planned, 12 September 2026. Its one phase is
-NOT STARTED.** Planned from the shepherd's issue #10 the night stile
-closed, after a local probe showed the lane going idle and the held
-`sheep wait` never hearing it. Next: tether phase 0.
+**Where we are: tether phase 0 is PART-DONE, 12 September 2026.** A
+dog's `sheep wait`, a held `sheep attach`, and `sheep abort` attach
+again when a restart drops the socket, and `sheep log` prints pi's
+interruption; the home ring restarts a real `wrangler dev` home under
+journeys 1 to 4 and `pnpm test` holds. What waits is a person: the
+account ring's `r1`, a secret put and delete under a held wait on a
+station, typed by the shepherd with their token. Nothing waits on work.
 
 One phase, because the two defects are one command's and one proof
 restarts a home for both.
@@ -49,7 +52,7 @@ subscription moves to each new attachment, `Entries` keeps its ids
 across them, a drop before acceptance fails as today, and after a
 reattach the exit is decided by the hold. `formatEntry` prints an
 assistant entry's `errorMessage` as a last `[error]` line.
-`packages/cli/src/cli.ts` usage, `packages/cli/agent-guide.md`, and
+`packages/cli/src/usage.ts`, `packages/cli/agent-guide.md`, and
 `README.md`: a sentence where a sentence is owed, paid for by cutting;
 the guide's word guard does not move.
 
@@ -75,9 +78,14 @@ hermetic --ring account --yes <sha>` with `r1`, a station deployed and
 deleted on the shepherd's account, a few container minutes and one
 deploy, typed by the shepherd.
 
-**Status: NOT STARTED.** 2026-09-12. Nothing built.
+**Status: PART-DONE.** 2026-09-12. Journeys 1 to 4 hold in the home ring against a restarted `wrangler dev` home, both mutations fail them, and `r1` is built and waits on the shepherd's account ring.
 
 **Findings:**
 
 - **2026-09-12 — The lane in issue #10 was never stuck.** Locally, a home restarted mid-turn went `idle` at 53 s and a fresh `sheep wait` returned at once; the wait held across the restart hung, since the reset closed its socket and `until` never settles on a close.
 - **2026-09-12 — The blank entry is pi's interruption.** `recovery.ts` settles an orphaned model call as an assistant message with `stopReason: error` and an `errorMessage`, then calls the model again; `sheep log` prints content and never the error.
+- **2026-09-12 — A pending request rejects before the drop is announced.** Pi's client rejects every pending request with its `DisconnectedError` and then tells `onConnectionStateChange`, so a held `agent.prompt` that rejected can already read `dropped()` and hand the turn to the tether.
+- **2026-09-12 — What landed during a drop arrives only in the snapshot.** The interruption never came as an `entry_added`; the stream writes this turn's unwritten entries from the reattach's snapshot, by id. Forgetting the ids wrote the prompt twice.
+- **2026-09-12 — `sheep rm` under a held wait ends it at once, exit 0.** The end aborts the turn before closing sockets, so the lane idles first; journey 4 step 3 was corrected to say so, and the refusal path stays for a reattach that meets an ended sheep.
+- **2026-09-12 — The home ring allows five files now.** `tether.test.ts` restarts the home it starts and cannot share one; the file costs about 90 s, a local restart about 850 ms of no answer.
+- **2026-09-12 — Open: `r1` on the account.** `pnpm hermetic --ring account --yes <sha>` on a release with this phase, typed by the shepherd with `CLOUDFLARE_API_TOKEN`, `LAMB_PLAYGROUND_TOKEN`, and `ANTHROPIC_API_KEY`: one station deployed and deleted, a few container minutes.

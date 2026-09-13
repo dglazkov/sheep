@@ -1,8 +1,8 @@
 ---
-status: planned
+status: partial
 since: 2026-09-12
 see: tether
-note: "written 12 Sep 2026, the night stile closed, from the shepherd's issue #10: a Worker version change mid-turn looked like a lane stuck running forever. A local probe split it in two. The lane goes idle; the `sheep wait` held across the restart is what never returns, since the reset closes the cell's WebSockets and `until` has no path for a connection that ends. The blank assistant entries are pi's recovery of the interrupted model call, with `stopReason: error` and a sentence `sheep log` does not print. One phase: the reattach, the printed error, the home ring, and the account ring's `r1`."
+note: "written 12 Sep 2026, the night stile closed, from the shepherd's issue #10: a Worker version change mid-turn looked like a lane stuck running forever. A local probe split it in two. The lane goes idle; the `sheep wait` held across the restart is what never returns, since the reset closes the cell's WebSockets and `until` has no path for a connection that ends. The blank assistant entries are pi's recovery of the interrupted model call, with `stopReason: error` and a sentence `sheep log` does not print. One phase: the reattach, the printed error, the home ring, and the account ring's `r1`. Tether phase 0 built it the same night: `until` rejects on a drop, a tether attaches again inside a two-minute window and says so once on stderr, the stream re-seeds from the reattach's snapshot by id, and `formatEntry` prints the error line. The home ring restarts a real `wrangler dev` home under journeys 1 to 4, falsified by `until` never rejecting and by the stream forgetting its ids; `sheep rm` under a held wait turned out to end it at once, and journey 4 step 3 says so. Part-done: `r1` on the account waits on the shepherd."
 ---
 
 # Tether — the journeys
@@ -87,8 +87,11 @@ Acceptance criteria:
    and does not start again.
 2. `sheep wait` keeps trying to attach for up to two minutes, then exits
    2 with the connection's error on stderr. It does not hang.
-3. A sheep ended with `sheep rm` while a dog waits on it gives the home's
-   refusal at once on the reattach, not two minutes of retries.
+3. A sheep ended with `sheep rm` while a dog waits on it ends the wait at
+   once, not after two minutes of retries: the end aborts the turn before
+   it closes the sockets, so the wait hears the lane go idle and exits 0
+   with the aborted turn's last assistant entry. A reattach that does meet
+   an ended sheep gets the home's refusal at once, and is not retried.
 
 ## Journey 5: The walk
 

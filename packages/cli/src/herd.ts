@@ -6,7 +6,7 @@
 import type { Entry, LaneTranscriptSnapshot } from "@earendil-works/pi-agent-core";
 import type { TranscriptState } from "@earendil-works/pi-coding-agent/experimental/services/transcript";
 import { attachSheep, BACKGROUND_CONTEXT, lastAssistant, messageText, type Sheep } from "./client.js";
-import type { Home, SessionSummary, SetupRecord, SetupState } from "./home.js";
+import { type Home, Sentence, type SessionSummary, type SetupRecord, type SetupState } from "./home.js";
 
 export interface Output {
   json: boolean;
@@ -172,6 +172,16 @@ class Stream {
 
   constructor(private readonly out: (text: string) => void) {}
 
+  /**
+   * After a reattach (tether phase 0): the reply streams again from the model's next call. What was printed of the
+   * interrupted one stays printed, its line ended, and the count starts over.
+   */
+  restart(): void {
+    if (this.#wrote) this.out("\n");
+    this.#printed = "";
+    this.#wrote = false;
+  }
+
   observe(state: TranscriptState): void {
     const streaming = state.snapshot?.operation?.streamingMessage;
     if (streaming !== undefined && streaming.role === "assistant") this.grow(messageText(streaming));
@@ -218,8 +228,14 @@ class Stream {
  */
 class Entries {
   readonly #written = new Set<string>();
+  /** The first id written: the turn's first entry, which a reattach's snapshot is read from. */
+  #first: string | undefined;
 
   constructor(private readonly out: (text: string) => void) {}
+
+  get first(): string | undefined {
+    return this.#first;
+  }
 
   observe(state: TranscriptState): void {
     const event = state.event;
@@ -230,8 +246,144 @@ class Entries {
   write(entry: Entry): void {
     if (this.#written.has(entry.id)) return;
     this.#written.add(entry.id);
+    this.#first ??= entry.id;
     this.out(`${JSON.stringify(entry)}\n`);
   }
+}
+
+/**
+ * The window (tether phase 0): how long a reattach keeps being tried while
+ * the home does not answer, counted from the drop, so it is two minutes of
+ * consecutive failure. `SHEEP_TEST_TETHER_MS` shortens it in tests, and
+ * every ring strips it.
+ */
+export const TETHER_WINDOW_MS = 120_000;
+const REATTACH_FIRST_MS = 250;
+const REATTACH_MOST_MS = 5_000;
+
+function tetherWindow(): number {
+  const seam = Number(process.env.SHEEP_TEST_TETHER_MS);
+  return Number.isFinite(seam) && seam > 0 ? seam : TETHER_WINDOW_MS;
+}
+
+/** What a reattach says, once each time, on stderr; stdout's lines are the contract and are not touched. */
+export const reattachedLine = (id: string): string => `sheep: ${id}: the connection dropped; attached again\n`;
+
+/**
+ * The tether (tether phase 0): one id held through drops. `hold` runs a
+ * read of the lane — `until(idle)`, a queued entry's placement, an abort —
+ * on the current attachment; when it fails because the connection dropped
+ * (the attachment's `dropped()` says so, whether the failure was `until`'s
+ * `Dropped` or a request pi rejected at the drop), the attachment is
+ * closed, a new one is made to the same id, one line is said on stderr,
+ * and the read runs again on the new attachment's snapshot, which is the
+ * cell's state now. A home that does not answer is tried again with a
+ * short backoff until `TETHER_WINDOW_MS` of consecutive failure, then its
+ * last error is thrown; the home's own refusal (`Sentence`) is thrown at
+ * once. A `signal` (`sheep wait --timeout`) wins over all of it.
+ *
+ * `follow` is how a command keeps something on each attachment — `held`'s
+ * stream — called with the first at once and with every new one before
+ * the read runs again; what it returns is called before that attachment is
+ * closed. Anything that is not a drop is thrown as it was.
+ */
+class Tether {
+  #sheep: Sheep;
+  #unfollow: () => void;
+
+  constructor(
+    private readonly home: Home,
+    private readonly id: string,
+    first: Sheep,
+    private readonly output: Output,
+    private readonly options: { signal?: AbortSignal; follow?: (sheep: Sheep, again: boolean) => () => void } = {},
+  ) {
+    this.#sheep = first;
+    this.#unfollow = options.follow?.(first, false) ?? (() => {});
+  }
+
+  get sheep(): Sheep {
+    return this.#sheep;
+  }
+
+  /** The read, run again on each new attachment after a drop; `again` is false the first time. */
+  async hold<T>(read: (sheep: Sheep, again: boolean) => Promise<T>): Promise<T> {
+    let again = false;
+    for (;;) {
+      try {
+        return await read(this.#sheep, again);
+      } catch (error) {
+        if (this.options.signal?.aborted === true || this.#sheep.dropped() === undefined) throw error;
+      }
+      await this.#reattach();
+      again = true;
+    }
+  }
+
+  async close(): Promise<void> {
+    this.#unfollow();
+    this.#unfollow = () => {};
+    await this.#sheep.close();
+  }
+
+  async #reattach(): Promise<void> {
+    await this.close();
+    const { signal } = this.options;
+    const window = tetherWindow();
+    const started = Date.now();
+    let pause = REATTACH_FIRST_MS;
+    let last: unknown;
+    for (;;) {
+      const left = window - (Date.now() - started);
+      // One attempt never outlives the window: a home that takes the connection and says nothing is a home that did not answer.
+      const deadline = AbortSignal.timeout(Math.max(left, 1));
+      const attempt = new AbortController();
+      const attaching = attachSheep(this.home, this.id, attempt.signal);
+      try {
+        const sheep = await withSignal(attaching, signal === undefined ? deadline : AbortSignal.any([signal, deadline]));
+        this.#sheep = sheep;
+        this.output.err(reattachedLine(this.id));
+        this.#unfollow = this.options.follow?.(sheep, true) ?? (() => {});
+        return;
+      } catch (error) {
+        if (error instanceof Sentence) throw error;
+        if (signal?.aborted === true) {
+          abandon(attempt, attaching);
+          throw error;
+        }
+        if (deadline.aborted) {
+          abandon(attempt, attaching);
+          throw last ?? error;
+        }
+        last = error;
+      }
+      const remaining = window - (Date.now() - started);
+      if (remaining <= 0) throw last;
+      await pauseFor(Math.min(pause, remaining), signal);
+      pause = Math.min(pause * 2, REATTACH_MOST_MS);
+    }
+  }
+}
+
+/** An attachment given up on: its socket closed by its signal, and closed again should it land all the same, so nothing holds the process. */
+function abandon(attempt: AbortController, attaching: Promise<Sheep>): void {
+  attempt.abort();
+  void attaching.then((late) => late.close(), () => undefined);
+}
+
+function pauseFor(ms: number, signal: AbortSignal | undefined): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      reject(signal?.reason instanceof Error ? signal.reason : new Error("aborted"));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    if (signal?.aborted === true) return onAbort();
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 const idle = (state: TranscriptState): LaneTranscriptSnapshot | undefined =>
@@ -266,7 +418,7 @@ export async function runPrompt(home: Home, id: string, prompt: string, options:
 }
 
 async function held(home: Home, id: string, prompt: string, options: { wait: boolean }, output: Output): Promise<number> {
-  const sheep = await attachSheep(home, id);
+  const first = await attachSheep(home, id);
   const stream = new Stream(output.json ? () => {} : output.out);
   const entries = new Entries(output.json ? output.out : () => {});
   let active = false;
@@ -277,27 +429,72 @@ async function held(home: Home, id: string, prompt: string, options: { wait: boo
    * the window is itself the stream's first line.
    */
   let opening: string | undefined;
-  const unsubscribe = sheep.transcript.state.subscribe((state) => {
-    if (!active && opening !== undefined && state.snapshot?.transcript.some((entry) => entry.id === opening) === true) active = true;
-    if (!active) return;
-    stream.observe(state);
-    entries.observe(state);
-  });
+  /**
+   * Tether phase 0: the ids the transcript held when the prompt was sent,
+   * and whether the lane has since taken it. Once it has, the operation is
+   * durable in the cell and a drop loses the connection, not the turn; before,
+   * a drop is a failure as it always was, since the dog cannot know whether
+   * its prompt landed.
+   */
+  let before: ReadonlySet<string> | undefined;
+  let accepted = false;
+  const opened = (snapshot: LaneTranscriptSnapshot | null | undefined): boolean =>
+    opening !== undefined && snapshot?.transcript.some((entry) => entry.id === opening) === true;
+  /**
+   * The stream's subscription, on every attachment. On a reattach, the
+   * entries that landed while the socket was down are in the new snapshot
+   * and never arrive as events, so this turn's unwritten ones are written
+   * from it first, in transcript order — from the queued entry under
+   * `--wait`, else from the turn's first written entry, else from the first
+   * the transcript did not hold when the prompt was sent — and the
+   * subscription after them, so every later event follows.
+   */
+  const follow = (sheep: Sheep, again: boolean): (() => void) => {
+    if (again) {
+      stream.restart();
+      const snapshot = sheep.snapshot();
+      if (!active && opened(snapshot)) active = true;
+      if (active) {
+        const start = opening ?? entries.first;
+        const from = start !== undefined ? snapshot.transcript.findIndex((entry) => entry.id === start) : snapshot.transcript.findIndex((entry) => before?.has(entry.id) === false);
+        if (from !== -1) for (const entry of snapshot.transcript.slice(from)) entries.write(entry);
+      }
+    }
+    return sheep.transcript.state.subscribe((state) => {
+      if (!accepted && before !== undefined && state.snapshot !== null && state.snapshot !== undefined) {
+        const taken = before;
+        accepted = state.snapshot.operation !== null || state.snapshot.transcript.some((entry) => !taken.has(entry.id));
+      }
+      if (!active && opened(state.snapshot)) active = true;
+      if (!active) return;
+      stream.observe(state);
+      entries.observe(state);
+    });
+  };
+  const tether = new Tether(home, id, first, output, { follow });
   try {
-    if (sheep.snapshot().operation === null) {
+    if (first.snapshot().operation === null) {
       active = true;
-      const response = await sheep.agent.prompt({ message: prompt, images: null }, BACKGROUND_CONTEXT);
-      if (response.accepted) {
+      before = new Set(first.snapshot().transcript.map((entry) => entry.id));
+      let response: Awaited<ReturnType<Sheep["agent"]["prompt"]>> | undefined;
+      try {
+        response = await first.agent.prompt({ message: prompt, images: null }, BACKGROUND_CONTEXT);
+      } catch (error) {
+        // After acceptance, the hold decides the exit, the way `sheep wait` decides it: pi's `prompt` cannot resolve across a reattach.
+        if (first.dropped() === undefined || !accepted) throw error;
+      }
+      if (response === undefined || response.accepted) {
         // pi's `prompt` resolves at the end of the operation; the replica's last delivery may still be in flight.
-        const snapshot = await sheep.until(idle);
+        const snapshot = await tether.hold((sheep) => sheep.until(idle));
         if (output.json) printAssistant(entries, snapshot);
-        if (response.error !== null) return fail(output, response.error.message);
+        if (response !== undefined && response.error !== null) return fail(output, response.error.message);
         return 0;
       }
       if (response.error.code !== "lane_busy") return fail(output, response.error.message);
       active = false;
+      before = undefined;
     }
-    const queued = await sheep.agent.followUp({ message: prompt, images: null }, BACKGROUND_CONTEXT);
+    const queued = await first.agent.followUp({ message: prompt, images: null }, BACKGROUND_CONTEXT);
     if (!queued.accepted) return fail(output, queued.error.message);
     output.err(`queued ${id}\n`);
     if (!options.wait) {
@@ -305,19 +502,20 @@ async function held(home: Home, id: string, prompt: string, options: { wait: boo
       return 0;
     }
     opening = queued.entryId;
-    const placed = await sheep.until((state) => {
-      const snapshot = state.snapshot;
-      if (snapshot === null || snapshot === undefined) return undefined;
-      if (snapshot.transcript.some((entry) => entry.id === queued.entryId)) return "placed" as const;
-      return snapshot.operation === null ? ("dropped" as const) : undefined;
-    });
+    const placed = await tether.hold((sheep) =>
+      sheep.until((state) => {
+        const snapshot = state.snapshot;
+        if (snapshot === null || snapshot === undefined) return undefined;
+        if (snapshot.transcript.some((entry) => entry.id === queued.entryId)) return "placed" as const;
+        return snapshot.operation === null ? ("dropped" as const) : undefined;
+      }),
+    );
     if (placed === "dropped") return fail(output, `queued prompt ${queued.entryId} was dropped: the turn ended without taking it up`);
-    const snapshot = await sheep.until(idle);
+    const snapshot = await tether.hold((sheep) => sheep.until(idle));
     if (output.json) printAssistant(entries, snapshot);
     return 0;
   } finally {
-    unsubscribe();
-    await sheep.close();
+    await tether.close();
   }
 }
 
@@ -341,15 +539,21 @@ export async function runWait(home: Home, ids: readonly string[], options: { tim
         }
         return;
       }
+      // Tether phase 0: each id held through drops on its own, under the one timeout.
+      const tether = new Tether(home, id, sheep, output, { signal: controller.signal });
       try {
-        const snapshot = await sheep.until(idle, controller.signal);
+        const snapshot = await tether.hold((attached) => attached.until(idle, controller.signal));
         const entry = lastAssistant(snapshot.transcript) ?? null;
         if (output.json) results.push({ id, message: entry });
         else output.out(`${id}\t${oneLine(entry === null ? "" : messageText(entry.message))}\n`);
-      } catch {
-        timedOut = true;
+      } catch (error) {
+        if (controller.signal.aborted) timedOut = true;
+        else {
+          failed = true;
+          output.err(`sheep: ${id}: ${error instanceof Error ? error.message : String(error)}\n`);
+        }
       } finally {
-        await sheep.close();
+        await tether.close();
       }
     }),
   );
@@ -477,21 +681,26 @@ function compact(value: unknown): string {
 
 /** pi's `requestAbort` on the open operation; resolves once the lane has settled it. */
 export async function runAbort(home: Home, id: string, output: Output): Promise<number> {
-  const sheep = await attachSheep(home, id);
+  const tether = new Tether(home, id, await attachSheep(home, id), output);
   try {
-    const operation = sheep.snapshot().operation;
+    const operation = tether.sheep.snapshot().operation;
     if (operation === null) {
       if (output.json) output.out(`${JSON.stringify({ id, aborted: false })}\n`);
       else output.out(`${id}\tidle\n`);
       return 0;
     }
-    await sheep.agent.requestAbort(operation.id, BACKGROUND_CONTEXT);
-    await sheep.until(idle);
+    // Tether phase 0: after a reattach the abort is asked again of the operation the new snapshot names, unless that lane is
+    // idle or already aborting it; asking twice is harmless, and an abort asked before the drop may not have landed.
+    await tether.hold(async (sheep, again) => {
+      const open = again ? sheep.snapshot().operation : operation;
+      if (open !== null && !(again && open.status === "aborting")) await sheep.agent.requestAbort(open.id, BACKGROUND_CONTEXT);
+      await sheep.until(idle);
+    });
     if (output.json) output.out(`${JSON.stringify({ id, aborted: true })}\n`);
     else output.out(`${id}\taborted ${operation.id}\n`);
     return 0;
   } finally {
-    await sheep.close();
+    await tether.close();
   }
 }
 
@@ -612,6 +821,8 @@ export function formatEntry(entry: Entry): string {
             else lines.push(`[${part.type}]`);
           }
         }
+        // Tether phase 0: pi's interruption, and any other assistant entry that ended in an error, says why as its last line.
+        if (message.role === "assistant" && message.errorMessage !== undefined && message.errorMessage !== "") lines.push(`[error] ${message.errorMessage}`);
       } else lines.push(compact(message));
       break;
     }

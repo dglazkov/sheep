@@ -86,14 +86,35 @@ export function webSocketTransport(url: string, signal?: AbortSignal): ByteTrans
     });
 }
 
+/**
+ * The drop (tether phase 0): the attachment's connection ended and the dog
+ * did not close it — a home's restart closing the cell's sockets, or a
+ * home that went away. `until` rejects with it instead of never settling,
+ * and `herd.ts`'s tether attaches again. `sheep.close()` is never a drop.
+ */
+export class Dropped extends Error {
+  constructor(
+    readonly id: string,
+    cause?: Error,
+  ) {
+    super(`session ${id}: the connection dropped${cause === undefined ? "" : `: ${cause.message}`}`, cause === undefined ? undefined : { cause });
+    this.name = "Dropped";
+  }
+}
+
 export interface Sheep {
   readonly id: string;
   readonly agent: AgentController;
   readonly transcript: Transcript;
   /** The replica's current snapshot; hydrated by the time the attachment is ready. */
   snapshot(): LaneTranscriptSnapshot;
-  /** Resolves with the first non-undefined `read` of the state, now or at any later delivery. */
+  /**
+   * Resolves with the first non-undefined `read` of the state, now or at any later delivery; rejects with `Dropped` when
+   * the connection ends first, and with the signal's reason when it aborts.
+   */
   until<T>(read: (state: TranscriptState) => T | undefined, signal?: AbortSignal): Promise<T>;
+  /** The drop, once the connection has ended without `close`; undefined while it holds. A request pending at the drop rejects with pi's own error, and this says why. */
+  dropped(): Dropped | undefined;
   close(): Promise<void>;
 }
 
@@ -131,7 +152,18 @@ export async function attachSheep(home: Home, id: string, signal?: AbortSignal):
   const plugins = serverServices.use(PresentationPlugins);
   const agent = sessionServices.use(AgentController);
   const transcript = sessionServices.use(Transcript);
+  // The drop: pi's client says `disconnected` once the transport closes (or fails), after rejecting what was pending and
+  // before any continuation of those rejections runs, so a caller whose request rejected can already read `dropped()`.
+  let closing = false;
+  let drop: Dropped | undefined;
+  const drops = new Set<(dropped: Dropped) => void>();
+  client.onConnectionStateChange((change) => {
+    if (change.state !== "disconnected" || closing || drop !== undefined) return;
+    drop = new Dropped(id, change.error);
+    for (const listener of [...drops]) listener(drop);
+  });
   const close = async (): Promise<void> => {
+    closing = true;
     await Promise.allSettled([server.dispose(BACKGROUND_CONTEXT), session.dispose(BACKGROUND_CONTEXT)]);
     await client.dispose();
   };
@@ -161,21 +193,32 @@ export async function attachSheep(home: Home, id: string, signal?: AbortSignal):
           const found = read(current);
           if (found !== undefined) return resolve(found);
         }
+        const settle = (): void => {
+          unsubscribe();
+          drops.delete(onDrop);
+          signal?.removeEventListener("abort", onAbort);
+        };
         const unsubscribe = transcript.state.subscribe((value) => {
           const found = read(value);
           if (found === undefined) return;
-          unsubscribe();
-          signal?.removeEventListener("abort", onAbort);
+          settle();
           resolve(found);
         });
         const onAbort = (): void => {
-          unsubscribe();
+          settle();
           reject(signal?.reason instanceof Error ? signal.reason : new Error("aborted"));
         };
+        const onDrop = (dropped: Dropped): void => {
+          settle();
+          reject(dropped);
+        };
         if (signal?.aborted) return onAbort();
+        if (drop !== undefined) return onDrop(drop);
+        drops.add(onDrop);
         signal?.addEventListener("abort", onAbort, { once: true });
       });
     },
+    dropped: () => drop,
     close,
   };
 }

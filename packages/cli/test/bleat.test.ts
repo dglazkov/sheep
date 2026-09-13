@@ -375,6 +375,24 @@ describe("journey 1 step 4 and journey 2 steps 2 to 4: the block in sheep log", 
     expect(warming.stdout).toMatch(/^\[setup] setup-now \S+ running \(1[23]\.\d s\)\n$/);
   });
 
+  it("tether's journey 3: an assistant entry's errorMessage is its block's last line, and one with none is unchanged", async () => {
+    const warning = "Assistant request was interrupted. The preceding content is the latest committed partial; newer live output may be missing and the external outcome is unknown.";
+    const interrupted = { id: "e3", type: "message", timestamp: AT + 1_000, message: { role: "assistant", content: [], stopReason: "error", errorMessage: warning } };
+    const partial = { id: "e4", type: "message", timestamp: AT + 2_000, message: { role: "assistant", content: [{ type: "text", text: "half a" }], stopReason: "error", errorMessage: warning } };
+    const reply = { id: "e5", type: "message", timestamp: AT + 3_000, message: { role: "assistant", content: [{ type: "text", text: "the reply\n" }], stopReason: "stop" } };
+    sheepdom.set("interrupted", { setup: null, asks: 0, socket: "refuse", entries: [interrupted, partial, reply], setups: [] });
+    const logged = await sheep(["log", "interrupted"]);
+    expect(logged.code).toBe(0);
+    expect(logged.stdout).toBe(
+      `[assistant] e3 ${new Date(AT + 1_000).toISOString()}\n[error] ${warning}\n\n` +
+        `[assistant] e4 ${new Date(AT + 2_000).toISOString()}\nhalf a\n[error] ${warning}\n\n` +
+        `[assistant] e5 ${new Date(AT + 3_000).toISOString()}\nthe reply\n`,
+    );
+    // --json already carried the fields, and still does, unchanged.
+    const json = await sheep(["log", "interrupted", "--json"]);
+    expect(json.stdout.trimEnd().split("\n").map((line) => JSON.parse(line) as unknown)).toEqual([interrupted, partial, reply]);
+  });
+
   it("journey 3 step 1: a sheep with no setups has the bytes it had, and the row is not asked for it", async () => {
     sheepdom.set("bare", { setup: null, asks: 0, socket: "refuse", entries: [call, result], setups: [] });
     asked.length = 0;
