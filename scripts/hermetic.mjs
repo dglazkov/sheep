@@ -434,12 +434,14 @@
  * The sheep is ended with n1's check, counted minted and ended.
  *
  * Shear phase 1 gives the account ring four steps around the upgrade
- * (shear's journey 5 step 2), and refuses an `--older` from before shear
- * phase 0, whose command says no notice and whose home sends no header.
- * `sh1`, after a2b: the older release's `sheep ls` with `SHEEP_TIP` unset,
- * the real tip, prints the notice in one of up to three runs (the fetch
- * never holds the verb, so a lost race says nothing and keeps nothing) and
- * nothing in the run after. `sh2`, after the install: the newer's `sheep
+ * (shear's journey 5 step 2), and refuses an `--older` from before the
+ * tip's detached child (`releaseCarriesChild`), whose notice never lands, or
+ * is never said, and whose home may send no header. `sh1`, after a2b: the
+ * older release's first `sheep ls` with `SHEEP_TIP` unset writes its ask
+ * and starts the child, which keeps the real tip, the release branch's
+ * manifest, in `~/.sheep/tip.json` (polled for 15 s); the notice is said
+ * exactly once, by the next run or by the first when its child beat its
+ * verb, and the run after it says nothing. `sh2`, after the install: the newer's `sheep
  * ls` prints the skew line once, from the older home's header. `sh3`: a
  * sheep minted with a two-minute faux turn and a `sheep wait` held on it;
  * `sheep home deploy`, prose and `--json`, exits 2 naming it, and the home
@@ -2805,7 +2807,13 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
   }
   // Shear phase 1: the walk reads the notice from the older's `sheep ls` and the skew line from its home's header, which a
   // release from before shear phase 0 has neither of; refused before the account is asked anything.
-  if (!releaseCarries(older, SHEAR_SINCE, "shear phase 0's notice and header")) usage(`--older ${older.ref} is ${older.stamp.commit}, from before shear phase 0 (${SHEAR_SINCE}): its command says no notice and its home sends no header, which the walk reads; name shear phase 0's release or a later one`);
+  let carriesChild;
+  try {
+    carriesChild = releaseCarriesChild(older);
+  } catch (error) {
+    usage(`--older ${older.ref}: ${error.message}`);
+  }
+  if (!carriesChild) usage(`--older ${older.ref} is ${older.stamp.commit}, which does not carry the tip's detached child (no ASK_FRESH_MS in the history of packages/cli/src/tip.ts): its command's notice never lands, or it says none and its home sends no header, which the walk reads; name a release built from a commit that carries it`);
   const api = accountApi(token);
   // The second machine is a container (station phase 2): Docker is needed for the walk, and its absence is known before anything is made.
   const docker = spawnSync("docker", ["version", "--format", "{{.Server.Version}} {{.Server.Os}}/{{.Server.Arch}}"], { encoding: "utf8" });
@@ -3202,16 +3210,20 @@ function releaseCarriesStop(release) {
   throw new Error(`cannot tell whether the release built from ${release.stamp.commit} carries stile phase 0's stop: git merge-base --is-ancestor ${STOP_SINCE} ${release.stamp.commit} exited ${done.status}: ${(done.stderr || "").trim()}`);
 }
 
-/** The commit on main shear phase 0 built (the notice and the header): an older release built from it or after says both (shear phase 1). */
-const SHEAR_SINCE = "fdca17c";
-
-/** Whether a release was built from `since` or a commit after it on main, asked of git as `releaseCarriesStop` asks. */
-function releaseCarries(release, since, what) {
+/**
+ * Whether a release's command carries the tip's detached child (shear phase 0, reworked), asked of git by itself: the
+ * release's main commit has `ASK_FRESH_MS`, the ten-minute ask rule that came with the child, in the history of
+ * `packages/cli/src/tip.ts` (`git log -S` prints a commit that added it). A release built from there says the notice against
+ * any station and sends the header. The stamp's commit must be a bare sha, as a release's is; a `-dirty` checkout mark, or
+ * anything else, never reaches git and is refused. Exported so it can be run by hand.
+ */
+export function releaseCarriesChild(release) {
+  const commit = release.stamp.commit;
+  if (!/^[0-9a-f]{7,40}$/.test(commit)) throw new Error(`the release's stamp names ${JSON.stringify(commit)}, not a bare commit sha, so git is not asked whether it carries the tip's detached child`);
   const gitDir = release.git("rev-parse", "--absolute-git-dir");
-  const done = spawnSync("git", ["--git-dir", gitDir, "merge-base", "--is-ancestor", since, release.stamp.commit], { encoding: "utf8" });
-  if (done.status === 0) return true;
-  if (done.status === 1) return false;
-  throw new Error(`cannot tell whether the release built from ${release.stamp.commit} carries ${what}: git merge-base --is-ancestor ${since} ${release.stamp.commit} exited ${done.status}: ${(done.stderr || "").trim()}`);
+  const done = spawnSync("git", ["--git-dir", gitDir, "log", "--format=%H", "-S", "ASK_FRESH_MS", commit, "--", "packages/cli/src/tip.ts"], { encoding: "utf8" });
+  if (done.status !== 0) throw new Error(`cannot tell whether the release built from ${commit} carries the tip's detached child: git log -S ASK_FRESH_MS ${commit} -- packages/cli/src/tip.ts exited ${done.status}: ${(done.stderr || "").trim()}`);
+  return done.stdout.trim() !== "";
 }
 
 /** What is wrong with a two-part stop for a missing account token, prose and `--json`, or undefined when it holds. */
@@ -3336,34 +3348,48 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
     ring.ok("a2b", 'sheep new --name older-sheep -- "hello"; sheep pasture new older; sheep ls; sheep pasture ls (on the older release)', `${FAUX_REPLY}; ${olderSheep} (older-sheep) listed; the pasture older listed, ${olderPasture.stdout.trim().split("\t")[2]} branch, no repository`);
 
     // sh1 (shear phase 1, shear's journey 5 step 2 for journey 1): the older release's `sheep ls` with the tip on, the one place
-    // a ring reads the real tip, the release branch's manifest on GitHub, against a real command. The fetch never holds the verb,
-    // so a run whose fetch lost the race says nothing and keeps nothing; up to three runs, the notice said in exactly one, and
-    // a run after it says nothing, since the said file keeps the tip and the commit it was said for.
+    // a ring reads the real tip, the release branch's manifest on GitHub, against a real command. The first run writes its ask
+    // and starts the detached child, which fetches the tip and keeps it in ~/.sheep/tip.json; the ring polls the file for it.
+    // The notice is said by the first run to end after the tip is kept: most often the next run, and the first when the child
+    // beat its verb to the end, which a far station allows. Said exactly once across the runs, and the run after says nothing.
     const tipOn = { ...ring.env() };
     delete tipOn.SHEEP_TIP;
     delete tipOn.CI;
     const saidPath = join(ring.home, ".sheep", "tip.json");
-    let noticed;
-    let noticeRuns = 0;
-    const noticeRunsSeen = [];
-    while (noticed === undefined && noticeRuns < 3) {
-      noticeRuns++;
+    const readSaidFile = () => {
+      try {
+        return JSON.parse(readFileSync(saidPath, "utf8"));
+      } catch {
+        return undefined;
+      }
+    };
+    const listedTipOn = async (label) => {
       const listed = await ring.sheep(["ls"], { env: tipOn });
-      noticeRunsSeen.push(listed);
-      if (listed.code !== 0 || !listed.stdout.includes(olderSheep)) ring.fail("sh1", `sheep ls (the older release ${older.stamp.commit}, the tip on; run ${noticeRuns})`, { ...listed, stderr: `${listed.stderr}\nexpected exit 0 and ${olderSheep} listed` });
-      if (listed.stderr !== "") noticed = listed;
+      if (listed.code !== 0 || !listed.stdout.includes(olderSheep)) ring.fail("sh1", `sheep ls (the older release ${older.stamp.commit}, the tip on; ${label})`, { ...listed, stderr: `${listed.stderr}\nexpected exit 0 and ${olderSheep} listed` });
+      return listed;
+    };
+    const askStarted = Date.now();
+    const asking = await listedTipOn("the run that starts the child");
+    const askedAt = readSaidFile()?.asked;
+    if (typeof askedAt !== "string" || Number.isNaN(Date.parse(askedAt))) ring.fail("sh1", "cat ~/.sheep/tip.json (after the first run)", { stdout: JSON.stringify(readSaidFile() ?? null), stderr: "expected the ask written before the child started", code: 1 });
+    let said = readSaidFile();
+    while (typeof said?.tip?.commit !== "string" && Date.now() - askStarted < 15_000) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      said = readSaidFile();
     }
-    const said = existsSync(saidPath) ? JSON.parse(readFileSync(saidPath, "utf8")) : undefined;
     const tip = said?.tip;
-    if (noticed === undefined || typeof tip?.commit !== "string" || typeof tip?.builtAt !== "string") {
-      ring.fail("sh1", `sheep ls ×${noticeRuns} (the older release ${older.stamp.commit}, the tip on); cat ~/.sheep/tip.json`, { stdout: JSON.stringify(said ?? null), stderr: `expected the notice on stderr within three runs and the tip kept in ${saidPath}; the runs' stderr: ${JSON.stringify(noticeRunsSeen.map((one) => one.stderr))}`, code: 1 });
-    }
+    if (typeof tip?.commit !== "string" || typeof tip?.builtAt !== "string") ring.fail("sh1", "cat ~/.sheep/tip.json (polled 15 s after the first run)", { stdout: JSON.stringify(said ?? null), stderr: `expected the child to keep the tip in ${saidPath} within 15 s of the ask; the first run's stderr: ${JSON.stringify(asking.stderr)}`, code: 1 });
+    const keptSeconds = ((Date.now() - askStarted) / 1000).toFixed(1);
     if (tip.commit === older.stamp.commit || !(older.stamp.builtAt < tip.builtAt)) ring.fail("sh1", "cat ~/.sheep/tip.json", { stdout: JSON.stringify(said), stderr: `the release branch's tip is ${tip.commit} (${tip.builtAt}), not a build newer than the older ${older.stamp.commit} (${older.stamp.builtAt}): the walk needs a newer release published`, code: 1 });
     const notice = `sheep: a newer build ${tip.commit} (${tip.builtAt}) is out; this command is ${older.stamp.commit} (${older.stamp.builtAt}); \`npm install -g github:dglazkov/sheep#release\` updates it\n`;
-    if (noticed.stderr !== notice || said.noticed !== tip.commit) ring.fail("sh1", `sheep ls (the older release, the tip on; run ${noticeRuns})`, { ...noticed, stderr: `${noticed.stderr}\nexpected exactly the notice ${JSON.stringify(notice)}, and the said file's noticed ${tip.commit}; it has ${JSON.stringify(said.noticed)}` });
-    const quiet = await ring.sheep(["ls"], { env: tipOn });
-    if (quiet.code !== 0 || quiet.stderr !== "") ring.fail("sh1", "sheep ls (the older release, the tip on, after the notice)", { ...quiet, stderr: `${quiet.stderr}\nexpected exit 0 and nothing on stderr: the notice is said once` });
-    ring.ok("sh1", `sheep ls ×${noticeRuns + 1} (the older release ${older.stamp.commit}, SHEEP_TIP unset, the real tip)`, `the notice said once, on run ${noticeRuns}: the tip ${tip.commit} (${tip.builtAt}) against ${older.stamp.commit}; ~/.sheep/tip.json keeps it; the run after said nothing`);
+    const next = await listedTipOn("the run after the tip was kept");
+    const afterNotice = await listedTipOn("the run after that");
+    const saidBy = asking.stderr === notice ? "the first run, its child ahead of its verb" : "the next run";
+    const order = asking.stderr === notice ? [next, afterNotice] : [afterNotice];
+    if (!(asking.stderr === "" || asking.stderr === notice) || (asking.stderr === "" && next.stderr !== notice) || order.some((one) => one.stderr !== "") || readSaidFile()?.noticed !== tip.commit) {
+      ring.fail("sh1", `sheep ls ×3 (the older release ${older.stamp.commit}, the tip on)`, { stdout: JSON.stringify(readSaidFile() ?? null), stderr: `stderr of the three runs: ${JSON.stringify([asking.stderr, next.stderr, afterNotice.stderr])}\nexpected the notice ${JSON.stringify(notice)} exactly once, on the first run or the next, nothing on the others, and the said file's noticed ${tip.commit}`, code: 1 });
+    }
+    ring.ok("sh1", `sheep ls ×3 (the older release ${older.stamp.commit}, SHEEP_TIP unset, the real tip)`, `the child kept the tip ${tip.commit} (${tip.builtAt}) ${keptSeconds}s after the ask; the notice said once, by ${saidBy}; the run after it said nothing`);
 
     // The upgrade (journey 4 step 1): the newer package into the same prefix; the command names it; sheep home warns; the redeploy moves the stamp and keeps every row.
     const upStarted = Date.now();

@@ -305,8 +305,10 @@ export interface StationState {
    */
   tip?: { commit: string; builtAt: string } | "hang";
   tipAsks?: number;
-  /** Shear phase 0: `GET /sessions` held back this many milliseconds, a verb that takes as long as a station far away does. */
-  sessionsDelayMs?: number;
+  /** Shear phase 0, reworked: the tip's answer held back this many milliseconds, as GitHub far away is; so a child cannot land before its verb ends. */
+  tipDelayMs?: number;
+  /** Shear phase 0, reworked: how many tip requests have closed, answered or abandoned, so a test knows the child that asked is done. */
+  tipClosed?: number;
   /** Shear phase 1: how many `GET /` asks answer 503 before the door answers `sheep`: a station that does not answer the guard's ask. */
   doorDown?: number;
   /** Shear phase 1: a path answered with this status and body, before any other route: a route that threw, a verb refused. */
@@ -334,7 +336,9 @@ export function fakeStation(auths: (string | undefined)[], state: StationState):
     // The tip is GitHub's, not the station's: counted on its own, and in neither the bearers nor the log.
     if (url.pathname === "/_tip/package.json") {
       state.tipAsks = (state.tipAsks ?? 0) + 1;
+      response.once("close", () => void (state.tipClosed = (state.tipClosed ?? 0) + 1));
       if (state.tip === "hang") return;
+      if (state.tipDelayMs !== undefined && state.tipDelayMs > 0) await new Promise((resolveDelay) => setTimeout(resolveDelay, state.tipDelayMs));
       if (state.tip === undefined) return void response.writeHead(404).end("no tip");
       return void response.writeHead(200, { "content-type": "text/plain; charset=utf-8" }).end(JSON.stringify({ name: "sheep", sheep: { ...state.tip, wrangler: "4.0.0" } }));
     }
@@ -378,10 +382,7 @@ export function fakeStation(auths: (string | undefined)[], state: StationState):
     }
     if (url.pathname === "/home") return answer(200, JSON.stringify({ serverId: "fake-station", container: true, build }));
     if (request.headers.authorization !== `Bearer ${state.token}`) return answer(401, "unauthorized");
-    if (url.pathname === "/sessions") {
-      if (state.sessionsDelayMs !== undefined && state.sessionsDelayMs > 0) await new Promise((resolveDelay) => setTimeout(resolveDelay, state.sessionsDelayMs));
-      return answer(200, JSON.stringify(state.sessions));
-    }
+    if (url.pathname === "/sessions") return answer(200, JSON.stringify(state.sessions));
     if (url.pathname === "/pastures") return answer(200, JSON.stringify(state.pastures));
     answer(404, "no");
   });

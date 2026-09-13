@@ -10,6 +10,9 @@
  * `readStamp` never sees it. Each world is a scratch kennel whose `HOME` is
  * its own, so the said file is the world's; `CI` is taken out of every
  * run's environment, since a runner sets it and it silences both lines.
+ * The tip is fetched by a detached child the command never waits for (the
+ * rework), so a case polls the said file and the fake's `tipClosed` for the
+ * child's work, and each case ends with every child it started done.
  *
  * Shear phase 1: the floor (journey 4 steps 1 and 2, and journey 5 step 1
  * for it), from the same station: a verb it has no route for, `sheep
@@ -80,20 +83,46 @@ async function world(state: Partial<StationState>): Promise<{ state: StationStat
 
 const NOTICE = `sheep: a newer build ${NEWER.commit} (${NEWER.builtAt}) is out; this command is ${CLI.commit} (${CLI.builtAt}); \`npm install -g github:dglazkov/sheep#release\` updates it\n`;
 
+/** Polls until `check` holds, every 25 ms for up to `ms`; the child's work is asynchronous, and a fixed sleep would be a guess. */
+async function until(check: () => boolean, ms = 5_000): Promise<boolean> {
+  const deadline = Date.now() + ms;
+  while (!check()) {
+    if (Date.now() > deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  return true;
+}
+
+/** The said file as it is on disk now, or `{}`: read raw, so a test sees `asked` and `tip` exactly as the command and the child wrote them. */
+function saidIn(dir: string): Record<string, any> {
+  try {
+    return JSON.parse(readFileSync(join(dir, ".sheep", "tip.json"), "utf8"));
+  } catch {
+    return {};
+  }
+}
+
 describe("the notice (journey 1)", () => {
-  // The station takes 300 ms to list, as one far away does: the tip must answer before the verb ends to be said in that run.
-  it("is said once on stderr for a newer tip, fetched once, and stdout is byte-equal to a run with SHEEP_TIP=0", { timeout: 60_000 }, async () => {
-    const { state, dir, sheep } = await world({ tip: NEWER, sessionsDelayMs: 300 });
+  // The tip takes 500 ms to answer, as GitHub far away may: the child cannot land before its verb ends, so the first run
+  // never says the notice and the next one does, which is the order the design promises "most often".
+  it("is not said by the run that starts the child, is kept once the child lands, is said once by the next run, and stdout is byte-equal to a run with SHEEP_TIP=0", { timeout: 60_000 }, async () => {
+    const { state, dir, sheep } = await world({ tip: NEWER, tipDelayMs: 500 });
     const first = await sheep(["ls"]);
-    expect(first).toMatchObject({ code: 0, stderr: NOTICE });
+    expect(first).toMatchObject({ code: 0, stderr: "" });
     expect(first.stdout).toContain(SESSIONS[0]!.id);
-    const said = JSON.parse(readFileSync(join(dir, ".sheep", "tip.json"), "utf8"));
-    expect(said).toMatchObject({ tip: NEWER, noticed: NEWER.commit });
-    expect(Date.now() - Date.parse(said.tip.at)).toBeLessThan(60_000);
+    // The ask was written before the child started; the tip, once the child lands.
+    expect(Date.now() - Date.parse(saidIn(dir).asked)).toBeLessThan(60_000);
+    expect(await until(() => saidIn(dir).tip !== undefined), JSON.stringify(saidIn(dir))).toBe(true);
+    expect(saidIn(dir).tip).toMatchObject(NEWER);
+    expect(Date.now() - Date.parse(saidIn(dir).tip.at)).toBeLessThan(60_000);
+    expect(await until(() => state.tipClosed === 1)).toBe(true);
 
     const second = await sheep(["ls"]);
-    expect(second).toMatchObject({ code: 0, stderr: "", stdout: first.stdout });
-    // The kept tip is less than a day old, so the second command asked nothing of it.
+    expect(second).toMatchObject({ code: 0, stderr: NOTICE, stdout: first.stdout });
+    expect(saidIn(dir)).toMatchObject({ tip: NEWER, noticed: NEWER.commit });
+    const third = await sheep(["ls"]);
+    expect(third).toMatchObject({ code: 0, stderr: "", stdout: first.stdout });
+    // The kept tip is less than a day old, so neither later command started a child: one fetch for the one ask.
     expect(state.tipAsks).toBe(1);
 
     const off = await sheep(["ls"], { SHEEP_TIP: "0" });
@@ -102,48 +131,60 @@ describe("the notice (journey 1)", () => {
     expect(state.tipAsks).toBe(1);
   });
 
-  it("leaves --json's stdout as it was, and is said again, once, when the tip moves", { timeout: 60_000 }, async () => {
-    const { state, dir, sheep } = await world({ tip: NEWER, sessionsDelayMs: 300 });
+  it("leaves --json's stdout as it was, and is said again, once, when the tip moves and both the tip and the ask are aged", { timeout: 60_000 }, async () => {
+    const { state, dir, sheep } = await world({ tip: NEWER, tipDelayMs: 500 });
     const json = await sheep(["ls", "--json"]);
-    expect(json).toMatchObject({ code: 0, stderr: NOTICE });
+    expect(json).toMatchObject({ code: 0, stderr: "" });
+    expect(await until(() => saidIn(dir).tip !== undefined)).toBe(true);
+    expect(await sheep(["ls", "--json"])).toMatchObject({ code: 0, stderr: NOTICE, stdout: json.stdout });
     const off = await sheep(["ls", "--json"], { SHEEP_TIP: "0" });
     expect(off.stdout).toBe(json.stdout);
     expect(JSON.parse(json.stdout)).toHaveLength(1);
 
-    // The tip moves on, and the kept one is aged past a day, so the next command fetches it: a new commit, said once.
+    // The tip moves on, and the kept one is aged past a day and the ask past ten minutes, so the next command starts a child.
     const later = { commit: "9e9e9e9", builtAt: "2026-09-14T09:00:00Z" };
     state.tip = later;
     const path = join(dir, ".sheep", "tip.json");
-    const kept = JSON.parse(readFileSync(path, "utf8"));
-    await writeFile(path, JSON.stringify({ ...kept, tip: { ...kept.tip, at: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString() } }));
+    const kept = saidIn(dir);
+    await writeFile(path, JSON.stringify({ ...kept, tip: { ...kept.tip, at: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString() }, asked: new Date(Date.now() - 11 * 60 * 1000).toISOString() }));
+    expect(await sheep(["ls", "--json"])).toMatchObject({ code: 0, stdout: json.stdout, stderr: "" });
+    expect(await until(() => saidIn(dir).tip?.commit === later.commit)).toBe(true);
     const moved = await sheep(["ls", "--json"]);
     expect(moved).toMatchObject({ code: 0, stdout: json.stdout, stderr: NOTICE.replace(`${NEWER.commit} (${NEWER.builtAt})`, `${later.commit} (${later.builtAt})`) });
     expect(await sheep(["ls", "--json"])).toMatchObject({ code: 0, stderr: "" });
+    expect(await until(() => state.tipClosed === 2)).toBe(true);
     expect(state.tipAsks).toBe(2);
   });
 
-  it("is never said, nor the tip fetched, under CI, with SHEEP_TIP=0, or from a command with no stamp", { timeout: 60_000 }, async () => {
-    const { state, dir, sheep } = await world({ tip: NEWER, sessionsDelayMs: 300 });
+  it("is never said, nor a child started, under CI, with SHEEP_TIP=0, or from a command with no stamp", { timeout: 60_000 }, async () => {
+    const { state, dir, sheep } = await world({ tip: NEWER });
     for (const extra of [{ CI: "true" }, { SHEEP_TIP: "0" }, { SHEEP_TEST_CLI_BUILD: undefined }]) {
       const run = await sheep(["ls"], extra);
       expect(run, JSON.stringify(extra)).toMatchObject({ code: 0, stderr: "" });
     }
-    expect(state.tipAsks ?? 0).toBe(0);
+    // No ask was written, and an ask is written before any child starts.
     expect(existsSync(join(dir, ".sheep", "tip.json"))).toBe(false);
+    expect(state.tipAsks ?? 0).toBe(0);
   });
 
-  it("costs the verb nothing when the tip never answers: no line, nothing kept, and no longer than with SHEEP_TIP=0", { timeout: 60_000 }, async () => {
-    const { state, dir, sheep } = await world({ tip: "hang", sessionsDelayMs: 300 });
-    // Warm, then two of each, the fastest of each compared: a held fetch costs two seconds, and the margin is one.
+  it("costs the verb nothing when the tip never answers, keeps nothing, and a second run within ten minutes starts no child", { timeout: 60_000 }, async () => {
+    const { state, dir, sheep } = await world({ tip: "hang" });
+    // Warm, then two with the tip off, the fastest compared with the run that started the child: were the exit to wait on
+    // the child, it would cost its two-second timeout, and the margin is one.
     await sheep(["ls"], { SHEEP_TIP: "0" });
     const off = [await sheep(["ls"], { SHEEP_TIP: "0" }), await sheep(["ls"], { SHEEP_TIP: "0" })];
-    const hung = [await sheep(["ls"]), await sheep(["ls"])];
-    for (const run of hung) expect(run).toMatchObject({ code: 0, stderr: "", stdout: off[0]!.stdout });
-    // The fetch was made, each time, since nothing answered and nothing was kept.
-    expect(state.tipAsks).toBe(2);
-    expect(existsSync(join(dir, ".sheep", "tip.json"))).toBe(false);
-    const fastest = (runs: Run[]) => Math.min(...runs.map((run) => run.ms));
-    expect(fastest(hung), `hung ${hung.map((run) => run.ms)} ms against ${off.map((run) => run.ms)} ms`).toBeLessThan(fastest(off) + 1_000);
+    const started = await sheep(["ls"]);
+    const within = await sheep(["ls"]);
+    for (const run of [started, within]) expect(run).toMatchObject({ code: 0, stderr: "", stdout: off[0]!.stdout });
+    const fastest = Math.min(...off.map((run) => run.ms));
+    expect(started.ms, `the child's run ${started.ms} ms against ${off.map((run) => run.ms)} ms`).toBeLessThan(fastest + 1_000);
+    // The child gives up at its timeout and its request closes; by then a second child, had one started, would have asked.
+    expect(await until(() => (state.tipClosed ?? 0) >= 1)).toBe(true);
+    expect(state.tipAsks).toBe(1);
+    expect(await until(() => state.tipClosed === state.tipAsks)).toBe(true);
+    const said = saidIn(dir);
+    expect(said.tip).toBeUndefined();
+    expect(Date.now() - Date.parse(said.asked)).toBeLessThan(60_000);
   });
 });
 

@@ -1,13 +1,22 @@
 /**
- * Shear phase 0: the said file, the day-old rule, and the notice, as pure
+ * Shear phase 0: the said file, the day-old rule, the ten-minute ask rule
+ * (the rework that moved the fetch into a child), and the notice, as pure
  * functions over scratch paths. Nothing is fetched and nothing is spawned;
  * `shear.test.ts` drives the same rules through the built command.
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
-import { noticeLine, readSaid, type Said, TIP_FRESH_MS, TIP_URL, tipDue, tipUrl, underCi, writeSaid } from "../src/tip.js";
+import { afterAll, describe, expect, it, vi } from "vitest";
+import * as local from "../src/local.js";
+import { ASK_FRESH_MS, askDue, noticeLine, readSaid, type Said, sayAtExit, TIP_FRESH_MS, TIP_URL, tipDue, tipUrl, underCi, writeSaid } from "../src/tip.js";
+
+// `skewLine` is the step `sayAtExit` takes between its read and its write; a test replaces it once to land a tip there, as a
+// child renaming the file in would. Every other call is the real one. The module is mocked, and nothing in `tip.ts` changes.
+vi.mock("../src/local.js", async (original) => {
+  const actual = await original<typeof import("../src/local.js")>();
+  return { ...actual, skewLine: vi.fn(actual.skewLine) };
+});
 
 const made: string[] = [];
 afterAll(() => {
@@ -26,7 +35,7 @@ const NEWER = { commit: "5511bf9", builtAt: "2026-09-13T18:26:23Z", at: "2026-09
 describe("the said file", () => {
   it("reads back what was written, whole, creating ~/.sheep when it is not there", () => {
     const path = join(scratch(), ".sheep", "tip.json");
-    const said: Said = { tip: NEWER, noticed: "5511bf9", skew: "a2b17e7:5511bf9" };
+    const said: Said = { tip: NEWER, asked: "2026-09-13T19:00:00.000Z", noticed: "5511bf9", skew: "a2b17e7:5511bf9" };
     writeSaid(said, path);
     expect(readSaid(path)).toEqual(said);
     writeSaid({ noticed: "9e9e9e9" }, path);
@@ -42,7 +51,7 @@ describe("the said file", () => {
     expect(readSaid(join(dir, "torn.json"))).toEqual({});
     writeFileSync(join(dir, "null.json"), "null");
     expect(readSaid(join(dir, "null.json"))).toEqual({});
-    writeFileSync(join(dir, "mixed.json"), JSON.stringify({ tip: { commit: "5511bf9", builtAt: 7 }, noticed: 3, skew: "a:b" }));
+    writeFileSync(join(dir, "mixed.json"), JSON.stringify({ tip: { commit: "5511bf9", builtAt: 7 }, asked: 1_757_000_000_000, noticed: 3, skew: "a:b" }));
     expect(readSaid(join(dir, "mixed.json"))).toEqual({ skew: "a:b" });
   });
 
@@ -65,6 +74,50 @@ describe("the day-old rule", () => {
   it("does not fetch while the kept tip is less than a day old", () => {
     expect(tipDue({ tip: NEWER }, at)).toBe(false);
     expect(tipDue({ tip: NEWER }, at + TIP_FRESH_MS - 1)).toBe(false);
+  });
+});
+
+describe("the ten-minute ask rule", () => {
+  const asked = "2026-09-13T19:00:00.000Z";
+  const at = Date.parse(asked);
+  it("starts a child when nothing was asked, the ask is ten minutes old or more, or its time does not parse", () => {
+    expect(askDue({}, at)).toBe(true);
+    expect(askDue({ asked }, at + ASK_FRESH_MS)).toBe(true);
+    expect(askDue({ asked }, at + 6 * ASK_FRESH_MS)).toBe(true);
+    expect(askDue({ asked: "a while ago" }, at)).toBe(true);
+    expect(ASK_FRESH_MS).toBe(10 * 60 * 1000);
+  });
+
+  it("starts none while the ask is less than ten minutes old, whatever the tip", () => {
+    expect(askDue({ asked }, at)).toBe(false);
+    expect(askDue({ asked }, at + ASK_FRESH_MS - 1)).toBe(false);
+    // An ask that found nothing (an unreachable GitHub) holds off the next as much as one that kept a tip.
+    expect(askDue({ asked, tip: { ...NEWER, at: "2026-09-01T00:00:00.000Z" } }, at + 1)).toBe(false);
+  });
+});
+
+describe("sayAtExit and the child", () => {
+  it("keeps a tip the child renamed in between its read and its write, beside the skew it records", async () => {
+    const { skewLine: realSkewLine } = await vi.importActual<typeof import("../src/local.js")>("../src/local.js");
+    vi.stubEnv("CI", "");
+    vi.stubEnv("SHEEP_TIP", "0");
+    vi.stubEnv("SHEEP_TEST_CLI_BUILD", `${COMMAND.commit} ${COMMAND.builtAt}`);
+    try {
+      const path = join(scratch(), ".sheep", "tip.json");
+      const asked = "2026-09-13T19:00:00.000Z";
+      writeSaid({ asked }, path);
+      const home = { commit: "1111111", builtAt: "2026-09-10T00:00:00Z" };
+      vi.mocked(local.skewLine).mockImplementationOnce((...args) => {
+        // The child lands now: after sayAtExit read the file, before it writes.
+        writeSaid({ ...readSaid(path), tip: NEWER }, path);
+        return realSkewLine(...args);
+      });
+      const text = sayAtExit(home, false, path);
+      expect(text).toContain("is older than this command's");
+      expect(readSaid(path)).toEqual({ asked, tip: NEWER, skew: `${home.commit}:${COMMAND.commit}` });
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 

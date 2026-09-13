@@ -6,16 +6,20 @@
  * `sheep.commit` and `sheep.builtAt` are the newest build there is.
  * `SHEEP_TIP` names another URL (the fakes serve one), and `SHEEP_TIP=0`
  * turns it off, which every ring sets so none reaches GitHub. A command
- * from the release starts one fetch of it beside its verb, at most once a
- * day, and never waits on it: whatever answered before the verb ended is
- * in the said file, and whatever did not is aborted at the exit.
+ * from the release hands one fetch of it to a child process started
+ * detached and never waited for, at most once a day and at most one ask in
+ * ten minutes; the child writes the tip into the said file and is gone, and
+ * the notice is said by the first command to end after that, most often
+ * the next (shear phase 0, reworked: the walk found a fetch in the command's
+ * own process, aborted at its exit, never landed against a local home).
  *
  * The said file is `~/.sheep/tip.json`, beside `tools`, never per kennel:
- * the tip last fetched and when, the tip commit the notice was last said
- * for, and the pair of builds the skew line was last said for. A missing
- * or unreadable file is empty, so the worst a broken one costs is a line
- * said again.
+ * the tip last fetched and when, when a command last asked for it, the tip
+ * commit the notice was last said for, and the pair of builds the skew
+ * line was last said for. A missing or unreadable file is empty, so the
+ * worst a broken one costs is a line said again.
  */
+import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -27,13 +31,18 @@ export const TIP_URL = "https://raw.githubusercontent.com/dglazkov/sheep/release
 /** How long a kept tip is good for before a command fetches it again. */
 export const TIP_FRESH_MS = 24 * 60 * 60 * 1000;
 
-/** How long the one fetch may take; after that it is abandoned, and the next command tries again. */
+/** How long the one fetch may take; after that the child gives up, and a command after the ask's ten minutes tries again. */
 export const TIP_TIMEOUT_MS = 2_000;
+
+/** How long an ask holds off the next: an unreachable GitHub costs one child in this long. */
+export const ASK_FRESH_MS = 10 * 60 * 1000;
 
 /** `~/.sheep/tip.json`, as `readSaid` reads it: every field absent until something put it there. */
 export interface Said {
   /** The tip last fetched: its build, and when it was fetched (ISO). */
   tip?: { commit: string; builtAt: string; at: string };
+  /** When a command last started a child to fetch the tip (ISO), written before the child starts. */
+  asked?: string;
   /** The tip commit the notice was last said for. */
   noticed?: string;
   /** The pair the skew line was last said for, `<home commit>:<cli commit>`. */
@@ -67,10 +76,11 @@ export function readSaid(path: string = saidPath()): Said {
     return {};
   }
   if (parsed === null || typeof parsed !== "object") return {};
-  const raw = parsed as { tip?: Partial<NonNullable<Said["tip"]>>; noticed?: unknown; skew?: unknown };
+  const raw = parsed as { tip?: Partial<NonNullable<Said["tip"]>>; asked?: unknown; noticed?: unknown; skew?: unknown };
   const said: Said = {};
   const tip = raw.tip;
   if (tip && typeof tip.commit === "string" && typeof tip.builtAt === "string" && typeof tip.at === "string") said.tip = { commit: tip.commit, builtAt: tip.builtAt, at: tip.at };
+  if (typeof raw.asked === "string") said.asked = raw.asked;
   if (typeof raw.noticed === "string") said.noticed = raw.noticed;
   if (typeof raw.skew === "string") said.skew = raw.skew;
   return said;
@@ -100,38 +110,67 @@ export function tipDue(said: Said, now: number = Date.now()): boolean {
   return Number.isNaN(at) || now - at >= TIP_FRESH_MS;
 }
 
-/** The fetch started beside a verb; `stop` abandons it if it has not answered, so the exit never waits on it. */
-export interface TipFetch {
-  stop(): void;
+/** Whether a child may be started: no ask kept, or the kept one ten minutes old or more (or at a time that does not parse). */
+export function askDue(said: Said, now: number = Date.now()): boolean {
+  if (said.asked === undefined) return true;
+  const at = Date.parse(said.asked);
+  return Number.isNaN(at) || now - at >= ASK_FRESH_MS;
 }
 
-const NOTHING: TipFetch = { stop() {} };
+/**
+ * The child's whole program, run as `node --input-type=module -e` so it
+ * depends on nothing beside it: not the bundle's layout under the
+ * release, nor `dist/` under a checkout. The URL, the said file's path,
+ * and the timeout come in `process.argv`, never spliced into the code.
+ * One fetch, no retry; a manifest with a `sheep` stamp is merged into the
+ * said file as `tip`, through a file beside it renamed into place, and
+ * anything else (unreachable, too slow, not a manifest) writes nothing.
+ */
+export const TIP_CHILD = `
+import { readFileSync, renameSync, writeFileSync } from "node:fs";
+const [url, path, timeout] = process.argv.slice(1);
+try {
+  const response = await fetch(url, { signal: AbortSignal.timeout(Number(timeout)), headers: { accept: "application/json" } });
+  const stamp = response.ok ? (await response.json())?.sheep : undefined;
+  if (stamp && typeof stamp.commit === "string" && stamp.commit !== "" && typeof stamp.builtAt === "string" && !Number.isNaN(Date.parse(stamp.builtAt))) {
+    let said = {};
+    try {
+      const kept = JSON.parse(readFileSync(path, "utf8"));
+      if (kept !== null && typeof kept === "object" && !Array.isArray(kept)) said = kept;
+    } catch {}
+    said.tip = { commit: stamp.commit, builtAt: stamp.builtAt, at: new Date().toISOString() };
+    const partial = path + "." + process.pid;
+    writeFileSync(partial, JSON.stringify(said, null, 2) + "\\n");
+    renameSync(partial, path);
+  }
+} catch {}
+`;
 
 /**
- * One fetch of the tip, started and not awaited (shear phase 0): nothing
- * when the tip is off, under `CI`, from a command with no stamp (a
- * checkout, which never says the notice), or when the kept tip is less
- * than a day old. Otherwise the manifest is fetched with a two-second
- * timeout and no retry, and a manifest with a `sheep` stamp is written to
- * the said file with the time. The synchronous part is one small read.
+ * The ask (shear phase 0, reworked): nothing when the tip is off, under
+ * `CI`, from a command with no stamp (a checkout, which never says the
+ * notice), when the kept tip is less than a day old, or when a command
+ * asked less than ten minutes ago. Otherwise `asked` is written to the
+ * said file, and then a child is started detached, its stdio ignored and
+ * unreferenced, so the verb's exit waits on nothing; the child fetches the
+ * tip and writes it (`TIP_CHILD`). A child that cannot be started is
+ * swallowed: a verb never fails for the line it would have said.
  */
-export function startTip(path: string = saidPath()): TipFetch {
+export function startTip(path: string = saidPath()): void {
   const url = tipUrl();
-  if (url === undefined || underCi() || cliBuild().builtAt === null || !tipDue(readSaid(path))) return NOTHING;
-  const abandon = new AbortController();
-  const signal = AbortSignal.any([abandon.signal, AbortSignal.timeout(TIP_TIMEOUT_MS)]);
-  fetch(url, { signal, headers: { accept: "application/json" } })
-    .then(async (response) => {
-      if (!response.ok) return;
-      const manifest = (await response.json()) as { sheep?: { commit?: unknown; builtAt?: unknown } };
-      const stamp = manifest?.sheep;
-      if (!stamp || typeof stamp.commit !== "string" || stamp.commit === "" || typeof stamp.builtAt !== "string" || Number.isNaN(Date.parse(stamp.builtAt))) return;
-      writeSaid({ ...readSaid(path), tip: { commit: stamp.commit, builtAt: stamp.builtAt, at: new Date().toISOString() } }, path);
-    })
-    .catch(() => {
-      // unreachable, too slow, or not a manifest: nothing kept, and the next command tries again
+  if (url === undefined || underCi() || cliBuild().builtAt === null) return;
+  const said = readSaid(path);
+  if (!tipDue(said) || !askDue(said)) return;
+  writeSaid({ ...said, asked: new Date().toISOString() }, path);
+  try {
+    const child = spawn(process.execPath, ["--input-type=module", "-e", TIP_CHILD, "--", url, path, String(TIP_TIMEOUT_MS)], { detached: true, stdio: "ignore" });
+    child.once("error", () => {
+      // no child: the next ask, ten minutes on, tries again
     });
-  return { stop: () => abandon.abort() };
+    child.unref();
+  } catch {
+    // no child: the next ask, ten minutes on, tries again
+  }
 }
 
 /**
@@ -160,21 +199,23 @@ export function sayAtExit(home: BuildSide | undefined, local: boolean, path: str
   if (underCi()) return "";
   const cli = cliBuild();
   const said = readSaid(path);
-  const next: Said = { ...said };
+  const marks: Pick<Said, "noticed" | "skew"> = {};
   let text = "";
   const notice = tipUrl() === undefined ? undefined : noticeLine(cli, said);
   if (notice !== undefined) {
     text += notice;
-    next.noticed = said.tip!.commit;
+    marks.noticed = said.tip!.commit;
   }
   if (home !== undefined) {
     const skew = skewLine(home, cli, local);
     const pair = `${home.commit}:${cli.commit}`;
     if (skew !== undefined && said.skew !== pair) {
       text += skew;
-      next.skew = pair;
+      marks.skew = pair;
     }
   }
-  if (text !== "") writeSaid(next, path);
+  // The marks go over the file as it is now, read again right before the write: a tip the child renamed in since the read
+  // above is kept, not written over with the copy from before it landed.
+  if (text !== "") writeSaid({ ...readSaid(path), ...marks }, path);
   return text;
 }

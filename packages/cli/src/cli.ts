@@ -109,10 +109,10 @@ export async function main(argv: readonly string[]): Promise<number> {
     process.stdout.write(`${version()}\n`);
     return 0;
   }
-  // The tip and the lines at the end (shear phase 0): the fetch starts beside the verb and is never waited on; setup is the
+  // The tip and the lines at the end (shear phase 0): a detached child fetches the tip and is never waited on; setup is the
   // shepherd's sitting and the dog's report, and says neither. At the end, the notice and the skew line, each once, on stderr.
   if (command === "setup") return await run(command, parsed, { heard() {} });
-  const tip = startTip();
+  startTip();
   let home: Home | undefined;
   let local = false;
   try {
@@ -123,7 +123,6 @@ export async function main(argv: readonly string[]): Promise<number> {
       },
     });
   } finally {
-    tip.stop();
     const said = sayAtExit(home?.homeBuild, local);
     if (said !== "") process.stderr.write(said);
   }
