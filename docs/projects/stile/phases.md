@@ -254,18 +254,16 @@ that release, and the shepherd's walk.
   lost two rows of its top; the stile stops with `preserveScreen` and
   writes its own newline.
 - **2026-09-12 — Styling is proved from the emulator's cells.** pi-tui
-  appends a bare `ESC[0m` to every line, so "no escape in the output" is
-  no test for a plain screen; `NO_COLOR` is read cell by cell.
+  appends a bare reset to every line, so `NO_COLOR` is read cell by cell.
 - **2026-09-12 — The fakes never showed a spinner** until `healthDelayMs`
   held their listings back; the cell ring's lease test flaked under the
   loaded run (0.015 minutes against 0.01) and passed alone.
-- **2026-09-12 — The package ring held on release `084cc74`.** `t0`
-  walked the new stile: seven steps settled, the count exact, no run of
-  a value after 79 keys; the ring reads the checkout's local `release`
-  branch, which must be fast-forwarded first.
-- **2026-09-12 — Open: the ⚑ account ring and the walk on release
-  `084cc74`.** `t1` and `a7` read the new frames and run on the
-  shepherd's yes; the walk at their terminal is theirs.
+- **2026-09-12 — The package ring held on release `084cc74`**, `t0`
+  walking the new stile whole; the ring reads the checkout's local
+  `release` branch, fast-forwarded first.
+- **2026-09-12 — Open: the ⚑ account ring and the walk on `084cc74`.**
+  `t1` and `a7` read the new frames, on the shepherd's yes; the walk is
+  theirs.
 
 ---
 
