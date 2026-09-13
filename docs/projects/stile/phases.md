@@ -24,24 +24,19 @@ tool, has built a facade.
 
 ---
 
-**Where we are: stile phases 0 and 2 are CLOSED and phase 1 PART-DONE, 12
-September 2026.** The screen of issue #9 is built to the approved
-mockups, green in the inner rings and the package ring on release
-`084cc74`, the shepherd's first walk found two faults, both fixed, and their
-second walk on release `752761e` was flawless; what is left of **stile
-phase 1** is the ⚑ account ring on that release through `t1`: one run
-held a7 and t2 and failed at a8's pushes to the playground, a token
-lead, before t1 ran. Stile phase 0
-gave the dog what the shepherd keeps: `~/.sheep/credentials`, deploy and
-delete reading it, the stop in two parts, and `sheep-2` upgraded with
-nothing in the environment. Stile phase 1 gave the shepherd the stile,
-first as plain text that their walk refused, then as the TUI of
-`design.md`'s "The screen": the pixel sheep, the six colours, the
-selector, the boxed secrets, the deploy's progress, the finish. Stile
-phase 2 gave a second machine the join, by a KV store per station after
-a secret put proved to restart running turns (issue #10), walked on
-`sheep-2` and held in the account ring. Issue #8 is closed; checkout
-deploys left unstamped are issue #11.
+**Where we are: stile is DONE, all three phases CLOSED, 12 September
+2026.** Stile phase 0 gave the dog what the shepherd keeps:
+`~/.sheep/credentials`, deploy and delete reading it, the stop in two
+parts, and `sheep-2` upgraded with nothing in the environment. Stile
+phase 1 gave the shepherd the stile, first as plain text that their walk
+refused, then as the TUI of `design.md`'s "The screen": the pixel sheep,
+the six colours, the selector, the boxed secrets, the deploy's progress,
+the finish; walked by the shepherd on release `752761e`, and held in
+every ring on it, the account ring's `t1` playing them on the real
+account. Stile phase 2 gave a second machine the join, by a KV store per
+station after a secret put proved to restart running turns (issue #10),
+walked on `sheep-2` and held in the account ring. Issues #8 and #9 are
+closed; checkout deploys left unstamped are issue #11. Nothing waits.
 
 The order is dependency order. Phase 0 is the mechanism under the flow,
 provable against the fakes with nothing on a screen, so the stile in
@@ -224,19 +219,14 @@ colour (the attribute test fails), and the pixel sheep drawn under
 `NO_COLOR` (the plain test fails); the conductor looks at the frames
 rendered, as a newcomer would, before the shepherd walks it.
 
-**Status: PART-DONE, 12 September 2026.** The stile is built and green in
-the inner rings, and its screen is the second cut: matched to the
-approved mockups, `pnpm test`, `pnpm -r typecheck`, and `pnpm bundle`
-exit 0, all four mutations falsified (hidden input echoed, `?` never
-closing, the cursor step without its colour, the pixel sheep under
-`NO_COLOR`), and the conductor looked at every state rendered through
-the harness. The first cut held in every ring on release `b227c2d`, the
-account ring typing the real token and key through its own terminal.
-The package ring held on release `084cc74`; the shepherd's walk on it
-found the arrows dead under the kitty protocol and a blank first frame,
-both fixed, the package ring green again on `752761e`, and the shepherd's
-second walk on it flawless, a station deployed. The account ring on it held a7 and t2 and failed at a8's pushes before
-t1, a token lead. Owed: the ⚑ account ring again, through t1.
+**Status: CLOSED, 12 September 2026.** The stile holds in every ring on
+release `752761e` with the screen of the second cut: `pnpm test`,
+`pnpm -r typecheck`, and `pnpm bundle` exit 0, all four mutations
+falsified, the package ring green, and the ⚑ account ring's 51 lines
+held with `t1` playing the shepherd through its own terminal (two values
+typed, no yes on a Paid account, no leak after 167 keys) and `a7` joining
+through the stile from a container. The shepherd walked journey 1 at
+their terminal and called it flawless; issue #9 is closed.
 
 **Findings:**
 
@@ -263,12 +253,10 @@ t1, a token lead. Owed: the ⚑ account ring again, through t1.
   once and the install awaited.
 - **2026-09-12 — The shepherd walked journey 1 on `752761e`**: arrows,
   sheep first, a station in 1m 20s, "flawlessly". Issue #9 closed.
-- **2026-09-12 — The account ring on `752761e` held a7 and t2, then
-  failed at a8**: the pushes to the playground never landed and the
-  ring's own deletes were refused alike; the faux program says "pushed"
-  unconditionally. t1 never ran. The token is the lead, not the screen.
-- **2026-09-12 — Open: the ⚑ account ring again on `752761e`, through
-  t1**, once the playground token is checked; on the shepherd's yes.
+- **2026-09-12 — The account ring's first run on `752761e` failed at
+  a8**: the playground token had expired (401), the pushes never landed,
+  and the faux program says "pushed" regardless. With a new token the
+  ring held 51 lines, `t1` and `a7` through the new stile.
 
 ---
 
