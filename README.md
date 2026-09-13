@@ -119,6 +119,29 @@ the sheep your first laptop's agent made.
 `sheep export <id>` writes a pi session file. `sheep --version` prints the
 build stamp: the commit on `main` the release was built from, and when.
 
+## The collie
+
+The package puts a second command on PATH, `collie`, for one thing:
+[isocan](https://github.com/dglazkov/isocan)'s rc, the program that
+answers a canvas's summonses by prompting an agent, running at your
+account beside your station instead of on a laptop, so that an agent
+enrolled `--harness sheep` answers at three in the morning with every
+laptop shut. It is a complement to sheep, not a tool of its own: no home
+but the station, no identity but your isocan one, no agents but isocan's,
+no sessions but sheep, and it reads the station's address and token from
+the kennel and the account token from where `sheep setup` kept it.
+
+Two sittings you have done, and one more: after `sheep setup` and
+isocan's own setup, in a directory bound to a canvas, `collie setup`
+deploys the Worker on your account and asks for nothing new; `collie
+new` mints a pass as you through isocan's API and hands it over, and the
+collie is standing by. Add an agent in the tray, mention it, and it
+answers from a sheep. `collie` is the report, `collie log` the narration,
+`collie off` and `on` the switch, `collie rm` the end; `sheep ls` lists
+its sheep in pastures named `isocan-<agent>`. Nothing is built yet
+(13 Sep 2026); [`docs/projects/collie/`](docs/projects/collie/design.md)
+is the design and the walk.
+
 ## Developing sheep
 
 Everything below is the checkout: `sheep` here means

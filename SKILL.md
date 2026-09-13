@@ -36,6 +36,16 @@ The kennel is found by walking up from where you stand, the way git finds
 `.git`, and is `~/.sheep` when there is none, so a home the shepherd set
 up for the whole machine is the one you find in every directory.
 
+## The collie
+
+`collie`, on PATH beside `sheep`, is the shepherd's: it hosts isocan's rc
+at their account so an isocan agent on the sheep harness answers with
+the laptop shut. `collie setup`, `new`, `pass`, and `rm` need their
+isocan identity and their account and are never yours to run; `collie`
+and `collie log` are anyone's to read, and `collie --agent-help` says
+the rest. Its sheep are herd like any other, in pastures named
+`isocan-<agent>`.
+
 ## What a sheep can see
 
 On a home with eyes, a sheep can `look <path>` at a page in its workspace:
