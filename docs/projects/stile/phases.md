@@ -232,8 +232,8 @@ the harness. The first cut held in every ring on release `b227c2d`, the
 account ring typing the real token and key through its own terminal.
 The package ring held on release `084cc74`; the shepherd's walk on it
 found the arrows dead under the kitty protocol and a blank first frame,
-both fixed. Owed: the ⚑ account ring and a second walk on the release
-with the fixes.
+both fixed and the package ring green again on `752761e`. Owed: the ⚑
+account ring and a second walk on that release.
 
 **Findings:**
 
@@ -253,18 +253,17 @@ with the fixes.
   pi-tui appends a bare reset to every line; `NO_COLOR` is read cell by
   cell. The fakes showed no spinner until `healthDelayMs` held their
   listings back.
-- **2026-09-12 — The package ring held on release `084cc74`**, `t0`
-  walking the new stile whole; the ring reads the checkout's local
-  `release` branch, fast-forwarded first.
+- **2026-09-12 — The package ring held on releases `084cc74` and
+  `752761e`**, `t0` walking the stile whole; the ring reads the local
+  `release` branch, and a global `sheep` a walk installed fools it.
 - **2026-09-12 — Ghostty sends an arrow as `CSI 1;1 B`** under the kitty
   protocol pi-tui negotiates; a byte comparison missed it. Keys are
   matched by name now, releases skipped.
 - **2026-09-12 — A synchronous `npm install -g` ran before the first
   frame**, a blank screen for its length, since pi-tui draws on a timer.
   The first frame is drawn at once and the install awaited.
-- **2026-09-12 — Open: the ⚑ account ring and a second walk on the
-  release with the fixes.** `t1` and `a7` on the shepherd's yes; the walk
-  is theirs.
+- **2026-09-12 — Open: the ⚑ account ring and a second walk on release
+  `752761e`.** `t1` and `a7` on the shepherd's yes; the walk is theirs.
 
 ---
 
