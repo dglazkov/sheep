@@ -19,13 +19,11 @@ finding and a stop, not a feature.
 
 ---
 
-**Where we are: shear phase 0 and shear phase 1 PART-DONE, 13 September
-2026.** Both hold in all three inner rings. shear phase 0's walk on
-release fdca17c said the notice once and found the tip's fetch never
-lands for a fast verb, so the fetch moves to a detached child (design.md,
-"The notice"), built next and walked on its release; shear phase 1's
-account walk then upgrades from that release, under the shepherd's
-standing authorization. Nothing waits on a person.
+**Where we are: shear phase 0 CLOSED, shear phase 1 PART-DONE, 13
+September 2026.** The notice and the header were walked on release
+6261bfc, the tip's fetch in a detached child. shear phase 1 holds in all
+three inner rings; its account walk upgrades from that release under the
+shepherd's standing authorization, and waits on nobody.
 
 Two phases, because the notice and the header are lines a command
 says, provable against the fakes alone, and the floor and the guard are
@@ -102,21 +100,20 @@ aborted the fetch at the exit (fdca17c). The walk found it never answered
 a verb against a local home; the child replaces it, and the command tests
 say the notice on the run after the tip is kept.
 
-**Status: PART-DONE, 2026-09-13.** `pnpm test` exits 0 on all three
-inner rings with the child built and its mutations caught, and the walk
-on release fdca17c said the notice once; the walk on the child's release
-is next.
+**Status: CLOSED, 2026-09-13.** Every inner ring holds, and the walk on
+release 6261bfc said the notice once, from the run after the child kept
+the tip.
 
 **Findings:**
 
 - **2026-09-13 — A dropped Worker header fails the cell's header case and the local home's,** not the skew cases, which the fake station answers: `expected null to be '0.0.0-checkout'`.
 - **2026-09-13 — The said file never written fails four of seven `shear.test.ts` cases;** the notice and both skew lines print on the second run.
 - **2026-09-13 — The child costs a verb about 2 ms** (median of twenty `sheep ls`, 207 against 205); never started, three notice cases fail; the ten-minute ask ignored, the hanging tip is asked twice.
-- **2026-09-13 — workerd refuses a Worker module exporting a string** ("not of type 'function or ExportedHandler'") while the vitest pool accepts it; only the home ring caught `BUILD_HEADER` exported from the cell.
-- **2026-09-13 — Node's WebSocket shows no handshake headers;** socket verbs hear the header from the `GET /home` they ask first. The Worker stamps the 101 anyway, rebuilt, since a stub's headers are immutable.
-- **2026-09-13 — The walk on release fdca17c held:** its local home sent `x-sheep-build: fdca17c 2026-09-13T19:16:16Z`; `sheep ls` against a served newer manifest said the notice once in 101 ms, the second run nothing, `SHEEP_TIP=0` nothing, stdout byte-equal.
-- **2026-09-13 — The in-process fetch never lands for a fast verb:** against the real tip `sheep ls` ended in 114–135 ms, GitHub answers Node in 71–82 after its start, and `tip.json` was never written, run after run.
-- **2026-09-13 — The release workflow flaked on docs-only 49788e8:** bleat's `setup running (0.x s)` read `1.0 s`, its second failed release.
+- **2026-09-13 — workerd refuses a Worker module exporting a string,** which the vitest pool accepts; only the home ring caught it.
+- **2026-09-13 — Node's WebSocket shows no handshake headers;** socket verbs hear it from the `GET /home` they ask first.
+- **2026-09-13 — The in-process fetch never landed for a fast verb** (walk on fdca17c): `sheep ls` ended in 114–135 ms, GitHub answers Node in 71–82, and `tip.json` was never written.
+- **2026-09-13 — The release workflow failed docs-only 49788e8 and 1eeae0d** on bleat's `setup running (0.x s)`, which read `1.0 s` both times.
+- **2026-09-13 — The walk on release 6261bfc held:** `sheep ls` said nothing in 108 ms and its child kept the served tip 39 ms after the ask; the next run said the notice, the third nothing; against GitHub the child landed 81 ms after a 107 ms verb's ask.
 - **2026-09-13 — A route that throws answers workerd's 500 with no header,** which a floor on every non-ok answer would call a home from before the header; the design now applies the floor to a 4xx other than 401 alone.
 
 ---
