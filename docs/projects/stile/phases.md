@@ -25,17 +25,20 @@ tool, has built a facade.
 ---
 
 **Where we are: stile phases 0 and 2 are CLOSED and phase 1 PART-DONE, 12
-September 2026.** The next thing to do is **stile phase 1**'s screen, issue
-#9, which the shepherd's walk found bare and confusing and chose to keep
-out of this project; every other proof of every phase has held. Stile
-phase 0 gave the dog what the shepherd keeps: `~/.sheep/credentials`,
-deploy and delete reading it, the stop in two parts, and `sheep-2`
-upgraded with nothing in the environment. Stile phase 1 gave the
-shepherd the stile, green in every ring on the real account. Stile phase
-2 gave a second machine the join, by a KV store per station after a
-secret put proved to restart running turns (issue #10), walked on
-`sheep-2` and held in the account ring. No ⚑ step is left. Issue #8 is
-closed; checkout deploys left unstamped are issue #11.
+September 2026.** The screen of issue #9 is built to the approved
+mockups and green in the inner rings, and what is left of **stile phase
+1** waits on a person: the ⚑ account ring on the release that carries
+the screen, and the shepherd's walk at their own terminal. Stile phase 0
+gave the dog what the shepherd keeps: `~/.sheep/credentials`, deploy and
+delete reading it, the stop in two parts, and `sheep-2` upgraded with
+nothing in the environment. Stile phase 1 gave the shepherd the stile,
+first as plain text that their walk refused, then as the TUI of
+`design.md`'s "The screen": the pixel sheep, the six colours, the
+selector, the boxed secrets, the deploy's progress, the finish. Stile
+phase 2 gave a second machine the join, by a KV store per station after
+a secret put proved to restart running turns (issue #10), walked on
+`sheep-2` and held in the account ring. Issue #8 is closed; checkout
+deploys left unstamped are issue #11.
 
 The order is dependency order. Phase 0 is the mechanism under the flow,
 provable against the fakes with nothing on a screen, so the stile in
@@ -219,40 +222,46 @@ colour (the attribute test fails), and the pixel sheep drawn under
 rendered, as a newcomer would, before the shepherd walks it.
 
 **Status: PART-DONE, 12 September 2026.** The stile is built and green in
-the inner rings: `pnpm test`, `pnpm -r typecheck`, and `pnpm bundle` exit
-0, and both named mutations falsified their tests — hidden input echoed
-fails four stile cases on the buffer check, and a `?` that never closes
-fails journey 1's frame snapshot. Every ring holds on release `b227c2d`:
-the package ring with `t0`, the dog ring, and the ⚑ account ring (46
-lines) with `t1`, `up`, and `st`. The shepherd walked it and found the
-screen bare and confusing: issue #9, Open.
+the inner rings, and its screen is the second cut: matched to the
+approved mockups, `pnpm test`, `pnpm -r typecheck`, and `pnpm bundle`
+exit 0, all four mutations falsified (hidden input echoed, `?` never
+closing, the cursor step without its colour, the pixel sheep under
+`NO_COLOR`), and the conductor looked at every state rendered through
+the harness. The first cut held in every ring on release `b227c2d`, the
+account ring typing the real token and key through its own terminal.
+Owed: the package and ⚑ account rings on the release that carries the
+screen, and the shepherd's walk.
 
 **Findings:**
 
 - **2026-09-12 — A first sitting deploys before it has a key.** `deploy()`
-  stops when neither machine nor Worker holds one, so the stile passes
-  `keyLater` and its `key` step puts the key through `putModelKey`, which
-  shares `putSecret` with deploy: one put, not two.
-- **2026-09-12 — The plan's yes exists only on an account not yet on
-  Workers Paid.** The account ring requires Paid up front, so `t1` counts
-  no yes; the package ring's `t0` counts the whole of it against a Free
-  fake account, and journey 1's criterion now says so.
-- **2026-09-12 — pi-tui inlines into `sheep.mjs` with nothing shipped
-  beside it.** No new external, no native module; the bundle is 896 KiB.
-  `ProcessTerminal`'s bracketed paste delivers a pasted token as one
-  escape sequence, which the key splitter must unwrap.
-- **2026-09-12 — A symlinked `HOME` split `~/.sheep` in two.** Kennel
-  phase 1's `kennelName()` compared a walk from the resolved cwd with
-  `HOME` as set; under macOS's `/var` link `t0` minted `t0`, not
-  `sheep-2`, while Linux CI passed. Kennel checks now compare real paths.
-- **2026-09-12 — The account ring played the shepherd for real.** `t1`
-  typed the real token and key through its terminal, deployed a second
-  station, then herded, upgraded, and deleted it with nothing in the
-  environment; `ps` saw no secret in 28,638 samples.
-- **2026-09-12 — Open: the shepherd's walk found the screen bare and
-  confusing.** No colour, a banner that is "fish on legs", choices as
-  bracketed text; every mechanical proof held regardless. Issue #9, kept
-  out of this project at the shepherd's word.
+  stops without one, so the stile passes `keyLater` and its `key` step
+  puts the key through `putModelKey`, which shares `putSecret` with
+  deploy: one put, not two.
+- **2026-09-12 — The plan's yes exists only on an account not on Workers
+  Paid.** The account ring requires Paid, so `t1` counts no yes; `t0`
+  counts the whole of it against a Free fake account.
+- **2026-09-12 — A symlinked `HOME` split `~/.sheep` in two.** Under
+  macOS's `/var` link `t0` minted `t0`, not `sheep-2`, while Linux CI
+  passed; kennel checks now compare real paths.
+- **2026-09-12 — The shepherd's walk refused the first screen.** Plain
+  text, "fish on legs", bracketed choices, every mechanical proof green.
+  Issue #9; the second cut was settled as mockups first, five rounds,
+  the sheep as pixels rasterised from shapes.
+- **2026-09-12 — pi-tui's main-screen stop writes a space before its
+  newline.** On a last row that fills the width it wraps, and the finish
+  lost two rows of its top; the stile stops with `preserveScreen` and
+  writes its own newline.
+- **2026-09-12 — Styling is proved from the emulator's cells.** pi-tui
+  appends a bare `ESC[0m` to every line, so "no escape in the output" is
+  no test for a plain screen; `NO_COLOR` is read cell by cell.
+- **2026-09-12 — The fakes never showed a spinner** until `healthDelayMs`
+  held their listings back; the cell ring's lease test flaked under the
+  loaded run (0.015 minutes against 0.01) and passed alone.
+- **2026-09-12 — Open: the rings and the walk on the release with the
+  screen.** `t0`, `t1`, and `a7` read the new frames: the package ring
+  once CI builds the release, the ⚑ account ring on the shepherd's yes,
+  the walk at their terminal.
 
 ---
 

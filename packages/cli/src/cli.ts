@@ -119,8 +119,8 @@ export async function main(argv: readonly string[]): Promise<number> {
     // gets the report. Nothing the stile keeps is ever written to stdout, and it is never reached with `--json`.
     if (!parsed.json && atTerminal()) {
       try {
-        const report = await stile({ dir: process.cwd(), install: !parsed.noInstall, explain: parsed.explain, name: parsed.name, subdomain: parsed.subdomain, faux: parsed.faux });
-        process.stdout.write(`${report.next}\n`);
+        // The finish is the screen's: the sentence to say is in its box, and nothing prints twice (issue #9).
+        await stile({ dir: process.cwd(), install: !parsed.noInstall, explain: parsed.explain, name: parsed.name, subdomain: parsed.subdomain, faux: parsed.faux });
         return 0;
       } catch (error) {
         if (error instanceof Stop) {

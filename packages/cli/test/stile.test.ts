@@ -1,5 +1,6 @@
 /**
- * The stile, through a terminal this ring owns (stile phase 1).
+ * The stile, through a terminal this ring owns (stile phase 1; the frames
+ * of the second cut, issue #9).
  *
  * Every case spawns the built command with `SHEEP_TEST_TERMINAL=80x24`,
  * feeds what it writes into `@xterm/headless` (`screen.ts`), and presses
@@ -21,6 +22,15 @@
  * hand below, from the design's mock, and are not recorded from a run: a
  * snapshot that is whatever the code printed cannot fail.
  *
+ * **The attributes are asserted too.** The text of a frame cannot see
+ * colour, so a screen that lost its styling would pass every snapshot.
+ * The cases under "the screen's colour" read the emulator's cells: the
+ * cursor step's name bold amber, a settled `✓` green, the chosen row's
+ * `❯` amber, a refusal red, an address cyan and underlined, the box and
+ * the panel drawn, the sheep in pixels with 256-colour backgrounds; and
+ * under `NO_COLOR` none of it, the line-art sheep instead, and the glyphs
+ * alone still saying which step is done, current, and chosen.
+ *
  * Every world is its own `HOME`, a temporary directory: the machine this
  * runs on may keep real credentials in its own `~/.sheep`, and nothing
  * here may read them.
@@ -32,25 +42,58 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { hiddenShown, wordsAt } from "../src/stile/screen.js";
+import { AGENT_SENTENCE } from "../src/stile/flow.js";
+import { colourLevel } from "../src/stile/paint.js";
+import { hiddenShown, TAGLINE, wordsAt } from "../src/stile/screen.js";
 import { STEPS, THINGS, WORDS } from "../src/stile/words.js";
 import { ACCOUNT, type FakeState, fakeAccount, fakeStation, fresh, KEY, type StationState, TOKEN } from "./fakes.js";
 import { bin, type Result } from "./local-home.js";
-import { DOWN, driveStile, ENTER, runsOf, type StileRun } from "./screen.js";
+import { DOWN, driveStile, ENTER, runsOf, type StileRun, type StyledRow } from "./screen.js";
 
 const fakeWrangler = new URL("./fake-wrangler.mjs", import.meta.url).pathname;
 
-/** The sheep, the same five lines every frame starts with. */
-const BANNER = ["      __  _", "   ,-'  `' \\_          sheep", "  (  o   ) . _)        a home for coding agents that herd coding agents", "   `-.__.-'", "     ||  ||", ""].join("\n");
+/** The column everything under a step starts at, and the width of the box and the finish's box at eighty. */
+const IND = " ".repeat(14);
+const BOX_RULE = "─".repeat(64);
+const WIDE_RULE = "─".repeat(76);
 
-/** A frame: the banner, then the rows given, as the terminal's buffer reads them back (trailing spaces trimmed). */
-const frame = (...rows: string[]) => `${BANNER}\n${rows.join("\n")}`;
+/** The rows after the banner's seven: what every frame is compared on. The banner is checked once, by its cells. */
+const body = (text: string): string[] => text.split("\n").slice(7);
 
-/** The cursor's row: the mark, the step's name in its column, what it shows, and the hint flush with the eightieth column. */
-const cursor = (step: string, text: string, hint = "? explain") => {
+/** A cursor row: the mark, the step's name in its column, its text, and the hint at the right with at least two spaces before it. */
+const cursor = (step: string, text: string, hint = "? explain"): string => {
   const left = `  › ${step.padEnd(8)}  ${text}`;
-  return `${left}${" ".repeat(80 - left.length - hint.length)}${hint}`;
+  return `${left}${" ".repeat(Math.max(2, 80 - [...left].length - hint.length))}${hint}`;
 };
+const done = (step: string, text: string): string => `  ✓ ${step.padEnd(8)}  ${text}`;
+const later = (step: string): string => `    ${step}`;
+/** A row of the selector: `❯` on the chosen one, the label in a column of thirty, the description dim beside it. */
+const chosen = (label: string, description = ""): string => `${IND}❯ ${label.padEnd(30)}${description}`.trimEnd();
+const other = (label: string, description = ""): string => `${IND}  ${label.padEnd(30)}${description}`.trimEnd();
+/** A secret's box: the prompt, two spaces, what the hidden input shows, and the caret. */
+const box = (prompt: string, typed: string): string[] => [`${IND}╭${BOX_RULE}╮`, `${IND}│ ${`${prompt}  ${typed}▌`.padEnd(62)} │`, `${IND}╰${BOX_RULE}╯`];
+const KEYS = { choose: "  ↑↓ choose   Enter take   ? explain   Ctrl-C leave", send: "  Enter send   ? explain   Ctrl-C leave", recheck: "  Enter check again   ? explain   Ctrl-C leave" };
+/** A frame's body with its key line on the last row of twenty-four: the rows given, blank rows, then the key line. */
+const screen = (rows: string[], foot: string): string[] => {
+  const out = [...rows];
+  while (out.length < 16) out.push("");
+  return [...out, foot];
+};
+const command = done("command", "sheep 0.0.0-checkout, from a checkout");
+/** The sheep's first row, in pixels and in lines: the first row of the viewport when the finish is on screen whole. */
+const SHEEP_TOP = "        ████    ▄▄█▄▄ ▄▄█▄▄ ▄▄█▄▄";
+const LINE_SHEEP_TOP = "     ,-.      ,-''-.,-''-.,-''-.";
+/** The finish's last frame must start with the sheep: the renderer's stop scrolls two rows, and the sheep is still whole. */
+const expectWhole = (run: StileRun, top: string): void => {
+  const rows = run.frame().split("\n");
+  expect(rows[0], `the finish scrolled the sheep off; the viewport starts with ${JSON.stringify(rows[0])}`).toBe(top);
+  expect(rows[2]!.slice(37)).toBe("sheep");
+};
+const finishBox = [`  ╭${WIDE_RULE}╮`, `  │ ${"say to your agent".padEnd(74)} │`, `  │ ${AGENT_SENTENCE.padEnd(74)} │`, `  ╰${WIDE_RULE}╯`];
+/** Every prompt the command drew, read from its output with the paint stripped: the box's rule, the prompt, its two spaces. */
+const promptsShown = (run: StileRun): Set<string> => new Set(run.output().replace(/\x1b\[[0-9;]*m/g, "").match(/│ (Cloudflare API token|Anthropic API key) {2}/g) ?? []);
+/** The finish's `next` row counts the sitting's seconds, which no snapshot can name. */
+const timeless = (text: string): string => text.replace(/done, in \d+m \d+s/, "done, in <time>");
 
 interface World {
   root: string;
@@ -136,19 +179,23 @@ async function world(state: FakeState = fresh(), options: { linkedHome?: boolean
   return made;
 }
 
+/** What a secret's box shows after the prompt: the dots, the count, and the caret, read from the frame. */
+function shownIn(text: string, prompt: string): string {
+  return new RegExp(`│ ${prompt.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}  (.*?) *│$`, "m").exec(text)?.[1] ?? "";
+}
+
 /**
  * Types a value at a hidden prompt, one key at a time, and after every
  * key reads the terminal's whole buffer and everything the command wrote:
  * no run of eight characters of the value, or of either fake value, is in
- * either. The wait before each read is for the prompt's row to have been
- * redrawn with as many characters as were typed, so the absence is never
- * read from a frame drawn before the key; and once the value is typed,
- * the row shows dots and a count, and not the value.
+ * either. The wait before each read is for the box to have been redrawn
+ * with as many dots as keys were typed, so the absence is never read from
+ * a frame drawn before the key; and once the value is typed, the box
+ * shows dots and a count, and not the value.
  */
 async function typeHidden(run: StileRun, prompt: string, value: string): Promise<void> {
-  const shownAfter = (text: string) => new RegExp(`${prompt.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}: (.*?)\\s*\\? (?:explain|close)$`, "m").exec(text)?.[1] ?? "";
   await run.type(value, async (typed) => {
-    await run.waitFor((text) => shownAfter(text).length === hiddenShown(typed).length, { timeoutMs: 5_000 });
+    await run.waitFor((text) => shownIn(text, prompt) === `${hiddenShown(typed)}▌`, { timeoutMs: 5_000 });
     const whole = run.buffer();
     const output = run.output();
     for (const secret of new Set([TOKEN, KEY, value])) {
@@ -158,7 +205,7 @@ async function typeHidden(run: StileRun, prompt: string, value: string): Promise
       }
     }
   });
-  expect(shownAfter(run.frame())).toBe(hiddenShown(value.length));
+  expect(shownIn(run.frame(), prompt)).toBe(`${hiddenShown(value.length)}▌`);
 }
 
 /** Every file under a directory, for the walk that looks for a typed value where none may be. */
@@ -174,7 +221,7 @@ function filesUnder(dir: string): string[] {
   return found;
 }
 
-/** The rows between a step's row and the next step's row: its words, or its progress, drawn under it. */
+/** The rows between a step's row and the next step's row: its words, its box, its list, or its progress, drawn under it. */
 function under(text: string, step: string): string[] {
   const lines = text.split("\n");
   const at = lines.findIndex((line) => new RegExp(`^  [✓› ] ${step}\\b`).test(line));
@@ -183,80 +230,126 @@ function under(text: string, step: string): string[] {
   return next === -1 ? rest : rest.slice(0, next);
 }
 
+/** The viewport row whose text starts with `prefix`, with its cells; fails the case when there is none. */
+function rowStarting(run: StileRun, prefix: string): StyledRow {
+  const found = run.styledFrame().find((row) => row.text.startsWith(prefix));
+  expect(found, `a row starting with ${JSON.stringify(prefix)} in:\n${run.frame()}`).toBeDefined();
+  return found!;
+}
+
+/** The cell under a text's column: `row.text[column]`, checked to be the glyph expected there so the index is never off by one. */
+function cellAt(row: StyledRow, column: number, glyph: string) {
+  expect([...row.text][column], `column ${column} of ${JSON.stringify(row.text)}`).toBe(glyph);
+  return row.cells[column]!;
+}
+
+const AMBER = 179;
+const GREEN = 114;
+const RED = 167;
+const CYAN = 74;
+const HALF_BLOCKS = /[▀▄█]/;
+
+/**
+ * The banner, by its cells: seven rows of the pixel sheep with 256-colour
+ * foregrounds and backgrounds on the half-block glyphs, the name bold amber
+ * beside the third row, the line dim beside the fourth, and nothing else
+ * in the first seven rows.
+ */
+function expectPixelBanner(run: StileRun): void {
+  const rows = run.styledFrame().slice(0, 7);
+  expect(rows).toHaveLength(7);
+  let painted = 0;
+  for (const row of rows) {
+    const picture = [...row.text].slice(0, 36).join("");
+    expect(picture, `a banner row holds glyphs that are not pixels: ${JSON.stringify(row.text)}`).toMatch(/^[▀▄█ ]*$/);
+    for (const cell of row.cells.slice(0, 36)) {
+      if (!HALF_BLOCKS.test(cell.ch)) continue;
+      expect(cell.fgMode).toBe("p256");
+      if (cell.bgMode === "p256") painted++;
+    }
+  }
+  // The two-tone cells, a light pixel over a dark one, are where the picture has edges; a sheep has many.
+  expect(painted).toBeGreaterThan(20);
+  expect(rows[2]!.text.slice(37)).toBe("sheep");
+  const name = cellAt(rows[2]!, 37, "s");
+  expect(name).toMatchObject({ bold: true, fg: AMBER, fgMode: "p256" });
+  expect(rows[3]!.text.slice(37)).toBe(TAGLINE);
+  expect(cellAt(rows[3]!, 37, "a")).toMatchObject({ dim: true, bold: false, fg: null });
+}
+
 describe("the stile: journey 1, the first sitting", () => {
   it("walks the seven steps: two values typed at hidden prompts, one yes, two defaults, and nothing typed anywhere but the credentials", { timeout: 120_000 }, async () => {
     const w = await world({ ...fresh(), plan: "free" });
     const run = w.stile();
 
-    // Step 1: the sheep and the checklist of seven; command filled in at once; the cursor on where, everywhere the default.
-    const start = frame(
-      "  ✓ command   sheep 0.0.0-checkout, from a checkout",
-      cursor("where", "[everywhere on this machine]  ·  this directory"),
-      "    account",
-      "    plan",
-      "    station",
-      "    key",
-      "    next",
+    // Step 1: the sheep and the checklist of seven; command filled in at once; the cursor on where, everywhere the default,
+    // as the chosen row of a list with a description beside each answer; the key line on the last row.
+    const start = screen(
+      ["", command, cursor("where", "where should this machine keep its settings?"), chosen("everywhere on this machine", "~/.sheep, the usual answer"), other("this directory", ".sheep/ here, git-ignored"), later("account"), later("plan"), later("station"), later("key"), later("next")],
+      KEYS.choose,
     );
-    expect(await run.waitFor("› where")).toBe(start);
+    const first = await run.waitFor("› where");
+    expect(body(first)).toEqual(start);
+    expectPixelBanner(run);
     // The banner and the checklist fit 80 by 24 with no words open.
-    expect(start.split("\n").length).toBeLessThanOrEqual(24);
-    for (const row of start.split("\n")) expect([...row].length).toBeLessThanOrEqual(80);
+    expect(first.split("\n").length).toBeLessThanOrEqual(24);
+    for (const row of first.split("\n")) expect([...row].length).toBeLessThanOrEqual(80);
 
-    // `?` opens the step's words under it: four things, what, where, cost, and what sheep does.
+    // `?` opens the step's words under it as a panel: the four things, what, where, cost, and what sheep does, with a rule
+    // down the left. With them open the screen is full: the blank line under the grass and the key line give way.
     await run.press("?");
-    expect(run.frame()).toBe(
-      frame(
-        "  ✓ command   sheep 0.0.0-checkout, from a checkout",
-        cursor("where", "[everywhere on this machine]  ·  this directory", "? close"),
-        "      what: where this machine keeps its settings: everywhere on it, or this",
-        "      directory alone.",
-        "      where: everywhere puts them in ~/.sheep; this directory puts them in",
-        "      .sheep/ here, git-ignored.",
-        "      cost: nothing. Everywhere is the usual answer, and every directory without",
-        "      its own falls back to it.",
-        "      sheep: sheep writes the skill your agent reads and, for this directory, an",
-        "      empty .sheep/; nothing else.",
-        "    account",
-        "    plan",
-        "    station",
-        "    key",
-        "    next",
-      ),
-    );
+    expect(body(run.frame())).toEqual([
+      command,
+      cursor("where", "where should this machine keep its settings?", "? close"),
+      `${IND}│ what   where this machine keeps its settings: everywhere on it,`,
+      `${IND}│        or this directory alone.`,
+      `${IND}│ where  everywhere puts them in ~/.sheep; this directory puts`,
+      `${IND}│        them in .sheep/ here, git-ignored.`,
+      `${IND}│ cost   nothing. Everywhere is the usual answer, and every`,
+      `${IND}│        directory without its own falls back to it.`,
+      `${IND}│ sheep  writes the skill your agent reads and, for this`,
+      `${IND}│        directory, an empty .sheep/; nothing else.`,
+      chosen("everywhere on this machine", "~/.sheep, the usual answer"),
+      other("this directory", ".sheep/ here, git-ignored"),
+      later("account"),
+      later("plan"),
+      later("station"),
+      later("key"),
+      later("next"),
+    ]);
     // `?` again closes them: the frame is the first one again, exactly.
     await run.press("?");
-    expect(run.frame()).toBe(start);
+    expect(body(run.frame())).toEqual(start);
 
-    // Enter takes the default. Step 2: account, at a hidden prompt.
+    // Enter takes the default. Step 2: account, at a hidden prompt in a box, the address to make the token at under it.
     await run.press(ENTER);
-    expect(await run.waitFor("› account")).toBe(
-      frame(
-        "  ✓ command   sheep 0.0.0-checkout, from a checkout",
-        "  ✓ where     everywhere on this machine",
-        cursor("account", "Cloudflare API token: "),
-        "    plan",
-        "    station",
-        "    key",
-        "    next",
+    expect(body(await run.waitFor("› account"))).toEqual(
+      screen(
+        ["", command, done("where", "everywhere on this machine"), cursor("account", "the Cloudflare account your home lives on"), ...box("Cloudflare API token", ""), `${IND}made at dash.cloudflare.com/?to=/:account/api-tokens`, later("plan"), later("station"), later("key"), later("next")],
+        KEYS.send,
       ),
     );
     await typeHidden(run, "Cloudflare API token", TOKEN);
     await run.press(ENTER);
 
-    // The account's name; the plan not on, with the plans page, held until Enter finds it on.
-    expect(await run.waitFor("› plan")).toBe(
-      frame(
-        "  ✓ command   sheep 0.0.0-checkout, from a checkout",
-        "  ✓ where     everywhere on this machine",
-        "  ✓ account   Fake's Account",
-        cursor("plan", "[turned on at the dashboard; check again]"),
-        "      Fake's Account is not on Workers Paid yet; turn it on at the dashboard,",
-        "      then check again:",
-        `      https://dash.cloudflare.com/${ACCOUNT.id}/workers/plans`,
-        "    station",
-        "    key",
-        "    next",
+    // The account's name; the plan not on, its page as a link under the row, and the one action as the chosen row, held
+    // until Enter finds it on.
+    expect(body(await run.waitFor("› plan"))).toEqual(
+      screen(
+        [
+          "",
+          command,
+          done("where", "everywhere on this machine"),
+          done("account", "Fake's Account"),
+          cursor("plan", "Workers Paid, 5 USD a month, is not on this account yet"),
+          `${IND}dash.cloudflare.com/${ACCOUNT.id}/workers/plans`,
+          "",
+          chosen("turned on at the dashboard; check again"),
+          later("station"),
+          later("key"),
+          later("next"),
+        ],
+        KEYS.recheck,
       ),
     );
     // Enter with the account still Free: asked again, and nothing deployed.
@@ -267,32 +360,49 @@ describe("the stile: journey 1, the first sitting", () => {
     w.state.plan = "workers_paid";
     await run.press(ENTER);
 
-    // Step 3: station offers new, the name minted for the kennel, and Enter takes it.
-    expect(await run.waitFor("› station")).toBe(
-      frame(
-        "  ✓ command   sheep 0.0.0-checkout, from a checkout",
-        "  ✓ where     everywhere on this machine",
-        "  ✓ account   Fake's Account",
-        "  ✓ plan      Workers Paid, 5 USD a month",
-        cursor("station", "[new sheep-2]"),
-        "    key",
-        "    next",
+    // Step 3: station offers new, the name minted for the kennel, as the chosen row, and Enter takes it.
+    expect(body(await run.waitFor("› station"))).toEqual(
+      screen(
+        [
+          "",
+          command,
+          done("where", "everywhere on this machine"),
+          done("account", "Fake's Account"),
+          done("plan", "Workers Paid, 5 USD a month"),
+          cursor("station", "which station should this machine's sheep live on?"),
+          chosen("new sheep-2", "deploy a station on this account"),
+          later("key"),
+          later("next"),
+        ],
+        KEYS.choose,
       ),
     );
     await run.press(ENTER);
-    // The deploy's progress lines appear under the step as it runs.
-    await run.waitFor((text) => under(text, "station").some((line) => line.includes("deploying sheep-2")), { whole: true });
+    // The deploy's stages appear under the step as it runs: the current one behind a spinner with the elapsed time, and the
+    // key line says what the wait is.
+    const deploying = await run.waitFor((text) => under(text, "station").some((line) => /^ {14}[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] deploying sheep-2 .* {2}\dm \d+s$/.test(line)), { whole: true });
+    expect(deploying.split("\n").at(-1)).toBe("  the first container takes a minute or two   Ctrl-C leaves it deploying");
+    expect(under(deploying, "station").some((line) => /^ {14}✓ /.test(line))).toBe(true);
+    // The row while it works: the flow's line, and deploy's own lines are the stages under it, never the row.
+    expect(deploying).toContain("\n  › station   deploying sheep-2 to Fake's Account\n");
 
-    // Step 4: the step became the address; key at a hidden prompt.
-    expect(await run.waitFor("› key")).toBe(
-      frame(
-        "  ✓ command   sheep 0.0.0-checkout, from a checkout",
-        "  ✓ where     everywhere on this machine",
-        "  ✓ account   Fake's Account",
-        "  ✓ plan      Workers Paid, 5 USD a month",
-        "  ✓ station   https://sheep-2.fake.workers.dev",
-        cursor("key", "Anthropic API key: "),
-        "    next",
+    // Step 4: the step became the address; key at a hidden prompt, in the same box, where it goes said once under it.
+    expect(body(await run.waitFor("› key"))).toEqual(
+      screen(
+        [
+          "",
+          command,
+          done("where", "everywhere on this machine"),
+          done("account", "Fake's Account"),
+          done("plan", "Workers Paid, 5 USD a month"),
+          done("station", "https://sheep-2.fake.workers.dev"),
+          cursor("key", "the Anthropic key your sheep call the model with"),
+          ...box("Anthropic API key", ""),
+          `${IND}made at console.anthropic.com/settings/keys`,
+          `${IND}kept in ~/.sheep/credentials and put on the home as its secret`,
+          later("next"),
+        ],
+        KEYS.send,
       ),
     );
     await typeHidden(run, "Anthropic API key", KEY);
@@ -300,28 +410,30 @@ describe("the stile: journey 1, the first sitting", () => {
 
     const exit = await run.exited;
     expect(exit).toEqual({ code: 0, stderr: "" });
-    // next: the address, where the credentials are kept, and the one sentence to say to their agent.
-    expect(run.buffer()).toBe(
-      `${frame(
-        "  ✓ command   sheep 0.0.0-checkout, from a checkout",
-        "  ✓ where     everywhere on this machine",
-        "  ✓ account   Fake's Account",
-        "  ✓ plan      Workers Paid, 5 USD a month",
-        "  ✓ station   https://sheep-2.fake.workers.dev",
-        "  ✓ key       put on the home as its secret",
-        "  ✓ next      home: https://sheep-2.fake.workers.dev",
-        "              credentials: ~/.sheep/credentials",
-        "              config: ~/.sheep/config",
-        "              say to your agent: sheep is set up on this machine; run `sheep",
-        "              --agent-help` and herd.",
-      )}\n\nsheep is set up on this machine; run \`sheep --agent-help\` and herd.`,
-    );
+    // The finish: seven green rows, the three places things are, and the sentence to say in a box; nothing printed twice,
+    // and nothing after the screen stopped.
+    expect(body(timeless(run.buffer()))).toEqual([
+      "",
+      command,
+      done("where", "everywhere on this machine"),
+      done("account", "Fake's Account"),
+      done("plan", "Workers Paid, 5 USD a month"),
+      done("station", "https://sheep-2.fake.workers.dev"),
+      done("key", "put on the home as its secret"),
+      done("next", "done, in <time>"),
+      "  credentials  ~/.sheep/credentials (mode 600, the two values and nothing else)",
+      "  config       ~/.sheep/config",
+      "  skill        ~/.agents/skills/sheep",
+      "",
+      ...finishBox,
+    ]);
+    expectWhole(run, SHEEP_TOP);
+    expect(run.output().split(AGENT_SENTENCE).length - 1, "the sentence to say is on the screen once").toBe(1);
     expect(run.leaks()).toEqual([]);
 
     // The count, from the keys this ring pressed: two values typed, one yes (the plan re-checked on), two defaults (where,
     // station), no value asked twice — the plan's first Enter found it still Free, which is the account's answer, not a value.
-    const prompts = run.output().match(/(Cloudflare API token|Anthropic API key):/g) ?? [];
-    expect(new Set(prompts)).toEqual(new Set(["Cloudflare API token:", "Anthropic API key:"]));
+    expect(promptsShown(run)).toEqual(new Set(["│ Cloudflare API token  ", "│ Anthropic API key  "]));
 
     // The credentials: ~/.sheep/credentials, mode 600, both values; the config in ~/.sheep, naming the station.
     const credentials = join(w.root, ".sheep", "credentials");
@@ -360,28 +472,45 @@ describe("the stile: journey 1, the first sitting", () => {
     await run.waitFor("› where");
     await run.press(ENTER);
     // account and plan fill in with no prompt: the next frame that waits for a key is the station's.
-    expect(await run.waitFor("› station")).toBe(
-      frame(
-        "  ✓ command   sheep 0.0.0-checkout, from a checkout",
-        "  ✓ where     everywhere on this machine",
-        "  ✓ account   Fake's Account",
-        "  ✓ plan      Workers Paid, 5 USD a month",
-        cursor("station", "[new sheep-2]"),
-        "    key",
-        "    next",
+    expect(body(await run.waitFor("› station"))).toEqual(
+      screen(
+        [
+          "",
+          command,
+          done("where", "everywhere on this machine"),
+          done("account", "Fake's Account"),
+          done("plan", "Workers Paid, 5 USD a month"),
+          cursor("station", "which station should this machine's sheep live on?"),
+          chosen("new sheep-2", "deploy a station on this account"),
+          later("key"),
+          later("next"),
+        ],
+        KEYS.choose,
       ),
     );
     await run.press(ENTER);
     expect(await run.exited).toEqual({ code: 0, stderr: "" });
-    expect(run.output()).not.toContain("API token:");
-    expect(run.output()).not.toContain("API key:");
-    expect(run.buffer()).toContain("  ✓ key       put on the home as its secret\n");
+    expect(run.output()).not.toContain("API token");
+    expect(run.output()).not.toContain("API key");
+    expect(run.buffer()).toContain(`${done("key", "put on the home as its secret")}\n`);
     // The key went with the deploy's own secrets, and no second put followed.
     expect(w.wrangler().map((call) => call.args.slice(0, 3).join(" ")).filter((call) => call.startsWith("secret put"))).toEqual(["secret put SHEEP_TOKEN", "secret put SHEEP_ANTHROPIC_API_KEY", "secret put PEN_CELL_ORIGIN"]);
     expect(run.leaks()).toEqual([]);
+
+    expectWhole(run, SHEEP_TOP);
+    // The finish's cells: the settled address cyan and underlined, the settled ticks green, the paths' labels dim, the
+    // sentence to say bold in its box with its heading bold amber.
+    const station = rowStarting(run, "  ✓ station");
+    expect(cellAt(station, 2, "✓")).toMatchObject({ fg: GREEN, fgMode: "p256" });
+    expect(cellAt(station, 14, "h")).toMatchObject({ fg: CYAN, fgMode: "p256", underline: true });
+    expect(cellAt(rowStarting(run, "  credentials"), 2, "c")).toMatchObject({ dim: true });
+    expect(cellAt(rowStarting(run, "  credentials"), 15, "~")).toMatchObject({ dim: false, fg: null });
+    expect(cellAt(rowStarting(run, "  │ say to your agent"), 4, "s")).toMatchObject({ bold: true, fg: AMBER, fgMode: "p256" });
+    expect(cellAt(rowStarting(run, `  │ ${AGENT_SENTENCE}`), 4, "s")).toMatchObject({ bold: true, fg: null });
+    expect(cellAt(rowStarting(run, "  ╭"), 2, "╭")).toMatchObject({ dim: true });
   });
 
-  it("asks again for a token the account rejects, with the account's reason under the prompt", { timeout: 90_000 }, async () => {
+  it("asks again for a token the account rejects, with the account's reason in red under the row and the box back empty", { timeout: 90_000 }, async () => {
     const w = await world();
     const wrong = "cfWr0ngT0kenZq8Xv3Lm7Pn2Kd5Hs9Bj4";
     const run = w.stile([], [wrong]);
@@ -391,8 +520,20 @@ describe("the stile: journey 1, the first sitting", () => {
     await typeHidden(run, "Cloudflare API token", wrong);
     await run.press(ENTER);
     const again = await run.waitFor("Invalid API Token");
-    expect(again).toContain(`${cursor("account", "Cloudflare API token: ")}\n`);
-    expect(under(again, "account")[0]).toBe("      the account token is not accepted: Invalid API Token (code 1000); it wants");
+    expect(again).toContain(`${cursor("account", "the Cloudflare account your home lives on")}\n`);
+    // The reason's first clause in red after the ✗; what it wants, dim, on two lines at most and cut; then the box, empty.
+    const beneath = under(again, "account");
+    expect(beneath[0]).toBe(`${IND}✗ the account token is not accepted: Invalid API Token (code 1000)`);
+    expect(beneath[1]).toBe(`${IND}  it wants Workers Scripts (edit), Durable Objects (edit),`);
+    expect(beneath[2]).toMatch(/^ {16}Containers \(edit\), .*…$/);
+    expect(beneath.slice(3, 6)).toEqual(box("Cloudflare API token", ""));
+    const refused = rowStarting(run, `${IND}✗`);
+    expect(cellAt(refused, 14, "✗")).toMatchObject({ fg: RED, fgMode: "p256", dim: false });
+    expect(cellAt(refused, 16, "t")).toMatchObject({ fg: RED, fgMode: "p256" });
+    expect(cellAt(refused, 79, ")")).toMatchObject({ fg: RED, fgMode: "p256" });
+    const wants = rowStarting(run, `${IND}  it wants`);
+    expect(cellAt(wants, 16, "i")).toMatchObject({ dim: true, fg: null, bold: false });
+    expect(cellAt(rowStarting(run, `${IND}  Containers`), 16, "C")).toMatchObject({ dim: true, fg: null });
     // Nothing was kept of the rejected token past its replacement: the right one is typed, and it is the one kept.
     await typeHidden(run, "Cloudflare API token", TOKEN);
     await run.press(ENTER);
@@ -401,6 +542,128 @@ describe("the stile: journey 1, the first sitting", () => {
     await run.exited;
     expect(JSON.parse(readFileSync(join(w.root, ".sheep", "credentials"), "utf8"))).toEqual({ cloudflare: TOKEN });
     expect(run.leaks()).toEqual([]);
+  });
+});
+
+describe("the stile: the screen's colour", () => {
+  it("paints the meanings and nothing else: the cursor step bold amber, a settled tick green, the chosen row's ❯ amber, the box and the panel dim, the rest plain", { timeout: 60_000 }, async () => {
+    const w = await world();
+    const run = w.stile();
+    await run.waitFor("› where");
+    // The settled step: its tick green, its name dim, its text plain.
+    const settled = rowStarting(run, "  ✓ command");
+    expect(cellAt(settled, 2, "✓")).toMatchObject({ fg: GREEN, fgMode: "p256", bold: false });
+    expect(cellAt(settled, 4, "c")).toMatchObject({ dim: true, fg: null });
+    expect(cellAt(settled, 14, "s")).toMatchObject({ dim: false, bold: false, fg: null });
+    // The cursor step: its mark amber, its name bold amber, its question plain, its hint dim.
+    const current = rowStarting(run, "  › where");
+    expect(cellAt(current, 2, "›")).toMatchObject({ fg: AMBER, fgMode: "p256" });
+    for (const [column, glyph] of [...Array.from("where").entries()]) expect(cellAt(current, 4 + column, glyph)).toMatchObject({ bold: true, fg: AMBER, fgMode: "p256" });
+    expect(cellAt(current, 14, "w")).toMatchObject({ bold: false, fg: null });
+    expect(cellAt(current, 71, "?")).toMatchObject({ dim: true });
+    // The chosen row: `❯` amber and bold, the label bold, the description dim; the other row's label plain.
+    const picked = rowStarting(run, `${IND}❯`);
+    expect(cellAt(picked, 14, "❯")).toMatchObject({ fg: AMBER, fgMode: "p256", bold: true });
+    expect(cellAt(picked, 16, "e")).toMatchObject({ bold: true, fg: null });
+    expect(cellAt(picked, 46, "~")).toMatchObject({ dim: true, bold: false });
+    const unpicked = rowStarting(run, `${IND}  this directory`);
+    expect(cellAt(unpicked, 16, "t")).toMatchObject({ bold: false, dim: false, fg: null });
+    expect(cellAt(unpicked, 46, ".")).toMatchObject({ dim: true });
+    // The steps not reached and the key line: dim.
+    expect(cellAt(rowStarting(run, "    account"), 4, "a")).toMatchObject({ dim: true, fg: null });
+    expect(cellAt(rowStarting(run, "  ↑↓ choose"), 2, "↑")).toMatchObject({ dim: true });
+    // The panel: its rule dim, its labels bold, its text plain.
+    await run.press("?");
+    const what = rowStarting(run, `${IND}│ what`);
+    expect(cellAt(what, 14, "│")).toMatchObject({ dim: true });
+    expect(cellAt(what, 16, "w")).toMatchObject({ bold: true });
+    expect(cellAt(what, 23, "w")).toMatchObject({ bold: false, dim: false, fg: null });
+    await run.press("?");
+    // The box: its corners at the fourteenth column and the last, dim; the prompt dim; the dots and the caret amber.
+    await run.press(ENTER);
+    await run.waitFor("› account");
+    expect(cellAt(rowStarting(run, `${IND}╭`), 14, "╭")).toMatchObject({ dim: true });
+    expect(cellAt(rowStarting(run, `${IND}╭`), 79, "╮")).toMatchObject({ dim: true });
+    expect(cellAt(rowStarting(run, `${IND}╰`), 79, "╯")).toMatchObject({ dim: true });
+    const prompt = rowStarting(run, `${IND}│ Cloudflare`);
+    expect(cellAt(prompt, 16, "C")).toMatchObject({ dim: true });
+    expect(cellAt(prompt, 38, "▌")).toMatchObject({ fg: AMBER, fgMode: "p256" });
+    await run.type(TOKEN.slice(0, 3));
+    const typed = rowStarting(run, `${IND}│ Cloudflare`);
+    expect(cellAt(typed, 38, "•")).toMatchObject({ fg: AMBER, fgMode: "p256" });
+    expect(cellAt(typed, 41, "▌")).toMatchObject({ fg: AMBER, fgMode: "p256" });
+    // The address under the box: a link, cyan and underlined, after a dim `made at`.
+    const madeAt = rowStarting(run, `${IND}made at`);
+    expect(cellAt(madeAt, 14, "m")).toMatchObject({ dim: true });
+    expect(cellAt(madeAt, 22, "d")).toMatchObject({ fg: CYAN, fgMode: "p256", underline: true });
+    run.kill();
+    await run.exited;
+    expect(run.leaks()).toEqual([]);
+  });
+
+  it("draws the same screen plain under NO_COLOR: no colour, no boldness, the line-art sheep, and ✓ › ❯ still carrying the meaning", { timeout: 60_000 }, async () => {
+    const w = await world(fresh(), { env: { NO_COLOR: "1" } });
+    // The account token kept, so the sitting reaches the key's box and the finish with one value typed.
+    await w.keep({ cloudflare: TOKEN });
+    const run = w.stile();
+    const first = await run.waitFor("› where");
+    const plainRows = (): void => {
+      for (const row of run.styledFrame()) {
+        for (const cell of row.cells) {
+          expect(cell, `a cell of ${JSON.stringify(row.text)} is styled under NO_COLOR`).toMatchObject({ fg: null, bg: null, fgMode: "default", bgMode: "default", bold: false, dim: false, underline: false });
+        }
+      }
+    };
+    plainRows();
+    // The line-art sheep, of the same size, where the picture cannot exist; not a pixel of the other.
+    const banner = first.split("\n").slice(0, 7);
+    for (const row of banner) expect(row).not.toMatch(HALF_BLOCKS);
+    expect(banner[0]).toBe("     ,-.      ,-''-.,-''-.,-''-.");
+    expect(banner[2]).toBe("   ( o   o )(   ~   ~   ~   ~    )   sheep");
+    expect(banner[3]!.slice(37)).toBe(TAGLINE);
+    expect(banner[6]).toBe("   ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁");
+    // The rest is the same frame as with colour: the glyphs alone say which step is done, current, and chosen.
+    expect(body(first)).toEqual(
+      screen(
+        ["", command, cursor("where", "where should this machine keep its settings?"), chosen("everywhere on this machine", "~/.sheep, the usual answer"), other("this directory", ".sheep/ here, git-ignored"), later("account"), later("plan"), later("station"), later("key"), later("next")],
+        KEYS.choose,
+      ),
+    );
+    await run.press("?");
+    expect(run.frame()).toContain(`${IND}│ what   `);
+    plainRows();
+    await run.press("?");
+    await run.press(ENTER);
+    await run.waitFor("› station");
+    plainRows();
+    await run.press(ENTER);
+    await run.waitFor("› key");
+    expect(run.frame()).toContain(`${IND}╭${BOX_RULE}╮`);
+    expect(run.frame()).toContain(`${IND}made at console.anthropic.com/settings/keys`);
+    plainRows();
+    await typeHidden(run, "Anthropic API key", KEY);
+    plainRows();
+    await run.press(ENTER);
+    expect((await run.exited).code).toBe(0);
+    // The finish, plain, with the line-art sheep whole at the top of the last frame.
+    expectWhole(run, LINE_SHEEP_TOP);
+    expect(run.frame()).toContain(`${done("station", "https://sheep-2.fake.workers.dev")}\n`);
+    plainRows();
+    // Nothing painted in the output either: pi-tui's own bare reset after each line is the one SGR left.
+    expect(run.output()).not.toMatch(/\x1b\[(?!0m)[0-9;]+m/);
+    expect(run.leaks()).toEqual([]);
+  });
+
+  it("decides its colour level from the environment alone: none under NO_COLOR or a dumb terminal, 256 through the seam or a 256-colour terminal, sixteen otherwise", () => {
+    expect(colourLevel({ NO_COLOR: "1", COLORTERM: "truecolor", SHEEP_TEST_TERMINAL: "80x24" })).toBe("none");
+    expect(colourLevel({ NO_COLOR: "" })).toBe("none");
+    expect(colourLevel({ TERM: "dumb", COLORTERM: "truecolor" })).toBe("none");
+    expect(colourLevel({ SHEEP_TEST_TERMINAL: "80x24", TERM: "xterm" })).toBe("256");
+    expect(colourLevel({ COLORTERM: "truecolor", TERM: "xterm" })).toBe("256");
+    expect(colourLevel({ COLORTERM: "24bit" })).toBe("256");
+    expect(colourLevel({ TERM: "xterm-256color" })).toBe("256");
+    expect(colourLevel({ TERM: "xterm" })).toBe("16");
+    expect(colourLevel({})).toBe("16");
   });
 });
 
@@ -448,24 +711,31 @@ describe("the stile: journey 3, the second laptop", () => {
     await typeHidden(run, "Cloudflare API token", TOKEN);
     await run.press(ENTER);
 
-    // station lists what the account already has: new sheep-2 first, then sheep, found because it answers as a sheep home.
-    // learner and sheep-pen are Workers on the account too, and answer as something else.
-    expect(await run.waitFor("› station")).toBe(
-      frame(
-        "  ✓ command   sheep 0.0.0-checkout, from a checkout",
-        "  ✓ where     everywhere on this machine",
-        "  ✓ account   Fake's Account",
-        "  ✓ plan      Workers Paid, 5 USD a month",
-        cursor("station", "[new sheep-2]  ·  join sheep"),
-        "    key",
-        "    next",
+    // station lists what the account already has: new sheep-2 first, then sheep, found because it answers as a sheep home,
+    // each with what choosing it means. learner and sheep-pen are Workers on the account too, and answer as something else.
+    expect(body(await run.waitFor("› station"))).toEqual(
+      screen(
+        [
+          "",
+          command,
+          done("where", "everywhere on this machine"),
+          done("account", "Fake's Account"),
+          done("plan", "Workers Paid, 5 USD a month"),
+          cursor("station", "which station should this machine's sheep live on?"),
+          chosen("new sheep-2", "deploy a station on this account"),
+          other("join sheep", "this account's station, joined"),
+          later("key"),
+          later("next"),
+        ],
+        KEYS.choose,
       ),
     );
     // The listing asked every Worker on the account at its address, with no bearer, and nothing else yet.
     expect(log.map((entry) => `${entry.method} ${entry.path} ${entry.auth ?? "(no bearer)"}`).sort()).toEqual(["GET / (no bearer)", "GET / (no bearer)", "GET / (no bearer)"]);
     expect(w.state.events).toEqual([]);
     await run.press(DOWN);
-    expect(run.frame()).toContain(`${cursor("station", "new sheep-2  ·  [join sheep]")}\n`);
+    expect(under(run.frame(), "station").slice(0, 2)).toEqual([other("new sheep-2", "deploy a station on this account"), chosen("join sheep", "this account's station, joined")]);
+    expect(cellAt(rowStarting(run, `${IND}❯ join`), 14, "❯")).toMatchObject({ fg: AMBER, fgMode: "p256" });
     await run.press(ENTER);
 
     const exit = await run.exited;
@@ -488,26 +758,27 @@ describe("the stile: journey 3, the second laptop", () => {
     expect(w.wrangler()).toEqual([]);
     expect(w.state.secrets.sheep).toEqual(["SHEEP_TOKEN", "SHEEP_ANTHROPIC_API_KEY", "PEN_CELL_ORIGIN"]);
 
-    // The sentence the command prints after the screen stops, taken by the emulator before the buffer is read.
-    await run.waitFor((text) => text.endsWith("\n\nsheep is set up on this machine; run `sheep --agent-help` and herd."), { whole: true, timeoutMs: 5_000 });
-    expect(run.buffer()).toBe(
-      `${frame(
-        "  ✓ command   sheep 0.0.0-checkout, from a checkout",
-        "  ✓ where     everywhere on this machine",
-        "  ✓ account   Fake's Account",
-        "  ✓ plan      Workers Paid, 5 USD a month",
-        "  ✓ station   https://sheep.fake.workers.dev, joined",
-        "  ✓ key       the station holds its own; nothing asked",
-        "  ✓ next      home: https://sheep.fake.workers.dev",
-        "              credentials: ~/.sheep/credentials",
-        "              config: ~/.sheep/config",
-        "              say to your agent: sheep is set up on this machine; run `sheep",
-        "              --agent-help` and herd.",
-      )}\n\nsheep is set up on this machine; run \`sheep --agent-help\` and herd.`,
-    );
+    // The finish: joined, the key the station's own, and the credentials holding the account token alone.
+    await run.waitFor("say to your agent", { whole: true, timeoutMs: 5_000 });
+    expect(body(timeless(run.buffer()))).toEqual([
+      "",
+      command,
+      done("where", "everywhere on this machine"),
+      done("account", "Fake's Account"),
+      done("plan", "Workers Paid, 5 USD a month"),
+      done("station", "https://sheep.fake.workers.dev, joined"),
+      done("key", "the station holds its own; nothing asked"),
+      done("next", "done, in <time>"),
+      "  credentials  ~/.sheep/credentials (mode 600, the account token)",
+      "  config       ~/.sheep/config",
+      "  skill        ~/.agents/skills/sheep",
+      "",
+      ...finishBox,
+    ]);
+    expectWhole(run, SHEEP_TOP);
     // key asked nothing: one prompt in the whole sitting, the token's.
-    expect(run.output()).not.toContain("API key:");
-    expect(new Set(run.output().match(/(Cloudflare API token|Anthropic API key):/g) ?? [])).toEqual(new Set(["Cloudflare API token:"]));
+    expect(run.output()).not.toContain("API key");
+    expect(promptsShown(run)).toEqual(new Set(["│ Cloudflare API token  "]));
 
     // The asks: both carried the join token and nothing else, the first while the write was still on its way to the edge.
     const joins = log.filter((entry) => entry.path === "/join");
@@ -544,16 +815,17 @@ describe("the stile: journey 3, the second laptop", () => {
     }
   });
 
-  it("keeps the selected station in sight when the options are wider than the row: a window with … where more are", { timeout: 60_000 }, async () => {
+  it("keeps a long station name whole: the descriptions give way rather than the label, and the chosen row is still in sight", { timeout: 60_000 }, async () => {
     const long = "sheep-hermetic-0123456-a-long-station-name";
     const { w } = await secondLaptop({ worker: long });
     await w.keep({ cloudflare: TOKEN });
     const run = w.stile();
     await run.waitFor("› where");
     await run.press(ENTER);
-    expect(await run.waitFor("› station")).toContain(`${cursor("station", "[new sheep-2]  …")}\n`);
+    expect(under(await run.waitFor("› station"), "station").slice(0, 2)).toEqual([`${IND}❯ new sheep-2`, `${IND}  join ${long}`]);
     await run.press(DOWN);
-    expect(run.frame()).toContain(`${cursor("station", `…  [join ${long}]`)}\n`);
+    expect(under(run.frame(), "station").slice(0, 2)).toEqual([`${IND}  new sheep-2`, `${IND}❯ join ${long}`]);
+    expect(run.frame()).not.toContain("deploy a station");
     await run.press(ENTER);
     expect((await run.exited).code).toBe(0);
     expect(JSON.parse(readFileSync(`${w.root}/.sheep/config`, "utf8"))).toEqual({ home: `https://${long}.fake.workers.dev`, token: STATION_TOKEN });
@@ -624,13 +896,13 @@ describe("the stile: where the settings go, and a station already there", () => 
     const w = await world(fresh(), { linkedHome: true });
     await w.keep({ cloudflare: TOKEN, anthropic: KEY });
     const run = w.stile();
-    expect(await run.waitFor("› where")).toContain(`${cursor("where", "[everywhere on this machine]  ·  this directory")}\n`);
+    expect(under(await run.waitFor("› where"), "where").slice(0, 2)).toEqual([chosen("everywhere on this machine", "~/.sheep, the usual answer"), other("this directory", ".sheep/ here, git-ignored")]);
     await run.press(ENTER);
-    expect(await run.waitFor("› station")).toContain(`${cursor("station", "[new sheep-2]")}\n`);
+    expect(under(await run.waitFor("› station"), "station")[0]).toBe(chosen("new sheep-2", "deploy a station on this account"));
     await run.press(ENTER);
     expect(await run.exited).toEqual({ code: 0, stderr: "" });
-    expect(run.buffer()).toContain("  ✓ station   https://sheep-2.fake.workers.dev\n");
-    expect(run.buffer()).toContain("              credentials: ~/.sheep/credentials\n              config: ~/.sheep/config\n");
+    expect(run.buffer()).toContain(`${done("station", "https://sheep-2.fake.workers.dev")}\n`);
+    expect(run.buffer()).toContain("  credentials  ~/.sheep/credentials (mode 600, the two values and nothing else)\n  config       ~/.sheep/config\n");
   });
 
   it("makes this directory's kennel, with its own station named for the directory, when this directory is chosen", { timeout: 90_000 }, async () => {
@@ -639,13 +911,14 @@ describe("the stile: where the settings go, and a station already there", () => 
     const run = w.stile();
     await run.waitFor("› where");
     await run.press(DOWN);
-    expect(run.frame()).toContain(`${cursor("where", "everywhere on this machine  ·  [this directory]")}\n`);
+    expect(under(run.frame(), "where").slice(0, 2)).toEqual([other("everywhere on this machine", "~/.sheep, the usual answer"), chosen("this directory", ".sheep/ here, git-ignored")]);
     await run.press(ENTER);
-    expect(await run.waitFor("› station")).toContain("  ✓ where     this directory\n");
-    expect(run.frame()).toContain("  › station   [new blog]");
+    expect(await run.waitFor("› station")).toContain(`${done("where", "this directory")}\n`);
+    expect(under(run.frame(), "station")[0]).toBe(chosen("new blog", "deploy a station on this account"));
     await run.press(ENTER);
     expect(await run.exited).toEqual({ code: 0, stderr: "" });
-    expect(run.buffer()).toContain("              config: ~/blog/.sheep/config\n");
+    expect(run.buffer()).toContain("  config       ~/blog/.sheep/config\n");
+    expect(run.buffer()).toContain("  skill        ~/blog/.agents/skills/sheep\n");
     expect(JSON.parse(readFileSync(join(w.blog, ".sheep", "config"), "utf8"))).toMatchObject({ home: "https://blog.fake.workers.dev", name: "blog" });
     expect(existsSync(join(w.blog, ".agents", "skills", "sheep", "SKILL.md"))).toBe(true);
     expect(existsSync(join(w.root, ".sheep", "config"))).toBe(false);
@@ -665,8 +938,8 @@ describe("the stile: where the settings go, and a station already there", () => 
     await typeHidden(run, "Cloudflare API token", TOKEN);
     await run.press(ENTER);
     expect(await run.exited).toEqual({ code: 0, stderr: "" });
-    expect(run.buffer()).toContain(`  ✓ station   ${w.station}\n  ✓ key       the home holds its own; nothing asked\n`);
-    expect(run.output()).not.toContain("API key:");
+    expect(run.buffer()).toContain(`${done("station", w.station)}\n${done("key", "the home holds its own; nothing asked")}\n`);
+    expect(run.output()).not.toContain("API key");
     // Nothing redeployed and nothing put: the wrangler log is empty.
     expect(w.wrangler()).toEqual([]);
     expect(JSON.parse(readFileSync(join(w.root, ".sheep", "credentials"), "utf8"))).toEqual({ cloudflare: TOKEN });
@@ -674,14 +947,19 @@ describe("the stile: where the settings go, and a station already there", () => 
 });
 
 describe("the stile: the words", () => {
-  it("--explain opens every step's words as it is reached, each at most eight lines, and each prompt's frame one screen", { timeout: 120_000 }, async () => {
+  it("--explain opens every step's words as it is reached, each at most eight lines, and each step's frame one screen with the banner still on it", { timeout: 120_000 }, async () => {
     const w = await world();
     const run = w.stile(["--explain"]);
     const seen: Record<string, string[]> = {};
     const read = async (step: string) => {
       const text = await run.waitFor(`› ${step}`);
       seen[step] = under(text, step);
-      expect(text.split("\n").length, `the ${step} frame is more than one screen:\n${text}`).toBeLessThanOrEqual(24);
+      const rows = text.split("\n");
+      expect(rows.length, `the ${step} frame is more than one screen:\n${text}`).toBeLessThanOrEqual(24);
+      // One screen means nothing scrolled off: the banner's name and line are still on rows three and four.
+      expect(rows[2]!.slice(37), `the ${step} frame scrolled the banner off:\n${text}`).toBe("sheep");
+      expect(rows[3]!.slice(37)).toBe(TAGLINE);
+      expect(text).toContain("? close");
       return text;
     };
     await read("where");
@@ -691,30 +969,33 @@ describe("the stile: the words", () => {
     await run.press(ENTER);
     await read("station");
     await run.press(ENTER);
+    // The deploy with the words open: fewer stages kept, and still one screen.
+    await run.waitFor((text) => under(text, "station").some((line) => /^ {14}[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] /.test(line)) && text.split("\n")[2]!.slice(37) === "sheep");
     await read("key");
     await typeHidden(run, "Anthropic API key", KEY);
     await run.press(ENTER);
     expect((await run.exited).code).toBe(0);
     for (const [step, lines] of Object.entries(seen)) {
-      expect(lines.length, `${step}'s words`).toBeGreaterThan(0);
-      expect(lines.length, `${step}'s words are ${lines.length} lines`).toBeLessThanOrEqual(8);
-      // The four things, in order.
-      const joined = lines.map((line) => line.trim()).join(" ");
-      expect(joined.indexOf("what:")).toBe(0);
-      expect(joined.indexOf("where:")).toBeGreaterThan(0);
-      expect(joined.indexOf("cost:")).toBeGreaterThan(joined.indexOf("where:"));
-      expect(joined.indexOf("sheep:")).toBeGreaterThan(joined.indexOf("cost:"));
+      // The panel's lines, and not the box's middle line, which also starts with the rule and ends with one.
+      const panel = lines.filter((line) => line.startsWith(`${IND}│ `) && !line.endsWith("│"));
+      expect(panel.length, `${step}'s words`).toBeGreaterThan(0);
+      expect(panel.length, `${step}'s words are ${panel.length} lines`).toBeLessThanOrEqual(8);
+      // The four things, in order, each labelled once.
+      expect(panel.map((line) => line.slice(16, 22).trim()).filter(Boolean)).toEqual(["what", "where", "cost", "sheep"]);
+      expect(lines[0]).toBe(panel[0]);
     }
     // A settled step is one line again: no words are left under a done row in the last frame.
-    expect(run.buffer().split("\n").slice(-12).join("\n")).not.toContain("what:");
+    expect(run.buffer().split("\n").slice(-16).join("\n")).not.toContain("│ what");
   });
 
-  it("gives every step all four things, non-empty, in at most eight lines at eighty columns", () => {
+  it("gives every step all four things, non-empty, in at most eight lines of the panel at eighty columns, seven where a box or a link sits under them", () => {
     for (const step of STEPS) {
       for (const thing of THINGS) expect(WORDS[step][thing].trim().length, `${step}.${thing}`).toBeGreaterThan(10);
       const lines = wordsAt(step, 80);
-      expect(lines.length, `${step}'s words wrap to ${lines.length} lines at 80:\n${lines.join("\n")}`).toBeLessThanOrEqual(8);
-      for (const line of lines) expect([...line].length).toBeLessThanOrEqual(80);
+      const most = step === "account" || step === "key" || step === "plan" ? 7 : 8;
+      expect(lines.length, `${step}'s words wrap to ${lines.length} lines at 80:\n${lines.map((line) => `${line.label.padEnd(6)} ${line.text}`).join("\n")}`).toBeLessThanOrEqual(most);
+      for (const line of lines) expect([...line.text].length, `${step}: ${line.text}`).toBeLessThanOrEqual(80 - 14 - 2 - 7);
+      expect(lines.filter((line) => line.label !== "").map((line) => line.label)).toEqual(["what", "where", "cost", "sheep"]);
     }
   });
 });

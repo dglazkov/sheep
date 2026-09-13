@@ -74,7 +74,9 @@ async function underPty(args: string[]): Promise<Pty & { home: string }> {
   spawnSync("mkfifo", [fifo]);
   const child = spawn("sh", ["-c", `cat < ${quote(fifo)} | script ${scriptArgs.map(quote).join(" ")} > ${quote(out)} 2>&1`], { cwd, env, stdio: "ignore" });
   const keys = createWriteStream(fifo);
-  const read = () => (existsSync(out) ? readFileSync(out, "utf8") : "");
+  // The screen paints (SGR) between the dots and the count; what the pty gave back is read with the paint stripped, so a
+  // value's characters are looked for as a terminal would show them, and the hidden prompt's dots and count read as one.
+  const read = () => (existsSync(out) ? readFileSync(out, "utf8").replace(/\x1b\[[0-9;]*m/g, "") : "");
   const exited = new Promise<number>((resolve) => child.once("close", (code) => resolve(code ?? -1)));
   return {
     home,
@@ -97,7 +99,7 @@ describe.skipIf(flavour === undefined)("sheep setup at a real terminal", () => {
     const pty = await underPty(["setup"]);
     await pty.waitFor("› where");
     pty.write("\r");
-    await pty.waitFor("Cloudflare API token:");
+    await pty.waitFor("│ Cloudflare API token");
     // Typed, a key at a time, as fingers do; then pasted, as a terminal brackets a paste.
     const typed = "cfTyP3dQ8mZr4Wx";
     for (const key of typed) {

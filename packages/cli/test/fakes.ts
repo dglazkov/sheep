@@ -66,6 +66,12 @@ export interface FakeState {
   events: string[];
   /** A KV key's delete refused by the API, as a token without Workers KV Storage (edit) would be: the join's failed delete. */
   kvDeleteFails?: boolean;
+  /**
+   * Every answer to the applications listing, which deploy polls for a container's health, held back this many
+   * milliseconds (stile phase 1, second cut): a deploy slow enough to look at through the screen harness, since `polls`
+   * counts the listings deploy makes before its wait too. Unset, no delay.
+   */
+  healthDelayMs?: number;
   requests: { method: string; path: string; auth: string | undefined }[];
 }
 
@@ -158,6 +164,7 @@ export function fakeAccount(state: FakeState): Promise<{ server: Server; url: st
     }
     if (path === `/accounts/${ACCOUNT.id}/containers/applications` && request.method === "GET") {
       state.polls++;
+      if (state.healthDelayMs !== undefined && state.healthDelayMs > 0) await new Promise((resolveDelay) => setTimeout(resolveDelay, state.healthDelayMs));
       // The health the API reports (7 Sep 2026): the ring's finding is that instances are provisioned after the deploy returns.
       const instances =
         state.health === "failed"

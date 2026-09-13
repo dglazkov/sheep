@@ -24,6 +24,15 @@
  * records any place where a run of eight characters of a secret appears.
  * Eight, because a single character of a token is in every word on the
  * screen, and eight of a token in a row is in none of them.
+ *
+ * **The attributes are read too** (the second cut, issue #9). `frame()`
+ * and `buffer()` are text, which cannot see colour, so a styled screen
+ * could lose its styling and every text assertion stay green. `styled()`
+ * and `styledFrame()` read each cell's foreground and background, its
+ * colour mode (the sixteen-colour palette, the 256-colour palette, RGB,
+ * or the default), and its bold, dim, and underline bits from the
+ * emulator, so a test can say which cells carry meaning by colour and
+ * which carry none under `NO_COLOR`.
  */
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
@@ -68,11 +77,70 @@ export interface Exit {
   stderr: string;
 }
 
+/** One cell of the emulator's buffer, with the attributes that carry meaning on the stile's screen. */
+export interface StyledCell {
+  ch: string;
+  /** The foreground: a palette index or an RGB number by `fgMode`, or `null` for the terminal's default. */
+  fg: number | null;
+  fgMode: "default" | "p16" | "p256" | "rgb";
+  bg: number | null;
+  bgMode: "default" | "p16" | "p256" | "rgb";
+  bold: boolean;
+  dim: boolean;
+  underline: boolean;
+}
+
+export interface StyledRow {
+  /** The row as `frame` reads it: trailing spaces trimmed. */
+  text: string;
+  /** Every cell of the row, one per column, so `cells[i]` is the cell under `text[i]` while every glyph is one cell wide. */
+  cells: StyledCell[];
+}
+
+/** `@xterm/headless`'s colour modes, as `getFgColorMode()` and `getBgColorMode()` number them. */
+const MODE_P16 = 0x1000000;
+const MODE_P256 = 0x2000000;
+const MODE_RGB = 0x3000000;
+
+function modeName(mode: number): StyledCell["fgMode"] {
+  return mode === MODE_P16 ? "p16" : mode === MODE_P256 ? "p256" : mode === MODE_RGB ? "rgb" : "default";
+}
+
+const BLANK_CELL: StyledCell = { ch: "", fg: null, fgMode: "default", bg: null, bgMode: "default", bold: false, dim: false, underline: false };
+
+/** A row of the emulator's buffer with its attributes, cell by cell. */
+function styledRow(term: HeadlessTerminal, index: number, columns: number): StyledRow {
+  const line = term.buffer.active.getLine(index);
+  const cells: StyledCell[] = [];
+  for (let x = 0; x < columns; x++) {
+    const cell = line?.getCell(x);
+    if (cell === undefined) {
+      cells.push(BLANK_CELL);
+      continue;
+    }
+    cells.push({
+      ch: cell.getChars(),
+      fg: cell.isFgDefault() ? null : cell.getFgColor(),
+      fgMode: modeName(cell.getFgColorMode()),
+      bg: cell.isBgDefault() ? null : cell.getBgColor(),
+      bgMode: modeName(cell.getBgColorMode()),
+      bold: cell.isBold() !== 0,
+      dim: cell.isDim() !== 0,
+      underline: cell.isUnderline() !== 0,
+    });
+  }
+  return { text: rowText(term, index), cells };
+}
+
 export interface StileRun {
   /** The viewport as text: each row with its trailing spaces trimmed, and the empty rows after the last one dropped. */
   frame(): string;
   /** Every row the terminal holds, scrollback and viewport, as `frame` trims them. */
   buffer(): string;
+  /** One row of the viewport with its attributes, `row` counted from the top of the viewport. */
+  styled(row: number): StyledRow;
+  /** The viewport's rows with their attributes, the empty rows after the last one with text dropped. */
+  styledFrame(): StyledRow[];
   /** Every byte the command has written to stdout, escape sequences and all. */
   output(): string;
   /** One key, then the wait until the command has gone quiet and the emulator has taken what it wrote; then the leak check. */
@@ -179,9 +247,20 @@ export function driveStile(options: StileOptions): StileRun {
     check();
   };
 
+  const styled = (row: number): StyledRow => styledRow(term, term.buffer.active.viewportY + row, columns);
+  const styledFrame = (): StyledRow[] => {
+    const viewport: StyledRow[] = [];
+    for (let index = 0; index < rows; index++) viewport.push(styled(index));
+    let end = viewport.length;
+    while (end > 0 && viewport[end - 1]!.text === "") end--;
+    return viewport.slice(0, end);
+  };
+
   return {
     frame,
     buffer,
+    styled,
+    styledFrame,
     output: () => raw,
     press,
     async type(value, onKey) {

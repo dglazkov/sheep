@@ -43,10 +43,11 @@ import { type StepName, STEPS } from "./words.js";
 
 export { type StepName, STEPS };
 
-/** One of the answers a step offers. `value` is what the flow reads; `label` is what the screen draws. */
+/** One of the answers a step offers. `value` is what the flow reads; `label` is what the screen draws, and `description` sits dim beside it. */
 export interface Option {
   value: string;
   label: string;
+  description?: string;
 }
 
 /**
@@ -64,8 +65,10 @@ export interface Driver {
    * The step's line: what it is doing now while it is the cursor, and
    * what it settled on once it is done, which is the last line said. A
    * deploy's progress comes through here, line by line. Never a value.
+   * `refused` marks the reason a value is asked for again, so a screen
+   * knows red from progress; a scripted driver may ignore it.
    */
-  say(step: StepName, line: string): void;
+  say(step: StepName, line: string, tone?: "refused"): void;
   /** One of the options, by `value`. The first is the default, and Enter takes it. */
   choose(step: StepName, options: Option[]): Promise<string>;
 }
@@ -172,14 +175,14 @@ export async function runFlow(options: FlowOptions): Promise<FlowReport> {
   const whereOptions: Option[] =
     inherited === undefined
       ? [
-          { value: "machine", label: "everywhere on this machine" },
-          { value: "here", label: "this directory" },
+          { value: "machine", label: "everywhere on this machine", description: "~/.sheep, the usual answer" },
+          { value: "here", label: "this directory", description: ".sheep/ here, git-ignored" },
         ]
       : samePath(inherited, ownKennel)
-        ? [{ value: "kennel", label: "this directory's kennel, already here" }]
+        ? [{ value: "kennel", label: "this directory's kennel, already here", description: ".sheep/ here, already made" }]
         : [
-            { value: "kennel", label: `the kennel above, ${tilde(inherited)}` },
-            { value: "here", label: "this directory, a kennel of its own" },
+            { value: "kennel", label: `the kennel above, ${tilde(inherited)}`, description: "what every command here finds" },
+            { value: "here", label: "this directory, a kennel of its own", description: ".sheep/ here, git-ignored" },
           ];
   const where = (await driver.choose("where", whereOptions)) as Where;
   if (where === whereOptions[0]!.value) count.defaults++;
@@ -207,7 +210,7 @@ export async function runFlow(options: FlowOptions): Promise<FlowReport> {
       token = (await driver.ask("account", "Cloudflare API token", true)).trim();
       count.typed++;
       if (token === "") {
-        driver.say("account", "nothing was typed; the token is what proves the account is yours");
+        driver.say("account", "nothing was typed; the token is what proves the account is yours", "refused");
         token = undefined;
         count.askedTwice++;
         continue;
@@ -222,7 +225,7 @@ export async function runFlow(options: FlowOptions): Promise<FlowReport> {
       if (!(error instanceof Refusal)) throw error;
       // A token from the environment outranks anything typed here, so asking again would keep a value the deploy never reads.
       if (kept?.from === "environment") throw new Refusal(`${CREDENTIAL_ENV.cloudflare} in this environment is not accepted (${error.message}), and it takes precedence over anything typed here; nothing was kept`);
-      driver.say("account", error.message);
+      driver.say("account", error.message, "refused");
       count.askedTwice++;
       token = undefined;
     }
@@ -239,7 +242,9 @@ export async function runFlow(options: FlowOptions): Promise<FlowReport> {
       driver.say("plan", `${PLAN.name}, ${PLAN.price}`);
       break;
     }
-    driver.say("plan", `${account.name} is not on ${PLAN.name} yet; turn it on at the dashboard, then check again:`);
+    // Two lines: the first short enough for the step's row beside its hint, the second the plans page, an address alone,
+    // which the screen draws as a link under the row.
+    driver.say("plan", `${PLAN.name}, ${PLAN.price}, is not on this account yet`);
     driver.say("plan", plansPage(account.id));
     await driver.choose("plan", [{ value: "recheck", label: `turned on at the dashboard; check again` }]);
     count.yes++;
@@ -264,10 +269,15 @@ export async function runFlow(options: FlowOptions): Promise<FlowReport> {
     const names = new Set([...taken.workers, ...taken.applications.map((application) => application.name)]);
     const minted = recorded ?? mintName(kennelName(dir), names, options.name);
     const homes = await findStations(api, account.id, taken.workers);
-    const chosen = await driver.choose("station", [{ value: "new", label: `new ${minted}` }, ...homes.map((home) => ({ value: `join:${home.name}`, label: `join ${home.name}` }))]);
+    const chosen = await driver.choose("station", [
+      { value: "new", label: `new ${minted}`, description: "deploy a station on this account" },
+      ...homes.map((home) => ({ value: `join:${home.name}`, label: `join ${home.name}`, description: "this account's station, joined" })),
+    ]);
     const joining = homes.find((home) => chosen === `join:${home.name}`);
     if (joining === undefined) {
       count.defaults++;
+      // The step's row while it works: this line first, then deploy's own as the stages under it.
+      driver.say("station", `deploying ${minted} to ${account.name}`);
       deployed = await deploy({
         name: minted,
         subdomain: options.subdomain,
@@ -280,6 +290,7 @@ export async function runFlow(options: FlowOptions): Promise<FlowReport> {
       driver.say("station", deployed.home);
     } else {
       count.yes++;
+      driver.say("station", `joining ${joining.name} on ${account.name}`);
       // The join: the home's own token, for proof that this machine can write the Worker's secrets. The config is the
       // address and that token, with no name and no local marker, the rest kept, as `sheep home join` wrote it; the join
       // secret is deleted after the write whatever the write did.
@@ -322,7 +333,7 @@ export async function runFlow(options: FlowOptions): Promise<FlowReport> {
       value = (await driver.ask("key", "Anthropic API key", true)).trim();
       count.typed++;
       if (value === "") {
-        driver.say("key", "nothing was typed; the key is what the home's sheep call the model with");
+        driver.say("key", "nothing was typed; the key is what the home's sheep call the model with", "refused");
         count.askedTwice++;
       }
     }

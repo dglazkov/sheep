@@ -816,6 +816,13 @@ async function stileHarness() {
 /** A sitting's rows, in the order the checklist draws them: every step settled, each with its ✓. */
 const STILE_STEPS = ["command", "where", "account", "plan", "station", "key", "next"];
 
+/**
+ * The selector's chosen row (stile phase 1, second cut): the one line starting with fourteen spaces and `❯`, its label
+ * up to the two spaces before its description. Undefined where no choice is on the screen.
+ */
+const chosenRow = (text) => /^ {14}❯ (.+?)(?: {2,}.*)?$/m.exec(text)?.[1];
+const stationChosen = (text, label) => text.includes("\n  › station") && chosenRow(text) === label;
+
 class Ring {
   /**
    * A ref in a repository (the spec becomes `git+file://<repo>#<sha>`, and
@@ -1225,10 +1232,10 @@ class Ring {
       frames.open = run.frame();
       await run.press("?");
       frames.closed = run.frame();
-      if (!frames.open.includes("what:") || !frames.open.includes("cost:") || frames.closed !== frames.start) fail("`?` did not open the step's words, or `?` again did not close them back to the first frame");
+      if (!frames.open.includes("│ what ") || !frames.open.includes("│ cost ") || frames.closed !== frames.start) fail("`?` did not open the step's words as a panel, or `?` again did not close them back to the first frame");
       await run.press(ENTER);
       count.defaults++;
-      await run.waitFor("Cloudflare API token:", { timeoutMs: 60_000 });
+      await run.waitFor("│ Cloudflare API token", { timeoutMs: 60_000 });
       await run.type(token);
       count.typed++;
       await run.press(ENTER);
@@ -1245,7 +1252,7 @@ class Ring {
       frames.station = after;
       await run.press(ENTER);
       count.defaults++;
-      frames.key = await run.waitFor("Anthropic API key:", { timeoutMs: deployMs });
+      frames.key = await run.waitFor("│ Anthropic API key", { timeoutMs: deployMs });
       await run.type(key);
       count.typed++;
       await run.press(ENTER);
@@ -1295,7 +1302,8 @@ class Ring {
       if (count.typed !== 2 || count.yes !== 1 || count.defaults !== 2 || count.askedTwice !== 0 || count.variables.length !== 0) fail(`expected the count two typed, one yes, two defaults, none asked twice, no variable; got ${JSON.stringify(count)}`);
       const settled = STILE_STEPS.map((name) => new RegExp(`^ {2}✓ ${name}\\b`, "m").test(frames.final));
       if (settled.includes(false)) fail(`expected every step settled; not: ${STILE_STEPS.filter((_, index) => !settled[index]).join(", ")}`);
-      for (const line of ["  ✓ station   https://sheep-2.fake.workers.dev", "              credentials: ~/.sheep/credentials", "              config: ~/.sheep/config"]) if (!frames.final.includes(`${line}\n`)) fail(`expected the line ${JSON.stringify(line)}`);
+      if (!stationChosen(frames.station, "new sheep-2")) fail(`expected the station step to offer new sheep-2 first, as the chosen row; got ${JSON.stringify(chosenRow(frames.station))}`);
+      for (const line of ["  ✓ station   https://sheep-2.fake.workers.dev", "  ✓ next      done, in ", "  credentials  ~/.sheep/credentials (mode 600, the two values and nothing else)", "  config       ~/.sheep/config", "  skill        ~/.agents/skills/sheep", "  │ say to your agent"]) if (!frames.final.includes(`\n${line}`)) fail(`expected the line ${JSON.stringify(line)}`);
       const credentials = join(home, ".sheep", "credentials");
       const kept = existsSync(credentials) ? JSON.parse(readFileSync(credentials, "utf8")) : undefined;
       if (kept?.cloudflare !== TOKEN || kept?.anthropic !== KEY || (statSync(credentials).mode & 0o777) !== 0o600) fail(`expected ${credentials} mode 600 holding the two values typed`);
@@ -3640,7 +3648,7 @@ async function stileOnAccount(ring, api, station, { token, key, step = "t1" }) {
   const fail = (why) => ring.fail(step, typed, { stdout: (frames.final ?? run.buffer()).split(token).join("<token>").split(key).join("<key>"), stderr: `${exit?.stderr ?? ""}\n${why}`, code: exit?.code ?? 1 });
   if (exit.code !== 0 || exit.stderr !== "") fail("expected exit 0 and nothing on stderr");
   if (leaks.length > 0) fail(`a typed value was on the terminal or in the output: ${JSON.stringify(leaks)}`);
-  if (!frames.station.includes(`[new ${name}]`)) fail(`expected the station step to offer new ${name}`);
+  if (!stationChosen(frames.station, `new ${name}`)) fail(`expected the station step to offer new ${name} first, as the chosen row; got ${JSON.stringify(chosenRow(frames.station))}`);
   const address = `https://${name}.${station.subdomain}.workers.dev`;
   if (!frames.final.includes(`  ✓ station   ${address}\n`)) fail(`expected the station step to become ${address}`);
   // The count (journey 1's first criterion): two values typed and none asked twice, and no variable. The yes is the plan's
@@ -3881,19 +3889,19 @@ async function secondMachine(ring, api, station, { sheepId, spec, commit, token 
       await sitting.press(ENTER);
       count.defaults++;
       // account asks for the token, since this machine has never held one.
-      await sitting.waitFor("Cloudflare API token:", { timeoutMs: 60_000 });
+      await sitting.waitFor("│ Cloudflare API token", { timeoutMs: 60_000 });
       await sitting.type(token);
       count.typed++;
       await sitting.press(ENTER);
-      const stationRow = (text) => text.split("\n").find((row) => row.startsWith("  › station")) ?? "";
-      const after = await sitting.waitFor((text) => /\[new /.test(stationRow(text)) || /\[join /.test(stationRow(text)) || text.includes("check again") || text.includes("not accepted"), { timeoutMs: 180_000 });
+      // The station step's list: the chosen row is the line starting with fourteen spaces and `❯` under `› station`.
+      const after = await sitting.waitFor((text) => (text.includes("\n  › station") && /^ {14}❯ (new|join) /m.test(text)) || text.includes("check again") || text.includes("not accepted"), { timeoutMs: 180_000 });
       if (after.includes("not accepted")) fail("the account refused the token the ring typed");
       if (after.includes("check again")) fail("the account is not on Workers Paid, which the ring's preflight required");
       frames.station = after;
-      if (!/› station {3}\[new [a-z0-9-]+\]/.test(stationRow(after))) fail(`expected the station step to offer new <name> first, selected; got ${JSON.stringify(stationRow(after))}`);
+      if (!/^new [a-z0-9-]+$/.test(chosenRow(after) ?? "") || !after.includes("\n  › station")) fail(`expected the station step to offer new <name> first, as the chosen row; got ${JSON.stringify(chosenRow(after))}`);
       if (!after.includes("  ✓ plan      Workers Paid")) fail("expected plan to fill in with nothing asked");
       // The walk's station among the joins: the selection moved one option at a time until it is on it, every option seen once.
-      const selected = (text) => /\[([^\]]+)\]/.exec(stationRow(text))?.[1];
+      const selected = (text) => chosenRow(text);
       listed.push(selected(after));
       for (let moves = 0; selected(sitting.frame()) !== `join ${station.name}`; moves++) {
         if (moves > 50) fail(`the station step never offered join ${station.name}; it offered ${listed.join(", ")}`);
@@ -3908,12 +3916,12 @@ async function secondMachine(ring, api, station, { sheepId, spec, commit, token 
       exit = await Promise.race([sitting.exited, new Promise((resolveLate) => setTimeout(() => resolveLate(undefined), JOIN_SITTING_MS))]);
       joinSeconds = ((Date.now() - chosenAt) / 1000).toFixed(0);
       if (exit === undefined) fail(`the sitting did not end within ${JOIN_SITTING_MS / 1000}s of choosing the join`);
-      await sitting.waitFor((text) => text.includes("say to your agent:"), { whole: true, timeoutMs: 5_000 }).catch(() => undefined);
+      await sitting.waitFor((text) => text.includes("say to your agent"), { whole: true, timeoutMs: 5_000 }).catch(() => undefined);
       frames.final = sitting.buffer();
       if (exit.code !== 0 || exit.stderr !== "") fail(`expected exit 0 and nothing on stderr; got exit ${exit.code}: ${exit.stderr}`);
       if (/is not accepted|nothing was typed/.test(frames.final)) count.askedTwice++;
-      for (const line of [`  ✓ station   ${home}, joined`, "  ✓ key       the station holds its own; nothing asked", `  ✓ next      home: ${home}`]) if (!frames.final.includes(`${line}\n`)) fail(`expected the line ${JSON.stringify(line)}`);
-      if (sitting.output().includes("Anthropic API key:")) fail("key asked for a key on a joined station");
+      for (const line of [`  ✓ station   ${home}, joined`, "  ✓ key       the station holds its own; nothing asked", "  ✓ next      done, in ", "  credentials  ~/.sheep/credentials (mode 600, the account token)", "  │ say to your agent"]) if (!frames.final.includes(`\n${line}`)) fail(`expected the line ${JSON.stringify(line)}`);
+      if (sitting.output().includes("Anthropic API key")) fail("key asked for a key on a joined station");
       if (count.typed !== 1 || count.yes !== 1 || count.defaults !== 1 || count.askedTwice !== 0) fail(`expected one value typed, one choice (the join), one default (where), none asked twice; got ${JSON.stringify(count)}`);
       const leaks = sitting.leaks();
       if (leaks.length > 0) fail(`the account token or the station's token was on the terminal or in the output: ${JSON.stringify(leaks)}`);

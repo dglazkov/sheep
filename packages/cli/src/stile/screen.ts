@@ -1,14 +1,19 @@
 /**
  * The screen: the stile's three callbacks drawn with pi-tui (stile phase
- * 1).
+ * 1; redrawn in the second cut, issue #9).
  *
  * pi-tui's **main-screen** renderer, not its alternate screen, so the
  * flow scrolls like a checklist filling in and leaves its lines in the
- * scrollback when it ends. A small sheep, then the seven steps, one line
- * each: a done step is what it settled on, the cursor step is its prompt
- * and nothing else, and the steps after it are their names alone. `?`
- * opens the step's words under it and `?` again closes them; `--explain`
- * opens each step's words as the cursor reaches it.
+ * scrollback when it ends. The frames are the ones of
+ * `docs/projects/stile/screen/mock.mjs`, matched to the cell: the sheep
+ * in pixels beside its name, the seven steps, and under the cursor step a
+ * vertical selector with `❯`, or a rounded box for a secret with the
+ * address to make it at under the box, or the deploy's stages as green
+ * ticks behind a spinner with the elapsed time; a refusal in red; `?`
+ * opening the step's words as a panel with a rule down its left; the
+ * finish with the sentence to say in a box; a dim key line on the last
+ * row. Colour carries the state, at a level `paint.ts` decides; with none
+ * the glyphs alone do.
  *
  * **Hidden input is never on screen.** A hidden prompt draws one `•` per
  * character and never the character, and nothing typed reaches the
@@ -23,36 +28,46 @@
  * pseudo-terminal. It replaces the pseudo-terminal and nothing else, the
  * way `SHEEP_TEST_WRANGLER` replaces wrangler and not deploy — no step is
  * answered by it, no prompt is skipped, and the hiding still happens.
+ *
+ * **What gives way.** The banner and the checklist fit 80 by 24 with
+ * nothing open. When what is under the cursor fills the screen (the words
+ * open on a step), the blank line under the grass goes first, then the
+ * key line, then the line under a secret's box, and the deploy keeps
+ * fewer of its ticks; the words themselves are held to eight lines (seven
+ * on the steps that draw a box or a link under them), so a step with its
+ * words open is still one screen.
  */
 import { type Component, ProcessTerminal, type Terminal, TuiMainScreen } from "@earendil-works/pi-tui";
 import { Refusal } from "../deploy.js";
-import { type Driver, type FlowOptions, type FlowReport, type Option, runFlow } from "./flow.js";
-import { explain, type StepName, STEPS } from "./words.js";
+import { AGENT_SENTENCE, type Driver, type FlowOptions, type FlowReport, type Option, runFlow, tilde } from "./flow.js";
+import { colourLevel, Paint, padTo, width as widthOf } from "./paint.js";
+import { sheep } from "./sheep.js";
+import { explain, QUESTIONS, shown, type StepName, STEPS, UNDER_BOX } from "./words.js";
 
-/**
- * The sheep and the two lines beside it. A draft, and the shepherd's to
- * change; nothing reads it but the screen and the frame snapshots.
- */
-export const BANNER = [
-  "      __  _",
-  "   ,-'  `' \\_          sheep",
-  "  (  o   ) . _)        a home for coding agents that herd coding agents",
-  "   `-.__.-'",
-  "     ||  ||",
-];
-
-/** The mark at the left of a step: settled, the cursor, or not reached. */
-const MARKS = { done: "✓", cursor: "›", waiting: " " } as const;
+/** The line under the name in the banner. */
+export const TAGLINE = "a home for agents that herd agents";
 
 /** The widest step name plus its gutters: `  ✓ command   `, so every step's text starts in the same column. */
 const NAME_WIDTH = 8;
-const GUTTER = "  ";
-/** The hint at the right of the cursor step's line, while its words are closed. */
+/** The column everything under a step starts at: the width of `  ✓ command   `. */
+const INDENT = 14;
+const IND = " ".repeat(INDENT);
+/** The hint at the right of the cursor step's line, while its words are closed and open. */
 const HINT_OPEN = "? explain";
 const HINT_CLOSE = "? close";
+/** The fewest spaces between the cursor row's text and its hint. */
+const HINT_GAP = 2;
 
-/** How many of a step's progress lines are kept under it while it is the cursor; a deploy says more than this. */
-const PROGRESS_LINES = 4;
+/** How many of a deploy's stages are kept under the step at most: the current one and three ticks above it. */
+const STAGES_KEPT = 4;
+/** The banner's rows and the checklist's: what is on screen before anything is under a step. */
+const FIXED_ROWS = 7 + STEPS.length;
+
+const SPINNER = [..."⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"];
+const SPINNER_MS = 80;
+
+/** The key line's parts, as the step allows. */
+const KEYS = { choose: "↑↓ choose   Enter take", recheck: "Enter check again", send: "Enter send", leave: "Ctrl-C leave", deploying: "the first container takes a minute or two   Ctrl-C leaves it deploying" };
 
 /** The size the seam names, or nothing when it is not set. A malformed value is a refusal, not a guess. */
 export function seamSize(): { columns: number; rows: number } | undefined {
@@ -161,8 +176,14 @@ export function hiddenShown(length: number): string {
   return length <= HIDDEN_DOTS ? "•".repeat(length) : `${"•".repeat(HIDDEN_DOTS)} ${length}`;
 }
 
+/** What a step said while it was the cursor: a line of progress, or the reason a value is asked for again. */
+interface Said {
+  text: string;
+  refused: boolean;
+}
+
 /** What the cursor step is waiting for, if anything. */
-type Waiting = { kind: "ask"; prompt: string; hidden: boolean; buffer: string } | { kind: "choose"; options: Option[]; at: number } | undefined;
+type Waiting = { kind: "ask"; prompt: string; hidden: boolean; buffer: string } | { kind: "choose"; options: Option[]; at: number; first: number } | undefined;
 
 /** Wrapping that does not break a word unless the word is wider than the line. */
 function wrap(text: string, width: number): string[] {
@@ -185,89 +206,325 @@ function wrap(text: string, width: number): string[] {
   return lines.length === 0 ? [""] : lines;
 }
 
-/** A step's words as the screen draws them at a width: the four things, wrapped, indented under the row. At most eight at eighty. */
-export function wordsAt(step: StepName, width: number): string[] {
-  return explain(step).flatMap((one) => wrap(one, Math.max(20, width - 6))).map((line) => `      ${line}`);
+/** `text` cut to `room` cells with `…` at the end where it was longer. Plain text only. */
+function fit(text: string, room: number): string {
+  const chars = [...text];
+  if (chars.length <= room) return text;
+  return `${chars.slice(0, Math.max(0, room - 1)).join("")}…`;
+}
+
+/** A path as lines that never break inside a segment: whole on one line, else its segments packed at `/` to `room`. */
+function pathLines(path: string, room: number): string[] {
+  if (path.length <= room) return [path];
+  const pieces = path.split(/(?<=\/)/);
+  const lines: string[] = [];
+  let line = "";
+  for (const piece of pieces) {
+    if (line !== "" && line.length + piece.length > room) {
+      lines.push(line);
+      line = "";
+    }
+    line += piece;
+  }
+  if (line !== "") lines.push(line);
+  return lines;
+}
+
+/** The line up to its first `:` or `,`: what a stage is about. A stage that says the same thing again replaces the last. */
+const stageKey = (text: string): string => text.split(/[:,]/)[0]!;
+
+/** Minutes and seconds since `since`, as `1m 12s`. */
+function elapsed(since: number): string {
+  const seconds = Math.max(0, Math.floor((Date.now() - since) / 1000));
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}
+
+/** The text room the panel wraps to at a width: the indent, the rule, the label, and a space. */
+const PANEL_ROOM = (width: number): number => Math.max(20, width - INDENT - 2 - 7);
+
+/**
+ * A step's words as the panel draws them at a width: the four things,
+ * each wrapped to the panel, its label on the first line and blank on the
+ * rest. At most eight at eighty; seven on the steps that draw a box or a
+ * link under them (the words' rule, held by the command ring).
+ */
+export function wordsAt(step: StepName, width: number): { label: string; text: string }[] {
+  return explain(step).flatMap(({ label, text }) => wrap(text, PANEL_ROOM(width)).map((line, index) => ({ label: index === 0 ? label : "", text: line })));
 }
 
 /**
  * The whole screen as one pi-tui component: the banner, the seven rows,
- * and under the cursor row its words when they are open and its progress
- * while a step is running. One component rather than seven, because the
- * checklist is one block whose rows are drawn in relation to each other.
+ * and under the cursor row its words when they are open, what it waits
+ * for, or its progress while it works; then the finish. One component
+ * rather than seven, because the checklist is one block whose rows are
+ * drawn in relation to each other, and the key line's row depends on all
+ * of them.
  */
 class Sheet implements Component {
   cursor: StepName = "command";
-  /** The flow ended: every row is settled, and there is no cursor left to draw a prompt or a hint on. */
+  /** The flow ended: every row is settled, and the finish is drawn from the report. */
   finished = false;
-  readonly lines = new Map<StepName, string>();
-  readonly progress = new Map<StepName, string[]>();
+  report: FlowReport | undefined;
+  /** What each step settled on: the last line it said that was not a refusal. */
+  readonly settled = new Map<StepName, string>();
+  /** What each step said while it was the cursor, since it was reached. */
+  readonly said = new Map<StepName, Said[]>();
   readonly open = new Set<StepName>();
   waiting: Waiting;
+  /** The station step's choice was a join, so what it says under the row is not a deploy's stages. */
+  joining = false;
+  /** When the cursor step was reached, for the elapsed time beside a stage; and when the sitting started, for the finish. */
+  reachedAt = Date.now();
+  readonly startedAt = Date.now();
+  /** The spinner's frame, advanced by the timer while a stage runs. */
+  tick = 0;
+
+  constructor(
+    private readonly paint: Paint,
+    private readonly terminal: Terminal,
+  ) {}
 
   /** Nothing is cached here: every render is drawn from the state above, so there is nothing to throw away. */
   invalidate(): void {}
 
+  /** The progress lines the cursor step said, the row's own first line excluded: a deploy's stages, the plan's page. */
+  stages(): string[] {
+    return (this.said.get(this.cursor) ?? []).filter((one) => !one.refused).map((one) => one.text).slice(1);
+  }
+
+  /** A stage is running: the cursor step is working, with nothing asked, and has said what it is doing. */
+  working(): boolean {
+    return !this.finished && this.waiting === undefined && this.stages().length > 0;
+  }
+
   render(width: number): string[] {
-    const out = [...BANNER, ""];
+    const out = [...this.banner(), ""];
     const reached = this.finished ? STEPS.length : STEPS.indexOf(this.cursor);
+    const panel = this.open.has(this.cursor) && !this.finished ? this.panel(width) : [];
     for (const step of STEPS) {
       const at = STEPS.indexOf(step);
-      const mark = at < reached ? MARKS.done : at === reached ? MARKS.cursor : MARKS.waiting;
-      // The last step, settled, is the one that keeps every line it said: its first on the row, the rest under it, wrapped
-      // rather than cut, since a path or the sentence to say is no use with its end missing.
-      const said = this.progress.get(step) ?? [];
-      const last = this.finished && step === "next";
-      const text = last ? (said[0] ?? "") : at === reached ? this.cursorText(this.room(step, width)) : at < reached ? (this.lines.get(step) ?? "") : "";
-      out.push(this.row(mark, step, text, at === reached, width));
-      // The words are the cursor's alone: a done step is one line, what it settled on, whether or not its words were open.
-      if (at === reached && this.open.has(step)) for (const line of wordsAt(step, width)) out.push(line);
-      // While a step is the cursor, what it said is under it, wrapped: a deploy's progress, the plans page, the reason a
-      // token was refused. A prompt does not hide them, since they are what the prompt is about.
-      if (at === reached) for (const line of said.slice(-PROGRESS_LINES).flatMap((one) => wrap(one, Math.max(20, width - 6)))) out.push(`      ${line}`);
-      if (last) for (const line of said.slice(1).flatMap((one) => wrap(one, Math.max(20, width - 14)))) out.push(`${" ".repeat(14)}${line}`);
+      if (at < reached) out.push(this.doneRow(step, this.finished && step === "next" ? `done, in ${elapsed(this.startedAt)}` : (this.settled.get(step) ?? "")));
+      else if (at === reached) {
+        out.push(this.cursorRow(step, width));
+        out.push(...panel);
+        out.push(...this.under(step, width, panel.length));
+      } else out.push(`    ${this.paint.dim(step.padEnd(NAME_WIDTH))}`);
+    }
+    if (this.finished) {
+      // The finish is the last thing on screen, and the newline that puts the prompt under it takes one row: a finish
+      // that fills the screen would scroll the top of the sheep into the scrollback. So it is drawn one row short, giving
+      // up the blank line after the seven rows first and the one before the box next; at 80 by 24 the first is enough.
+      const finish = this.finish(width);
+      while (out.length + finish.length > this.terminal.rows - 1) {
+        const blank = finish.indexOf("");
+        if (blank === -1) break;
+        finish.splice(blank, 1);
+      }
+      return out.concat(finish).map((line) => this.guard(line, width));
+    }
+    // The key line sits on the last row of the viewport. When what is under the cursor fills the screen, the blank line
+    // under the grass gives way first, then the key line itself, until the words close.
+    const foot = this.keyLine();
+    const rows = this.terminal.rows;
+    if (out.length + (foot === undefined ? 0 : 1) > rows) out.splice(7, 1);
+    if (foot !== undefined && out.length + 1 <= rows) {
+      while (out.length < rows - 1) out.push("");
+      out.push(foot);
+    }
+    return out.map((line) => this.guard(line, width));
+  }
+
+  /** pi-tui refuses a line wider than the terminal; nothing here should make one, and this is the guard that says so quietly. */
+  private guard(line: string, width: number): string {
+    if (widthOf(line) <= width) return line;
+    // A styled line over the width is a bug in the drawing above; cut its plain text rather than crash the sitting.
+    return fit(line.replace(/\x1b\[[0-9;]*m/g, "").replace(/\x1b\]8;;[^\x1b]*\x1b\\/g, ""), width);
+  }
+
+  /** Seven rows: the sheep, and beside it the name in bold amber with the dim line under it. The grass is the rule. */
+  private banner(): string[] {
+    const title = ["", "", this.paint.boldAmber("sheep"), this.paint.dim(TAGLINE), "", "", ""];
+    return sheep(this.paint).map((row, index) => ` ${row} ${title[index]}`.trimEnd());
+  }
+
+  /** A settled step: green tick, dim name, and what it settled on, an address drawn as a link. */
+  private doneRow(step: StepName, text: string): string {
+    const address = /^(https?:\/\/\S+)(.*)$/.exec(text);
+    const styled = address === null ? text : `${this.paint.link(address[1]!)}${address[2]}`;
+    return `  ${this.paint.green("✓")} ${this.paint.dim(step.padEnd(NAME_WIDTH))}  ${styled}`;
+  }
+
+  /** The cursor row: amber mark and bold amber name, the step's question or its first line, and the hint at the right while it waits. */
+  private cursorRow(step: StepName, width: number): string {
+    const hint = this.waiting === undefined ? undefined : this.open.has(step) ? HINT_CLOSE : HINT_OPEN;
+    const first = (this.said.get(step) ?? []).find((one) => !one.refused)?.text;
+    const room = width - INDENT - (hint === undefined ? 0 : HINT_GAP + hint.length);
+    const text = fit(first ?? QUESTIONS[step], Math.max(1, room));
+    const left = `  ${this.paint.amber("›")} ${this.paint.boldAmber(step.padEnd(NAME_WIDTH))}  ${text}`;
+    if (hint === undefined) return left;
+    return `${left}${" ".repeat(Math.max(HINT_GAP, width - widthOf(left) - hint.length))}${this.paint.dim(hint)}`;
+  }
+
+  /** The words as a panel: a dim rule down the left, the four labels bold, each thing wrapped to the panel. */
+  private panel(width: number): string[] {
+    return wordsAt(this.cursor, width).map(({ label, text }) => `${IND}${this.paint.dim("│ ")}${this.paint.bold(label.padEnd(6))} ${text}`);
+  }
+
+  /** What is under the cursor row: a refusal and the box, the list, or the stages. */
+  private under(step: StepName, width: number, panelRows: number): string[] {
+    const waiting = this.waiting;
+    const out: string[] = [];
+    if (waiting?.kind === "ask") {
+      const refused = [...(this.said.get(step) ?? [])].reverse().find((one) => one.refused);
+      if (refused !== undefined) {
+        // The reason: `✗` and its first clause (up to the first `;`, or the whole line) in red, and the rest, if any, dim on at
+        // most two lines under it, cut with `…` beyond; the permissions and the address it names are in the step's words too.
+        // With the words open there is less room above the box, and the dim lines are the ones that give way.
+        const room = Math.max(0, this.terminal.rows - FIXED_ROWS - panelRows - 3 - (this.open.has(step) ? 0 : 1) - 1);
+        const at = refused.text.indexOf(";");
+        const head = at === -1 ? refused.text : refused.text.slice(0, at);
+        const rest = at === -1 ? "" : refused.text.slice(at + 1).trim();
+        out.push(`${IND}${this.paint.red(`✗ ${fit(head, width - INDENT - 2)}`)}`);
+        const most = Math.min(2, room);
+        if (rest !== "" && most > 0) {
+          const lines = wrap(rest, width - INDENT - 2);
+          const kept = lines.length > most ? [...lines.slice(0, most - 1), fit(lines.slice(most - 1).join(" "), width - INDENT - 2)] : lines;
+          out.push(...kept.map((line) => `${IND}  ${this.paint.dim(line)}`));
+        }
+      }
+      out.push(...this.box(waiting, width));
+      // The address to make the value at, said once under the box; the words say it too, and the screen is one row short
+      // with them open, so it is theirs then.
+      if (!this.open.has(step) && (step === "account" || step === "key")) {
+        const { madeAt, note } = UNDER_BOX[step];
+        out.push(`${IND}${this.paint.dim("made at ")}${this.paint.link(shown(madeAt), madeAt)}`);
+        if (note !== undefined) out.push(`${IND}${this.paint.dim(fit(note, width - INDENT))}`);
+      }
+      return out;
+    }
+    if (waiting?.kind === "choose") {
+      // The plan not on the account: its page as a link under the row, then the one action as the chosen row.
+      const extra = this.stages();
+      for (const line of extra) {
+        if (/^https?:\/\/\S+$/.test(line)) {
+          const prefix = "turn it on at ";
+          const link = this.paint.link(shown(line), line);
+          out.push(INDENT + prefix.length + shown(line).length <= width ? `${IND}${this.paint.dim(prefix)}${link}` : `${IND}${link}`);
+        } else out.push(`${IND}${this.paint.dim(fit(line, width - INDENT))}`);
+      }
+      if (extra.length > 0) out.push("");
+      out.push(...this.list(waiting, width, panelRows));
+      return out;
+    }
+    if (!this.finished) {
+      // Working: the stages said so far as green ticks, the current one behind the spinner with the elapsed time. Fewer are
+      // kept when the words are open, so the step stays on one screen.
+      const keep = Math.max(1, Math.min(STAGES_KEPT, this.terminal.rows - FIXED_ROWS - panelRows));
+      const stages = this.stages().slice(-keep);
+      stages.forEach((text, index) => {
+        if (index < stages.length - 1) out.push(`${IND}${this.paint.green("✓")} ${fit(text, width - INDENT - 2)}`);
+        else {
+          const time = elapsed(this.reachedAt);
+          out.push(`${IND}${this.paint.amber(SPINNER[this.tick % SPINNER.length]!)} ${fit(text, width - INDENT - 2 - 2 - time.length)}  ${this.paint.dim(time)}`);
+        }
+      });
     }
     return out;
   }
 
-  /** How many columns the cursor row has for its text, between the step's name and the hint. */
-  private room(step: StepName, width: number): number {
-    const hint = this.open.has(step) ? HINT_CLOSE : HINT_OPEN;
-    return Math.max(0, width - `${GUTTER}${MARKS.cursor} ${step.padEnd(NAME_WIDTH)}${GUTTER}`.length - hint.length - 5);
+  /** A secret's box: rounded, the prompt dim inside, a dot per character in amber, the count past sixteen dim, an amber caret. */
+  private box(waiting: Waiting & { kind: "ask" }, width: number): string[] {
+    const outer = Math.max(10, width - INDENT - 2);
+    const inner = outer - 2;
+    const typed = waiting.buffer.length;
+    let content = "";
+    for (let dots = waiting.hidden ? Math.min(typed, HIDDEN_DOTS) : 0; ; dots--) {
+      const count = waiting.hidden && typed > HIDDEN_DOTS ? ` ${this.paint.dim(String(typed))}` : "";
+      const value = waiting.hidden ? this.paint.amber("•".repeat(dots)) : this.paint.amber(waiting.buffer);
+      content = `${this.paint.dim(waiting.prompt)}  ${value}${count}${this.paint.amber("▌")}`;
+      if (widthOf(content) <= inner || dots <= 0) break;
+    }
+    const rule = "─".repeat(outer);
+    return [`${IND}${this.paint.dim(`╭${rule}╮`)}`, `${IND}${this.paint.dim("│")} ${padTo(content, inner)} ${this.paint.dim("│")}`, `${IND}${this.paint.dim(`╰${rule}╯`)}`];
   }
 
   /**
-   * The cursor row's text: its prompt, its options, or what it last said
-   * while it works. Options that do not fit (a station step on an account
-   * with several sheep homes, stile phase 2) are a window that always holds
-   * the selected one, with `…` on the side where more are, so an arrow key
-   * never moves the selection out of sight.
+   * The options as a vertical list at the indent: `❯` and bold on the
+   * chosen row, a dim description beside each label where they all fit,
+   * the labels alone where they do not. More options than the screen has
+   * rows for are a window that always holds the chosen one, with a dim
+   * `↑ n more` or `↓ n more` where the rest are, so an arrow key never
+   * moves the choice out of sight.
    */
-  private cursorText(room: number): string {
-    const waiting = this.waiting;
-    // Working, with nothing asked: the row is the step's name alone, and what it says is under it.
-    if (waiting === undefined) return "";
-    if (waiting.kind === "ask") return `${waiting.prompt}: ${waiting.hidden ? hiddenShown(waiting.buffer.length) : waiting.buffer}`;
-    const labels = waiting.options.map((option, index) => (index === waiting.at ? `[${option.label}]` : option.label));
-    const shown = (first: number, last: number) => `${first > 0 ? "…  " : ""}${labels.slice(first, last + 1).join("  ·  ")}${last < labels.length - 1 ? "  …" : ""}`;
-    if (shown(0, labels.length - 1).length <= room) return shown(0, labels.length - 1);
-    let first = waiting.at;
-    let last = waiting.at;
-    for (;;) {
-      if (last < labels.length - 1 && shown(first, last + 1).length <= room) last++;
-      else if (first > 0 && shown(first - 1, last).length <= room) first--;
-      else break;
+  private list(waiting: Waiting & { kind: "choose" }, width: number, panelRows: number): string[] {
+    const labels = waiting.options.map((option) => option.label);
+    const descriptions = waiting.options.map((option) => option.description ?? "");
+    const longest = Math.max(...labels.map((label) => [...label].length));
+    const widest = Math.max(...descriptions.map((description) => [...description].length));
+    let labelWidth = Math.max(30, longest + 2);
+    const withDescriptions = widest > 0 && INDENT + 2 + labelWidth + widest <= width;
+    if (!withDescriptions) labelWidth = longest;
+    const rowOf = (index: number): string => {
+      const label = fit(labels[index]!, width - INDENT - 2);
+      const description = withDescriptions ? this.paint.dim(descriptions[index]!) : "";
+      const chosen = index === waiting.at;
+      return `${IND}${chosen ? this.paint.boldAmber("❯ ") : "  "}${chosen ? this.paint.bold(padTo(label, labelWidth)) : padTo(label, labelWidth)}${description}`.trimEnd();
+    };
+    const count = waiting.options.length;
+    const size = Math.max(3, this.terminal.rows - FIXED_ROWS - panelRows);
+    if (count <= size) return waiting.options.map((_option, index) => rowOf(index));
+    // The window: a marker row at either end where more are, and the chosen row always inside.
+    let first = Math.min(Math.max(0, waiting.first), count - size);
+    const visibleFrom = () => first + (first > 0 ? 1 : 0);
+    const visibleTo = () => first + size - 1 - (first + size < count ? 1 : 0);
+    while (waiting.at < visibleFrom() && first > 0) first--;
+    while (waiting.at > visibleTo() && first + size < count) first++;
+    waiting.first = first;
+    const out: string[] = [];
+    for (let index = first; index < Math.min(count, first + size); index++) {
+      if (index === first && first > 0) out.push(`${IND}  ${this.paint.dim(`↑ ${first} more`)}`);
+      else if (index === first + size - 1 && first + size < count) out.push(`${IND}  ${this.paint.dim(`↓ ${count - index} more`)}`);
+      else out.push(rowOf(index));
     }
-    return shown(first, last);
+    return out;
   }
 
-  private row(mark: string, step: StepName, text: string, isCursor: boolean, width: number): string {
-    const left = `${GUTTER}${mark} ${step.padEnd(NAME_WIDTH)}${GUTTER}`;
-    const hint = isCursor ? (this.open.has(step) ? HINT_CLOSE : HINT_OPEN) : "";
-    const room = Math.max(0, width - left.length - (hint === "" ? 0 : hint.length + 5));
-    const body = text.length > room ? `${text.slice(0, Math.max(1, room - 1))}…` : text;
-    if (hint === "") return `${left}${body}`;
-    return `${left}${body}${" ".repeat(Math.max(5, width - left.length - body.length - hint.length))}${hint}`;
+  /** The dim key line for the last row, as the step allows; nothing while a step works on something other than a deploy. */
+  private keyLine(): string | undefined {
+    const hint = this.open.has(this.cursor) ? HINT_CLOSE : HINT_OPEN;
+    const waiting = this.waiting;
+    let text: string | undefined;
+    if (waiting?.kind === "choose") text = `${this.cursor === "plan" ? KEYS.recheck : KEYS.choose}   ${hint}   ${KEYS.leave}`;
+    else if (waiting?.kind === "ask") text = `${KEYS.send}   ${hint}   ${KEYS.leave}`;
+    else if (this.cursor === "station" && !this.joining && this.working()) text = KEYS.deploying;
+    return text === undefined ? undefined : `  ${this.paint.dim(text)}`;
+  }
+
+  /** After the seven green rows: where things are, and the sentence to say in a box across the screen. */
+  private finish(width: number): string[] {
+    const report = this.report;
+    if (report === undefined) return [];
+    const out: string[] = [""];
+    const labelled = (label: string, path: string, note?: string): void => {
+      const lines = pathLines(path, Math.max(10, width - 15));
+      lines.forEach((line, index) => {
+        const head = index === 0 ? `  ${this.paint.dim(label.padEnd(11))}  ` : " ".repeat(15);
+        const tail = index === lines.length - 1 && note !== undefined && 15 + line.length + 1 + note.length <= width ? ` ${this.paint.dim(note)}` : "";
+        out.push(`${head}${line}${tail}`);
+      });
+    };
+    labelled("credentials", tilde(report.credentials), report.key === "left" ? "(mode 600, the account token)" : "(mode 600, the two values and nothing else)");
+    labelled("config", tilde(report.config));
+    labelled("skill", "checkout" in report.skill ? "from this checkout" : tilde(report.skill.path));
+    out.push("");
+    const outer = Math.max(10, width - 4);
+    const inner = outer - 2;
+    const rule = "─".repeat(outer);
+    out.push(`  ${this.paint.dim(`╭${rule}╮`)}`);
+    out.push(`  ${this.paint.dim("│")} ${padTo(this.paint.boldAmber("say to your agent"), inner)} ${this.paint.dim("│")}`);
+    for (const line of wrap(AGENT_SENTENCE, inner)) out.push(`  ${this.paint.dim("│")} ${padTo(this.paint.bold(line), inner)} ${this.paint.dim("│")}`);
+    out.push(`  ${this.paint.dim(`╰${rule}╯`)}`);
+    return out;
   }
 }
 
@@ -301,13 +558,34 @@ export async function stile(options: Omit<FlowOptions, "driver"> & { explain?: b
   const size = seamSize();
   const terminal: Terminal = size === undefined ? new ProcessTerminal() : new PipeTerminal(size);
   const tui = new TuiMainScreen(terminal);
-  const sheet = new Sheet();
+  const sheet = new Sheet(new Paint(colourLevel()), terminal);
   tui.addChild(sheet);
 
   /** The one place a key is answered: whichever of ask and choose is waiting, plus `?` and Ctrl-C, which are always. */
   let answer: ((value: string) => void) | undefined;
   let refuse: ((error: Error) => void) | undefined;
-  const draw = () => tui.requestRender();
+
+  /**
+   * The spinner's timer: running while a stage runs, so the frame advances and the elapsed time counts, and stopped the
+   * moment the step waits or settles. Unreferenced, so it never keeps the process alive at the end.
+   */
+  let timer: NodeJS.Timeout | undefined;
+  const sync = () => {
+    if (sheet.working() && timer === undefined) {
+      timer = setInterval(() => {
+        sheet.tick++;
+        tui.requestRender();
+      }, SPINNER_MS);
+      timer.unref();
+    } else if (!sheet.working() && timer !== undefined) {
+      clearInterval(timer);
+      timer = undefined;
+    }
+  };
+  const draw = () => {
+    sync();
+    tui.requestRender();
+  };
 
   const toggle = () => {
     if (sheet.open.has(sheet.cursor)) sheet.open.delete(sheet.cursor);
@@ -326,6 +604,7 @@ export async function stile(options: Omit<FlowOptions, "driver"> & { explain?: b
           continue;
         }
         // Working, with nothing asked (a deploy under way): raw mode made Ctrl-C a byte, so it is the signal it would have been.
+        if (timer !== undefined) clearInterval(timer);
         tui.stop();
         process.stderr.write("sheep: setup was interrupted while it was working; what was kept is kept, and `sheep setup` again picks up from there\n");
         process.exit(130);
@@ -376,6 +655,7 @@ export async function stile(options: Omit<FlowOptions, "driver"> & { explain?: b
       }
       if (key === "\r" || key === "\n") {
         const chosen = waiting.options[waiting.at]!.value;
+        if (sheet.cursor === "station") sheet.joining = chosen.startsWith("join:");
         const give = answer;
         sheet.waiting = undefined;
         answer = undefined;
@@ -391,17 +671,26 @@ export async function stile(options: Omit<FlowOptions, "driver"> & { explain?: b
   const reach = (step: StepName) => {
     if (sheet.cursor === step) return;
     sheet.cursor = step;
-    sheet.progress.set(step, []);
+    sheet.said.set(step, []);
+    sheet.reachedAt = Date.now();
     // Words opened on a step close when it settles; `--explain` opens the next step's as it is reached.
     sheet.open.clear();
     if (options.explain === true) sheet.open.add(step);
   };
 
   const driver: Driver = {
-    say(step, line) {
+    say(step, line, tone) {
       reach(step);
-      sheet.lines.set(step, line);
-      sheet.progress.set(step, [...(sheet.progress.get(step) ?? []), line]);
+      const said = sheet.said.get(step) ?? [];
+      const last = said.at(-1);
+      if (tone === "refused") said.push({ text: line, refused: true });
+      else {
+        sheet.settled.set(step, line);
+        // A stage that says the same thing again (a rollout's counts) replaces its line rather than stacking.
+        if (last !== undefined && !last.refused && stageKey(last.text) === stageKey(line)) said[said.length - 1] = { text: line, refused: false };
+        else said.push({ text: line, refused: false });
+      }
+      sheet.said.set(step, said);
       draw();
     },
     ask(step, prompt, hidden) {
@@ -415,7 +704,7 @@ export async function stile(options: Omit<FlowOptions, "driver"> & { explain?: b
     },
     choose(step, choices) {
       reach(step);
-      sheet.waiting = { kind: "choose", options: choices, at: 0 };
+      sheet.waiting = { kind: "choose", options: choices, at: 0, first: 0 };
       draw();
       return new Promise<string>((resolveChoose, rejectChoose) => {
         answer = resolveChoose;
@@ -426,16 +715,25 @@ export async function stile(options: Omit<FlowOptions, "driver"> & { explain?: b
 
   tui.start();
   if (options.explain === true) sheet.open.add("command");
+  let stopped = false;
   try {
     const report = await runFlow({ ...options, driver });
-    // The last step is settled, so the last frame shows seven done rows rather than six and a cursor.
+    // The last step is settled, so the last frame is the finish: seven done rows, the paths, and the sentence in its box.
     sheet.finished = true;
+    sheet.report = report;
     sheet.waiting = undefined;
     sheet.open.clear();
-    for (const step of STEPS) if (step !== "next") sheet.progress.delete(step);
+    sync();
     tui.renderNow();
+    // The renderer's own stop writes a space before its newline, which wraps off a row the box fills to its last column
+    // and scrolls the sheep's top row away; so the screen is left as drawn and the one newline is written here, with the
+    // cursor where the render left it, at the end of the last row.
+    stopped = true;
+    tui.stop({ preserveScreen: true });
+    terminal.write("\r\n");
     return report;
   } finally {
-    tui.stop();
+    if (timer !== undefined) clearInterval(timer);
+    if (!stopped) tui.stop();
   }
 }
