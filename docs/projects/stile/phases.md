@@ -26,9 +26,10 @@ tool, has built a facade.
 
 **Where we are: stile phases 0 and 2 are CLOSED and phase 1 PART-DONE, 12
 September 2026.** The screen of issue #9 is built to the approved
-mockups and green in the inner rings, and what is left of **stile phase
-1** waits on a person: the ⚑ account ring on the release that carries
-the screen, and the shepherd's walk at their own terminal. Stile phase 0
+mockups, green in the inner rings and the package ring on release
+`084cc74`, and what is left of **stile phase 1** waits on a person: the
+⚑ account ring on that release, and the shepherd's walk at their own
+terminal. Stile phase 0
 gave the dog what the shepherd keeps: `~/.sheep/credentials`, deploy and
 delete reading it, the stop in two parts, and `sheep-2` upgraded with
 nothing in the environment. Stile phase 1 gave the shepherd the stile,
@@ -229,8 +230,8 @@ closing, the cursor step without its colour, the pixel sheep under
 `NO_COLOR`), and the conductor looked at every state rendered through
 the harness. The first cut held in every ring on release `b227c2d`, the
 account ring typing the real token and key through its own terminal.
-Owed: the package and ⚑ account rings on the release that carries the
-screen, and the shepherd's walk.
+The package ring held on release `084cc74`. Owed: the ⚑ account ring on
+that release, and the shepherd's walk.
 
 **Findings:**
 
@@ -258,10 +259,13 @@ screen, and the shepherd's walk.
 - **2026-09-12 — The fakes never showed a spinner** until `healthDelayMs`
   held their listings back; the cell ring's lease test flaked under the
   loaded run (0.015 minutes against 0.01) and passed alone.
-- **2026-09-12 — Open: the rings and the walk on the release with the
-  screen.** `t0`, `t1`, and `a7` read the new frames: the package ring
-  once CI builds the release, the ⚑ account ring on the shepherd's yes,
-  the walk at their terminal.
+- **2026-09-12 — The package ring held on release `084cc74`.** `t0`
+  walked the new stile: seven steps settled, the count exact, no run of
+  a value after 79 keys; the ring reads the checkout's local `release`
+  branch, which must be fast-forwarded first.
+- **2026-09-12 — Open: the ⚑ account ring and the walk on release
+  `084cc74`.** `t1` and `a7` read the new frames and run on the
+  shepherd's yes; the walk at their terminal is theirs.
 
 ---
 
