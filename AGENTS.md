@@ -48,6 +48,10 @@ after reads what was kept; the local home becomes the developer's rig.
 [Project tether](docs/projects/tether/design.md) holds a dog's wait
 through the home's restart: a dropped socket is attached again, and the
 model call the restart cut off reads as interrupted in `sheep log`.
+[Project smit](docs/projects/smit/design.md) marks a station deployed
+from a checkout with the checkout's commit, `-dirty` when the tree has
+uncommitted changes, and the deploy's time, so `sheep home` names what
+it runs; a checkout with no commit is refused.
 Setup and usage are in [README.md](README.md).
 Read a project's `phases.md` for where its work stands and what the next
 phase is; [docs/projects/README.md](docs/projects/README.md) lists them.

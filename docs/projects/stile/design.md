@@ -440,8 +440,8 @@ stile through a terminal it owns.
   break that for a gain the file already has.
 - **A station deployed from a checkout is unstamped forever**, which the
   dog's account under issue #8 found: nobody can tell what it runs.
-  The fix is to stamp or refuse, and it is a finding for a later
-  project.
+  The fix is to stamp or refuse; project smit stamps it, from the
+  shepherd's issue #11.
 - **A per-machine token on the home.** The join hands out the home's
   one token; revoking a machine means rotating it everywhere. Tokens
   per machine, listed and revoked, is a project when there is a second
