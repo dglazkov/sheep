@@ -27,9 +27,9 @@ tool, has built a facade.
 **Where we are: stile phases 0 and 2 are CLOSED and phase 1 PART-DONE, 12
 September 2026.** The screen of issue #9 is built to the approved
 mockups, green in the inner rings and the package ring on release
-`084cc74`, and the shepherd's first walk found two faults, both fixed; what is
-left of **stile phase 1** waits on a person: the ⚑ account ring and a
-second walk on the release with the fixes. Stile phase 0
+`084cc74`, the shepherd's first walk found two faults, both fixed, and their
+second walk on release `752761e` was flawless; what is left of **stile
+phase 1** is the ⚑ account ring on that release, on the shepherd's yes. Stile phase 0
 gave the dog what the shepherd keeps: `~/.sheep/credentials`, deploy and
 delete reading it, the stop in two parts, and `sheep-2` upgraded with
 nothing in the environment. Stile phase 1 gave the shepherd the stile,
@@ -232,8 +232,8 @@ the harness. The first cut held in every ring on release `b227c2d`, the
 account ring typing the real token and key through its own terminal.
 The package ring held on release `084cc74`; the shepherd's walk on it
 found the arrows dead under the kitty protocol and a blank first frame,
-both fixed and the package ring green again on `752761e`. Owed: the ⚑
-account ring and a second walk on that release.
+both fixed, the package ring green again on `752761e`, and the shepherd's
+second walk on it flawless, a station deployed. Owed: the ⚑ account ring.
 
 **Findings:**
 
@@ -247,12 +247,11 @@ account ring and a second walk on that release.
   text, "fish on legs", bracketed choices, every proof green. Issue #9;
   the second cut was settled as mockups first.
 - **2026-09-12 — pi-tui's main-screen stop writes a space before its
-  newline.** On a last row that fills the width it wraps and the finish
-  lost two rows; the stile stops with `preserveScreen` and writes its own.
+  newline**, which wraps on a full-width last row; the stile stops with
+  `preserveScreen` and writes its own.
 - **2026-09-12 — Styling is proved from the emulator's cells**, since
-  pi-tui appends a bare reset to every line; `NO_COLOR` is read cell by
-  cell. The fakes showed no spinner until `healthDelayMs` held their
-  listings back.
+  pi-tui appends a bare reset to every line; the fakes showed no spinner
+  until `healthDelayMs` held their listings back.
 - **2026-09-12 — The package ring held on releases `084cc74` and
   `752761e`**, `t0` walking the stile whole; the ring reads the local
   `release` branch, and a global `sheep` a walk installed fools it.
@@ -260,10 +259,12 @@ account ring and a second walk on that release.
   protocol pi-tui negotiates; a byte comparison missed it. Keys are
   matched by name now, releases skipped.
 - **2026-09-12 — A synchronous `npm install -g` ran before the first
-  frame**, a blank screen for its length, since pi-tui draws on a timer.
-  The first frame is drawn at once and the install awaited.
-- **2026-09-12 — Open: the ⚑ account ring and a second walk on release
-  `752761e`.** `t1` and `a7` on the shepherd's yes; the walk is theirs.
+  frame**, a blank screen for its length; the first frame is drawn at
+  once and the install awaited.
+- **2026-09-12 — The shepherd walked journey 1 on `752761e`**: arrows,
+  sheep first, a station in 1m 20s, "flawlessly". Issue #9 closed.
+- **2026-09-12 — Open: the ⚑ account ring on release `752761e`.** `t1`
+  and `a7` read the new frames, on the shepherd's yes.
 
 ---
 
