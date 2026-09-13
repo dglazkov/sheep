@@ -286,7 +286,10 @@ generated, and sets the secrets through `wrangler secret put` on stdin;
 run again, it redeploys the same Worker from the package it runs from and
 keeps them. That is the upgrade: after `npm install -g` of a newer
 release, `sheep home` says on stderr that the home is older, and `sheep
-home deploy` moves its stamp with every session and pasture kept.
+home deploy` moves its stamp, every session and pasture kept. From a
+checkout the stamp is the checkout's commit, `-dirty` when `git status`
+has anything to say, and the deploy's time, so a redeploy moves it too; a
+checkout git cannot name a commit for is refused.
 `--subdomain` registers a `workers.dev` subdomain when the account has
 none.
 
