@@ -4,7 +4,7 @@ var __name = (target, value) => __defProp(target, "name", { value, configurable:
 // src/collie.ts
 import { DurableObject } from "cloudflare:workers";
 
-// ../../node_modules/.pnpm/isocan@https+++codeload.github.com+dglazkov+isocan+tar.gz+2f15360e76e321c83d26339c50f2311dcb96931e/node_modules/isocan/packages/rc/dist/index.mjs
+// ../../node_modules/.pnpm/isocan@https+++codeload.github.com+dglazkov+isocan+tar.gz+18ca496a6a7006f3914020be7bfed10da8c2542c/node_modules/isocan/packages/rc/dist/index.mjs
 var SYSTEM_ACTOR = { id: "sys_isocan", name: "isocan" };
 function isSystemActor(actorId) {
   return actorId.startsWith("sys_");
@@ -77,6 +77,42 @@ function canvasUrl(origin, canvasId) {
   return `${origin.replace(/\/+$/, "")}${canvasPath(canvasId)}`;
 }
 __name(canvasUrl, "canvasUrl");
+function canvasUrlWithPass(origin, canvasId, token) {
+  return urlWithPass(canvasUrl(origin, canvasId), token);
+}
+__name(canvasUrlWithPass, "canvasUrlWithPass");
+function urlWithPass(url, token) {
+  return `${url}#${token}`;
+}
+__name(urlWithPass, "urlWithPass");
+function splitPassFragment(address) {
+  const hash = address.indexOf("#");
+  if (hash < 0) return { address };
+  const pass = address.slice(hash + 1);
+  const rest = address.slice(0, hash);
+  return pass ? { address: rest, pass } : { address: rest };
+}
+__name(splitPassFragment, "splitPassFragment");
+function parseCanvasAddress(raw) {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const { address, pass } = splitPassFragment(trimmed);
+  const schemed = /^[a-z][a-z0-9+.-]*:\/\//i.test(address) ? address : `${/^(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/.test(address) ? "http" : "https"}://${address}`;
+  let url;
+  try {
+    url = new URL(schemed);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+  if (!url.hostname) return null;
+  const parts = url.pathname.replace(/\/+$/, "").split("/");
+  if (parts.length !== 3 || parts[0] !== "" || `/${parts[1]}` !== CANVAS_PATH_PREFIX) return null;
+  const canvasId = decodeURIComponent(parts[2] ?? "");
+  if (!canvasId) return null;
+  return { origin: url.origin, canvasId, ...pass !== void 0 ? { pass } : {} };
+}
+__name(parseCanvasAddress, "parseCanvasAddress");
 function normalizeHomeUrl(raw) {
   const trimmed = raw.trim();
   try {
@@ -4431,6 +4467,10 @@ function stationCommands(client, marks, narrate = () => {
   };
 }
 __name(stationCommands, "stationCommands");
+function droppedWords(home, id, ms) {
+  return `the station at ${new URL(home).origin} stopped answering for ${Math.max(1, Math.round(ms / 1e3))}s \u2014 following sheep ${id}'s turn again`;
+}
+__name(droppedWords, "droppedWords");
 async function follow(client, id, mark, onEntry, narrate) {
   const seen = /* @__PURE__ */ new Set();
   let started = mark.tip === null;
@@ -4453,9 +4493,10 @@ async function follow(client, id, mark, onEntry, narrate) {
     if (Date.now() - rowAt >= SETUP_POLL_MS) await askRow();
     let view;
     try {
-      const query = new URLSearchParams({ wait: String(FOLLOW_WAIT_MS) });
+      const query = new URLSearchParams({ wait: String(droppedAt === null ? FOLLOW_WAIT_MS : 0) });
       if (tip !== null) query.set("tip", tip);
       view = await client.json(`${sheepPath(id)}/transcript?${query}`);
+      if (droppedAt !== null) narrate(droppedWords(client.station.home, id, Date.now() - droppedAt));
       droppedAt = null;
       pause = 250;
     } catch (error) {
@@ -4497,38 +4538,16 @@ var LIMITS = { turnsPerHour: 12, agentChain: 3 };
 var NARRATION_KEPT = 5e3;
 var COLLIE_CWD = "collie:object";
 var DEFAULT_LAP_MS = 3e4;
-function parsePassAddress(raw) {
-  const trimmed = raw.trim();
-  const hash = trimmed.indexOf("#");
-  if (hash < 0) return null;
-  const pass = trimmed.slice(hash + 1);
-  const address = trimmed.slice(0, hash);
-  if (pass === "") return null;
-  const schemed = /^[a-z][a-z0-9+.-]*:\/\//i.test(address) ? address : `${/^(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/.test(address) ? "http" : "https"}://${address}`;
-  let url;
-  try {
-    url = new URL(schemed);
-  } catch {
-    return null;
-  }
-  if (url.protocol !== "http:" && url.protocol !== "https:" || !url.hostname) return null;
-  const parts = url.pathname.replace(/\/+$/, "").split("/");
-  if (parts.length !== 3 || parts[0] !== "" || parts[1] !== "p") return null;
-  const canvasId = decodeURIComponent(parts[2] ?? "");
-  if (canvasId === "") return null;
-  return { origin: url.origin, canvasId, pass };
-}
-__name(parsePassAddress, "parsePassAddress");
 function canvasAddress(origin, canvasId) {
-  return `${origin.replace(/\/+$/, "")}/p/${encodeURIComponent(canvasId)}`;
+  const withPass = canvasUrlWithPass(origin, canvasId, "");
+  return withPass.slice(0, withPass.lastIndexOf("#"));
 }
 __name(canvasAddress, "canvasAddress");
 function cellPassAddress(origin, canvasId, token) {
+  if (!isLoopbackBase(origin)) return canvasUrlWithPass(origin, canvasId, token);
   const url = new URL(origin);
-  const loopback = url.hostname === "127.0.0.1" || url.hostname === "localhost" || url.hostname === "[::1]";
-  if (loopback) url.hostname = "host.docker.internal";
-  const base = loopback ? url.toString().replace(/\/$/, "") : origin;
-  return `${canvasAddress(base, canvasId)}#${token}`;
+  url.hostname = "host.docker.internal";
+  return canvasUrlWithPass(url.toString().replace(/\/$/, ""), canvasId, token);
 }
 __name(cellPassAddress, "cellPassAddress");
 async function agentKeyFor(secret, name) {
@@ -4863,7 +4882,8 @@ var Collie = class extends DurableObject {
    * an agent's claim is said as the agent's. Isocan's refusal is its own sentence, and nothing here changes.
    */
   async passes(address) {
-    const parsed = parsePassAddress(address);
+    const read = parseCanvasAddress(address);
+    const parsed = read === null || read.pass === void 0 || read.pass === "" ? null : { origin: read.origin, canvasId: read.canvasId, pass: read.pass };
     if (parsed === null) return { ok: false, status: 400, error: "that is not a pass's address; isocan prints one as <home>/p/<canvas>#<pass>" };
     let client;
     try {
@@ -5011,7 +5031,7 @@ var CHECKOUT_BUILD = { commit: "0.0.0-checkout", builtAt: null };
 function collieBuild() {
   if (false) return CHECKOUT_BUILD;
   try {
-    const parsed = JSON.parse('{"commit":"7aac0c8","builtAt":"2026-09-14T18:36:31Z"}');
+    const parsed = JSON.parse('{"commit":"9062185","builtAt":"2026-09-14T20:18:56Z"}');
     if (typeof parsed.commit === "string" && parsed.commit !== "") return { commit: parsed.commit, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
   } catch {
   }
