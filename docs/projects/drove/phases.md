@@ -35,14 +35,14 @@ resource, spend money, or need a login, and are asked out loud first.
 
 ---
 
-**Where we are: drove phases 0 and 1 closed and drove phase 2
-part-done, 14 September 2026.** Drove phase 2's journey 5 waits on the
-shepherd: the box's github shop and a `github-token` credential, and
-the repository and issue a walk comments on. The second station
-`sheep-drove` stands at `b589052`; conformance against the box printed
-`conformant: 30 checks` twice through sheep on it, and journey 1 was
-walked there by a real model. Journeys 1, 2, 3, and 4 hold; journey 5
-alone waits, and nothing waits on work. Town stands at `473687e`, whose
+**Where we are: done, 14 September 2026.** All three phases are
+CLOSED and every journey was walked: `town` is in every sheep's shell,
+`sheep sh` looks into it, town's conformance script passes through
+sheep on the local home and on the second station against the box, and
+`scripts/drove.mjs` walks a sheep with a grant from the box that works
+memory and github, twice, the search clean. The second station
+`sheep-drove` stands at `b589052`. Nothing waits on a person; three
+Open debts remain, none of them the line's. Town stands at `473687e`, whose
 `docs/harness.md` and `scripts/conform.mjs` are road's `80496d2`.
 
 The order is the order of dependence. Drove phase 0 is the program,
@@ -306,36 +306,34 @@ put back. (A workspace file was the plan; `sheep export` holds no
 workspace, so it hid the token from the search whole.) A phase with a walk is not CLOSED
 until the walk is walked.
 
-**Status: PART-DONE.** 2026-09-14. Proof steps 1 to 3 held on the
-second station against the box, and the stage's search was falsified
-there; step 4, journey 5, waits on the box's github shop.
+**Status: CLOSED.** 2026-09-14. The four Proof steps held on the second
+station against the box, journey 5 walked twice with a real model, and
+the stage's search was falsified there. This is the night sky's line.
 
 **Findings:**
 
 - **2026-09-14 — The station went up on `sheep home deploy --help`.**
-  The verb takes `--help` for no flag and deployed `sheep-drove` at
-  `b589052`, clean, healthy, before the conductor meant to; the
-  shepherd had said yes.
+  The verb takes `--help` for no flag; it deployed `sheep-drove` at
+  `b589052`, clean and healthy, after the shepherd's yes but before the
+  conductor meant to.
 - **2026-09-14 — Conformance held over the wire.** Town `473687e`,
-  `--town` the box, the bridge on `sheep-drove`: thirty `ok`, exit 0,
-  twice (14 s, 12 s), seven sheep then thirteen, all ended, the box's
-  shops as before.
+  `--town` the box, the bridge on the station: thirty `ok`, exit 0,
+  twice (14 s, 12 s); every bridge sheep ended.
 - **2026-09-14 — Journey 1 walked on the station.** A real model ran
-  `town`, the log held the box's help and no token, `env` no grant, the
-  audit three calls, and after the revoke `town` exited 3 in the town's
-  words.
+  `town`; no token in the log or `env`; after the revoke `town` exited 3
+  in the town's words.
 - **2026-09-14 — pi's export tables are WITHOUT ROWID.** The stage's
-  first search died on a real export; it names a hit by primary key now,
-  and a place that throws is unread and not clean.
-- **2026-09-14 — The falsification held.** A canary prompted into a
-  scratch sheep was found in the log and export; with both skipped the
-  search called it clean, exit 0; put back, exit 1.
-- **2026-09-14 — The box's audit keeps argv's hash, not its words.**
-  The stage reads the memory line and the comment from the transcript.
-- **2026-09-14 — Open: journey 5 waits on the box's github.** A
-  `github-token` credential for `dimitri` from the shepherd's token,
-  then `shop add` of `shops/github`, and the repository and issue to
-  comment on.
+  first search died on a real export; it names hits by primary key, and
+  a place that throws is not clean.
+- **2026-09-14 — The falsification held.** A prompted canary was found
+  in log and export; with both skipped the search said clean, exit 0.
+- **2026-09-14 — Journey 5 walked twice, 16 s and 15 s.** Each run
+  remembered a line and commented it on `dglazkov/town#6`, a fixture
+  opened and closed for the walk; `--teardown` revoked the kept pass.
+- **2026-09-14 — The box's audit keeps argv's hash.** The stage reads
+  the memory line and the comment from the transcript.
+- **2026-09-14 — Open: the report prints the last message's newlines
+  as `\n`.** Readable, not pretty; the stage's next change fixes it.
 - **2026-09-14 — Open: `setup.test.ts` reads this checkout's kennel.**
-  With a home named there it fails, so the suite runs with the config
-  set aside; the test wants a kennel of its own.
+  With a home named there it fails; the suite runs with the config set
+  aside.
