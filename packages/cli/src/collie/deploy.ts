@@ -17,8 +17,9 @@
  * as `COLLIE_BUILD` (`markFor`, the station's mark); a release's Worker
  * carries its own stamp already.
  *
- * The three secrets go through `deploy.ts`'s own `putSecret`, each value on
- * wrangler's stdin and never an argument: `COLLIE_SHEEP_HOME` and
+ * The three secrets ride with the Worker's upload as one version, through
+ * `wrangler deploy --secrets-file` reading a named pipe (`withSecretsPipe`),
+ * never an argument and never a file's content: `COLLIE_SHEEP_HOME` and
  * `COLLIE_SHEEP_TOKEN`, the station's address and token as the kennel's
  * config holds them, and `COLLIE_TOKEN`, minted here the first time and kept
  * after in the config's `collie` block beside the Worker's name and address,
@@ -35,14 +36,16 @@
  * is: asked in place of the collie's `workers.dev` address, for the door, the
  * report, and the end. Every ring strips it.
  */
+import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, constants as fsConstants, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync, writeSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { configPath, readConfigFile, sheepDir, writeConfigFile } from "../config.js";
 import { accountToken, CREDENTIAL_ENV } from "../credentials.js";
-import { type Account, AccountApi, address, markFor, MidTurn, type MidTurnSheep, parseJsonc, putSecret, Refusal, tail, validateName, wrangler, wranglerBin } from "../deploy.js";
+import { type Account, AccountApi, address, markFor, MidTurn, type MidTurnSheep, parseJsonc, Refusal, tail, validateName, wrangler, type WranglerResult, wranglerBin } from "../deploy.js";
 import { type BuildSide, readStamp } from "../local.js";
 import { CollieHome, Unreachable } from "./home.js";
 import { answersCollie, rigConfig } from "./local.js";
@@ -202,6 +205,49 @@ export async function readyWithToken(url: string, token: string, progress: (inAR
   }
 }
 
+/**
+ * The secrets handed to wrangler through a named pipe, not a file (collie phase 2). `--secrets-file` takes a path and
+ * reads it whole; `/dev/stdin` would do on macOS but not on Linux, where a child's stdin is a socket and opening it by
+ * path is ENXIO. So a FIFO, mode 600, in a private temporary directory (mode 700, `mkdtemp`'s): the values pass through
+ * the kernel's pipe and are never written to a disk, never in an argument, and the directory is removed in `finally`
+ * whatever wrangler did. The write waits for wrangler to open the pipe (a non-blocking open answers ENXIO until a reader
+ * has it), and gives up when wrangler has ended without reading.
+ */
+export async function withSecretsPipe(values: Record<string, string>, run: (path: string) => Promise<WranglerResult>): Promise<WranglerResult> {
+  const dir = mkdtempSync(join(tmpdir(), "collie-secrets-"));
+  const fifo = join(dir, "secrets.json");
+  try {
+    const made = spawnSync("mkfifo", ["-m", "600", fifo], { encoding: "utf8" });
+    if (made.error !== undefined || made.status !== 0) throw new Error(`mkfifo could not make the pipe the secrets pass through (${made.error?.message ?? made.stderr.trim()}); nothing was deployed`);
+    const payload = JSON.stringify(values);
+    let ended = false;
+    const feeding = (async () => {
+      while (!ended) {
+        try {
+          const fd = openSync(fifo, fsConstants.O_WRONLY | fsConstants.O_NONBLOCK);
+          try {
+            writeSync(fd, payload);
+          } finally {
+            closeSync(fd);
+          }
+          return;
+        } catch (error) {
+          if (!(error instanceof Error && "code" in error && error.code === "ENXIO")) throw error;
+        }
+        await sleep(20);
+      }
+    })();
+    try {
+      return await run(fifo);
+    } finally {
+      ended = true;
+      await feeding.catch(() => undefined);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 /** The agents mid-turn at the collie, from `GET /report` with the kept token; undefined when it does not answer, since then nothing can be known. */
 async function midTurnAtCollie(address: string, token: string): Promise<MidTurnSheep[] | undefined> {
   const probe = collieProbe(address);
@@ -255,25 +301,28 @@ export async function deployCollie(options: CollieDeployOptions): Promise<Collie
   const bin = wranglerBin(stamp, say);
   const config = writeCollieConfig(name);
   const cwd = dirname(config);
-  say("collie: uploading the Worker with wrangler\n");
+  // The Worker and its three secrets are one version (release cc475fb's co4): a version without `COLLIE_TOKEN` kept
+  // answering some requests 401 even after the new one answered five times in a row, so none may ever exist.
+  // `wrangler deploy --secrets-file` (wrangler 4.129) binds them as `secret_text` in the same upload; a redeploy that
+  // keeps them passes no file, and the new version inherits what the Worker holds.
+  const bearer = kept ?? randomBytes(24).toString("hex");
+  const secrets: [string, string][] = options.secrets
+    ? [
+        ["COLLIE_SHEEP_HOME", options.station.home],
+        ["COLLIE_SHEEP_TOKEN", options.station.token],
+        ["COLLIE_TOKEN", bearer],
+      ]
+    : [];
+  say(secrets.length === 0 ? "collie: uploading the Worker, its secrets kept\n" : "collie: uploading the Worker with its secrets, as one version\n");
   const define = stamp === undefined ? ["--define", `COLLIE_BUILD:${JSON.stringify(JSON.stringify(mark))}`] : [];
-  const deployed = await wrangler(bin, ["deploy", "--config", config, ...define], { token, accountId: account.id, cwd });
+  const deployed =
+    secrets.length === 0
+      ? await wrangler(bin, ["deploy", "--config", config, ...define], { token, accountId: account.id, cwd })
+      : await withSecretsPipe(Object.fromEntries(secrets), (path) => wrangler(bin, ["deploy", "--config", config, ...define, "--secrets-file", path], { token, accountId: account.id, cwd }));
   if (deployed.code !== 0) throw new Error(`wrangler deploy --config ${config} exited ${deployed.code}:\n${tail(deployed)}`);
 
   // Past here the Worker is live, so a failure is exit 1 and says that running setup again finishes it.
   try {
-    const bearer = kept ?? randomBytes(24).toString("hex");
-    const secrets: [string, string][] = options.secrets
-      ? [
-          ["COLLIE_SHEEP_HOME", options.station.home],
-          ["COLLIE_SHEEP_TOKEN", options.station.token],
-          ["COLLIE_TOKEN", bearer],
-        ]
-      : [];
-    for (const [secret, value] of secrets) {
-      say(`collie: putting ${secret} on the Worker, on stdin\n`);
-      await putSecret({ bin, config, cwd, secret, value, token, accountId: account.id, env: null });
-    }
     // The block: this Worker, its address, its token; the rest of the config as it was.
     const { collie: _collie, ...rest } = readConfigFile() ?? {};
     writeConfigFile({ ...rest, collie: { name, address: collieAddress, token: bearer } });

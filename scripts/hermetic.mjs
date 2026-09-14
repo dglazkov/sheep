@@ -4413,10 +4413,33 @@ async function collieOnAccount(ring, api, station, { harness, token, needles, ho
     // The room's own word that the enrolment landed and this badge answers for Percy, before isocan's `who` is asked: a failure
     // names the first thing that did not happen, the narration's or the canvas's.
     await until("co5", "collie log --json (the enrolment narrated: \"enrolled Percy — answerable here\")", narration, (lines) => lines.some((line) => /enrolled Percy — answerable here/.test(line)), 120_000);
-    const who = await until("co5", "isocan --json who (Percy answerable)", () => isocanRead(["who"]), (value) => value?.standing?.some((row) => row.actor.name === "Percy" && row.state === "answerable"), 120_000, 3_000);
-    const percy = who.standing.find((row) => row.actor.name === "Percy");
-    if (percy.policy?.owner?.id !== person.actor.id) ring.fail("co5", "isocan --json who", { stdout: JSON.stringify(percy), stderr: `expected Percy listening to ${person.actor.id}`, code: 1 });
-    ring.ok("co5", "POST /api/projects/:id/agents/ask {name: Percy}; collie log; isocan who", `the ask answered ok; "Hermetic asked from the canvas to add Percy — enrolling here"; Percy answerable, ${percy.listens}`);
+    // Percy's actor id, from the canvas's roster (it lists the enrolment in any state); then the fact, as the tray reads it: the
+    // home's own rc route on the person's badge, parked, Percy among the actors held, Hermetic the owner and Percy's policy's.
+    // Not this machine's `isocan who`, whose replica daemon cannot see a hold the collie placed at the home (isocan#306).
+    const rostered = await until("co5", "isocan --json who (Percy on the roster)", () => isocanRead(["who"]), (value) => value?.standing?.some((row) => row.actor?.name === "Percy"), 120_000, 3_000);
+    const percy = { actor: rostered.standing.find((row) => row.actor.name === "Percy").actor };
+    const held = await until(
+      "co5",
+      `GET ${COLLIE_ISOCAN_HOME}/api/projects/${made.canvasId}/rc (Percy held, owned by Hermetic)`,
+      () => tray("GET", `/api/projects/${made.canvasId}/rc`),
+      (answer) =>
+        answer.status === 200 &&
+        answer.body.parked === true &&
+        Array.isArray(answer.body.actorIds) &&
+        answer.body.actorIds.includes(percy.actor.id) &&
+        Array.isArray(answer.body.owners) &&
+        answer.body.owners.some((owner) => owner.id === person.actor.id) &&
+        answer.body.policies?.[percy.actor.id]?.owner?.id === person.actor.id,
+      120_000,
+      2_000,
+    );
+    const whoOnce = await isocanRead(["who"]);
+    const whoSaid = whoOnce?.standing?.find((row) => row.actor?.name === "Percy")?.state ?? "(not listed)";
+    ring.ok(
+      "co5",
+      "POST /api/projects/:id/agents/ask {name: Percy}; collie log; GET /api/projects/:id/rc; isocan who",
+      `the ask answered ok; "Hermetic asked from the canvas to add Percy — enrolling here", then "enrolled Percy — answerable here"; the home's rc: parked ${held.body.parked}, actorIds ${JSON.stringify(held.body.actorIds)} (Percy ${percy.actor.id}), owners ${JSON.stringify(held.body.owners.map((owner) => owner.name))}, Percy's policy ${JSON.stringify(held.body.policies[percy.actor.id])}; observed, not asserted: this machine's isocan who reads Percy ${whoSaid} (isocan#306)`,
+    );
 
     // co6: the mention, and the reply read from the thread, with no `isocan rc` of the ring's on this machine the whole time.
     const rcSeen = new Set();
@@ -4510,6 +4533,7 @@ async function collieOnAccount(ring, api, station, { harness, token, needles, ho
       "collie journey 1 step 3: `collie setup` at a person's real terminal; co3 drove it through the harness's terminal (pipes, SHEEP_TEST_TERMINAL), and packages/cli/test/collie-setup.test.ts proves the hidden prompt under a real pseudo-terminal",
       "collie journey 1 step 5: the tray's Add an agent in a browser; co5 posted the ask its button sends, on the person's badge",
       "collie journey 3 step 3: the name typed at a terminal; co9 gave it as one line of stdin",
+      "collie journey 1 step 5's `isocan who` listing Percy answerable: a replica daemon's roster does not see a hold placed at the home (isocan#306); co5 read the home's rc route the tray reads",
       "collie journey 3 steps 1 and 2: the held mention answered after on; co8 read the tray's holds, and packages/cli/test/collie-home.test.ts walks the held mention on the rig",
     );
   } catch (error) {

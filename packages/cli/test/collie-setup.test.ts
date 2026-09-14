@@ -49,7 +49,7 @@ const SHEEP_ID = "11111111-2222-3333-4444-555555555555";
 type Json = Record<string, unknown>;
 
 interface CollieWorker {
-  /** The bearer the Worker holds, when a case says; otherwise the last `COLLIE_TOKEN` the fake wrangler's record shows put, as the real Worker's secret is. */
+  /** The bearer the Worker holds, when a case says; otherwise the last `COLLIE_TOKEN` a deploy's secrets file carried in the fake wrangler's record, as the real Worker's secret is. */
   token: string | null;
   /** The token as the account holds it: the fake wrangler's record, read at each request. */
   put?: () => string | null;
@@ -154,6 +154,8 @@ interface Run {
 interface WranglerCall {
   args: string[];
   stdin: string;
+  /** What `deploy --secrets-file` read: the path, whether it was a named pipe, its mode, and the values. */
+  secretsFile?: { path: string; fifo: boolean; mode: string; values: Record<string, string> };
   cwd: string;
   env: { token: boolean; tokenInArgs: boolean };
 }
@@ -278,8 +280,10 @@ export async function resolveIdentity(client, home) {
       child.stdin.end(run.stdin ?? "");
     });
   worker.put = () => {
-    const puts = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as WranglerCall).filter((call) => call.args[0] === "secret" && call.args[2] === "COLLIE_TOKEN") : [];
-    return puts.length === 0 ? null : puts.at(-1)!.stdin.trim();
+    const puts = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as WranglerCall).filter((call) => call.secretsFile?.values.COLLIE_TOKEN !== undefined || (call.args[0] === "secret" && call.args[2] === "COLLIE_TOKEN")) : [];
+    // Carried by a deploy's secrets file, or put on its own (which a case asserts never happens): the Worker holds either.
+    const last = puts.at(-1);
+    return last === undefined ? null : (last.secretsFile?.values.COLLIE_TOKEN ?? last.stdin.trim());
   };
   const made: World = {
     dir,
@@ -310,7 +314,7 @@ function heldToken(w: World): string {
 }
 
 describe("collie setup with --json, against the fake account (journey 1 step 3)", () => {
-  it("finds the station and the identity, deploys <station>-collie with the three secrets on stdin, waits for its door, and writes the block", { timeout: 60_000 }, async () => {
+  it("finds the station and the identity, deploys <station>-collie and its three secrets as one version, waits for its door, and writes the block", { timeout: 60_000 }, async () => {
     const w = await world();
     const run = await w.collie(["setup", "--json"]);
     expect(run.code, run.stderr).toBe(0);
@@ -327,9 +331,11 @@ describe("collie setup with --json, against the fake account (journey 1 step 3)"
     // The identity was asked of the isocan on PATH, through its own API.
     expect(w.calls()).toEqual(["baseForCwd 4441", "resolveIdentity client"]);
 
-    // The Worker: one deploy over the derived config, named for the station, built from packages/collie in this checkout.
+    // The Worker: one deploy over the derived config, named for the station, built from packages/collie in this checkout,
+    // and nothing after it: no `secret put`, so no version of the collie ever exists without its secrets (release cc475fb).
     const calls = w.wrangler();
-    expect(calls.map((call) => call.args.slice(0, 3).join(" "))).toEqual(["deploy --config " + join(w.kennel, "collie", "wrangler.jsonc"), "secret put COLLIE_SHEEP_HOME", "secret put COLLIE_SHEEP_TOKEN", "secret put COLLIE_TOKEN"]);
+    expect(calls.map((call) => call.args.slice(0, 3).join(" "))).toEqual(["deploy --config " + join(w.kennel, "collie", "wrangler.jsonc")]);
+    expect(w.account.deploys).toEqual([{ name: COLLIE.name, container: null, image: null, vars: [], kv: [], build: null, secrets: ["COLLIE_SHEEP_HOME", "COLLIE_SHEEP_TOKEN", "COLLIE_TOKEN"] }]);
     const derived = JSON.parse(readFileSync(join(w.kennel, "collie", "wrangler.jsonc"), "utf8")) as Json;
     expect(derived).toMatchObject({ name: COLLIE.name, main: collieSource, durable_objects: { bindings: [{ name: "COLLIE", class_name: "Collie" }] } });
     expect(derived.env).toBeUndefined();
@@ -339,14 +345,17 @@ describe("collie setup with --json, against the fake account (journey 1 step 3)"
     expect(w.account.applications.map((application) => application.name)).not.toContain(COLLIE.name);
     expect(w.account.secrets[COLLIE.name]).toEqual(["COLLIE_SHEEP_HOME", "COLLIE_SHEEP_TOKEN", "COLLIE_TOKEN"]);
 
-    // The secrets: each value on stdin, and none in any argument, in the env's record, or in the report.
+    // The secrets: through a named pipe, mode 600, in a directory gone after the deploy; none in any argument, in the env's
+    // record, or in the report; and the token the config keeps is the one the upload carried.
     const block = w.config().collie as Json;
     expect(block).toEqual({ name: COLLIE.name, address: COLLIE.address, token: expect.stringMatching(/^[0-9a-f]{48}$/) });
     const values = { COLLIE_SHEEP_HOME: STATION.home, COLLIE_SHEEP_TOKEN: STATION.token, COLLIE_TOKEN: block.token as string };
-    for (const call of calls.slice(1)) {
-      expect(call.args).not.toContain("--env");
-      expect(call.stdin).toBe(`${values[call.args[2] as keyof typeof values]}\n`);
-    }
+    const carried = calls[0]!.secretsFile!;
+    expect(carried).toMatchObject({ fifo: true, mode: "600", values });
+    expect(calls[0]!.args[calls[0]!.args.indexOf("--secrets-file") + 1]).toBe(carried.path);
+    expect(existsSync(carried.path)).toBe(false);
+    expect(existsSync(join(carried.path, ".."))).toBe(false);
+    expect(calls[0]!.stdin).toBe("");
     for (const call of calls) {
       expect(call.env).toMatchObject({ token: true, tokenInArgs: false });
       for (const value of [...Object.values(values), TOKEN]) expect(call.args.some((arg) => arg.includes(value)), `a value in wrangler's arguments: ${call.args.join(" ")}`).toBe(false);
@@ -368,8 +377,9 @@ describe("collie setup with --json, against the fake account (journey 1 step 3)"
     expect(again.code, again.stderr).toBe(0);
     expect(JSON.parse(again.stdout)).toMatchObject({ collie: { name: COLLIE.name, state: "redeployed", token: "kept" } });
     expect((w.config().collie as Json).token).toBe(token);
-    const puts = w.wrangler().filter((call) => call.args[2] === "COLLIE_TOKEN");
-    expect(puts.map((call) => call.stdin)).toEqual([`${token}\n`, `${token}\n`]);
+    const puts = w.wrangler().filter((call) => call.secretsFile !== undefined);
+    expect(puts.map((call) => call.secretsFile!.values.COLLIE_TOKEN)).toEqual([token, token]);
+    expect(w.wrangler().map((call) => call.args[0])).toEqual(["deploy", "deploy"]);
     expect(w.worker.requests).toContainEqual({ method: "GET", path: "/report", auth: `Bearer ${token}` });
   });
 
@@ -571,6 +581,9 @@ describe("collie deploy (journey 2 step 2's guard)", () => {
     expect(now.stdout).toContain("secrets: kept as the Worker holds them\ninterrupted: 1\n");
     const after = w.wrangler().slice(before);
     expect(after.map((call) => call.args[0])).toEqual(["deploy"]);
+    // Kept: the redeploy carries no secrets file, and the new version inherits what the Worker holds.
+    expect(after[0]!.secretsFile).toBeUndefined();
+    expect(after[0]!.args).not.toContain("--secrets-file");
     expect((w.config().collie as Json).token).toBe(token);
 
     // Mistakes: --now goes with deploy alone.
@@ -717,7 +730,7 @@ describe("collie setup at a terminal (the stile's screen, 80 by 24)", () => {
     await run.press("\r");
 
     // The deploy behind the spinner, its key line; then the finish.
-    const deploying = await run.waitFor((text) => /› collie {4}deploying blog-collie to Fake's Account/.test(text) && /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] uploading the Worker with wrangler +0m \ds$/m.test(text));
+    const deploying = await run.waitFor((text) => /› collie {4}deploying blog-collie to Fake's Account/.test(text) && /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] uploading the Worker with its secrets, as one version +0m \ds$/m.test(text));
     expect(deploying.split("\n").at(-1)).toBe("  the Worker takes a few seconds   Ctrl-C leaves it deploying");
     const finish = await run.waitFor("what is left", { timeoutMs: 60_000 });
     expect(finish).toContain(`  ✓ collie    ${COLLIE.address}`);

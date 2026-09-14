@@ -31,7 +31,7 @@
  * how the test reads which environment the CLI chose, and `eyes: true`
  * either way (eyes phase 2), as the real local home answers.
  */
-import { appendFileSync, readFileSync } from "node:fs";
+import { appendFileSync, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 
 const args = process.argv.slice(2);
@@ -48,11 +48,27 @@ const flag = (name) => {
   const at = args.indexOf(name);
   return at === -1 ? undefined : args[at + 1];
 };
+// `deploy --secrets-file <path>` (collie phase 2): read whole, as wrangler 4.129 reads it (JSON, else KEY=value lines), and
+// recorded with what the path was (a FIFO, a regular file) and its mode, so a case can say how the values travelled.
+const secretsPath = args[0] === "deploy" ? flag("--secrets-file") : undefined;
+let secretsFile;
+if (secretsPath !== undefined) {
+  const stat = statSync(secretsPath);
+  const text = readFileSync(secretsPath, "utf8");
+  let values;
+  try {
+    values = JSON.parse(text);
+  } catch {
+    values = Object.fromEntries(text.split("\n").filter((line) => line.includes("=")).map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]));
+  }
+  secretsFile = { path: secretsPath, fifo: stat.isFIFO(), mode: (stat.mode & 0o777).toString(8), values };
+}
 appendFileSync(
   process.env.SHEEP_TEST_WRANGLER_LOG,
   `${JSON.stringify({
     args,
     stdin,
+    ...(secretsFile === undefined ? {} : { secretsFile }),
     cwd: process.cwd(),
     env: { CI: process.env.CI, WRANGLER_SEND_METRICS: process.env.WRANGLER_SEND_METRICS, token: Boolean(token), account: process.env.CLOUDFLARE_ACCOUNT_ID ?? null, tokenInArgs: Boolean(token) && args.some((arg) => arg.includes(token)) },
   })}\n`,
@@ -95,7 +111,7 @@ if (args[0] === "dev") {
   // The define as the bundler takes it: a JSON expression after the key, here a string, whose value the Worker parses as JSON.
   const defined = args.filter((arg, i) => args[i - 1] === "--define" && arg.startsWith("SHEEP_BUILD:")).map((arg) => JSON.parse(JSON.parse(arg.slice("SHEEP_BUILD:".length))));
   const build = defined.length === 0 ? null : { commit: defined.at(-1).commit, builtAt: defined.at(-1).builtAt };
-  await fetch(`${api}/_fake/deploy`, { method: "POST", body: JSON.stringify({ name: pen.name, container: pen.containers?.[0]?.name ?? null, image: pen.containers?.[0]?.image ?? null, vars: args.filter((arg, i) => args[i - 1] === "--var"), kv: pen.kv_namespaces ?? [], build }) });
+  await fetch(`${api}/_fake/deploy`, { method: "POST", body: JSON.stringify({ name: pen.name, container: pen.containers?.[0]?.name ?? null, image: pen.containers?.[0]?.image ?? null, vars: args.filter((arg, i) => args[i - 1] === "--var"), kv: pen.kv_namespaces ?? [], build, ...(secretsFile === undefined ? {} : { secrets: Object.keys(secretsFile.values) }) }) });
   console.log(`Total Upload: 1234.56 KiB / gzip: 234.56 KiB\nUploaded ${pen.name} (2.34 sec)\nDeployed ${pen.name} triggers (1.23 sec)\n  https://${pen.name}.fake.workers.dev\nCurrent Version ID: 00000000-0000-0000-0000-000000000000`);
 } else if (args[0] === "secret" && args[1] === "put") {
   if (process.env.SHEEP_TEST_WRANGLER_FAIL === `secret:${args[2]}`) {

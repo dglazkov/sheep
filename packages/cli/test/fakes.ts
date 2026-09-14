@@ -52,7 +52,8 @@ export interface FakeState {
   rolloutPolls: number;
   /** `build` is what the deploy defined into the Worker (smit phase 0), null when it defined none, as the release's deploy does. */
   /** `container` and `image` are null for a Worker with no container (collie phase 2: the collie's). */
-  deploys: { name: string; container: string | null; image: string | null; vars: string[]; kv: { binding: string; id?: string }[]; build?: { commit: string; builtAt: string | null } | null }[];
+  /** `secrets` are the names a deploy's `--secrets-file` bound in the same upload (collie phase 2); absent without one. */
+  deploys: { name: string; container: string | null; image: string | null; vars: string[]; secrets?: string[]; kv: { binding: string; id?: string }[]; build?: { commit: string; builtAt: string | null } | null }[];
   /** Each Worker's secret names, as the fake wrangler's `secret put` registers them: never a value, as the real API answers. */
   secrets: Record<string, string[]>;
   /**
@@ -104,6 +105,12 @@ export function fakeAccount(state: FakeState): Promise<{ server: Server; url: st
       const body = (await json(request)) as FakeState["deploys"][number];
       state.deploys.push(body);
       if (!state.workers.includes(body.name)) state.workers.push(body.name);
+      // Secrets that rode with the upload are the Worker's from this version on, as the account lists them.
+      for (const secret of body.secrets ?? []) {
+        const held = state.secrets[body.name] ?? [];
+        if (!held.includes(secret)) held.push(secret);
+        state.secrets[body.name] = held;
+      }
       // A Worker with no container (the collie's) makes no application.
       if (body.container === null || body.image === null) return response.end("{}");
       const existing = state.applications.find((application) => application.name === body.container);
