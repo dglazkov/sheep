@@ -104,7 +104,9 @@ export async function main(argv: readonly string[]): Promise<number> {
   }
   const parsed = parse(argv);
   const command = parsed.rest[0];
-  if (command === undefined || command === "--help" || command === "-h") {
+  // Help wherever it is typed among the words, never only first: `sheep home deploy --help` once deployed a station, since
+  // the verb read no flag it did not know. A flag's value and a prompt after `--` are not words, so they never ask for it.
+  if (command === undefined || parsed.rest.includes("--help") || parsed.rest.includes("-h")) {
     process.stdout.write(USAGE);
     return 0;
   }

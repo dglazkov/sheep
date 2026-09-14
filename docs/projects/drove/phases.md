@@ -315,7 +315,7 @@ the stage's search was falsified there. This is the night sky's line.
 - **2026-09-14 — The station went up on `sheep home deploy --help`.**
   The verb takes `--help` for no flag; it deployed `sheep-drove` at
   `b589052`, clean and healthy, after the shepherd's yes but before the
-  conductor meant to.
+  conductor meant to. `--help` after any verb now prints the usage.
 - **2026-09-14 — Conformance held over the wire.** Town `473687e`,
   `--town` the box, the bridge on the station: thirty `ok`, exit 0,
   twice (14 s, 12 s); every bridge sheep ended.
