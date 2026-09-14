@@ -54,13 +54,13 @@ export interface Option {
  * What a screen, or a script, gives the flow. Three callbacks and no
  * more: everything else a step does is code that already exists.
  */
-export interface Driver {
+export interface Driver<S extends string = StepName> {
   /**
    * One value, typed. `hidden` means it is a credential: the screen shows
    * a dot per character and never the character. The flow never hands
    * what comes back to `say`.
    */
-  ask(step: StepName, prompt: string, hidden: boolean): Promise<string>;
+  ask(step: S, prompt: string, hidden: boolean): Promise<string>;
   /**
    * The step's line: what it is doing now while it is the cursor, and
    * what it settled on once it is done, which is the last line said. A
@@ -68,9 +68,9 @@ export interface Driver {
    * `refused` marks the reason a value is asked for again, so a screen
    * knows red from progress; a scripted driver may ignore it.
    */
-  say(step: StepName, line: string, tone?: "refused"): void;
+  say(step: S, line: string, tone?: "refused"): void;
   /** One of the options, by `value`. The first is the default, and Enter takes it. */
-  choose(step: StepName, options: Option[]): Promise<string>;
+  choose(step: S, options: Option[]): Promise<string>;
 }
 
 /**

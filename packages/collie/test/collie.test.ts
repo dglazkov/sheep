@@ -1,6 +1,6 @@
 /**
  * The collie's object in workerd (collie phase 1): journeys 1 (steps 5 to
- * 7), 2 (steps 2 and 4, in miniature), 3, and 5 (steps 3 and 5) against the
+ * 7), 2 (steps 2 to 4, in miniature; step 3 from collie phase 2), 3, and 5 (steps 3 and 5) against the
  * fakes in `fakes.ts`, which stand in for an isocan home and the station and
  * are put in place of the global `fetch` the object calls.
  *
@@ -279,6 +279,32 @@ describe("the night (journey 2, in miniature)", () => {
     expect(isocan.calls.filter((call) => call === "POST /api/park/advance").length).toBeGreaterThan(advancesBefore);
     // The alarm is armed a lap ahead again.
     expect(await runInDurableObject(again, (_instance, state) => state.storage.getAlarm())).not.toBeNull();
+  });
+
+  it("step 3: the station restarted mid-turn; the follow's drop is said once, naming the station, the turn's end still read, and the cursor advanced", async () => {
+    const stub = collie();
+    await standingBy(stub);
+    const percy = await percyEnrolled(stub);
+    station.turn = "hold";
+    isocan.mention(DIMITRI, percy, "@Percy through a restart");
+    const mention = isocan.log.at(-1)!;
+    await until(() => station.prompts.length === 1 && [...station.rows.keys()].some((id) => station.running(id)), "Percy's turn running at the station");
+    const [sheep] = [...station.rows.keys()];
+
+    // The restart: the held long poll is cut, and the station refuses connections for a while.
+    station.down = true;
+    await new Promise((resolve) => setTimeout(resolve, 2_500));
+    station.down = false;
+    await said(stub, "stopped answering for");
+    station.endTurn(sheep!);
+    await until(() => isocan.parks.get(percy.id)!.cursor >= mention.seq, "the cursor advanced when the turn ended");
+    await said(stub, "Percy · turn ended — end_turn");
+    const narration = await lines(stub);
+    const origin = new URL(station.origin).origin.replace(/[.]/g, "\\.");
+    expect(narration.filter((line) => line.includes("stopped answering for")), narration.join("\n")).toHaveLength(1);
+    expect(narration.find((line) => line.includes("stopped answering for"))).toMatch(new RegExp(`^Percy · the station at ${origin} stopped answering for \\d+s — following sheep ${sheep}'s turn again$`));
+    expect(station.prompts).toHaveLength(1);
+    expect(station.rows.size).toBe(1);
   });
 
   it("the resume rule reads isocan's own marks: a summons whose every entry is redelivered is the rejoined turn's, one with a new entry is sent after it", () => {

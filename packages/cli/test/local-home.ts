@@ -22,10 +22,15 @@
  * held it, and the cells' state there when it comes back. A home this
  * helper did not spawn cannot be restarted from here, and a file that needs
  * it skips with that sentence.
+ *
+ * Collie phase 2 adds `startKennelHome`: a scratch kennel's own local home,
+ * `sheep home local --faux --no-container` run by the built command, since
+ * the rig (`collie local`) stands beside the local home a kennel's config
+ * names, and a `startHome` home is in no kennel.
  */
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -271,4 +276,53 @@ export async function streamSheep(home: LocalHome, args: readonly string[], opti
 export async function scriptFaux(home: LocalHome, path: string, program: unknown): Promise<number> {
   const response = await fetch(`${home.url}${path}`, { method: "POST", headers: { authorization: `Bearer ${home.token}` }, body: JSON.stringify(program) });
   return response.status;
+}
+
+/** A kennel's own local home (collie phase 2): its address and token, as the config `sheep home local` wrote says them. */
+export interface KennelHome {
+  url: string;
+  token: string;
+  /** The kennel's config file. */
+  config: string;
+}
+
+/**
+ * A kennel's own local home, which the rig stands beside: `sheep home local
+ * --faux --no-container` run by the built command in `cwd` with `env` (its
+ * `HOME` the scratch world), so the kennel's config names it with `local:
+ * true` and its record is under the kennel's `local/`, which `collie local`
+ * reads and a `startHome` home has neither of. No container, so no image is
+ * built and no setup runs; the faux model answers `ok`. Started again the
+ * same way after `stopKennelHome`, it comes back on the port its record
+ * names, which is a local home's restart. Returns the sentence saying why
+ * when it does not start.
+ */
+export async function startKennelHome(cwd: string, env: Record<string, string>): Promise<KennelHome | string> {
+  const run = await new Promise<Result>((resolve, reject) => {
+    const child = spawn(process.execPath, [bin, "home", "local", "--faux", "--no-container"], { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
+    const out: Buffer[] = [];
+    const err: Buffer[] = [];
+    child.stdout.on("data", (chunk: Buffer) => out.push(chunk));
+    child.stderr.on("data", (chunk: Buffer) => err.push(chunk));
+    child.once("error", reject);
+    child.once("close", (code) => resolve({ stdout: Buffer.concat(out).toString("utf8"), stderr: Buffer.concat(err).toString("utf8"), code: code ?? -1 }));
+  });
+  if (run.code !== 0) return `sheep home local --faux --no-container exited ${run.code}: ${`${run.stdout}${run.stderr}`.trim().split("\n").slice(-3).join(" | ")}`;
+  const config = /^config: (.+) (?:written|refreshed|already names it|names)/m.exec(run.stdout)?.[1] ?? join(env.HOME ?? "", ".sheep", "config");
+  try {
+    const parsed = JSON.parse(await readFile(config, "utf8")) as { home?: unknown; token?: unknown; local?: unknown };
+    if (typeof parsed.home !== "string" || typeof parsed.token !== "string" || parsed.local !== true) return `${config} does not name a local home after sheep home local: ${JSON.stringify(Object.keys(parsed))}`;
+    return { url: parsed.home, token: parsed.token, config };
+  } catch (error) {
+    return `the kennel's config could not be read at ${config}: ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
+/** `sheep home stop` in the kennel: the local home's daemon stopped, its state kept. */
+export async function stopKennelHome(cwd: string, env: Record<string, string>): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(process.execPath, [bin, "home", "stop"], { cwd, env, stdio: "ignore" });
+    child.once("error", reject);
+    child.once("close", () => resolve());
+  });
 }

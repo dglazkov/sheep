@@ -23,4 +23,4 @@ export const OLDEST_SHEEP_HOME = "2026-09-12T03:08:08Z";
  * module's `browser` condition names a bundle built on `release` only).
  * Moved with the pin, which `/isocan-bump` does and says so.
  */
-export const ISOCAN_PIN = "2f15360e";
+export const ISOCAN_PIN = "18ca496a";

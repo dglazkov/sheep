@@ -22,6 +22,7 @@
  *                                          account ring: the preflight alone: the price, the account, its listing, the image on the registry; nothing deployed
  *   --name <worker>                        account ring: the station's name (default sheep-hermetic-<sha>)
  *   --older <ref>                          account ring: the release deployed first and upgraded from (default: the ref's first parent when it is a release commit; refused otherwise)
+ *   --collie                               account ring: collie journey 1 whole on the stile's station, as an isocan identity of the ring's own at dev.isocan.io (collie phase 2)
  *   --budget <usd>                         dog ring: Claude Code's --max-budget-usd (default 5)
  *   --timeout <minutes>                    dog ring: the container is killed after this long (default 30)
  *   --agent <name>                         dog ring: claude-code, the only dog so far
@@ -449,6 +450,32 @@
  * `--now` and must report `interrupted: 1`; `sh4`: the held wait returns
  * the reply, saying nothing but tether's reattach line. The guard's sheep
  * is ended with n1's.
+ *
+ * Collie phase 2 gives the package ring `c1` and `c2` after the walk, on
+ * every run: the installed `collie --version` naming the release's build and
+ * the isocan pin read from the tree it was built from, with no isocan in the
+ * release; and `collie setup --json` in blog, whose kennel names its local
+ * home, refused at **sheep** with `collie local` named and, in a world with
+ * no isocan identity, `isocan setup` too, exit 2, against an account server
+ * of the ring's that counts requests (none) and a wrangler that marks a file
+ * if run (never). Every ring's environment drops `ISOCAN_*` and the harness
+ * variables isocan reads a session from. With `--collie` the account ring
+ * walks collie journey 1 whole on t1's station, in t1's HOME, before that
+ * station is deleted (`collieOnAccount`, co1 to co9): isocan's setup from
+ * its release with the ring's own `ISOCAN_HOME`, port, and dev.isocan.io as
+ * the birth home; an identity `Hermetic` and a canvas
+ * `collie-hermetic-<sha>` made there and bound; `collie setup` through the
+ * stile's terminal with nothing typed; `collie new`; the ask at the doorbell
+ * for Percy on the person's hosted badge; the mention and a reply by Percy's
+ * actor read from the thread within ten minutes, from a real model on a
+ * station first redeployed without `--faux` (so `--collie` needs
+ * `ANTHROPIC_API_KEY`), no `isocan rc` of the ring's in any `ps` sample; the
+ * narration's beats, Percy's sheep in `isocan-percy`, and its log the
+ * summons then an assistant turn; `collie
+ * off` with the tray's read timed and `collie on`; `collie rm`, the badge gone
+ * from `isocan badges` and the Worker from the account. In a `finally`,
+ * Percy withdrawn, the canvas archived, the ring's daemon stopped, and the
+ * collie's Worker deleted through the account API if `collie rm` did not.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
@@ -637,11 +664,14 @@ function chromeCacheOf(home) {
   return join(cache, ".wrangler", "chrome");
 }
 /** The URLs npm's git installer may try for `github:dglazkov/sheep`; in repo mode the container's git is told each one is `/src.git`. */
+/** The variables isocan reads a harness session from (its `harnessVars`); a ring's environment carries none of them. */
+const HARNESS_VARIABLES = ["CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "PI_SESSION_ID", "ANTIGRAVITY_CONVERSATION_ID"];
+
 const GITHUB_URLS = ["https://github.com/dglazkov/sheep.git", "git+https://github.com/dglazkov/sheep.git", "ssh://git@github.com/dglazkov/sheep.git", "git+ssh://git@github.com/dglazkov/sheep.git"];
 
 function usage(message) {
   console.error(
-    `hermetic: ${message}\nusage: pnpm hermetic --ring package|machine [ref] [--repo <path>] [--spec <spec> [--commit <sha>]] [--image <name>] [--docker] [--no-eyes] [--keep]\n       pnpm hermetic --ring dog [ref|${INSTALL_SPEC}] [--repo <path>] [--commit <sha>] [--image <name>] [--yes] [--dry-run] [--budget <usd>] [--timeout <minutes>] [--agent claude-code] [--keep]\n       pnpm hermetic --ring account [ref|${INSTALL_SPEC}] [--repo <path>] [--commit <sha>] [--older <ref>] [--yes] [--dry-run] [--name <worker>] [--keep]`,
+    `hermetic: ${message}\nusage: pnpm hermetic --ring package|machine [ref] [--repo <path>] [--spec <spec> [--commit <sha>]] [--image <name>] [--docker] [--no-eyes] [--keep]\n       pnpm hermetic --ring dog [ref|${INSTALL_SPEC}] [--repo <path>] [--commit <sha>] [--image <name>] [--yes] [--dry-run] [--budget <usd>] [--timeout <minutes>] [--agent claude-code] [--keep]\n       pnpm hermetic --ring account [ref|${INSTALL_SPEC}] [--repo <path>] [--commit <sha>] [--older <ref>] [--collie] [--yes] [--dry-run] [--name <worker>] [--keep]`,
   );
   process.exit(2);
 }
@@ -668,6 +698,8 @@ function parseArgs(argv) {
     name: undefined,
     // The account ring's older release (station phase 3): a ref in --repo, deployed first and upgraded from.
     older: undefined,
+    // The account ring's collie (collie phase 2): journey 1 whole on the stile's station, with an isocan identity of the ring's at dev.isocan.io.
+    collie: false,
     // The container's half of the dog ring, and what the outer half tells it: never typed by hand.
     inside: false,
     redirect: false,
@@ -705,6 +737,7 @@ function parseArgs(argv) {
     else if (flag === "--agent") parsed.agent = value(flag);
     else if (flag === "--name") parsed.name = value(flag);
     else if (flag === "--older") parsed.older = value(flag);
+    else if (flag === "--collie") parsed.collie = true;
     else if (flag === "--inside") parsed.inside = true;
     else if (flag === "--redirect") parsed.redirect = true;
     else if (flag === "--expect") parsed.expect = value(flag);
@@ -746,6 +779,7 @@ function parseArgs(argv) {
   if (parsed.name !== undefined && parsed.ring !== "account") usage("--name is the account ring's");
   if (parsed.name !== undefined && !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(parsed.name)) usage(`--name ${parsed.name} is not a Worker name`);
   if (parsed.older !== undefined && parsed.ring !== "account") usage("--older is the account ring's");
+  if (parsed.collie && parsed.ring !== "account") usage("--collie is the account ring's: the package ring walks the collie's refusal on every run, and the machine and dog rings have no account to deploy it on");
   if (parsed.images.length > 0 && parsed.ring === "account") usage("--image is the machine and dog rings'");
   if (parsed.ring === "dog") {
     if (parsed.spec !== undefined && parsed.spec !== INSTALL_SPEC) usage(`the dog types the README's spec, ${INSTALL_SPEC}; a spec that is not that one cannot be what it installs (a ref installs through /src.git)`);
@@ -969,6 +1003,10 @@ class Ring {
       // No cache of this machine's (eyes phase 2): miniflare fetches the eyes' Chrome under XDG_CACHE_HOME when it is set, and the
       // ring's fresh HOME is meant to be the whole override, so the first look in the ring is the cold one.
       if (key === "XDG_CACHE_HOME") continue;
+      // No isocan of this machine's and no harness session (collie phase 2): isocan reads its home, its port, and whoever is
+      // speaking from these, so the ring's isocan identity is the one it makes under its fresh HOME, never the shepherd's or
+      // the agent's running the ring. SHEEP_TEST_COLLIE_URL went with the seams above.
+      if (key.startsWith("ISOCAN_") || HARNESS_VARIABLES.includes(key)) continue;
       inherited[key] = value;
     }
     const stripped = this.stripped();
@@ -1711,6 +1749,108 @@ class Ring {
       this.fail("walk", `ls -a ${join(this.home, ".sheep")}`, { stdout: homeAfter.join("\n"), stderr: "expected tools alone under the ring's HOME/.sheep", code: 1 });
     }
     this.ok("walk", `ls ~/.sheep`, `tools alone (wrangler ${stamp.wrangler}, fetched once for both kennels); the configs and both homes are in <blog>/.sheep and <pi>/.sheep`);
+  }
+
+  /**
+   * The isocan commit the collie's brain is pinned at, read from the tree
+   * the release was built from (`packages/cli/src/collie/floors.ts` at the
+   * manifest's commit, the release commit's second parent), with the
+   * `isocan` dependency of `packages/collie/package.json` there agreeing.
+   * Undefined with no repository to read.
+   */
+  isocanPin(step) {
+    if (this.sha === undefined) return undefined;
+    const parent = this.git("log", "-1", "--format=%P", this.sha).split(" ").find((one) => one.startsWith(this.stamp.commit));
+    const floors = this.git("show", `${parent}:packages/cli/src/collie/floors.ts`);
+    const pin = /export const ISOCAN_PIN = "([0-9a-f]{7,40})"/.exec(floors)?.[1];
+    const dependency = /github:dglazkov\/isocan#([0-9a-f]{7,40})/.exec(JSON.parse(this.git("show", `${parent}:packages/collie/package.json`)).dependencies?.isocan ?? "")?.[1];
+    if (pin === undefined || dependency === undefined || !dependency.startsWith(pin)) {
+      this.fail(step, `git show ${parent.slice(0, 7)}:packages/cli/src/collie/floors.ts`, { stdout: `ISOCAN_PIN ${pin}; packages/collie's isocan ${dependency}`, stderr: "expected ISOCAN_PIN to be the start of packages/collie's isocan commit: the pin is moved in both at once", code: 1 });
+    }
+    return pin;
+  }
+
+  /**
+   * Collie phase 2, the package ring's two steps (journey 6 step 1's
+   * package half), after the walk, with the installed package and nothing
+   * else. `c1`: the installed `collie --version` names the release's build
+   * and the isocan pin its brain carries, and the release carries no isocan
+   * of its own (sheep's manifest gains none). `c2`: `collie setup --json`
+   * in blog, whose kennel names its local home, refused at **sheep** with
+   * the rig named, exit 2: a Worker on Cloudflare cannot reach a laptop.
+   * The ring's world has no isocan identity (a fresh `HOME`, no `ISOCAN_*`
+   * and no harness variable in the environment), so the refusal carries
+   * `isocan: null` and names `isocan setup` too. The fake account the
+   * refusal must never reach is a server of the ring's own, counting every
+   * request, named by the command's one seam for it, and wrangler's seam is
+   * a script that writes a file when run: neither is asked, the kennel's
+   * config gains no `collie` block, and no `collie/` is made beside it.
+   */
+  async collieWalk() {
+    const bin = join(this.prefix, "bin", "collie");
+    if (!existsSync(join(this.pkg, "bin", "collie.js"))) {
+      this.skip("c1", `this release carries no bin/collie.js (built before collie phase 1); the collie's steps have nothing to walk`, "collie journey 6");
+      return;
+    }
+    const env = this.env();
+    const which = spawnSync("sh", ["-c", "command -v collie"], { env, encoding: "utf8" }).stdout.trim();
+    if (which !== bin) this.fail("c1", "command -v collie", { stdout: which, stderr: `expected ${bin}: the release's second bin, beside sheep`, code: 1 });
+    const pin = this.isocanPin("c1");
+    const version = await run("collie", ["--version"], { env, cwd: this.blog });
+    const said = /^collie (\S+) \((\S+)\); the brain is isocan ([0-9a-f]{7,40})\n$/.exec(version.stdout);
+    if (version.code !== 0 || version.stderr !== "" || said === null || said[1] !== this.stamp.commit || said[2] !== this.stamp.builtAt || (pin !== undefined && said[3] !== pin)) {
+      this.fail("c1", "collie --version", { ...version, stderr: `${version.stderr}\nexpected exactly "collie ${this.stamp.commit} (${this.stamp.builtAt}); the brain is isocan ${pin ?? "<the pin>"}" and nothing on stderr` });
+    }
+    if (pin === undefined) this.unchecked.push("collie journey 6 step 1: that `collie --version`'s isocan commit is the pin in the tree the release was built from; the ring had a spec and no repository");
+    const manifest = JSON.parse(readFileSync(join(this.pkg, "package.json"), "utf8"));
+    const carried = [manifest.dependencies, manifest.optionalDependencies, manifest.devDependencies].some((deps) => deps !== undefined && "isocan" in deps);
+    if (carried || existsSync(join(this.pkg, "node_modules", "isocan"))) this.fail("c1", `cat ${join(this.pkg, "package.json")}; ls ${join(this.pkg, "node_modules")}`, { stdout: JSON.stringify(manifest.dependencies), stderr: "the release carries an isocan; the collie imports the isocan the shepherd installed, and sheep's manifest gains none", code: 1 });
+    this.ok("c1", "collie --version", `${version.stdout.trim()}; <ring>/prefix/bin/collie beside sheep; no isocan in the release's manifest or node_modules`);
+
+    // c2: the refusal, with the account a server that counts and wrangler a script that leaves a mark.
+    const config = this.configOf(this.blog);
+    const configBefore = readFileSync(config, "utf8");
+    const trapped = [];
+    const { createServer } = await import("node:http");
+    const account = createServer((request, response) => {
+      trapped.push(`${request.method} ${request.url}`);
+      response.statusCode = 500;
+      response.end(JSON.stringify({ success: false, errors: [{ code: 0, message: "the ring's account answers nothing: collie setup must not have asked" }] }));
+    });
+    await new Promise((resolveListen) => account.listen(0, "127.0.0.1", resolveListen));
+    const mark = join(this.dir, "c2-wrangler-ran");
+    const wranglerTrap = join(this.dir, "c2-wrangler.mjs");
+    writeFileSync(wranglerTrap, `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(mark)}, JSON.stringify(process.argv.slice(2)));\nprocess.exit(1);\n`);
+    const isocanOnPath = spawnSync("sh", ["-c", "command -v isocan || true"], { env, encoding: "utf8" }).stdout.trim();
+    let setup;
+    try {
+      setup = await run("collie", ["setup", "--json"], { env: { ...env, SHEEP_TEST_ACCOUNT_API: `http://127.0.0.1:${account.address().port}`, SHEEP_TEST_WRANGLER: wranglerTrap }, cwd: this.blog });
+    } finally {
+      await new Promise((resolveClose) => account.close(resolveClose));
+    }
+    const command = "collie setup --json (in blog, whose kennel names its local home)";
+    let refusal;
+    try {
+      refusal = JSON.parse(setup.stdout);
+    } catch {
+      this.fail("c2", command, { ...setup, stderr: `${setup.stderr}\nstdout is not one JSON object` });
+    }
+    const home = this.homes.get(this.blog)?.url ?? JSON.parse(configBefore).home;
+    const sentence = `the kennel's home is local, at ${home}; a Worker on Cloudflare cannot reach a laptop; \`collie local\` is the rig for a local home; and no isocan identity was found here either (\`isocan setup\` names you); nothing was deployed`;
+    const wrong = [];
+    if (setup.code !== 2) wrong.push(`exit ${setup.code}, not 2`);
+    if (refusal.refused !== sentence) wrong.push(`refused ${JSON.stringify(refusal.refused)}, not ${JSON.stringify(sentence)}`);
+    if (refusal.step !== "sheep") wrong.push(`step ${JSON.stringify(refusal.step)}, not "sheep"`);
+    if (JSON.stringify(refusal.needs) !== JSON.stringify(["sheep", "isocan"])) wrong.push(`needs ${JSON.stringify(refusal.needs)}, not ["sheep","isocan"]`);
+    if (!this.samePath(refusal.sheep?.kennel, this.kennel(this.blog)) || refusal.sheep?.home !== home || refusal.sheep?.name !== null || refusal.sheep?.local !== true) wrong.push(`sheep ${JSON.stringify(refusal.sheep)}, not blog's kennel naming ${home}, local, no name`);
+    if (refusal.isocan !== null) wrong.push(`isocan ${JSON.stringify(refusal.isocan)}, not null: the ring's world has no isocan identity`);
+    if (trapped.length > 0) wrong.push(`the account was asked: ${trapped.join(", ")}`);
+    if (existsSync(mark)) wrong.push(`wrangler ran: ${readFileSync(mark, "utf8")}`);
+    if (readFileSync(config, "utf8") !== configBefore) wrong.push("blog's config changed");
+    if (existsSync(join(this.kennel(this.blog), "collie"))) wrong.push("a collie/ was made in blog's kennel");
+    if (wrong.length > 0) this.fail("c2", command, { ...setup, stderr: `${setup.stderr}\n${wrong.join("; ")}` });
+    this.ok("c2", command, `exit 2 at sheep, needs sheep and isocan: "the kennel's home is local, at ${home}; … \`collie local\` is the rig for a local home; and no isocan identity was found here either (\`isocan setup\` names you); nothing was deployed"; isocan null (${isocanOnPath === "" ? "no isocan on the ring's PATH" : `the ring's PATH has ${isocanOnPath}, and the fresh HOME no identity`}); the account asked nothing, wrangler never ran, blog's config unchanged, no collie/`);
+    this.unchecked.push("collie journey 1 step 3: the Worker deployed at the collie step; the package ring's kennel names its local home, so c2 is the refusal (the account ring's --collie deploys it)");
   }
 
   /**
@@ -2609,6 +2749,9 @@ async function dogInside({ dryRun, redirect, expect, budget }) {
 const PLAN_PRICE = "5 USD a month";
 const CLOUDFLARE_API = "https://api.cloudflare.com/client/v4";
 
+/** The isocan home the account ring's collie stands by at (collie phase 2): a hosted home with an address, never isocan.io's own. */
+const COLLIE_ISOCAN_HOME = "https://dev.isocan.io";
+
 /** The account API, for the ring's own reading: the token in a header, never an argument; every answer's errors quoted. */
 function accountApi(token) {
   const call = async (method, path, body) => {
@@ -2684,6 +2827,10 @@ function accountApi(token) {
     },
     async deleteKvNamespace(accountId, namespaceId) {
       await call("DELETE", `/accounts/${accountId}/storage/kv/namespaces/${namespaceId}`);
+    },
+    /** A Worker deleted with its Durable Objects (collie phase 2): the collie's, when a walk failed before `collie rm` ended it. */
+    async deleteWorker(accountId, name) {
+      await call("DELETE", `/accounts/${accountId}/workers/scripts/${encodeURIComponent(name)}?force=true`);
     },
     async deleteApplication(accountId, applicationId) {
       await call("DELETE", `/accounts/${accountId}/containers/applications/${applicationId}`);
@@ -2783,13 +2930,19 @@ async function registryDigest(image) {
  * ring's, and `env()` drops every `CLOUDFLARE_*` and `SHEEP_TEST_*`
  * variable, so the token reaches one command's environment by name.
  */
-async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: wantedName, older: olderRef }) {
+async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: wantedName, older: olderRef, collie }) {
   const token = process.env.CLOUDFLARE_API_TOKEN;
   if (!token) {
     console.error("hermetic: the account ring needs CLOUDFLARE_API_TOKEN in its environment: the shepherd's token for the account the station goes on, which sheep home deploy takes the same way; nothing was done");
     process.exit(2);
   }
   const key = process.env.ANTHROPIC_API_KEY;
+  // The collie's walk (collie phase 2) is journey 1 with a real model: t1's station is taken off the faux provider and Percy's turn
+  // spends the key the sitting kept, so a placeholder would be a walk that cannot answer. Refused before anything is asked.
+  if (collie && !key) {
+    console.error("hermetic: --collie walks collie journey 1 with a real model, so the account ring needs ANTHROPIC_API_KEY in its environment: the key the stile types and keeps, which Percy's one turn spends; nothing was done");
+    process.exit(2);
+  }
   // The faux provider uses no key, so a missing one becomes a placeholder secret; the ring says so, and never asks for one.
   const keyForDeploy = key || `not-a-key-the-faux-provider-answers-${randomBytes(8).toString("hex")}`;
   let ring;
@@ -2819,7 +2972,7 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
   const docker = spawnSync("docker", ["version", "--format", "{{.Server.Version}} {{.Server.Os}}/{{.Server.Arch}}"], { encoding: "utf8" });
   const engine = docker.error || docker.status !== 0 ? undefined : docker.stdout.trim();
   let failure;
-  const station = { deployed: false, name: undefined, home: undefined, account: undefined, subdomain: undefined, image: undefined, digest: undefined, tagDigest: undefined, engine, older, minted: [], ended: [], pastures: [] };
+  const station = { deployed: false, name: undefined, home: undefined, account: undefined, subdomain: undefined, image: undefined, digest: undefined, tagDigest: undefined, engine, older, minted: [], ended: [], pastures: [], collie: collie === true };
   try {
     // Preflight: the account, the plan, the subdomain, the listing, and the images both configs name, on the registry.
     if (spec === undefined) console.log(`account ring: ${ref} = ${ring.sha}${repo === root ? "" : ` in ${repo}`}; sheep ${ring.stamp.commit} (${ring.stamp.builtAt}), the newer`);
@@ -2856,6 +3009,17 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
     const leftStores = before.namespaces.filter((title) => title === `${station.name}-join` || title === `${station.name}-t-join`);
     if (leftStores.length > 0) throw new Error(`the account already holds the KV namespace ${leftStores.join(" and ")}; a ring that left it behind failed: delete it first (wrangler kv namespace delete --namespace-id <id>)`);
     console.log(`station: ${station.name} at https://${station.name}.${station.subdomain}.workers.dev, deleted at the end whatever happens`);
+    // The collie (collie phase 2): its Worker goes beside the stile's station, so a leftover of that name is refused as the
+    // station's is; the isocan home it stands by at is asked whether it answers, with a GET and nothing else.
+    if (station.collie) {
+      const collieWorker = `${station.name}-t-collie`;
+      if (before.workers.includes(collieWorker)) throw new Error(`the account already holds ${collieWorker}; a ring that left it behind failed: delete it first (wrangler delete ${collieWorker})`);
+      const isocanHealth = await fetch(`${COLLIE_ISOCAN_HOME}/api/healthz`, { signal: AbortSignal.timeout(15_000) }).then((response) => `${response.status}`, (error) => error.message);
+      if (isocanHealth !== "200") throw new Error(`${COLLIE_ISOCAN_HOME}/api/healthz answered ${isocanHealth}; the collie's walk makes its identity and canvas there, and the ring stops before anything is deployed`);
+      const harness = await stileHarness();
+      if (harness.why !== undefined) throw new Error(`--collie drives collie setup through the stile's terminal, and ${harness.why}`);
+      console.log(`collie: ${collieWorker} beside ${station.name}-t, deleted by collie rm at the end or by the ring; ${COLLIE_ISOCAN_HOME} answers; a canvas collie-hermetic-<sha> made there by an identity of the ring's own, archived at the end`);
+    }
 
     // The price and the yes, before anything is made.
     console.log(
@@ -2866,6 +3030,13 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
         "  few commands (minutes at Cloudflare's per-minute container rate: cents), redeploys it from the newer release and once more, and deletes both at the end, or on failure.",
         `  the key is used for nothing: the station runs the faux provider (ANTHROPIC_API_KEY ${key ? "is in the environment and becomes the secret" : "is not set; a placeholder string becomes the secret"}).`,
         "  the token and the key go to sheep home deploy's environment, and to nothing else of this ring.",
+        ...(station.collie
+          ? [
+              "  --collie: the collie's Worker costs nothing beyond the plan the station already needs: one Durable Object awake for the walk's minutes (list price about",
+              "  four dollars a month awake, inside the plan's included duration), one sheep's container for its setup and one turn, and a scratch canvas at dev.isocan.io.",
+              "  the key is spent on Percy's turn alone: t1's station is redeployed off the faux provider, and one short turn of the station's model costs cents.",
+            ]
+          : []),
       ].join("\n"),
     );
     if (dryRun) console.log("\ndry run: stopping before the world is made; nothing deployed");
@@ -3727,7 +3898,7 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
 
     // Stile phase 1, t1 (stile's journey 1 and journey 4 step 4): the ring plays the shepherd at the stile on a second, short
     // station of its own, then the dog with nothing in its environment; the station is gone before a6 compares the listing.
-    await stileOnAccount(ring, api, station, { token, key });
+    await stileOnAccount(ring, api, station, { token, key, needles });
 
     // Step 6: the delete, the name on stdin: the listing first (station phase 3), counted against what the walk minted and did not
     // end (end phase 1: none); then the account listed, the last lines.
@@ -3784,7 +3955,7 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
  * the count. The walk's `ps` watch is running through all of it, with the
  * token and the key among its needles.
  */
-async function stileOnAccount(ring, api, station, { token, key, step = "t1" }) {
+async function stileOnAccount(ring, api, station, { token, key, needles = [], step = "t1" }) {
   const harness = await stileHarness();
   if (harness.why !== undefined) {
     ring.skip(step, `the shepherd's sitting on the account: ${harness.why}`, "stile journey 1");
@@ -3844,12 +4015,389 @@ async function stileOnAccount(ring, api, station, { token, key, step = "t1" }) {
   if (upgraded.code !== 0 || report.name !== name || report.home !== address || report.state !== "redeployed" || report.key !== "put") {
     ring.fail(step, "sheep home deploy --faux --json (nothing in the environment)", { ...upgraded, stderr: `${upgraded.stderr}\nexpected exit 0, ${name} redeployed at ${address}, and the key put from what the sitting kept` });
   }
+  // Collie phase 2, with --collie: journey 1's third sitting and the rest of it on this station, before it is deleted below.
+  if (station.collie) await collieOnAccount(ring, api, station, { harness, token, needles, home, cwd, env, name, address, stationToken: config.token });
   const deleted = await dog(["home", "delete", "--name", name, "--json"], { input: `${name}\n` });
   if (deleted.code !== 0) ring.fail(step, `sheep home delete --name ${name} --json (the name on stdin, nothing in the environment)`, deleted);
   station.t1.deployed = false;
   const after = await api.listing(station.account.id);
   if (after.workers.includes(name) || after.applications.some((application) => application.name === name) || after.namespaces.includes(`${name}-join`)) ring.fail(step, `the account's listing after deleting ${name}`, { stdout: JSON.stringify(after), stderr: `expected no Worker, no container application, and no join store named ${name}`, code: 1 });
   ring.ok(step, `sheep new --detach; sheep home deploy --faux --json; sheep home delete --name ${name} (in <ring>/${step}/work, nothing in the environment)`, `${id} minted; redeployed in ${upSeconds}s with the key put from ~/.sheep/credentials and nothing asked; ${name} deleted, the name on stdin, and the account holds neither its Worker nor its application nor its join store ${name}-join (${t1Store.id})`);
+}
+
+/* The collie on the account (collie phase 2, journey 1 whole; journey 3 steps 1 to 3). */
+
+/** Percy's question, carrying the walk's nonce so the summons in `sheep log` is known for this mention's. */
+const COLLIE_QUESTION = "@Percy the empty state reads wrong";
+/** How long the reply may take from the mention: a birth, a container, isocan installed by the pasture's setup, the pass redeemed, one turn. */
+const COLLIE_REPLY_MS = 600_000;
+/** How long the tray may take to read nobody listening after `collie off` returns, at a hosted home ("within a few seconds"). */
+const COLLIE_OFF_MS = 5_000;
+/** The narration's beats for one summons that births a sheep, in order (the rig's walk, `collie-home.test.ts`, holds the same). */
+const collieBeats = (person, station) => [`Percy · summons from ${person}, 1 entry — starting a session`, `Percy · birthing a sheep for Percy at ${station}`, "Percy · making pasture isocan-percy", "Percy · minting a pass for Percy", "Percy · sheep ", `Percy · session started at ${station}`, "Percy · turn ended — end_turn"];
+/** `collie setup`'s five steps, in the order its checklist draws them (`packages/cli/src/collie/setup.ts`). */
+const COLLIE_STEPS = ["sheep", "isocan", "account", "collie", "next"];
+/** An `isocan rc` in a process's arguments, as `ps` shows the bin (`node …/isocan rc`, or `isocan.js rc`). */
+const RC_PROCESS = /(?:^|[\s/])isocan(?:\.js)? rc(?:\s|$)/;
+
+/** A port nothing listens on, for the ring's own isocan daemon: never 4441, where the shepherd's may be. */
+async function freePort() {
+  const { createServer } = await import("node:net");
+  return new Promise((resolvePort, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = server.address();
+      server.close(() => resolvePort(port));
+    });
+  });
+}
+
+/**
+ * co0 to co9 (collie phase 2, `--collie`): collie journey 1 whole on the
+ * stile's station (`<name>-t`), after t1's sitting and its dog, in t1's
+ * HOME and directory, so the account token `collie setup` reads is the one
+ * the sitting kept. With a real model (journey 6 step 3): co0 takes the
+ * station off the faux provider the way the installed command does, `sheep
+ * home deploy --json` again with no `--faux`, which deploys the config's vars
+ * alone and so drops the `SHEEP_PROVIDER` var the sitting's `--faux` set, and
+ * puts the key the sitting kept. Isocan's own sitting then, from its release (`npx
+ * github:dglazkov/isocan#release setup --no-open`, with
+ * `ISOCAN_DEFAULT_HOME` naming dev.isocan.io as the birth home), under an
+ * `ISOCAN_HOME` inside that HOME and a daemon on a free port: an identity
+ * of the ring's own, named `Hermetic`, a canvas `collie-hermetic-<sha>`
+ * made at dev.isocan.io by a fresh badge (the door admits one, and the
+ * create admits its maker), and the directory bound. The PATH these
+ * commands see is the ring's with any directory holding an `isocan` that is
+ * not the ring's left out (its node, npm, and npx linked into a directory
+ * of the ring's), since isocan's setup installs nothing when one is found
+ * and the collie imports the one it finds. Then `collie setup` through the
+ * terminal the stile used, nothing typed; `collie new`; the ask at the
+ * doorbell for Percy with the person's hosted badge; the mention by `isocan
+ * comment add`; the reply Percy's actor writes, whatever its words, read
+ * from the thread by `isocan --json comment list` within ten minutes while
+ * `ps` is polled for an `isocan rc` of the ring's (none may run); `collie
+ * log` holding the rc's beats, `sheep ls` Percy's sheep, and `sheep log`
+ * the summons first and an assistant turn after it; `collie off`
+ * with the tray's `GET /api/projects/:id/rc` read until nobody listens, the
+ * ms said, and `collie on` until it listens again; `collie rm` with the name
+ * on stdin, `isocan badges` no longer listing the collie's badge and the
+ * account no Worker. Whatever failed: Percy withdrawn (`isocan rc remove`),
+ * the canvas archived, the daemon stopped, and the collie's Worker deleted
+ * through the account API if `collie rm` did not.
+ */
+async function collieOnAccount(ring, api, station, { harness, token, needles, home, cwd, env: shepherdEnv, name, address, stationToken }) {
+  const sha7 = (ring.sha ?? ring.stamp.commit).slice(0, 7);
+  const title = `collie-hermetic-${sha7}`;
+  const nonce = randomBytes(6).toString("hex");
+  const collieWorker = `${name}-collie`;
+  const isocanHome = join(home, ".isocan");
+  const port = await freePort();
+  // The PATH: the ring's, without a directory whose isocan is not the ring's; node, npm, and npx kept through links of the ring's.
+  const tools = join(ring.dir, "co-node");
+  mkdirSync(tools, { recursive: true });
+  const nodeBin = dirname(process.execPath);
+  for (const tool of ["node", "npm", "npx"]) if (existsSync(join(nodeBin, tool)) && !existsSync(join(tools, tool))) symlinkSync(realpathSync(join(nodeBin, tool)), join(tools, tool));
+  const shadowed = [];
+  const path = shepherdEnv.PATH.split(":").filter((entry) => {
+    const found = join(entry, "isocan");
+    if (entry === join(ring.prefix, "bin") || !existsSync(found)) return true;
+    shadowed.push(found);
+    return false;
+  });
+  const env = { ...shepherdEnv, PATH: [path[0], tools, ...path.slice(1)].join(":"), ISOCAN_HOME: isocanHome, ISOCAN_PORT: String(port), ISOCAN_DEFAULT_HOME: COLLIE_ISOCAN_HOME };
+  for (const key of ["HOME", "ISOCAN_HOME"]) if (!env[key].startsWith(ring.dir + sep)) ring.fail("co1", "the shepherd's isocan environment", { stdout: `${key}=${env[key]}`, stderr: `expected ${key} inside the ring ${ring.dir}: the identity is the ring's own, never the shepherd's ~/.isocan`, code: 1 });
+  const carried = Object.keys(env).filter((key) => HARNESS_VARIABLES.includes(key) || key === "ISOCAN_SESSION_ID" || key === "ISOCAN_HARNESS" || key.startsWith("SHEEP_TEST_") || key.startsWith("CLOUDFLARE_"));
+  if (carried.length > 0) ring.fail("co1", "the shepherd's isocan environment", { stdout: carried.join("\n"), stderr: "expected no harness session, no seam, and no credential in it", code: 1 });
+  const at = (args, options = {}) => run0(args[0], args.slice(1), { env, cwd, ...options });
+  const isocanJson = async (step, args) => {
+    const result = await at(["isocan", "--json", ...args]);
+    try {
+      if (result.code === 0) return JSON.parse(result.stdout);
+    } catch {
+      // below
+    }
+    ring.fail(step, `isocan --json ${args.join(" ")}`, result);
+  };
+  // For a read that is asked again until it holds: a failed read is undefined, and the next lap asks again.
+  const isocanRead = async (args) => {
+    const result = await at(["isocan", "--json", ...args]);
+    try {
+      return result.code === 0 ? JSON.parse(result.stdout) : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const badge = () => {
+    const identity = JSON.parse(readFileSync(join(isocanHome, "identity.json"), "utf8"));
+    const auth = identity.auth?.[COLLIE_ISOCAN_HOME];
+    return auth === undefined ? undefined : { bearer: `${auth.badgeId}.${auth.secret}`, secret: auth.secret, actor: { id: identity.id, name: identity.name } };
+  };
+  const tray = async (method, route, body) => {
+    const held = badge();
+    let response;
+    try {
+      response = await fetch(`${COLLIE_ISOCAN_HOME}${route}`, { method, headers: { authorization: `Bearer ${held?.bearer}`, "x-isocan-features": "canvas-groups-v4", ...(body === undefined ? {} : { "content-type": "application/json" }) }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(20_000) });
+    } catch (error) {
+      // A lap that did not reach the home reads as no answer; `until` asks again, and a one-shot caller fails on the status.
+      return { status: 0, body: { error: error.message } };
+    }
+    const text = await response.text();
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      json = { text };
+    }
+    return { status: response.status, body: json };
+  };
+  const narration = async () => {
+    const result = await at(["collie", "log", "--json", "--last", "1000"]);
+    return result.code !== 0 ? [] : result.stdout.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line).line);
+  };
+  const until = async (step, what, read, ok, ms, everyMs = 2_000) => {
+    const deadline = Date.now() + ms;
+    let last;
+    for (;;) {
+      last = await read();
+      if (ok(last)) return last;
+      if (Date.now() > deadline) ring.fail(step, what, { stdout: typeof last === "string" ? last : JSON.stringify(last, null, 2), stderr: `waited ${Math.round(ms / 1000)}s`, code: 1 });
+      await new Promise((resolveSleep) => setTimeout(resolveSleep, everyMs));
+    }
+  };
+  const state = { daemon: false, canvasId: undefined, enrolled: false, rmDone: false };
+  const said = [];
+  let failure;
+  try {
+    // co0: the station off the faux provider, as the installed command does it: the deploy again with no --faux, nothing in the
+    // environment, the key from what the sitting kept. The faux provider's route is the var's alone, so it answering no more is the proof.
+    const realStarted = Date.now();
+    const real = await run0("sheep", ["home", "deploy", "--json"], { env: shepherdEnv, cwd });
+    let realReport;
+    try {
+      realReport = JSON.parse(real.stdout);
+    } catch {
+      ring.fail("co0", "sheep home deploy --json (no --faux, in <ring>/t1/work)", real);
+    }
+    if (real.code !== 0 || realReport.name !== name || realReport.state !== "redeployed" || realReport.faux !== false || realReport.key !== "put" || realReport.answers !== true) {
+      ring.fail("co0", "sheep home deploy --json (no --faux, in <ring>/t1/work)", { ...real, stderr: `${real.stderr}\nexpected exit 0, ${name} redeployed, faux false, the key put from ~/.sheep/credentials, answering` });
+    }
+    const fauxGone = await fetch(`${address}/faux`, { method: "POST", headers: { authorization: `Bearer ${stationToken}`, "content-type": "application/json" }, body: "null", signal: AbortSignal.timeout(30_000) });
+    if (fauxGone.status === 200) ring.fail("co0", `POST ${address}/faux`, { stdout: await fauxGone.text(), stderr: "status 200: the faux provider's route still answers, so the station still runs the faux provider", code: 1 });
+    ring.ok("co0", "sheep home deploy --json (no --faux, in <ring>/t1/work, nothing in the environment)", `${((Date.now() - realStarted) / 1000).toFixed(0)}s; ${name} redeployed, faux false, the key put from ~/.sheep/credentials; POST /faux answers ${fauxGone.status}: the station runs its model`);
+
+    // co1: isocan's own sitting, from its release, in the shepherd's directory: installed into the ring's prefix, a daemon of the ring's.
+    const setupStarted = Date.now();
+    const setup = await at(["npx", "-y", "github:dglazkov/isocan#release", "setup", "--no-open"]);
+    state.daemon = true;
+    const isocanBin = join(ring.prefix, "bin", "isocan");
+    let isocanRoot;
+    try {
+      isocanRoot = dirname(realpathSync(isocanBin));
+      while (!(existsSync(join(isocanRoot, "package.json")) && JSON.parse(readFileSync(join(isocanRoot, "package.json"), "utf8")).name === "isocan")) {
+        if (dirname(isocanRoot) === isocanRoot) throw new Error("no manifest named isocan above the bin");
+        isocanRoot = dirname(isocanRoot);
+      }
+    } catch (error) {
+      ring.fail("co1", "npx github:dglazkov/isocan#release setup --no-open", { ...setup, stderr: `${setup.stderr}\n${isocanBin} is not a release install of isocan: ${error.message}` });
+    }
+    const which = spawnSync("sh", ["-c", "command -v isocan"], { env, encoding: "utf8" }).stdout.trim();
+    if (setup.code !== 0 || which !== isocanBin) ring.fail("co1", "npx github:dglazkov/isocan#release setup --no-open", { ...setup, stderr: `${setup.stderr}\nexpected exit 0 and isocan installed at ${isocanBin}, first on PATH; command -v isocan is ${which}` });
+    ring.ok("co1", "npx github:dglazkov/isocan#release setup --no-open (in <ring>/t1/work)", `${((Date.now() - setupStarted) / 1000).toFixed(0)}s; isocan at <ring>/prefix/bin/isocan (${isocanRoot.replace(ring.dir, "<ring>")}); ISOCAN_HOME <ring>/t1/.isocan, HOME <ring>/t1, a daemon on 127.0.0.1:${port}${shadowed.length > 0 ? `; left off this PATH: ${shadowed.join(", ")}` : ""}`);
+
+    // co2: the ring's person, the birth home, a scratch canvas made at dev.isocan.io by a fresh badge, and the directory bound to it.
+    const named = await at(["isocan", "identity", "--home", "--name", "Hermetic"]);
+    if (named.code !== 0) ring.fail("co2", "isocan identity --home --name Hermetic", named);
+    const homed = await isocanJson("co2", ["home", COLLIE_ISOCAN_HOME]);
+    if (String(homed.birth ?? "").replace(/\/+$/, "") !== COLLIE_ISOCAN_HOME) ring.fail("co2", `isocan --json home ${COLLIE_ISOCAN_HOME}`, { stdout: JSON.stringify(homed), stderr: `expected the birth home ${COLLIE_ISOCAN_HOME}`, code: 1 });
+    const made = await isocanJson("co2", ["canvas", "create", title]);
+    if (!/^prj_/.test(made.canvasId ?? "")) ring.fail("co2", `isocan --json canvas create ${title}`, { stdout: JSON.stringify(made), stderr: "expected a canvasId", code: 1 });
+    state.canvasId = made.canvasId;
+    const bound = await at(["isocan", "use", made.canvasId]);
+    const binding = existsSync(join(cwd, ".isocan", "project.json")) ? JSON.parse(readFileSync(join(cwd, ".isocan", "project.json"), "utf8")) : undefined;
+    if (bound.code !== 0 || binding?.projectId !== made.canvasId) ring.fail("co2", `isocan use ${made.canvasId}`, { ...bound, stderr: `${bound.stderr}\nexpected <ring>/t1/work/.isocan/project.json naming ${made.canvasId}` });
+    const person = badge();
+    if (person === undefined) ring.fail("co2", `cat ${join(isocanHome, "identity.json")}`, { stdout: "", stderr: `expected a badge for ${COLLIE_ISOCAN_HOME} in the identity's auth, which the canvas's create knocked for`, code: 1 });
+    needles.push(person.secret);
+    const canvasAddress = `${COLLIE_ISOCAN_HOME}/p/${made.canvasId}`;
+    ring.ok("co2", `isocan identity --home --name Hermetic; isocan home ${COLLIE_ISOCAN_HOME}; isocan canvas create ${title}; isocan use`, `${person.actor.name} (${person.actor.id}), birth home ${COLLIE_ISOCAN_HOME}; ${canvasAddress}; <ring>/t1/work bound; a badge at ${COLLIE_ISOCAN_HOME} in <ring>/t1/.isocan/identity.json, its secret among the ps needles`);
+
+    // co3: `collie setup` through the stile's terminal, in the same HOME and directory; nothing typed, since the sitting kept the token.
+    const { driveStile } = harness.screen;
+    const typed = `collie setup (at a 80x24 terminal the ring owns, in <ring>/t1/work)`;
+    const setupAt = Date.now();
+    const sitting = driveStile({ command: join(ring.prefix, "bin", "collie"), args: ["setup"], cwd, env, columns: 80, rows: 24, secrets: [token, stationToken] });
+    let exit;
+    try {
+      exit = await Promise.race([sitting.exited, new Promise((resolveLate) => setTimeout(() => resolveLate(undefined), 300_000))]);
+    } finally {
+      sitting.kill();
+    }
+    const frame = sitting.buffer();
+    const collieAddress = `https://${collieWorker}.${station.subdomain}.workers.dev`;
+    const settled = COLLIE_STEPS.filter((stepName) => !new RegExp(`^ {2}✓ ${stepName}\\b`, "m").test(frame));
+    const block = JSON.parse(readFileSync(join(home, ".sheep", "config"), "utf8")).collie;
+    const listed = await api.listing(station.account.id);
+    const wrong3 = [];
+    if (exit === undefined) wrong3.push("the sitting did not end within five minutes");
+    else if (exit.code !== 0 || exit.stderr !== "") wrong3.push(`exit ${exit.code}, stderr ${JSON.stringify(exit.stderr)}; expected 0 and nothing`);
+    if (settled.length > 0) wrong3.push(`steps not settled: ${settled.join(", ")}`);
+    if (!frame.includes(`  ✓ sheep     ${name}, `)) wrong3.push(`expected the sheep step to name ${name}`);
+    if (!frame.includes(`  ✓ isocan    Hermetic, in `)) wrong3.push("expected the isocan step to name Hermetic");
+    // Prefixes: at eighty columns a long station's address may not fit a row whole; the config's block is read whole below.
+    if (!frame.includes(`  ✓ collie    https://${collieWorker}.`) || !frame.includes(`  collie       https://${collieWorker}.`)) wrong3.push(`expected the collie step and the finish to name ${collieAddress}`);
+    if (frame.includes("│ Cloudflare API token") || sitting.keys() !== 0) wrong3.push(`expected nothing asked and nothing typed; ${sitting.keys()} keys`);
+    if (sitting.leaks().length > 0) wrong3.push(`the account token or the station's was on the terminal: ${JSON.stringify(sitting.leaks())}`);
+    if (block?.name !== collieWorker || block?.address !== collieAddress || typeof block?.token !== "string") wrong3.push(`expected the kennel's collie block naming ${collieWorker} at ${collieAddress} with a token`);
+    if (!listed.workers.includes(collieWorker)) wrong3.push(`expected the account to list the Worker ${collieWorker}`);
+    if (wrong3.length > 0) ring.fail("co3", typed, { stdout: frame.split(token).join("<token>"), stderr: `${exit?.stderr ?? ""}\n${wrong3.join("; ")}`, code: exit?.code ?? 1 });
+    needles.push(block.token);
+    ring.ok("co3", typed, `${((Date.now() - setupAt) / 1000).toFixed(0)}s; sheep ${name}, isocan Hermetic, account from ~/.sheep/credentials, collie ${collieAddress} deployed, next; nothing asked, 0 keys, neither token on the terminal; ~/.sheep/config's collie block; the account lists ${collieWorker}`);
+
+    // co4: `collie new` in the bound directory stands by, the pass minted and spent inside it.
+    const standing = await at(["collie", "new"]);
+    const priceLine = "standing by costs one object awake, about four dollars a month at Cloudflare's list price, inside the plan's included duration for the first";
+    const expectedNew = `collie: standing by on "${title}" at ${canvasAddress}, as Hermetic\n${priceLine}\nagents are added in the tray at ${canvasAddress}\n\`collie log\` follows what it does\n`;
+    if (standing.code !== 0 || standing.stdout !== expectedNew || standing.stderr !== "") ring.fail("co4", "collie new (in <ring>/t1/work)", { ...standing, stderr: `${standing.stderr}\nexpected exactly:\n${expectedNew}` });
+    await until("co4", "collie log --json (the room answering)", narration, (lines) => lines.includes(`answering on "${title}" — ${canvasAddress}`), 120_000);
+    const parked = await until("co4", `GET ${COLLIE_ISOCAN_HOME}/api/projects/${made.canvasId}/rc`, () => tray("GET", `/api/projects/${made.canvasId}/rc`), (answer) => answer.status === 200 && answer.body.parked === true, 60_000);
+    ring.ok("co4", "collie new (in <ring>/t1/work); collie log; GET /api/projects/:id/rc", `standing by on "${title}" at ${canvasAddress}, as Hermetic, the price line; "answering on "${title}"" narrated; the tray reads an rc parked (${parked.body.actorIds?.length ?? 0} listening)`);
+
+    // co5: the ask at the doorbell, as the tray's Add an agent sends it, on the person's own hosted badge; Percy enrolled here.
+    const asked = await tray("POST", `/api/projects/${made.canvasId}/agents/ask`, { name: "Percy", from: person.actor });
+    if (asked.status !== 200 || asked.body.ok !== true) ring.fail("co5", `POST ${COLLIE_ISOCAN_HOME}/api/projects/${made.canvasId}/agents/ask {name: Percy}`, { stdout: JSON.stringify(asked.body), stderr: `status ${asked.status}; expected {ok: true}`, code: 1 });
+    await until("co5", "collie log --json (the enrolment)", narration, (lines) => lines.includes("Hermetic asked from the canvas to add Percy — enrolling here"), 120_000);
+    state.enrolled = true;
+    const who = await until("co5", "isocan --json who (Percy answerable)", () => isocanRead(["who"]), (value) => value?.standing?.some((row) => row.actor.name === "Percy" && row.state === "answerable"), 120_000, 3_000);
+    const percy = who.standing.find((row) => row.actor.name === "Percy");
+    if (percy.policy?.owner?.id !== person.actor.id) ring.fail("co5", "isocan --json who", { stdout: JSON.stringify(percy), stderr: `expected Percy listening to ${person.actor.id}`, code: 1 });
+    ring.ok("co5", "POST /api/projects/:id/agents/ask {name: Percy}; collie log; isocan who", `the ask answered ok; "Hermetic asked from the canvas to add Percy — enrolling here"; Percy answerable, ${percy.listens}`);
+
+    // co6: the mention, and the reply read from the thread, with no `isocan rc` of the ring's on this machine the whole time.
+    const rcSeen = new Set();
+    const rcWatch = setInterval(() => {
+      for (const line of psLines()) if (RC_PROCESS.test(line)) rcSeen.add(line);
+    }, 250);
+    const machineRc = psLines().filter((line) => RC_PROCESS.test(line));
+    let reply;
+    const mentionedAt = Date.now();
+    const question = `${COLLIE_QUESTION} (${nonce})`;
+    // Percy's reply: a comment by Percy's actor on the mention's thread, whatever the model's words, not empty and not the summons.
+    const byPercy = (thread) => thread?.comments.find((comment) => comment.author?.id === percy.actor.id && typeof comment.body === "string" && comment.body.trim() !== "" && comment.body !== question && !comment.body.startsWith("You are Percy"));
+    try {
+      const mention = await isocanJson("co6", ["comment", "add", question, "--at", "0,0"]);
+      reply = await until(
+        "co6",
+        `isocan --json comment list (thread ${mention.threadId}, Percy's reply)`,
+        () => isocanRead(["comment", "list"]),
+        (threads) => Array.isArray(threads) && byPercy(threads.find((thread) => thread.id === mention.threadId)) !== undefined,
+        COLLIE_REPLY_MS,
+        5_000,
+      );
+      reply = { threadId: mention.threadId, seconds: ((Date.now() - mentionedAt) / 1000).toFixed(0), comment: byPercy(reply.find((thread) => thread.id === mention.threadId)) };
+    } finally {
+      clearInterval(rcWatch);
+    }
+    const ringsRc = [...rcSeen].filter((line) => line.includes(ring.dir) || line.includes(realpathSync(ring.dir)) || !machineRc.includes(line));
+    if (ringsRc.length > 0) ring.fail("co6", "ps -Ao pid=,args= (polled for isocan rc)", { stdout: ringsRc.join("\n"), stderr: "an isocan rc ran on this machine during the walk that was not here before it: the collie is the rc, and no laptop's may answer", code: 1 });
+    ring.ok("co6", `isocan comment add "${COLLIE_QUESTION} (…)" --at 0,0; isocan --json comment list`, `Percy (${percy.actor.id}) replied on ${reply.threadId} in ${reply.seconds}s, in the model's words: ${JSON.stringify(reply.comment.body.length > 120 ? `${reply.comment.body.slice(0, 117)}…` : reply.comment.body)}; ps polled every 250 ms: no isocan rc started on this machine${machineRc.length > 0 ? ` (${machineRc.length} of the machine's own ran before the walk and are not the ring's)` : ", and none ran"}`);
+
+    // co7: the narration holds the rc's beats in order, and the station lists Percy's sheep in its pasture.
+    const lines = await until("co7", "collie log --json (the turn's end)", narration, (value) => value.includes("Percy · turn ended — end_turn"), 120_000);
+    let from = -1;
+    for (const beat of collieBeats("Hermetic", address)) {
+      const found = lines.findIndex((line, index) => index > from && line.startsWith(beat));
+      if (found === -1) ring.fail("co7", "collie log --json", { stdout: lines.join("\n"), stderr: `expected "${beat}…" after line ${from + 1}`, code: 1 });
+      from = found;
+    }
+    const sheepId = /^Percy · sheep (\S+) minted/.exec(lines.find((line) => /^Percy · sheep \S+ minted/.test(line)))[1];
+    const herd = JSON.parse((await run0("sheep", ["ls", "--json"], { env: shepherdEnv, cwd })).stdout || "[]");
+    const row = herd.find((one) => one.id === sheepId);
+    if (row?.pasture !== "isocan-percy" || row?.name !== "Percy") ring.fail("co7", "sheep ls --json (in <ring>/t1/work)", { stdout: JSON.stringify(herd), stderr: `expected ${sheepId}, Percy, in pasture isocan-percy`, code: 1 });
+    // The turn as the sheep has it: the summons is the first user message, and an assistant entry follows it.
+    const logged = await run0("sheep", ["log", sheepId, "--json"], { env: shepherdEnv, cwd });
+    const entries = logged.stdout.trim().split("\n").filter(Boolean).flatMap((line) => {
+      try {
+        return [JSON.parse(line)];
+      } catch {
+        return [];
+      }
+    });
+    const textOf = (entry) => (Array.isArray(entry.message?.content) ? entry.message.content.map((part) => part.text ?? "").join("") : String(entry.message?.content ?? ""));
+    const firstUser = entries.findIndex((entry) => entry.type === "message" && entry.message?.role === "user");
+    const summons = firstUser === -1 ? "" : textOf(entries[firstUser]);
+    const answered = entries.findIndex((entry, index) => index > firstUser && entry.type === "message" && entry.message?.role === "assistant");
+    if (logged.code !== 0 || firstUser === -1 || !summons.includes(`You are Percy, an agent enrolled on the isocan canvas "${title}"`) || !summons.includes(nonce) || answered === -1) {
+      ring.fail("co7", `sheep log ${sheepId} --json`, { ...logged, stdout: logged.stdout.slice(0, 4000), stderr: `${logged.stderr}\nexpected the summons for this mention (Percy's brief and the nonce) as the first user message, and an assistant entry after it` });
+    }
+    ring.ok("co7", `collie log --json; sheep ls --json; sheep log ${sheepId} --json`, `${lines.length} lines; the beats in order, summons to end_turn, at ${address}; sheep ${sheepId} Percy ${row.state} in isocan-percy; its log: the summons first (${summons.length} chars, the brief and this mention), then the model's answer and ${entries.length - answered - 1} entries after it`);
+
+    // co8: the switch, and the tray's read of it, measured.
+    const off = await at(["collie", "off"]);
+    const released = Date.now();
+    if (off.code !== 0 || off.stdout !== `collie: off — holds released; "${title}" reads nobody listening; collie on resumes\n`) ring.fail("co8", "collie off", off);
+    const nobody = await until("co8", `GET /api/projects/${made.canvasId}/rc (nobody listening)`, () => tray("GET", `/api/projects/${made.canvasId}/rc`), (answer) => answer.status === 200 && answer.body.actorIds?.length === 0, 30_000, 100);
+    const offMs = Date.now() - released;
+    if (offMs > COLLIE_OFF_MS) ring.fail("co8", `GET /api/projects/${made.canvasId}/rc (nobody listening)`, { stdout: JSON.stringify(nobody.body), stderr: `${offMs} ms from collie off's exit to nobody listening; expected within ${COLLIE_OFF_MS} ms`, code: 1 });
+    const on = await at(["collie", "on"]);
+    const resumed = Date.now();
+    if (on.code !== 0 || on.stdout !== `collie: standing by on "${title}"\n`) ring.fail("co8", "collie on", on);
+    await until("co8", `GET /api/projects/${made.canvasId}/rc (listening again)`, () => tray("GET", `/api/projects/${made.canvasId}/rc`), (answer) => answer.status === 200 && answer.body.actorIds?.length > 0, 60_000, 250);
+    ring.ok("co8", "collie off; GET /api/projects/:id/rc; collie on", `off, and the tray read nobody listening ${offMs} ms after it returned; on, and listening again in ${Date.now() - resumed} ms`);
+
+    // co9: the end. The listing, the name (one line of stdin), the badge ended, the Worker deleted, the block cleared.
+    const badgesBefore = (await isocanJson("co9", ["badges"])).badges;
+    const colliesBadge = badgesBefore.find((one) => !one.self && one.actors?.some((actor) => actor.name === "Percy"));
+    if (colliesBadge === undefined) ring.fail("co9", "isocan --json badges", { stdout: JSON.stringify(badgesBefore), stderr: "expected the collie's badge, not this machine's, holding Percy's claim", code: 1 });
+    const ended = await at(["collie", "rm"], { input: `${collieWorker}\n` });
+    const configPath = realpathSync(join(home, ".sheep", "config"));
+    const expectedRm = [`collie rm ends ${collieWorker}, the collie at ${collieAddress}\n`, `ended: the badge at ${COLLIE_ISOCAN_HOME}\n`, `deleted: the Worker ${collieWorker} and its object\n`, `cleared: the collie block in ${configPath}\n`];
+    if (ended.code !== 0 || expectedRm.some((line) => !ended.stdout.includes(line))) ring.fail("co9", "collie rm (the name on stdin)", { ...ended, stderr: `${ended.stderr}\nexpected exit 0 and the lines: ${expectedRm.join("")}` });
+    state.rmDone = true;
+    const gone = await until("co9", "isocan --json badges (the collie's gone)", () => isocanRead(["badges"]), (value) => Array.isArray(value?.badges) && !value.badges.some((one) => one.badgeId === colliesBadge.badgeId), 60_000, 3_000);
+    const after = await api.listing(station.account.id);
+    if (after.workers.includes(collieWorker)) ring.fail("co9", "the account's listing after collie rm", { stdout: after.workers.join("\n"), stderr: `expected no Worker ${collieWorker}`, code: 1 });
+    if (JSON.parse(readFileSync(join(home, ".sheep", "config"), "utf8")).collie !== undefined) ring.fail("co9", `cat ${configPath}`, { stdout: "", stderr: "expected the collie block cleared", code: 1 });
+    const stays = await isocanJson("co9", ["who"]);
+    if (!stays.standing?.some((one) => one.actor.name === "Percy")) ring.fail("co9", "isocan --json who (after collie rm)", { stdout: JSON.stringify(stays), stderr: "expected Percy's enrolment to stay: the end takes the collie's badge and Worker and nothing that is an agent's", code: 1 });
+    ring.ok("co9", "collie rm (the name on stdin); isocan badges; the account's listing", `listed and ended: the badge ${colliesBadge.badgeId} at ${COLLIE_ISOCAN_HOME}, isocan badges lists ${gone.badges.length} left and not it; ${collieWorker} deleted, the account lists no Worker of that name; the block cleared; Percy's enrolment stays until the ring withdraws it`);
+    ring.unchecked.push(
+      "collie journey 1 step 3: `collie setup` at a person's real terminal; co3 drove it through the harness's terminal (pipes, SHEEP_TEST_TERMINAL), and packages/cli/test/collie-setup.test.ts proves the hidden prompt under a real pseudo-terminal",
+      "collie journey 1 step 5: the tray's Add an agent in a browser; co5 posted the ask its button sends, on the person's badge",
+      "collie journey 3 step 3: the name typed at a terminal; co9 gave it as one line of stdin",
+      "collie journey 3 steps 1 and 2: the held mention answered after on; co8 read the tray's holds, and packages/cli/test/collie-home.test.ts walks the held mention on the rig",
+    );
+  } catch (error) {
+    failure = error;
+  } finally {
+    // Whatever failed: the enrolment withdrawn, the canvas archived, the daemon stopped, and the collie's Worker gone from the account.
+    if (state.enrolled || state.canvasId !== undefined) {
+      const withdrawn = await at(["isocan", "--json", "rc", "remove", "Percy"]).catch((error) => ({ code: 1, stdout: "", stderr: error.message }));
+      said.push(`isocan rc remove Percy: exit ${withdrawn.code}${withdrawn.code === 0 ? "" : ` (${withdrawn.stderr.trim().split("\n")[0]})`}`);
+    }
+    if (state.canvasId !== undefined) {
+      const archived = await at(["isocan", "canvas", "archive", state.canvasId]).catch((error) => ({ code: 1, stdout: "", stderr: error.message }));
+      said.push(`isocan canvas archive ${state.canvasId}: exit ${archived.code}${archived.code === 0 ? ` (${archived.stdout.trim().split("\n")[0]})` : ` (${archived.stderr.trim().split("\n")[0]})`}`);
+    }
+    if (state.daemon) {
+      const stopped = await at(["isocan", "stop"]).catch((error) => ({ code: 1, stdout: "", stderr: error.message }));
+      said.push(`isocan stop: exit ${stopped.code}`);
+    }
+    try {
+      const listing = await api.listing(station.account.id);
+      if (listing.workers.includes(collieWorker)) {
+        await api.deleteWorker(station.account.id, collieWorker);
+        said.push(`the Worker ${collieWorker} deleted through the account API (collie rm had not)`);
+      }
+    } catch (error) {
+      said.push(`STILL ON THE ACCOUNT, maybe: ${collieWorker} (${error.message}); delete by hand: wrangler delete ${collieWorker}`);
+    }
+    console.log(`  collie cleanup: ${said.join("; ") || "nothing was made"}`);
+    const archivedOk = state.canvasId === undefined || said.some((line) => line.startsWith(`isocan canvas archive ${state.canvasId}: exit 0`));
+    if (failure === undefined && !archivedOk) failure = new Error(`co: the canvas ${state.canvasId} at ${COLLIE_ISOCAN_HOME} was not archived: ${said.join("; ")}`);
+  }
+  if (failure !== undefined) throw failure;
+  ring.ok("co", "isocan rc remove Percy; isocan canvas archive; isocan stop", said.join("; "));
 }
 
 /** The t1 station, when a walk failed with it still up: deleted with the token in the command's environment, as the ring's own station is. */
@@ -5367,6 +5915,7 @@ async function main() {
     await ring.install();
     await ring.stileFakes("t0");
     await ring.walk();
+    await ring.collieWalk();
   } catch (error) {
     failure = error;
   } finally {

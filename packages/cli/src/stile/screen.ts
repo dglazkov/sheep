@@ -44,6 +44,39 @@ import { colourLevel, Paint, padTo, width as widthOf } from "./paint.js";
 import { sheep } from "./sheep.js";
 import { explain, QUESTIONS, shown, type StepName, STEPS, UNDER_BOX } from "./words.js";
 
+/**
+ * A checklist the screen draws (collie phase 2): what differs between the
+ * stile's sitting and another built on it — `collie setup`'s — and nothing
+ * else. The screen's rules (the banner beside a mascot of seven rows, the
+ * cursor row, the panel, the box, the selector, the stages behind the
+ * spinner, the finish in a box, the key line) are the screen's, and a
+ * second checklist gets them by handing this in, not by copying them.
+ */
+export interface Checklist<S extends string, R> {
+  /** The name in bold amber beside the mascot, and the tagline dim under it. */
+  name: string;
+  tagline: string;
+  /** Seven rows, each the same width: the picture at 256 colours, its line art below that. */
+  mascot: (paint: Paint) => string[];
+  steps: readonly S[];
+  /** What a step's row says while it waits for its answer, before it has said anything. */
+  questions: Record<S, string>;
+  /** A step's four things as the panel draws them at a width, already wrapped. */
+  words: (step: S, width: number) => { label: string; text: string }[];
+  /** Under a secret's box: the address the value is made at, and a note. */
+  underBox: Partial<Record<S, { madeAt: string; note?: string }>>;
+  /** The step whose one choice is to check again, whose key line says so. */
+  recheck?: S;
+  /** The step whose stages are a deploy, with its own key line; `unless` a choice made there says it is not a deploy. */
+  deploying?: { step: S; keys: string; unless?: (chosen: string) => boolean };
+  /** The finish: labelled lines (a label, a path or an address, a dim note), then a box with a bold amber title and bold lines. */
+  finish: (report: R) => { labelled: [string, string, string?][]; box: { title: string; lines: string[] } };
+  /** What stderr says when Ctrl-C lands while a step works with nothing asked. */
+  interruptedWorking: string;
+  /** The flow: the driver's three callbacks and the code that already exists between them. */
+  run: (driver: Driver<S>) => Promise<R>;
+}
+
 /** The line under the name in the banner. */
 export const TAGLINE = "a home for agents that herd agents";
 
@@ -60,14 +93,12 @@ const HINT_GAP = 2;
 
 /** How many of a deploy's stages are kept under the step at most: the current one and three ticks above it. */
 const STAGES_KEPT = 4;
-/** The banner's rows and the checklist's: what is on screen before anything is under a step. */
-const FIXED_ROWS = 7 + STEPS.length;
 
 const SPINNER = [..."⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"];
 const SPINNER_MS = 80;
 
 /** The key line's parts, as the step allows. */
-const KEYS = { choose: "↑↓ choose   Enter take", recheck: "Enter check again", send: "Enter send", leave: "Ctrl-C leave", deploying: "the first container takes a minute or two   Ctrl-C leaves it deploying" };
+const KEYS = { choose: "↑↓ choose   Enter take", recheck: "Enter check again", send: "Enter send", leave: "Ctrl-C leave" };
 
 /** The size the seam names, or nothing when it is not set. A malformed value is a refusal, not a guess. */
 export function seamSize(): { columns: number; rows: number } | undefined {
@@ -249,7 +280,12 @@ const PANEL_ROOM = (width: number): number => Math.max(20, width - INDENT - 2 - 
  * link under them (the words' rule, held by the command ring).
  */
 export function wordsAt(step: StepName, width: number): { label: string; text: string }[] {
-  return explain(step).flatMap(({ label, text }) => wrap(text, PANEL_ROOM(width)).map((line, index) => ({ label: index === 0 ? label : "", text: line })));
+  return panelWords(explain(step), width);
+}
+
+/** Any checklist's words, wrapped to the panel at a width: the label on each thing's first line and blank on the rest. */
+export function panelWords(things: { label: string; text: string }[], width: number): { label: string; text: string }[] {
+  return things.flatMap(({ label, text }) => wrap(text, PANEL_ROOM(width)).map((line, index) => ({ label: index === 0 ? label : "", text: line })));
 }
 
 /**
@@ -260,18 +296,18 @@ export function wordsAt(step: StepName, width: number): { label: string; text: s
  * drawn in relation to each other, and the key line's row depends on all
  * of them.
  */
-class Sheet implements Component {
-  cursor: StepName = "command";
+class Sheet<S extends string, R> implements Component {
+  cursor: S;
   /** The flow ended: every row is settled, and the finish is drawn from the report. */
   finished = false;
-  report: FlowReport | undefined;
+  report: R | undefined;
   /** What each step settled on: the last line it said that was not a refusal. */
-  readonly settled = new Map<StepName, string>();
+  readonly settled = new Map<S, string>();
   /** What each step said while it was the cursor, since it was reached. */
-  readonly said = new Map<StepName, Said[]>();
-  readonly open = new Set<StepName>();
+  readonly said = new Map<S, Said[]>();
+  readonly open = new Set<S>();
   waiting: Waiting;
-  /** The station step's choice was a join, so what it says under the row is not a deploy's stages. */
+  /** The deploying step's choice said it is not a deploy (the station step's join), so what it says under the row is not a deploy's stages. */
   joining = false;
   /** When the cursor step was reached, for the elapsed time beside a stage; and when the sitting started, for the finish. */
   reachedAt = Date.now();
@@ -279,10 +315,17 @@ class Sheet implements Component {
   /** The spinner's frame, advanced by the timer while a stage runs. */
   tick = 0;
 
+  /** The banner's rows and the checklist's: what is on screen before anything is under a step. */
+  private readonly fixedRows: number;
+
   constructor(
+    private readonly spec: Checklist<S, R>,
     private readonly paint: Paint,
     private readonly terminal: Terminal,
-  ) {}
+  ) {
+    this.cursor = spec.steps[0]!;
+    this.fixedRows = 7 + spec.steps.length;
+  }
 
   /** Nothing is cached here: every render is drawn from the state above, so there is nothing to throw away. */
   invalidate(): void {}
@@ -294,16 +337,24 @@ class Sheet implements Component {
 
   /** A stage is running: the cursor step is working, with nothing asked, and has said what it is doing. */
   working(): boolean {
-    return !this.finished && this.waiting === undefined && this.stages().length > 0;
+    return !this.finished && this.waiting === undefined && this.stages().length > 0 && this.stopped() === undefined;
+  }
+
+  /** The cursor step's last word was a refusal, with nothing asked after it: the sitting stopped there (collie phase 2). */
+  stopped(): Said | undefined {
+    if (this.finished || this.waiting !== undefined) return undefined;
+    const last = (this.said.get(this.cursor) ?? []).at(-1);
+    return last?.refused === true ? last : undefined;
   }
 
   render(width: number): string[] {
+    const steps = this.spec.steps;
     const out = [...this.banner(), ""];
-    const reached = this.finished ? STEPS.length : STEPS.indexOf(this.cursor);
+    const reached = this.finished ? steps.length : steps.indexOf(this.cursor);
     const panel = this.open.has(this.cursor) && !this.finished ? this.panel(width) : [];
-    for (const step of STEPS) {
-      const at = STEPS.indexOf(step);
-      if (at < reached) out.push(this.doneRow(step, this.finished && step === "next" ? `done, in ${elapsed(this.startedAt)}` : (this.settled.get(step) ?? "")));
+    for (const step of steps) {
+      const at = steps.indexOf(step);
+      if (at < reached) out.push(this.doneRow(step, this.finished && at === steps.length - 1 ? `done, in ${elapsed(this.startedAt)}` : (this.settled.get(step) ?? "")));
       else if (at === reached) {
         out.push(this.cursorRow(step, width));
         out.push(...panel);
@@ -341,25 +392,25 @@ class Sheet implements Component {
     return fit(line.replace(/\x1b\[[0-9;]*m/g, "").replace(/\x1b\]8;;[^\x1b]*\x1b\\/g, ""), width);
   }
 
-  /** Seven rows: the sheep, and beside it the name in bold amber with the dim line under it. The grass is the rule. */
+  /** Seven rows: the mascot, and beside it the name in bold amber with the dim line under it. The grass is the rule. */
   private banner(): string[] {
-    const title = ["", "", this.paint.boldAmber("sheep"), this.paint.dim(TAGLINE), "", "", ""];
-    return sheep(this.paint).map((row, index) => ` ${row} ${title[index]}`.trimEnd());
+    const title = ["", "", this.paint.boldAmber(this.spec.name), this.paint.dim(this.spec.tagline), "", "", ""];
+    return this.spec.mascot(this.paint).map((row, index) => ` ${row} ${title[index]}`.trimEnd());
   }
 
   /** A settled step: green tick, dim name, and what it settled on, an address drawn as a link. */
-  private doneRow(step: StepName, text: string): string {
+  private doneRow(step: S, text: string): string {
     const address = /^(https?:\/\/\S+)(.*)$/.exec(text);
     const styled = address === null ? text : `${this.paint.link(address[1]!)}${address[2]}`;
     return `  ${this.paint.green("✓")} ${this.paint.dim(step.padEnd(NAME_WIDTH))}  ${styled}`;
   }
 
   /** The cursor row: amber mark and bold amber name, the step's question or its first line, and the hint at the right while it waits. */
-  private cursorRow(step: StepName, width: number): string {
+  private cursorRow(step: S, width: number): string {
     const hint = this.waiting === undefined ? undefined : this.open.has(step) ? HINT_CLOSE : HINT_OPEN;
     const first = (this.said.get(step) ?? []).find((one) => !one.refused)?.text;
     const room = width - INDENT - (hint === undefined ? 0 : HINT_GAP + hint.length);
-    const text = fit(first ?? QUESTIONS[step], Math.max(1, room));
+    const text = fit(first ?? this.spec.questions[step], Math.max(1, room));
     const left = `  ${this.paint.amber("›")} ${this.paint.boldAmber(step.padEnd(NAME_WIDTH))}  ${text}`;
     if (hint === undefined) return left;
     return `${left}${" ".repeat(Math.max(HINT_GAP, width - widthOf(left) - hint.length))}${this.paint.dim(hint)}`;
@@ -367,20 +418,21 @@ class Sheet implements Component {
 
   /** The words as a panel: a dim rule down the left, the four labels bold, each thing wrapped to the panel. */
   private panel(width: number): string[] {
-    return wordsAt(this.cursor, width).map(({ label, text }) => `${IND}${this.paint.dim("│ ")}${this.paint.bold(label.padEnd(6))} ${text}`);
+    return this.spec.words(this.cursor, width).map(({ label, text }) => `${IND}${this.paint.dim("│ ")}${this.paint.bold(label.padEnd(6))} ${text}`);
   }
 
   /** What is under the cursor row: a refusal and the box, the list, or the stages. */
-  private under(step: StepName, width: number, panelRows: number): string[] {
+  private under(step: S, width: number, panelRows: number): string[] {
     const waiting = this.waiting;
     const out: string[] = [];
-    if (waiting?.kind === "ask") {
+    const stopped = this.stopped();
+    if (waiting?.kind === "ask" || stopped !== undefined) {
       const refused = [...(this.said.get(step) ?? [])].reverse().find((one) => one.refused);
       if (refused !== undefined) {
         // The reason: `✗` and its first clause (up to the first `;`, or the whole line) in red, and the rest, if any, dim on at
         // most two lines under it, cut with `…` beyond; the permissions and the address it names are in the step's words too.
         // With the words open there is less room above the box, and the dim lines are the ones that give way.
-        const room = Math.max(0, this.terminal.rows - FIXED_ROWS - panelRows - 3 - (this.open.has(step) ? 0 : 1) - 1);
+        const room = Math.max(0, this.terminal.rows - this.fixedRows - panelRows - 3 - (this.open.has(step) ? 0 : 1) - 1);
         const at = refused.text.indexOf(";");
         const head = at === -1 ? refused.text : refused.text.slice(0, at);
         const rest = at === -1 ? "" : refused.text.slice(at + 1).trim();
@@ -392,11 +444,14 @@ class Sheet implements Component {
           out.push(...kept.map((line) => `${IND}  ${this.paint.dim(line)}`));
         }
       }
+      // Stopped: the reason is the last thing under the row, and nothing is asked.
+      if (waiting?.kind !== "ask") return out;
       out.push(...this.box(waiting, width));
       // The address to make the value at, said once under the box; the words say it too, and the screen is one row short
       // with them open, so it is theirs then.
-      if (!this.open.has(step) && (step === "account" || step === "key")) {
-        const { madeAt, note } = UNDER_BOX[step];
+      const underBox = this.spec.underBox[step];
+      if (!this.open.has(step) && underBox !== undefined) {
+        const { madeAt, note } = underBox;
         out.push(`${IND}${this.paint.dim("made at ")}${this.paint.link(shown(madeAt), madeAt)}`);
         if (note !== undefined) out.push(`${IND}${this.paint.dim(fit(note, width - INDENT))}`);
       }
@@ -419,7 +474,7 @@ class Sheet implements Component {
     if (!this.finished) {
       // Working: the stages said so far as green ticks, the current one behind the spinner with the elapsed time. Fewer are
       // kept when the words are open, so the step stays on one screen.
-      const keep = Math.max(1, Math.min(STAGES_KEPT, this.terminal.rows - FIXED_ROWS - panelRows));
+      const keep = Math.max(1, Math.min(STAGES_KEPT, this.terminal.rows - this.fixedRows - panelRows));
       const stages = this.stages().slice(-keep);
       stages.forEach((text, index) => {
         if (index < stages.length - 1) out.push(`${IND}${this.paint.green("✓")} ${fit(text, width - INDENT - 2)}`);
@@ -471,7 +526,7 @@ class Sheet implements Component {
       return `${IND}${chosen ? this.paint.boldAmber("❯ ") : "  "}${chosen ? this.paint.bold(padTo(label, labelWidth)) : padTo(label, labelWidth)}${description}`.trimEnd();
     };
     const count = waiting.options.length;
-    const size = Math.max(3, this.terminal.rows - FIXED_ROWS - panelRows);
+    const size = Math.max(3, this.terminal.rows - this.fixedRows - panelRows);
     if (count <= size) return waiting.options.map((_option, index) => rowOf(index));
     // The window: a marker row at either end where more are, and the chosen row always inside.
     let first = Math.min(Math.max(0, waiting.first), count - size);
@@ -494,16 +549,18 @@ class Sheet implements Component {
     const hint = this.open.has(this.cursor) ? HINT_CLOSE : HINT_OPEN;
     const waiting = this.waiting;
     let text: string | undefined;
-    if (waiting?.kind === "choose") text = `${this.cursor === "plan" ? KEYS.recheck : KEYS.choose}   ${hint}   ${KEYS.leave}`;
+    const deploying = this.spec.deploying;
+    if (waiting?.kind === "choose") text = `${this.cursor === this.spec.recheck ? KEYS.recheck : KEYS.choose}   ${hint}   ${KEYS.leave}`;
     else if (waiting?.kind === "ask") text = `${KEYS.send}   ${hint}   ${KEYS.leave}`;
-    else if (this.cursor === "station" && !this.joining && this.working()) text = KEYS.deploying;
+    else if (deploying !== undefined && this.cursor === deploying.step && !this.joining && this.working()) text = deploying.keys;
     return text === undefined ? undefined : `  ${this.paint.dim(text)}`;
   }
 
-  /** After the seven green rows: where things are, and the sentence to say in a box across the screen. */
+  /** After the green rows: where things are, and the sentence to say in a box across the screen. */
   private finish(width: number): string[] {
     const report = this.report;
     if (report === undefined) return [];
+    const { labelled: lines, box } = this.spec.finish(report);
     const out: string[] = [""];
     const labelled = (label: string, path: string, note?: string): void => {
       const lines = pathLines(path, Math.max(10, width - 15));
@@ -513,16 +570,14 @@ class Sheet implements Component {
         out.push(`${head}${line}${tail}`);
       });
     };
-    labelled("credentials", tilde(report.credentials), report.key === "left" ? "(mode 600, the account token)" : "(mode 600, the two values and nothing else)");
-    labelled("config", tilde(report.config));
-    labelled("skill", "checkout" in report.skill ? "from this checkout" : tilde(report.skill.path));
+    for (const [label, path, note] of lines) labelled(label, path, note);
     out.push("");
     const outer = Math.max(10, width - 4);
     const inner = outer - 2;
     const rule = "─".repeat(outer);
     out.push(`  ${this.paint.dim(`╭${rule}╮`)}`);
-    out.push(`  ${this.paint.dim("│")} ${padTo(this.paint.boldAmber("say to your agent"), inner)} ${this.paint.dim("│")}`);
-    for (const line of wrap(AGENT_SENTENCE, inner)) out.push(`  ${this.paint.dim("│")} ${padTo(this.paint.bold(line), inner)} ${this.paint.dim("│")}`);
+    out.push(`  ${this.paint.dim("│")} ${padTo(this.paint.boldAmber(box.title), inner)} ${this.paint.dim("│")}`);
+    for (const line of box.lines.flatMap((one) => wrap(one, inner))) out.push(`  ${this.paint.dim("│")} ${padTo(this.paint.bold(line), inner)} ${this.paint.dim("│")}`);
     out.push(`  ${this.paint.dim(`╰${rule}╯`)}`);
     return out;
   }
@@ -549,16 +604,50 @@ export function keysOf(data: string): string[] {
   return [...data];
 }
 
+/** The stile's own checklist: the sheep, the seven steps, and the finish with the sentence to say to an agent. */
+export function sheepChecklist(options: Omit<FlowOptions, "driver">): Checklist<StepName, FlowReport> {
+  return {
+    name: "sheep",
+    tagline: TAGLINE,
+    mascot: sheep,
+    steps: STEPS,
+    questions: QUESTIONS,
+    words: wordsAt,
+    underBox: UNDER_BOX,
+    recheck: "plan",
+    deploying: { step: "station", keys: "the first container takes a minute or two   Ctrl-C leaves it deploying", unless: (chosen) => chosen.startsWith("join:") },
+    finish: (report) => ({
+      labelled: [
+        ["credentials", tilde(report.credentials), report.key === "left" ? "(mode 600, the account token)" : "(mode 600, the two values and nothing else)"],
+        ["config", tilde(report.config)],
+        ["skill", "checkout" in report.skill ? "from this checkout" : tilde(report.skill.path)],
+      ],
+      box: { title: "say to your agent", lines: [AGENT_SENTENCE] },
+    }),
+    interruptedWorking: "sheep: setup was interrupted while it was working; what was kept is kept, and `sheep setup` again picks up from there\n",
+    run: (driver) => runFlow({ ...options, driver }),
+  };
+}
+
 /**
  * The stile, drawn. Returns the flow's report; the screen is stopped
  * before it returns, whether the flow ended or threw, so a refusal is
  * printed under the last frame and not into it.
  */
 export async function stile(options: Omit<FlowOptions, "driver"> & { explain?: boolean }): Promise<FlowReport> {
+  return drawChecklist(sheepChecklist(options), { explain: options.explain });
+}
+
+/**
+ * Any checklist, drawn (collie phase 2): the stile's screen over a spec.
+ * Returns the flow's report; the screen is stopped before it returns,
+ * whether the flow ended or threw.
+ */
+export async function drawChecklist<S extends string, R>(spec: Checklist<S, R>, options: { explain?: boolean } = {}): Promise<R> {
   const size = seamSize();
   const terminal: Terminal = size === undefined ? new ProcessTerminal() : new PipeTerminal(size);
   const tui = new TuiMainScreen(terminal);
-  const sheet = new Sheet(new Paint(colourLevel()), terminal);
+  const sheet = new Sheet<S, R>(spec, new Paint(colourLevel()), terminal);
   tui.addChild(sheet);
 
   /** The one place a key is answered: whichever of ask and choose is waiting, plus `?` and Ctrl-C, which are always. */
@@ -611,7 +700,7 @@ export async function stile(options: Omit<FlowOptions, "driver"> & { explain?: b
         // Working, with nothing asked (a deploy under way): raw mode made Ctrl-C a byte, so it is the signal it would have been.
         if (timer !== undefined) clearInterval(timer);
         tui.stop();
-        process.stderr.write("sheep: setup was interrupted while it was working; what was kept is kept, and `sheep setup` again picks up from there\n");
+        process.stderr.write(spec.interruptedWorking);
         process.exit(130);
       }
       const waiting = sheet.waiting;
@@ -660,7 +749,7 @@ export async function stile(options: Omit<FlowOptions, "driver"> & { explain?: b
       }
       if (matchesKey(key, "enter")) {
         const chosen = waiting.options[waiting.at]!.value;
-        if (sheet.cursor === "station") sheet.joining = chosen.startsWith("join:");
+        if (spec.deploying !== undefined && sheet.cursor === spec.deploying.step) sheet.joining = spec.deploying.unless?.(chosen) === true;
         const give = answer;
         sheet.waiting = undefined;
         answer = undefined;
@@ -673,7 +762,7 @@ export async function stile(options: Omit<FlowOptions, "driver"> & { explain?: b
   });
 
   /** The cursor follows whichever step spoke last, and `--explain` opens the words of each as it is reached. */
-  const reach = (step: StepName) => {
+  const reach = (step: S) => {
     if (sheet.cursor === step) return;
     sheet.cursor = step;
     sheet.said.set(step, []);
@@ -683,7 +772,7 @@ export async function stile(options: Omit<FlowOptions, "driver"> & { explain?: b
     if (options.explain === true) sheet.open.add(step);
   };
 
-  const driver: Driver = {
+  const driver: Driver<S> = {
     say(step, line, tone) {
       reach(step);
       const said = sheet.said.get(step) ?? [];
@@ -719,13 +808,13 @@ export async function stile(options: Omit<FlowOptions, "driver"> & { explain?: b
   };
 
   tui.start();
-  if (options.explain === true) sheet.open.add("command");
+  if (options.explain === true) sheet.open.add(spec.steps[0]!);
   // The first frame at once, before the flow does anything: the renderer draws on a timer, and the command step's install
   // would otherwise be the first thing a shepherd waits on, with the cursor hidden and nothing on screen (issue #9's walk).
   tui.renderNow();
   let stopped = false;
   try {
-    const report = await runFlow({ ...options, driver });
+    const report = await spec.run(driver);
     // The last step is settled, so the last frame is the finish: seven done rows, the paths, and the sentence in its box.
     sheet.finished = true;
     sheet.report = report;
@@ -740,6 +829,13 @@ export async function stile(options: Omit<FlowOptions, "driver"> & { explain?: b
     tui.stop({ preserveScreen: true });
     terminal.write("\r\n");
     return report;
+  } catch (error) {
+    // The last frame before the refusal is printed under it: the step's red line, drawn now rather than on the timer.
+    if (!stopped) {
+      sync();
+      tui.renderNow();
+    }
+    throw error;
   } finally {
     if (timer !== undefined) clearInterval(timer);
     if (!stopped) tui.stop();

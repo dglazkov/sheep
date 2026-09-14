@@ -130,8 +130,10 @@ export class MidTurn extends Refusal {
   constructor(
     readonly home: string,
     readonly sheep: MidTurnSheep[],
+    /** The sentence, when it is another command's guard in the same shape (collie phase 2: `collie deploy`'s); the station's otherwise. */
+    sentence?: string,
   ) {
-    super(`these sheep are mid-turn at ${home}: a deploy restarts their turns and runs their interrupted calls again, so nothing was deployed; \`sheep home deploy --now\` deploys anyway`);
+    super(sentence ?? `these sheep are mid-turn at ${home}: a deploy restarts their turns and runs their interrupted calls again, so nothing was deployed; \`sheep home deploy --now\` deploys anyway`);
   }
 }
 
@@ -439,6 +441,17 @@ export class AccountApi {
     }));
   }
 
+  /**
+   * A Worker deleted through the API, and with `force` its Durable Objects with it (collie phase 2: `collie rm`, whose
+   * Worker has no environment for `wrangler delete` to name). A Worker the account does not have is `false`.
+   */
+  async deleteWorker(accountId: string, script: string): Promise<boolean> {
+    const envelope = await this.call<unknown>("DELETE", `/accounts/${accountId}/workers/scripts/${script}?force=true`);
+    if (envelope.success) return true;
+    if (envelope.errors?.some((error) => error.code === 10007 || error.code === 10090 || /not found/i.test(error.message))) return false;
+    throw new Error(`DELETE /accounts/${accountId}/workers/scripts/${script}: ${quoteErrors(envelope.errors)}`);
+  }
+
   async deleteApplication(accountId: string, applicationId: string): Promise<void> {
     await this.must<unknown>("DELETE", `/accounts/${accountId}/containers/applications/${applicationId}`);
   }
@@ -614,7 +627,7 @@ export function writeDerivedConfig(name: string, stamp: BuildStamp | undefined =
 
 /* wrangler. */
 
-interface WranglerResult {
+export interface WranglerResult {
   code: number;
   stdout: string;
   stderr: string;
@@ -627,7 +640,7 @@ interface WranglerResult {
  * one. It runs in the derived config's directory, so its own scratch
  * (`.wrangler/`) lands under the kennel.
  */
-async function wrangler(bin: string, args: string[], options: { token: string; accountId: string; cwd: string; stdin?: string }): Promise<WranglerResult> {
+export async function wrangler(bin: string, args: string[], options: { token: string; accountId: string; cwd: string; stdin?: string }): Promise<WranglerResult> {
   const env = { ...process.env, CI: "1", WRANGLER_SEND_METRICS: "false", CLOUDFLARE_API_TOKEN: options.token, CLOUDFLARE_ACCOUNT_ID: options.accountId };
   return new Promise((resolveRun, reject) => {
     const child = spawn(process.execPath, [bin, ...args], { cwd: options.cwd, env, stdio: ["pipe", "pipe", "pipe"] });
@@ -642,7 +655,7 @@ async function wrangler(bin: string, args: string[], options: { token: string; a
 }
 
 /** The last lines of a failed wrangler call, for the sentence; never a value the call carried. */
-const tail = (result: WranglerResult, lines = 12): string =>
+export const tail = (result: WranglerResult, lines = 12): string =>
   `${result.stdout}\n${result.stderr}`
     .split("\n")
     .map((line) => line.trimEnd())
@@ -650,7 +663,7 @@ const tail = (result: WranglerResult, lines = 12): string =>
     .slice(-lines)
     .join("\n");
 
-function wranglerBin(stamp: BuildStamp | undefined, say: (text: string) => void): string {
+export function wranglerBin(stamp: BuildStamp | undefined, say: (text: string) => void): string {
   const seam = process.env.SHEEP_TEST_WRANGLER;
   if (seam) return seam;
   return ensureWrangler(stamp, say).bin;
@@ -954,9 +967,12 @@ export const KEY_SECRET = "SHEEP_ANTHROPIC_API_KEY";
  * which is this and the derived config again — so there is one
  * implementation of the put and not a second one beside it.
  */
-async function putSecret(options: { bin: string; config: string; cwd: string; secret: string; value: string; token: string; accountId: string }): Promise<void> {
-  const put = await wrangler(options.bin, ["secret", "put", options.secret, "--config", options.config, "--env", "pen"], { token: options.token, accountId: options.accountId, cwd: options.cwd, stdin: `${options.value}\n` });
-  if (put.code !== 0) throw new Error(`wrangler secret put ${options.secret} --config ${options.config} --env pen exited ${put.code}:\n${tail(put)}`);
+export async function putSecret(options: { bin: string; config: string; cwd: string; secret: string; value: string; token: string; accountId: string; env?: string | null }): Promise<void> {
+  // The station's secrets are its `pen` environment's; a Worker with no environment (the collie, collie phase 2) passes `env: null`.
+  const env = options.env === undefined ? "pen" : options.env;
+  const envArgs = env === null ? [] : ["--env", env];
+  const put = await wrangler(options.bin, ["secret", "put", options.secret, "--config", options.config, ...envArgs], { token: options.token, accountId: options.accountId, cwd: options.cwd, stdin: `${options.value}\n` });
+  if (put.code !== 0) throw new Error(`wrangler secret put ${options.secret} --config ${options.config}${env === null ? "" : ` --env ${env}`} exited ${put.code}:\n${tail(put)}`);
 }
 
 /**
@@ -1163,7 +1179,7 @@ function midway(name: string, home: string, done: number): string {
  * commit and time under the release; under a checkout, the smit of the
  * checkout's root at `now`, or a `Refusal` when git cannot give one.
  */
-function markFor(stamp: BuildStamp | undefined, now: Date): BuildSide {
+export function markFor(stamp: BuildStamp | undefined, now: Date): BuildSide {
   if (stamp !== undefined) return { commit: stamp.commit, builtAt: stamp.builtAt };
   const root = checkoutRoot(packageDir);
   const smit = root === undefined ? undefined : checkoutStamp(root, now);

@@ -19,7 +19,7 @@
  * `state`, not in a line.
  */
 import { DurableObject } from "cloudflare:workers";
-import { ApiError, DaemonRoutes, endSheep, runRoom, SHEEP_HARNESS, SheepAgent, type BadgeStore, type RcAgentRow, type Room, type RoomAdapter, type RoomDeps, type RoomHarness, type RoomRows, type RoomState, type StoredBadge } from "isocan/rc";
+import { ApiError, canvasUrlWithPass, DaemonRoutes, endSheep, isLoopbackBase, parseCanvasAddress, runRoom, SHEEP_HARNESS, SheepAgent, type BadgeStore, type RcAgentRow, type Room, type RoomAdapter, type RoomDeps, type RoomHarness, type RoomRows, type RoomState, type StoredBadge } from "isocan/rc";
 import { StationClient, StationSentence, stationCommands, type Station } from "./sheep.ts";
 
 type Actor = RoomDeps["owner"];
@@ -57,45 +57,26 @@ export type Answer<T> = { ok: true; value: T } | { ok: false; status: number; er
 
 export type PassAnswer = { kind: "room"; room: RoomView; owner: string; already: boolean } | { kind: "agent"; agent: string; room: RoomView };
 
-/** A pass's address taken apart, as isocan's `parseCanvasAddress` reads one: `<origin>/p/<canvasId>#<pass>`. */
-export function parsePassAddress(raw: string): { origin: string; canvasId: string; pass: string } | null {
-  const trimmed = raw.trim();
-  const hash = trimmed.indexOf("#");
-  if (hash < 0) return null;
-  const pass = trimmed.slice(hash + 1);
-  const address = trimmed.slice(0, hash);
-  if (pass === "") return null;
-  const schemed = /^[a-z][a-z0-9+.-]*:\/\//i.test(address) ? address : `${/^(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/.test(address) ? "http" : "https"}://${address}`;
-  let url: URL;
-  try {
-    url = new URL(schemed);
-  } catch {
-    return null;
-  }
-  if ((url.protocol !== "http:" && url.protocol !== "https:") || !url.hostname) return null;
-  const parts = url.pathname.replace(/\/+$/, "").split("/");
-  if (parts.length !== 3 || parts[0] !== "" || parts[1] !== "p") return null;
-  const canvasId = decodeURIComponent(parts[2] ?? "");
-  if (canvasId === "") return null;
-  return { origin: url.origin, canvasId, pass };
-}
-
-/** A canvas's address, as isocan's `canvasUrl` writes one. */
+/**
+ * A canvas's address with no pass: isocan's `canvasUrlWithPass` with the fragment it adds taken off, since `isocan/rc`
+ * exports no `canvasUrl`. The fragment is the pass by isocan's rule (a pass rides after the first `#`).
+ */
 export function canvasAddress(origin: string, canvasId: string): string {
-  return `${origin.replace(/\/+$/, "")}/p/${encodeURIComponent(canvasId)}`;
+  const withPass = canvasUrlWithPass(origin, canvasId, "");
+  return withPass.slice(0, withPass.lastIndexOf("#"));
 }
 
 /**
- * A pass's address for a sheep's cell, as isocan's `canvasUrlWithPass` composes it: the canvas's address with the token
- * as its fragment. A loopback home is said the way a container reaches this machine, as the laptop's `homeAddressForCell`
- * says it (the rig's case: a sheep's container dials the developer's daemon).
+ * A pass's address for a sheep's cell, composed by isocan's `canvasUrlWithPass`. The host's one choice: a loopback home
+ * (isocan's `isLoopbackBase`) is said the way a container reaches this machine, `host.docker.internal`, as the laptop's
+ * `homeAddressForCell` says it with no `loopbackFromCell` configured (the rig's case: a sheep's container dials the
+ * developer's daemon).
  */
 export function cellPassAddress(origin: string, canvasId: string, token: string): string {
+  if (!isLoopbackBase(origin)) return canvasUrlWithPass(origin, canvasId, token);
   const url = new URL(origin);
-  const loopback = url.hostname === "127.0.0.1" || url.hostname === "localhost" || url.hostname === "[::1]";
-  if (loopback) url.hostname = "host.docker.internal";
-  const base = loopback ? url.toString().replace(/\/$/, "") : origin;
-  return `${canvasAddress(base, canvasId)}#${token}`;
+  url.hostname = "host.docker.internal";
+  return canvasUrlWithPass(url.toString().replace(/\/$/, ""), canvasId, token);
 }
 
 /**
@@ -488,7 +469,8 @@ export class Collie extends DurableObject<Env> {
    * an agent's claim is said as the agent's. Isocan's refusal is its own sentence, and nothing here changes.
    */
   async passes(address: string): Promise<Answer<PassAnswer>> {
-    const parsed = parsePassAddress(address);
+    const read = parseCanvasAddress(address);
+    const parsed = read === null || read.pass === undefined || read.pass === "" ? null : { origin: read.origin, canvasId: read.canvasId, pass: read.pass };
     if (parsed === null) return { ok: false, status: 400, error: "that is not a pass's address; isocan prints one as <home>/p/<canvas>#<pass>" };
     let client: StationClient;
     try {

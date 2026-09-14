@@ -26,14 +26,16 @@ lives in `packages/cli`'s modules and is changed for both.
 
 ---
 
-**Where we are: collie phases 0 and 1 CLOSED, 14 September 2026;
-collie phase 2 is next.** The brain is isocan's `isocan/rc` (project
-`room`, #294), and since isocan 14f39ba5 it carries `DaemonRoutes` too;
-`packages/collie` pins its release 2f15360e. The Worker holds the room in
-workerd against scripted fakes, the command speaks to it, and the rig
-walked by hand. Next is `collie setup`, `deploy`, `rm`, the mint through
-isocan's API, and the walks. Three Open debts below are isocan's work,
-wanted before the phase 2 walk; nothing waits on a person.
+**Where we are: collie phases 0 and 1 CLOSED, collie phase 2 PART-DONE,
+14 September 2026; its walks next, then collie phase 3.** The brain is isocan's `isocan/rc` (project `room`,
+#294), carrying `DaemonRoutes` and the address helpers since isocan
+14f39ba5 and 8729b9e3; the pin is release 18ca496a. `collie setup`,
+`new`, `pass`, `deploy`, `rm`, and `local` are built, and the home ring
+walks journey 1 on the rig against a real isocan daemon. Next is collie
+phase 2's walks on its release: `pnpm hermetic --ring package`, then
+`--ring account --collie` under the shepherd's standing authorization.
+Phase 1's Opens on the resume rule and the withdrawn sheep's badge are
+isocan's work still.
 
 Four phases: the brain in isocan, the Worker and the rig, the sitting
 and the walk, and moving in. The last is small and last because it needs
@@ -228,8 +230,8 @@ and `collie` reporting a room.
 - **2026-09-14 — Shared modules moved, not copied:** `setup-words.ts` serves `herd.ts` and the Worker; `local.ts` exports the rig's helpers; `tip.ts` keeps `collieSkew`.
 - **2026-09-14 — A scratch `HOME` loses Docker's buildx;** `sheep home local` there needs `DOCKER_CONFIG` at the real `~/.docker`.
 - **2026-09-14 — Open: the resume rule reads isocan's text.** The host's `attach` rejoins a marked turn, re-prompting only for an entry `summonsPrompt`'s JSON tail does not mark `redelivered`; a rejoin hook is isocan's work.
-- **2026-09-14 — Open: three host pieces are the laptop's only.** `parseCanvasAddress`/`canvasUrlWithPass` are rewritten in `collie.ts`; `endCellBadge` is skipped, so a withdrawn sheep's badge stays live; `back after <n>s — rejoined <name>'s turn` is unsaid. Isocan's work, before collie phase 2's walk.
-- **2026-09-14 — Open: a dropped station is retried silently** for five minutes; journey 2 step 3 wants the drop said once. Collie phase 2.
+- **2026-09-14 — Open: two host pieces are the laptop's only.** `endCellBadge` is skipped, so a withdrawn sheep's badge stays live; `back after <n>s — rejoined <name>'s turn` is unsaid. Isocan's work. (The address helpers came with isocan 8729b9e3, collie phase 2.)
+- **2026-09-14 — A dropped station was retried silently;** collie phase 2 says the drop once, when the station answers again.
 
 ---
 
@@ -270,7 +272,7 @@ checkout's local home (`sheep home local --faux` in a scratch kennel
 through `test/local-home.ts`, standing in for step 1's station), a real
 isocan daemon started by the test's installed `isocan` on a free port
 with its own `ISOCAN_HOME`, a canvas made and an identity named by it and
-the directory bound (step 2), `collie setup --json` finding both (step 3), `collie local` from that kennel, `collie new` in the
+the directory bound (step 2), `collie setup --json` finding both (step 3; the rig's kennel has a local home, so it is the refusal at **sheep** naming `collie local`, carrying the home and the identity, deploying nothing), `collie local` from that kennel, `collie new` in the
 bound directory minting through isocan's API against the test's daemon,
 an ask posted at the daemon's `POST /api/projects/:id/agents/ask` standing
 in for the tray, `isocan who` reading Percy answerable and listening to
@@ -290,7 +292,7 @@ and, with `--collie`, the account ring gains journey 1 whole after the
 stile it already drives (isocan's setup from its release in the ring's
 fresh `HOME`, an identity of the ring's own at dev.isocan.io and a scratch
 canvas bound; `collie setup` through the same terminal; `collie new`; the ask at the doorbell, a mention by `isocan comment`,
-the reply read from the thread by `isocan context` within ten minutes
+the reply read from the thread by `isocan --json comment list` within ten minutes
 with no `isocan rc` on this machine, `collie log` holding the rc's lines,
 off and on with the tray's read, `collie rm`, the station deleted, the
 enrolment withdrawn by the ring at its end). `README.md`: the collie's section, the sitting as the shepherd meets it,
@@ -309,9 +311,18 @@ is its own, made in the fresh `HOME` at dev.isocan.io for the walk and
 never the shepherd's; the canvas it makes there is named
 `collie-hermetic-<sha>` and archived by the ring at its end.
 
-**Status: NOT STARTED.**
+**Status: PART-DONE, 2026-09-14.** Every inner ring holds with the home ring's walk against a real isocan daemon, the frames were looked at, and the pin moved to 18ca496a; the package and account rings wait on the phase's release.
 
 **Findings:**
+
+- **2026-09-14 — Isocan's hold outlived its socket:** `POST /api/rc/hold` released on `req.raw` close, which Node fires once a POST's body is read, so `collie off` read nobody listening after nine seconds. Isocan 8729b9e3 releases on `reply.raw`; the walk reads 1 ms.
+- **2026-09-14 — The pin moved to 18ca496a** (release of 8729b9e3), which also exports `canvasUrlWithPass`, `parseCanvasAddress`, `isLoopbackBase` from both entries; the collie's copies went, save a pass-less `canvasAddress`, since isocan exports no `canvasUrl`.
+- **2026-09-14 — `collie new` mints through the PATH isocan's own functions,** refusing an isocan too old to export them with `isocan upgrade` named; pnpm's `.bin/isocan` is a shell shim, so the walk puts a symlink on PATH, a global install's shape.
+- **2026-09-14 — The stile takes a second checklist:** `drawChecklist(spec)` carries mascot, steps, words, and finish; the collie's coat is xterm 238, since true black vanished on a dark terminal.
+- **2026-09-14 — The rig's setup is a refusal:** a kennel with a local home refuses at **sheep** naming `collie local`, carrying both sides; `collie rm` on the rig ends the badges and stops the rig, asking the account nothing.
+- **2026-09-14 — Tests reading `ps` collide across rings:** a case claimed every `bin/collie.js` process and met the home ring's `collie new`; each world now runs the command through a symlink of its own.
+- **2026-09-14 — Isocan's routes want `x-isocan-features: canvas-groups-v4`,** and harness variables (`CLAUDE_CODE_SESSION_ID` and kin) make isocan speak as the agent; the walks strip them.
+- **2026-09-14 — A dev.isocan.io thread's replies are read with `isocan --json comment list`;** `isocan context` does not list them.
 
 ---
 

@@ -20,6 +20,10 @@
  * holds a `deploy` open that long before it registers anything, so a
  * screen harness has a stage that cannot end between two of its reads.
  *
+ * Collie phase 2: a config with no `pen` environment is a Worker's top
+ * level alone (the collie's), so its name is the top level's, it has no
+ * container, and `deploy`, `secret put`, and `delete` name that Worker.
+ *
  * Station phase 4: `dev` plays the local home's daemon for
  * `test/local.test.ts`: it listens on `--port` until SIGTERM, answering
  * `sheep` at the door, `[]` at `/sessions`, and at `/home` a `container`
@@ -87,24 +91,26 @@ if (args[0] === "dev") {
   // A deploy that takes a while, as a real upload does: the stage behind the stile's spinner stays up this long.
   const hold = Number(process.env.SHEEP_TEST_WRANGLER_DEPLOY_MS);
   if (Number.isFinite(hold) && hold > 0) await new Promise((resolveHold) => setTimeout(resolveHold, hold));
-  const pen = config.env.pen;
+  const pen = config.env?.pen ?? config;
   // The define as the bundler takes it: a JSON expression after the key, here a string, whose value the Worker parses as JSON.
   const defined = args.filter((arg, i) => args[i - 1] === "--define" && arg.startsWith("SHEEP_BUILD:")).map((arg) => JSON.parse(JSON.parse(arg.slice("SHEEP_BUILD:".length))));
   const build = defined.length === 0 ? null : { commit: defined.at(-1).commit, builtAt: defined.at(-1).builtAt };
-  await fetch(`${api}/_fake/deploy`, { method: "POST", body: JSON.stringify({ name: pen.name, container: pen.containers[0].name, image: pen.containers[0].image, vars: args.filter((arg, i) => args[i - 1] === "--var"), kv: pen.kv_namespaces ?? [], build }) });
+  await fetch(`${api}/_fake/deploy`, { method: "POST", body: JSON.stringify({ name: pen.name, container: pen.containers?.[0]?.name ?? null, image: pen.containers?.[0]?.image ?? null, vars: args.filter((arg, i) => args[i - 1] === "--var"), kv: pen.kv_namespaces ?? [], build }) });
   console.log(`Total Upload: 1234.56 KiB / gzip: 234.56 KiB\nUploaded ${pen.name} (2.34 sec)\nDeployed ${pen.name} triggers (1.23 sec)\n  https://${pen.name}.fake.workers.dev\nCurrent Version ID: 00000000-0000-0000-0000-000000000000`);
 } else if (args[0] === "secret" && args[1] === "put") {
   if (process.env.SHEEP_TEST_WRANGLER_FAIL === `secret:${args[2]}`) {
-    console.error(`✘ [ERROR] A request to the Cloudflare API (/accounts/x/workers/scripts/${config.env.pen.name}/secrets) failed.\n\n  the fake refused this secret [code: 10000]`);
+    console.error(`✘ [ERROR] A request to the Cloudflare API (/accounts/x/workers/scripts/${(config.env?.pen ?? config).name}/secrets) failed.\n\n  the fake refused this secret [code: 10000]`);
     process.exit(1);
   }
   // The account's side of a secret put (stile phase 0): the Worker's secret names are what `deploy` reads when no model key
   // is kept here, so the listing has to be what the puts actually made rather than a fixture.
-  await fetch(`${api}/_fake/secret`, { method: "POST", body: JSON.stringify({ name: config.env.pen.name, secret: args[2] }) });
-  console.log(`🌀 Creating the secret for the Worker "${config.env.pen.name}" \n✨ Success! Uploaded secret ${args[2]}`);
+  const worker = (config.env?.pen ?? config).name;
+  await fetch(`${api}/_fake/secret`, { method: "POST", body: JSON.stringify({ name: worker, secret: args[2] }) });
+  console.log(`🌀 Creating the secret for the Worker "${worker}" \n✨ Success! Uploaded secret ${args[2]}`);
 } else if (args[0] === "delete") {
-  await fetch(`${api}/_fake/delete`, { method: "POST", body: JSON.stringify({ name: config.env.pen.name }) });
-  console.log(`Successfully deleted ${config.env.pen.name}`);
+  const worker = (config.env?.pen ?? config).name;
+  await fetch(`${api}/_fake/delete`, { method: "POST", body: JSON.stringify({ name: worker }) });
+  console.log(`Successfully deleted ${worker}`);
 } else {
   console.error(`fake wrangler: unknown command ${args.join(" ")}`);
   process.exit(1);

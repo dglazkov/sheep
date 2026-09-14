@@ -147,6 +147,11 @@ export class CollieHome {
   on(): Promise<{ on: true; rooms: Room[] }> {
     return this.request("POST", "/on");
   }
+
+  /** `DELETE /` (collie phase 2, `collie rm`): the badge at each isocan home ended, the rooms and rows dropped. */
+  end(): Promise<{ ended: { origin: string; badge: string }[] }> {
+    return this.request("DELETE", "/");
+  }
 }
 
 /** A refusal's sentence, when the body is `{ "error": "<sentence>" }`; undefined for anything else. */

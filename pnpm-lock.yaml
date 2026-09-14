@@ -19,6 +19,9 @@ importers:
       esbuild:
         specifier: ^0.28.0
         version: 0.28.2
+      isocan:
+        specifier: github:dglazkov/isocan#18ca496a6a7006f3914020be7bfed10da8c2542c
+        version: https://codeload.github.com/dglazkov/isocan/tar.gz/18ca496a6a7006f3914020be7bfed10da8c2542c
 
   packages/cell:
     dependencies:
@@ -124,8 +127,8 @@ importers:
   packages/collie:
     dependencies:
       isocan:
-        specifier: github:dglazkov/isocan#2f15360e76e321c83d26339c50f2311dcb96931e
-        version: https://codeload.github.com/dglazkov/isocan/tar.gz/2f15360e76e321c83d26339c50f2311dcb96931e
+        specifier: github:dglazkov/isocan#18ca496a6a7006f3914020be7bfed10da8c2542c
+        version: https://codeload.github.com/dglazkov/isocan/tar.gz/18ca496a6a7006f3914020be7bfed10da8c2542c
     devDependencies:
       '@cloudflare/vitest-pool-workers':
         specifier: ^0.22.0
@@ -1615,8 +1618,8 @@ packages:
   isexe@2.0.0:
     resolution: {integrity: sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw==}
 
-  isocan@https://codeload.github.com/dglazkov/isocan/tar.gz/2f15360e76e321c83d26339c50f2311dcb96931e:
-    resolution: {tarball: https://codeload.github.com/dglazkov/isocan/tar.gz/2f15360e76e321c83d26339c50f2311dcb96931e}
+  isocan@https://codeload.github.com/dglazkov/isocan/tar.gz/18ca496a6a7006f3914020be7bfed10da8c2542c:
+    resolution: {tarball: https://codeload.github.com/dglazkov/isocan/tar.gz/18ca496a6a7006f3914020be7bfed10da8c2542c}
     version: 0.1.0
     hasBin: true
 
@@ -3782,7 +3785,7 @@ snapshots:
 
   isexe@2.0.0: {}
 
-  isocan@https://codeload.github.com/dglazkov/isocan/tar.gz/2f15360e76e321c83d26339c50f2311dcb96931e:
+  isocan@https://codeload.github.com/dglazkov/isocan/tar.gz/18ca496a6a7006f3914020be7bfed10da8c2542c:
     dependencies:
       '@modelcontextprotocol/sdk': 1.30.0(zod@4.6.5)
       '@types/node': 22.20.1

@@ -220,10 +220,15 @@ export function stationCommands(client: StationClient, marks: TurnMarks, narrate
   };
 }
 
+/** What the narration says once when a follow the station dropped is taken up again: the host's line, naming the station. */
+export function droppedWords(home: string, id: string, ms: number): string {
+  return `the station at ${new URL(home).origin} stopped answering for ${Math.max(1, Math.round(ms / 1000))}s — following sheep ${id}'s turn again`;
+}
+
 /**
  * One turn followed from `mark.tip` to its end: every entry after the tip handed on once, the queued entry waited for
  * when the prompt was queued, and the setup said while it runs. A station that stops answering is asked again with a
- * backoff for `FOLLOW_DROP_WINDOW_MS`; its refusal is thrown at once.
+ * backoff for `FOLLOW_DROP_WINDOW_MS`, and said once in the narration when it answers again; its refusal is thrown at once.
  */
 async function follow(client: StationClient, id: string, mark: TurnMark, onEntry: (entry: SheepEntry) => void, narrate: (line: string) => void): Promise<SheepReply> {
   const seen = new Set<string>();
@@ -248,9 +253,12 @@ async function follow(client: StationClient, id: string, mark: TurnMark, onEntry
     if (Date.now() - rowAt >= SETUP_POLL_MS) await askRow();
     let view: Transcript;
     try {
-      const query = new URLSearchParams({ wait: String(FOLLOW_WAIT_MS) });
+      // After a drop the station is asked without a wait, so its return is known (and said) at once rather than at the turn's next beat.
+      const query = new URLSearchParams({ wait: String(droppedAt === null ? FOLLOW_WAIT_MS : 0) });
       if (tip !== null) query.set("tip", tip);
       view = await client.json<Transcript>(`${sheepPath(id)}/transcript?${query}`);
+      // A drop is said once, when the follow is taken up again (tether's shape, in the collie's narration).
+      if (droppedAt !== null) narrate(droppedWords(client.station.home, id, Date.now() - droppedAt));
       droppedAt = null;
       pause = 250;
     } catch (error) {

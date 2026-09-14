@@ -4,11 +4,13 @@
  * `bin/collie.js` calls `main`, as `bin/sheep.js` calls `../cli.ts`'s.
  *
  * The verbs of this phase: `collie` (the report), `log`, `off`, `on`,
- * `new --pass`, and `pass`, each against the collie the kennel's config
+ * `new`, and `pass`, each against the collie the kennel's config
  * names in its `collie` block; `--version`, `--help`, and `--agent-help`,
- * which need no collie. `new` without `--pass` and `pass --agent` are
- * refused as not in this build; `setup`, `deploy`, and `rm` are unknown
- * here until they are built. `local` is the rig's, through `./local.ts`.
+ * which need no collie. `new` and `pass` mint through the isocan on PATH
+ * (`./isocan.ts`, collie phase 2), or take one with `--pass`; `pass --agent`
+ * is refused as not in this build. `setup`, `deploy [--now]`, and `rm` are
+ * the shepherd's (collie phase 2), through `./setup.ts`, `./deploy.ts`, and
+ * `./rm.ts`. `local` is the rig's, through `./local.ts`.
  *
  * As `sheep` does in `../cli.ts`: the tip is asked for before a verb, by
  * `startTip`'s detached child, and at the end the notice and the skew line
@@ -18,16 +20,17 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadConfig, sheepDir } from "../config.js";
+import { loadConfig, readConfigFile, sheepDir } from "../config.js";
 import { Sentence } from "../home.js";
 import { readStamp } from "../local.js";
 import { startTip } from "../tip.js";
 import { ISOCAN_PIN } from "./floors.js";
 import { CollieHome, type LogPage, Unreachable } from "./home.js";
 import { Interrupted, readPass } from "./hidden.js";
+import { LoopbackCanvas, mintCollie } from "./isocan.js";
 import { sayAtCollieExit } from "./said.js";
 import { COLLIE_USAGE } from "./usage.js";
-import { logWords, offWords, onWords, passWords, reportWords } from "./words.js";
+import { logWords, loopbackWords, offWords, onWords, passWords, reportWords } from "./words.js";
 
 /** How often `collie log --follow` asks for more. */
 export const FOLLOW_MS = 2_000;
@@ -50,20 +53,26 @@ interface Parsed {
   json: boolean;
   follow: boolean;
   pass: boolean;
+  /** `collie deploy --now`: deploy over agents mid-turn. */
+  now: boolean;
+  /** `collie setup --explain`: every step's words open as it is reached. */
+  explain: boolean;
   since?: string;
   last?: string;
   agent?: string;
+  canvas?: string;
   rest: string[];
   unknown: string[];
 }
 
 function parse(argv: readonly string[]): Parsed {
   const args = [...argv];
-  const parsed: Parsed = { json: false, follow: false, pass: false, rest: [], unknown: [] };
+  const parsed: Parsed = { json: false, follow: false, pass: false, now: false, explain: false, rest: [], unknown: [] };
   const valued: Record<string, (value: string | undefined) => void> = {
     "--since": (value) => (parsed.since = value ?? ""),
     "--last": (value) => (parsed.last = value ?? ""),
     "--agent": (value) => (parsed.agent = value ?? ""),
+    "--canvas": (value) => (parsed.canvas = value ?? ""),
   };
   while (args.length > 0) {
     const arg = args.shift()!;
@@ -73,6 +82,8 @@ function parse(argv: readonly string[]): Parsed {
     else if (arg === "--json") parsed.json = true;
     else if (arg === "--follow" || arg === "-f") parsed.follow = true;
     else if (arg === "--pass") parsed.pass = true;
+    else if (arg === "--now") parsed.now = true;
+    else if (arg === "--explain") parsed.explain = true;
     else if (arg.startsWith("-") && !["--help", "-h", "--version", "-v"].includes(arg)) parsed.unknown.push(arg);
     else parsed.rest.push(arg);
   }
@@ -122,6 +133,8 @@ export async function main(argv: readonly string[]): Promise<number> {
 async function run(command: string | undefined, parsed: Parsed, hear: (collie: CollieHome) => void): Promise<number> {
   const out = (text: string) => void process.stdout.write(text);
   const err = (text: string) => void process.stderr.write(text);
+  if (parsed.now && command !== "deploy") return misuse("--now goes with collie deploy");
+  if (parsed.explain && command !== "setup") return misuse("--explain goes with collie setup");
   switch (command) {
     case undefined:
     case "log":
@@ -130,6 +143,12 @@ async function run(command: string | undefined, parsed: Parsed, hear: (collie: C
     case "new":
     case "pass":
       break;
+    // The shepherd's three (collie phase 2): the sitting, the Worker again, and the end, each in its own module.
+    case "setup":
+    case "deploy":
+    case "rm":
+      if (parsed.rest.length > 1) return misuse(`${command} takes no ${JSON.stringify(parsed.rest[1])}`);
+      return await shepherds(command, parsed, out, err);
     // The rig (collie phase 1's Worker half): `collie local [stop]`, the Worker under wrangler dev beside the local home.
     case "local": {
       try {
@@ -143,8 +162,11 @@ async function run(command: string | undefined, parsed: Parsed, hear: (collie: C
       return misuse(`unknown command: ${command}`);
   }
   if (parsed.rest.length > 1) return misuse(`${command ?? "collie"} takes no ${JSON.stringify(parsed.rest[1])}`);
-  // Not in this build, and nothing asked of anyone: the mint through isocan, and a pass for an agent.
-  if (command === "new" && !parsed.pass) return refuse("collie new mints its pass through isocan in a later build; `collie new --pass` takes a pass you already have, at a hidden prompt");
+  // `--canvas` names the canvas a mint is for, so it goes with `new` and `pass` and not with a pass already minted.
+  if (parsed.canvas !== undefined && command !== "new" && command !== "pass") return misuse(`--canvas goes with collie new and collie pass, not ${command === undefined ? "collie" : `collie ${command}`}`);
+  if (parsed.canvas !== undefined && parsed.pass) return misuse("--canvas names the canvas collie mints a pass for; a pass taken with --pass already names its canvas");
+  if (parsed.canvas === "") return misuse("--canvas needs a canvas's id or the start of its title");
+  // Not in this build, and nothing asked of anyone: a pass for an agent (collie phase 3).
   if (command === "pass" && parsed.agent !== undefined) return refuse("collie pass --agent is not in this build yet; a pass minted for the agent, handed over with `collie pass`, makes it the collie's");
 
   const config = await loadConfig();
@@ -173,8 +195,22 @@ async function run(command: string | undefined, parsed: Parsed, hear: (collie: C
         return 0;
       case "new":
       case "pass": {
-        const address = await readPass("the pass isocan printed (hidden): ");
-        if (address === "") return refuse(process.stdin.isTTY ? "nothing was typed; no pass was handed to the collie" : "no pass on stdin; give its address as one line of stdin, or run this at a terminal to type it hidden");
+        // `--pass`: a pass already minted, at the hidden prompt or on stdin. Otherwise minted here through the isocan on
+        // PATH, with this machine's identity, and handed over in the same breath: the address is in no argument, no
+        // file, and never on the screen.
+        let address: string;
+        if (parsed.pass) {
+          address = await readPass("the pass isocan printed (hidden): ");
+          if (address === "") return refuse(process.stdin.isTTY ? "nothing was typed; no pass was handed to the collie" : "no pass on stdin; give its address as one line of stdin, or run this at a terminal to type it hidden");
+        } else {
+          const rig = (readConfigFile()?.collie as { local?: unknown } | undefined)?.local === true;
+          try {
+            address = (await mintCollie({ canvas: parsed.canvas, reachesLoopback: rig })).address;
+          } catch (error) {
+            if (error instanceof LoopbackCanvas) return refuse(loopbackWords(error.title, error.origin, collie.url.origin));
+            throw error;
+          }
+        }
         out(passWords(await collie.passes(address)));
         return 0;
       }
@@ -243,4 +279,46 @@ async function runLog(collie: CollieHome, parsed: Parsed, out: (text: string) =>
     process.off("SIGINT", stop);
   }
   return 0;
+}
+
+/**
+ * `collie setup`, `collie deploy [--now]`, and `collie rm` (collie phase 2): the shepherd's. A refusal that made nothing
+ * is exit 2, as `sheep home deploy`'s is, with `--json` its JSON on stdout; a failure after the account was touched is
+ * exit 1.
+ */
+async function shepherds(command: "setup" | "deploy" | "rm", parsed: Parsed, out: (text: string) => void, err: (text: string) => void): Promise<number> {
+  if (command === "setup") {
+    const { runSetup } = await import("./setup.js");
+    const { atTerminal } = await import("../stile/screen.js");
+    return await runSetup({ json: parsed.json, explain: parsed.explain, terminal: atTerminal(), out, err });
+  }
+  const { MidTurn, midTurnJson, Refusal } = await import("../deploy.js");
+  try {
+    if (command === "deploy") {
+      const { collieMidTurnText, redeployCollie, redeployWords } = await import("./deploy.js");
+      try {
+        const report = await redeployCollie({ now: parsed.now, say: parsed.json ? () => {} : err });
+        out(parsed.json ? `${JSON.stringify(report)}\n` : redeployWords(report));
+        return 0;
+      } catch (error) {
+        if (!(error instanceof MidTurn)) throw error;
+        if (parsed.json) out(`${JSON.stringify(midTurnJson(error))}\n`);
+        else err(collieMidTurnText(error));
+        return 2;
+      }
+    }
+    const { removeCollie } = await import("./rm.js");
+    const report = await removeCollie({ json: parsed.json, out, err });
+    if (parsed.json) out(`${JSON.stringify(report)}\n`);
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (error instanceof Refusal) {
+      if (parsed.json) out(`${JSON.stringify({ refused: message })}\n`);
+      else err(`collie: ${message}\n`);
+      return 2;
+    }
+    err(`collie: ${message}\n`);
+    return 1;
+  }
 }

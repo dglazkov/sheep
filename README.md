@@ -121,26 +121,26 @@ build stamp: the commit on `main` the release was built from, and when.
 
 ## The collie
 
-The package puts a second command on PATH, `collie`, for one thing:
-[isocan](https://github.com/dglazkov/isocan)'s rc, the program that
-answers a canvas's summonses by prompting an agent, running at your
-account beside your station instead of on a laptop, so that an agent
-enrolled `--harness sheep` answers at three in the morning with every
-laptop shut. It is a complement to sheep, not a tool of its own: no home
-but the station, no identity but your isocan one, no agents but isocan's,
-no sessions but sheep, and it reads the station's address and token from
-the kennel and the account token from where `sheep setup` kept it.
+The package puts a second command on PATH, `collie`:
+[isocan](https://github.com/dglazkov/isocan)'s rc, which answers a
+canvas's summonses by prompting an agent, running on your account beside
+your station instead of on a laptop, so an agent enrolled `--harness
+sheep` answers with every laptop shut.
 
-Two sittings you have done, and one more: after `sheep setup` and
-isocan's own setup, in a directory bound to a canvas, `collie setup`
-deploys the Worker on your account and asks for nothing new; `collie
-new` mints a pass as you through isocan's API and hands it over, and the
-collie is standing by. Add an agent in the tray, mention it, and it
-answers from a sheep. `collie` is the report, `collie log` the narration,
-`collie off` and `on` the switch, `collie rm` the end; `sheep ls` lists
-its sheep in pastures named `isocan-<agent>`. Nothing is built yet
-(13 Sep 2026); [`docs/projects/collie/`](docs/projects/collie/design.md)
-is the design and the walk.
+It is a third sitting, after `sheep setup` and isocan's own (`npx
+github:dglazkov/isocan#release setup` names you, makes a canvas, and binds
+the directory to it). `collie setup` at your terminal prints a small collie
+and five steps: **sheep** finds the station, **isocan** your identity,
+**account** reads the token `sheep setup` kept, **collie** deploys its
+Worker, `<station>-collie`, beside the station, and **next** says what is
+left. It asks for nothing new. `collie new` in the bound directory mints
+a pass as you through isocan and hands it over, never on the screen, and
+the collie stands by on the canvas. Add an agent in the tray, mention it,
+and it answers from a sheep in pasture `isocan-<agent>`. `collie` is the
+report, `collie log` the narration, `collie off` releases every hold and
+`collie on` takes them up again, and `collie rm` lists what goes (its
+badge, its Worker) and what stays (every enrolment and sheep), then waits
+for its name.
 
 ## Developing sheep
 
@@ -190,7 +190,7 @@ period. `--ring machine` repeats it inside `node:22-slim` and
 whose rig home and kennel the ring set up first; `--ring account` deploys
 a station on the shepherd's account, plays the shepherd through the stile
 with the real token and key, and walks the dog with nothing in the
-environment.
+environment; `--collie` sets up isocan and the collie there too.
 
 ### sheep
 

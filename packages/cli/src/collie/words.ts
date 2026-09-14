@@ -21,6 +21,11 @@ export function passWords(result: PassResult): string {
   );
 }
 
+/** Journey 5 step 2: a canvas on this machine's own isocan daemon, refused before a pass is minted; both homes named, and what would connect them. */
+export function loopbackWords(title: string, origin: string, collie: string): string {
+  return `the canvas "${title}" lives at ${origin}, this machine's own isocan daemon, which the collie at ${collie} cannot reach; no pass was minted — move the canvas to a home with an address, or use the rig`;
+}
+
 /** Titles as a sentence names them: `"A"`, `"A" and "B"`, `"A", "B", and "C"`. */
 export function titles(rooms: Room[]): string {
   const quoted = rooms.map((room) => `"${room.title}"`);

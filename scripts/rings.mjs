@@ -120,6 +120,7 @@ export const RINGS = {
   command: [
     "packages/cli/test/bleat.test.ts",
     "packages/cli/test/cli.test.ts",
+    "packages/cli/test/collie-setup.test.ts",
     "packages/cli/test/collie.test.ts",
     "packages/cli/test/deploy.test.ts",
     "packages/cli/test/earmark.test.ts",
@@ -135,7 +136,7 @@ export const RINGS = {
     "packages/pen/test/birth.test.ts",
     "packages/pen/test/git.test.ts",
   ],
-  home: ["packages/cli/test/bell.test.ts", "packages/cli/test/journey5.test.ts", "packages/cli/test/pasture-herd.test.ts", "packages/cli/test/pasture.test.ts", "packages/cli/test/tether.test.ts"],
+  home: ["packages/cli/test/bell.test.ts", "packages/cli/test/collie-home.test.ts", "packages/cli/test/journey5.test.ts", "packages/cli/test/pasture-herd.test.ts", "packages/cli/test/pasture.test.ts", "packages/cli/test/tether.test.ts"],
 };
 
 /** The ring a file is declared to be in, or `undefined` when it is in none. */
@@ -145,13 +146,14 @@ export function ringOf(repoPath) {
 
 /**
  * The ring a file's own source says it needs, read rather than declared.
- * `startHome` starts a `wrangler dev`, so the file is the home ring's
+ * `startHome` starts a `wrangler dev` (and `startKennelHome` one under a
+ * scratch kennel, through `sheep home local`), so the file is the home ring's
  * whatever else it does; spawning a process at all makes it the command
  * ring's; anything else runs in this one.
  */
 export function evidence(source) {
   const code = withoutProse(source);
-  if (/\bstartHome\b/.test(code)) return "home";
+  if (/\bstart(?:Kennel)?Home\b/.test(code)) return "home";
   if (/\bspawn\(|\bspawnSync\(|\bexecFile\b|from "\.\/local-home/.test(code)) return "command";
   return "checkout";
 }

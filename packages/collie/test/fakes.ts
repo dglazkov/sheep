@@ -509,7 +509,9 @@ export class FakeStation implements Handler {
         const since = url.searchParams.get("tip");
         const wait = Math.min(Number(url.searchParams.get("wait") ?? "0"), 25_000);
         const view = () => ({ id, tipId: cell.entries.at(-1)?.id ?? null, operation: cell.operation, entries: cell.entries });
-        if (view().tipId === since && cell.operation !== null && wait > 0) await waitFor(wait, () => view().tipId !== since || cell.operation === null);
+        if (view().tipId === since && cell.operation !== null && wait > 0) await waitFor(wait, () => view().tipId !== since || cell.operation === null || this.down);
+        // A station that went down while a long poll was held cuts it, as a restart closes the socket.
+        if (this.down) throw new TypeError("fetch failed");
         return answer(JSON.parse(JSON.stringify(view())));
       }
       if (method === "POST" && rest === "/prompt") {

@@ -121,6 +121,10 @@ Bumps so far:
   after `room`'s 30e9902e): collie phase 1 needed `DaemonRoutes` from
   `isocan/rc` and made that commit in isocan first; about forty minutes
   from the commit to the release branch, `test:deep` included.
+- **2026-09-14 — 18ca496a** (release of isocan 8729b9e3): collie phase 2's
+  home ring found a hold outliving its socket (9 s after `collie off`);
+  the fix releases on `reply.raw` and both entries export core's address
+  helpers, so the collie's copies went. About eight minutes to move.
 
 ## Things that have gone wrong before (pi-bump's lessons, which apply)
 

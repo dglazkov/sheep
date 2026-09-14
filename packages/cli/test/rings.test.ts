@@ -87,7 +87,8 @@ describe("the inner rings", () => {
     // Not a style rule: every file here costs a home start, and the ring's
     // whole point is that the cost is visible. If this needs raising, raise it
     // deliberately and say why in the commit. Raised to five by tether phase 0: its file restarts the home it started,
-    // which no other file's home can share without being restarted under it.
-    expect(RINGS.home.length).toBeLessThanOrEqual(5);
+    // which no other file's home can share without being restarted under it. Raised to six by collie phase 2: the rig's
+    // walk stands a kennel's own local home, the collie's Worker, and an isocan daemon together, and restarts two of them.
+    expect(RINGS.home.length).toBeLessThanOrEqual(6);
   });
 });

@@ -13,6 +13,7 @@
     "bundle": "node scripts/bundle.mjs"
   },
   "devDependencies": {
-    "esbuild": "^0.28.0"
+    "esbuild": "^0.28.0",
+    "isocan": "github:dglazkov/isocan#18ca496a6a7006f3914020be7bfed10da8c2542c"
   }
 }

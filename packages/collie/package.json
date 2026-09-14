@@ -16,6 +16,6 @@
     "wrangler": "^4.0.0"
   },
   "dependencies": {
-    "isocan": "github:dglazkov/isocan#2f15360e76e321c83d26339c50f2311dcb96931e"
+    "isocan": "github:dglazkov/isocan#18ca496a6a7006f3914020be7bfed10da8c2542c"
   }
 }

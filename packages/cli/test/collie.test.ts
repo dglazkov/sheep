@@ -147,6 +147,11 @@ interface World {
   kennel: string;
   url: string;
   state: CollieState;
+  /**
+   * This world's path to the command: a symlink to `bin/collie.js` in a directory of its own outside the world. The processes
+   * it spawns carry it in their arguments, so a case reading `ps` finds its own and never another file's running at once.
+   */
+  bin: string;
   env: (extra?: Record<string, string | undefined>) => Record<string, string>;
   collie: (args: string[], options?: { stdin?: string; env?: Record<string, string | undefined> }) => Promise<Run>;
 }
@@ -161,6 +166,10 @@ async function world(state: Partial<CollieState> = {}, options: { collie?: boole
   });
   const dir = realpathSync(await mkdtemp(join(tmpdir(), "sheep-collie-")));
   cleanups.push(() => rm(dir, { recursive: true, force: true }));
+  const binDir = realpathSync(await mkdtemp(join(tmpdir(), "sheep-collie-bin-")));
+  cleanups.push(() => rm(binDir, { recursive: true, force: true }));
+  const bin = join(binDir, "collie.js");
+  await symlink(collieBin, bin);
   const kennel = join(dir, ".sheep");
   await mkdir(kennel);
   const config: Json = { home: "https://sheep-2.fake.workers.dev", token: "a-station-token", name: "sheep-2" };
@@ -175,7 +184,7 @@ async function world(state: Partial<CollieState> = {}, options: { collie?: boole
   };
   const collie = (args: string[], run: { stdin?: string; env?: Record<string, string | undefined> } = {}): Promise<Run> =>
     new Promise((resolve, reject) => {
-      const child = spawn(process.execPath, [collieBin, ...args], { env: env(run.env), cwd: dir, stdio: [run.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"] });
+      const child = spawn(process.execPath, [bin, ...args], { env: env(run.env), cwd: dir, stdio: [run.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"] });
       const out: Buffer[] = [];
       const err: Buffer[] = [];
       child.stdout.on("data", (chunk: Buffer) => out.push(chunk));
@@ -184,7 +193,7 @@ async function world(state: Partial<CollieState> = {}, options: { collie?: boole
       child.once("close", (code) => resolve({ code: code ?? -1, stdout: Buffer.concat(out).toString("utf8"), stderr: Buffer.concat(err).toString("utf8") }));
       if (run.stdin !== undefined) child.stdin!.end(run.stdin);
     });
-  return { dir, kennel, url: fake.url, state: full, env, collie };
+  return { dir, kennel, url: fake.url, state: full, bin, env, collie };
 }
 
 /** Every file under `root`, read whole; a FIFO or a socket is skipped. */
@@ -222,7 +231,7 @@ describe("collie without a collie (journey 5 step 4)", () => {
   it("says so in one sentence naming collie setup for every verb that needs one, exit 1, asking nothing of anyone and reading no pass", { timeout: 60_000 }, async () => {
     const w = await world({}, { collie: false });
     const sentence = `collie: no collie is set up in this kennel (${w.kennel}); \`collie setup\` deploys one beside the station\n`;
-    for (const args of [[], ["log"], ["off"], ["on"], ["pass"], ["new", "--pass"], ["--json"], ["log", "--follow"]]) {
+    for (const args of [[], ["log"], ["off"], ["on"], ["new"], ["pass"], ["new", "--canvas", "Pricing"], ["new", "--pass"], ["--json"], ["log", "--follow"]]) {
       const run = await w.collie(args, { stdin: `${PASS}\n` });
       expect(run, args.join(" ")).toEqual({ code: 1, stdout: "", stderr: sentence });
     }
@@ -231,16 +240,14 @@ describe("collie without a collie (journey 5 step 4)", () => {
 
   it("refuses what this build does not do yet, before the config is read, and names the verb that does", { timeout: 60_000 }, async () => {
     const w = await world();
-    expect(await w.collie(["new"])).toEqual({ code: 1, stdout: "", stderr: "collie: collie new mints its pass through isocan in a later build; `collie new --pass` takes a pass you already have, at a hidden prompt\n" });
     const agent = await w.collie(["pass", "--agent", "Percy"], { stdin: `${PASS}\n` });
     expect(agent).toMatchObject({ code: 1, stdout: "" });
     expect(agent.stderr).toMatch(/^collie: collie pass --agent is not in this build yet;/);
-    for (const verb of ["setup", "deploy", "rm"]) {
-      const run = await w.collie([verb]);
-      expect(run.code, verb).toBe(2);
-      expect(run.stdout).toBe("");
-      expect(run.stderr).toMatch(new RegExp(`^collie: unknown command: ${verb}\\n\\ncollie — `));
-    }
+    // `setup`, `deploy`, and `rm` are collie phase 2's, walked in `collie-setup.test.ts`; a verb that is none is still a mistake.
+    const unknown = await w.collie(["herd"]);
+    expect(unknown.code).toBe(2);
+    expect(unknown.stdout).toBe("");
+    expect(unknown.stderr).toMatch(/^collie: unknown command: herd\n\ncollie — /);
     // The rig (collie phase 1's Worker half) stands beside a local home, and this kennel names a station.
     expect(await w.collie(["local"])).toEqual({ code: 1, stdout: "", stderr: `collie: the rig stands beside this kennel's local home, and ${w.kennel} has none; \`sheep home local\` starts one\n` });
     expect(w.state.requests).toEqual([]);
@@ -248,7 +255,7 @@ describe("collie without a collie (journey 5 step 4)", () => {
 
   it("prints its version, its usage, and its guide with no collie and no kennel", { timeout: 30_000 }, async () => {
     const w = await world({}, { collie: false });
-    expect(await w.collie(["--version"])).toEqual({ code: 0, stdout: "collie 0.0.0-checkout; the brain is isocan 2f15360e\n", stderr: "" });
+    expect(await w.collie(["--version"])).toEqual({ code: 0, stdout: "collie 0.0.0-checkout; the brain is isocan 18ca496a\n", stderr: "" });
     const help = await w.collie(["--help"]);
     expect(help).toMatchObject({ code: 0, stderr: "" });
     for (const verb of ["collie log", "collie off", "collie on", "collie new --pass", "collie pass", "collie --agent-help"]) expect(help.stdout).toContain(verb);
@@ -262,9 +269,9 @@ describe("the pass (journey 1 step 4, journey 5 step 3)", () => {
     expect(await w.collie(["new", "--pass"], { stdin: `${PASS}\n` })).toEqual({ code: 0, stdout: STANDING_BY, stderr: "" });
     expect(w.state.requests).toEqual([{ method: "POST", path: "/passes", auth: `Bearer ${TOKEN}`, body: JSON.stringify({ address: PASS }) }]);
     w.state.passes[PASS] = { status: 200, body: { kind: "room", room: ROOM, owner: "Dimitri", already: true } };
-    expect(await w.collie(["pass"], { stdin: `${PASS}\n` })).toEqual({ code: 0, stdout: 'collie: already standing by on "Landing page"\n', stderr: "" });
+    expect(await w.collie(["pass", "--pass"], { stdin: `${PASS}\n` })).toEqual({ code: 0, stdout: 'collie: already standing by on "Landing page"\n', stderr: "" });
     w.state.passes[PASS] = { status: 200, body: { kind: "agent", agent: "Percy", room: ROOM } };
-    expect(await w.collie(["pass"], { stdin: `${PASS}\n` })).toEqual({ code: 0, stdout: 'collie: now answers for Percy on "Landing page"\n', stderr: "" });
+    expect(await w.collie(["pass", "--pass"], { stdin: `${PASS}\n` })).toEqual({ code: 0, stdout: 'collie: now answers for Percy on "Landing page"\n', stderr: "" });
     for (const { path, text } of filesUnder(w.dir)) expect(text.includes(PASS_TOKEN), `${path} holds the pass`).toBe(false);
   });
 
@@ -274,7 +281,7 @@ describe("the pass (journey 1 step 4, journey 5 step 3)", () => {
     const w = await world({ passes: { [PASS]: { status: 410, body: { error: spent } }, [`${PASS}x`]: { status: 502, body: { error: floor } } } });
     expect(await w.collie(["new", "--pass"], { stdin: `${PASS}\n` })).toEqual({ code: 1, stdout: "", stderr: `collie: ${spent}\n` });
     expect(await w.collie(["new", "--pass"], { stdin: `${PASS}x\n` })).toEqual({ code: 1, stdout: "", stderr: `collie: ${floor}\n` });
-    expect(await w.collie(["pass"], { stdin: "https://isocan.io/pass/nope\n" })).toEqual({ code: 1, stdout: "", stderr: "collie: that pass is not one isocan minted; `isocan pass` prints a new one\n" });
+    expect(await w.collie(["pass", "--pass"], { stdin: "https://isocan.io/pass/nope\n" })).toEqual({ code: 1, stdout: "", stderr: "collie: that pass is not one isocan minted; `isocan pass` prints a new one\n" });
     expect(await w.collie(["new", "--pass"], { stdin: "" })).toEqual({ code: 1, stdout: "", stderr: "collie: no pass on stdin; give its address as one line of stdin, or run this at a terminal to type it hidden\n" });
     // Three posts for three lines; the empty stdin asked nothing.
     expect(w.state.requests.map((request) => request.path)).toEqual(["/passes", "/passes", "/passes"]);
@@ -289,6 +296,164 @@ describe("the pass (journey 1 step 4, journey 5 step 3)", () => {
     const down = await w.collie(["off"]);
     expect(down).toMatchObject({ code: 1, stdout: "" });
     expect(down.stderr).toMatch(/^collie: the collie at http:\/\/127\.0\.0\.1:9 does not answer \(.+\)\n$/);
+  });
+});
+
+/**
+ * A fake isocan package, installed the way both real shapes are: a manifest named `isocan` at the root whose `.` export is
+ * the module, and a bin below it (`packages/cli/bin/isocan.js`, under a manifest of another name, as a linked checkout has
+ * it) reached through a symlink on PATH. The module is isocan's API as the mint uses it — `connect()` with `ctx.actor`,
+ * `ctx.client.base`, `ctx.client.mintPass`, and `ctx.homeOf`; `resolveCanvas` and `resolveCanvasRef` — scripted by
+ * `FAKE_ISOCAN` in the environment, and every call but the token written to `calls.jsonl` beside it.
+ */
+interface FakeIsocanScript {
+  identity: { id: string; name: string } | null;
+  base: string;
+  /** What `ctx.homeOf` answers for every canvas; null when the daemon is the canvas's home. */
+  homeOf: string | null;
+  /** The directory's canvas; null when the directory is bound to none. */
+  bound: { id: string; title: string } | null;
+  canvases: { id: string; title: string }[];
+  token: string;
+}
+
+async function fakeIsocan(w: World, options: { old?: boolean } = {}): Promise<{ bin: string; calls: () => Json[]; env: (script: Partial<FakeIsocanScript>) => Record<string, string> }> {
+  const root = join(w.dir, "isocan-install");
+  const calls = join(root, "calls.jsonl");
+  await mkdir(join(root, "packages", "cli", "bin"), { recursive: true });
+  await writeFile(join(root, "package.json"), JSON.stringify({ name: "isocan", type: "module", bin: { isocan: "packages/cli/bin/isocan.js" }, exports: { ".": { types: "./types/index.d.ts", default: "./index.mjs" }, "./rc": "./rc.mjs" } }));
+  await writeFile(join(root, "packages", "cli", "package.json"), JSON.stringify({ name: "@isocan/cli", type: "module" }));
+  await writeFile(join(root, "packages", "cli", "bin", "isocan.js"), "#!/usr/bin/env node\nconsole.log('isocan');\n", { mode: 0o755 });
+  await writeFile(
+    join(root, "index.mjs"),
+    `import { appendFileSync } from "node:fs";
+const s = JSON.parse(process.env.FAKE_ISOCAN ?? "{}");
+const call = (entry) => appendFileSync(${JSON.stringify(calls)}, JSON.stringify(entry) + "\\n");
+export async function connect() {
+  call({ call: "connect" });
+  if (s.identity === null) throw new Error('no identity configured — run \`isocan identity --name "Your Name" --session\` first');
+  return { ctx: { actor: s.identity, client: { base: s.base, async mintPass(canvasId, actorId) { call({ call: "mintPass", canvasId, actorId }); return { pass: { id: "pass_1" }, token: s.token }; } }, async homeOf(canvasId) { call({ call: "homeOf", canvasId }); return s.homeOf; } } };
+}
+export async function resolveCanvas() {
+  call({ call: "resolveCanvas" });
+  if (s.bound === null) throw new Error("multiple canvases — pass --canvas <id|title>, or bind this directory to one with \`isocan use <canvas>\`");
+  return s.bound;
+}
+${options.old === true ? "" : `// isocan 8729b9e3's address helpers, as core writes them; the fake is the isocan on PATH, so it carries its own.
+export function canvasUrlWithPass(origin, canvasId, token) {
+  call({ call: "canvasUrlWithPass", canvasId });
+  return \`\${origin.replace(/\\/+$/, "")}/p/\${encodeURIComponent(canvasId)}#\${token}\`;
+}
+export function isLoopbackBase(base) {
+  return /^(\\[::1\\]|::1|localhost|127\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})$/i.test(new URL(base).hostname);
+}
+`}export async function resolveCanvasRef(_client, ref) {
+  call({ call: "resolveCanvasRef", ref });
+  const found = s.canvases.find((canvas) => canvas.id === ref || canvas.title.startsWith(ref));
+  if (!found) throw new Error(\`no canvas matches "\${ref}"\`);
+  return found;
+}
+`,
+  );
+  const bin = join(w.dir, "bin");
+  await mkdir(bin);
+  await symlink(join(root, "packages", "cli", "bin", "isocan.js"), join(bin, "isocan"));
+  const base: FakeIsocanScript = { identity: DIMITRI, base: "http://127.0.0.1:4441", homeOf: "https://isocan.io", bound: { id: ROOM.canvasId, title: ROOM.title }, canvases: [{ id: ROOM.canvasId, title: ROOM.title }, { id: ROOM2.canvasId, title: ROOM2.title }], token: PASS_TOKEN };
+  return {
+    bin,
+    calls: () => (existsSync(calls) ? readFileSync(calls, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as Json) : []),
+    env: (script) => ({ PATH: `${bin}:/usr/bin:/bin`, FAKE_ISOCAN: JSON.stringify({ ...base, ...script }) }),
+  };
+}
+
+const DIMITRI = { id: "usr_dimitri", name: "Dimitri" };
+const MINTED = `${ROOM.address}#${PASS_TOKEN}`;
+const MINTED2 = `${ROOM2.address}#${PASS_TOKEN}`;
+
+describe("the mint through the isocan on PATH (journey 1 step 4, journey 5 step 2)", () => {
+  it("collie new mints a pass as this machine's identity for the directory's canvas and hands it over; collie pass --canvas for another", { timeout: 60_000 }, async () => {
+    const w = await world({ passes: { [MINTED]: ROOM_ANSWER, [MINTED2]: { status: 200, body: { kind: "room", room: ROOM2, owner: "Dimitri", already: false } } } });
+    const isocan = await fakeIsocan(w);
+    const run = await w.collie(["new"], { env: isocan.env({}) });
+    expect(run).toEqual({ code: 0, stdout: STANDING_BY, stderr: "" });
+    expect(isocan.calls()).toEqual([{ call: "connect" }, { call: "resolveCanvas" }, { call: "homeOf", canvasId: ROOM.canvasId }, { call: "mintPass", canvasId: ROOM.canvasId, actorId: DIMITRI.id }, { call: "canvasUrlWithPass", canvasId: ROOM.canvasId }]);
+    // The address composed by isocan's own `canvasUrlWithPass`, as its `pass` verb composes it: the canvas's home, its path, the token as the fragment.
+    expect(w.state.requests).toEqual([{ method: "POST", path: "/passes", auth: `Bearer ${TOKEN}`, body: JSON.stringify({ address: MINTED }) }]);
+
+    const second = await w.collie(["pass", "--canvas", "Pri"], { env: isocan.env({}) });
+    expect(second.code, second.stderr).toBe(0);
+    expect(second.stdout.split("\n")[0]).toBe(`collie: standing by on "Pricing" at ${ROOM2.address}, as Dimitri`);
+    expect(isocan.calls().slice(5)).toEqual([{ call: "connect" }, { call: "resolveCanvasRef", ref: "Pri" }, { call: "homeOf", canvasId: ROOM2.canvasId }, { call: "mintPass", canvasId: ROOM2.canvasId, actorId: DIMITRI.id }, { call: "canvasUrlWithPass", canvasId: ROOM2.canvasId }]);
+    expect(w.state.requests.at(-1)!.body).toBe(JSON.stringify({ address: MINTED2 }));
+    for (const { path, text } of filesUnder(w.dir)) expect(text.includes(PASS_TOKEN), `${path} holds the pass`).toBe(false);
+  });
+
+  it("while the collie holds the minted pass, no process carries it in its arguments, and nothing on the screen or in a file does after", { timeout: 60_000 }, async () => {
+    const w = await world({ passes: { [MINTED]: ROOM_ANSWER }, passHoldMs: 2_000 });
+    const isocan = await fakeIsocan(w);
+    const running = w.collie(["new"], { env: isocan.env({}) });
+    expect(await until(() => w.state.requests.length === 1 && isocan.calls().some((call) => call.call === "mintPass"), 20_000)).toBe(true);
+    const processes = spawnSync("ps", ["-axww", "-o", "pid=,args="], { encoding: "utf8" }).stdout.split("\n");
+    // Ours by this world's own path to the command; the pass is looked for in every process's arguments.
+    const ours = processes.filter((line) => line.includes(w.bin));
+    expect(ours.length, processes.join("\n")).toBeGreaterThan(0);
+    for (const line of ours) expect(line).toMatch(/ new$/);
+    for (const line of processes) expect(line.includes(PASS_TOKEN), `a process carries the pass in its arguments: ${line}`).toBe(false);
+    const run = await running;
+    expect(run).toEqual({ code: 0, stdout: STANDING_BY, stderr: "" });
+    for (const { path, text } of filesUnder(w.dir)) expect(text.includes(PASS_TOKEN), `${path} holds the pass`).toBe(false);
+  });
+
+  it("refuses before any pass is minted: no isocan on PATH, no identity, no canvas bound, and a canvas on this machine's own daemon; the rig reaches that one", { timeout: 60_000 }, async () => {
+    const w = await world({ passes: { [MINTED]: ROOM_ANSWER, [`http://127.0.0.1:4441/p/${ROOM.canvasId}#${PASS_TOKEN}`]: ROOM_ANSWER } });
+    const isocan = await fakeIsocan(w);
+
+    const missing = await w.collie(["new"], { env: { PATH: "/usr/bin:/bin" } });
+    expect(missing).toEqual({ code: 1, stdout: "", stderr: "collie: no `isocan` on this machine's PATH, and the collie mints through the isocan you set up here; `isocan setup` (npx github:dglazkov/isocan#release setup) installs it and names you\n" });
+
+    const nobody = await w.collie(["new"], { env: isocan.env({ identity: null }) });
+    expect(nobody).toEqual({ code: 1, stdout: "", stderr: 'collie: no identity configured — run `isocan identity --name "Your Name" --session` first\n' });
+
+    const unbound = await w.collie(["pass"], { env: isocan.env({ bound: null }) });
+    expect(unbound).toEqual({ code: 1, stdout: "", stderr: "collie: multiple canvases — pass --canvas <id|title>, or bind this directory to one with `isocan use <canvas>`\n" });
+
+    const loopback = `collie: the canvas "Landing page" lives at http://127.0.0.1:4441, this machine's own isocan daemon, which the collie at ${w.url} cannot reach; no pass was minted — move the canvas to a home with an address, or use the rig\n`;
+    expect(await w.collie(["new"], { env: isocan.env({ homeOf: null }) })).toEqual({ code: 1, stdout: "", stderr: loopback });
+    const localhost = await w.collie(["new"], { env: isocan.env({ homeOf: "http://localhost:4441" }) });
+    expect(localhost).toMatchObject({ code: 1, stdout: "" });
+    expect(localhost.stderr).toContain('the canvas "Landing page" lives at http://localhost:4441, this machine\'s own isocan daemon');
+
+    expect(isocan.calls().filter((call) => call.call === "mintPass")).toEqual([]);
+    expect(w.state.requests).toEqual([]);
+
+    // The rig (`local: true` in the collie block) is this machine's own, and reaches the loopback daemon.
+    const config = JSON.parse(readFileSync(join(w.kennel, "config"), "utf8"));
+    await writeFile(join(w.kennel, "config"), JSON.stringify({ ...config, collie: { address: w.url, token: TOKEN, local: true } }));
+    expect(await w.collie(["new"], { env: isocan.env({ homeOf: null }) })).toEqual({ code: 0, stdout: STANDING_BY, stderr: "" });
+    expect(isocan.calls().filter((call) => call.call === "mintPass")).toEqual([{ call: "mintPass", canvasId: ROOM.canvasId, actorId: DIMITRI.id }]);
+    expect(w.state.requests.map((request) => request.body)).toEqual([JSON.stringify({ address: `http://127.0.0.1:4441/p/${ROOM.canvasId}#${PASS_TOKEN}` })]);
+  });
+
+  it("refuses an isocan on PATH older than the address helpers, naming isocan upgrade, before it is asked anything", { timeout: 60_000 }, async () => {
+    const w = await world({ passes: { [MINTED]: ROOM_ANSWER } });
+    const isocan = await fakeIsocan(w, { old: true });
+    const old = await w.collie(["new"], { env: isocan.env({}) });
+    expect(old).toEqual({ code: 1, stdout: "", stderr: `collie: the \`isocan\` on PATH (${join(w.dir, "isocan-install")}) is older than the collie mints with: it exports no canvasUrlWithPass, isLoopbackBase; \`isocan upgrade\` updates it\n` });
+    expect(isocan.calls()).toEqual([]);
+    expect(w.state.requests).toEqual([]);
+  });
+
+  it("takes --canvas with new and pass alone, and not with a pass already minted", { timeout: 60_000 }, async () => {
+    const w = await world();
+    const isocan = await fakeIsocan(w);
+    const withPass = await w.collie(["new", "--pass", "--canvas", "Pricing"], { stdin: `${PASS}\n`, env: isocan.env({}) });
+    expect(withPass.code).toBe(2);
+    expect(withPass.stderr).toMatch(/^collie: --canvas names the canvas collie mints a pass for; a pass taken with --pass already names its canvas\n\ncollie — /);
+    const onLog = await w.collie(["log", "--canvas", "Pricing"], { env: isocan.env({}) });
+    expect(onLog.code).toBe(2);
+    expect(onLog.stderr).toMatch(/^collie: --canvas goes with collie new and collie pass, not collie log\n/);
+    expect(isocan.calls()).toEqual([]);
+    expect(w.state.requests).toEqual([]);
   });
 });
 
@@ -310,7 +475,7 @@ describe.skipIf(flavour === undefined)("the pass at a real terminal (journey 1 s
     const side = realpathSync(await mkdtemp(join(tmpdir(), "sheep-collie-pty-")));
     cleanups.push(() => rm(side, { recursive: true, force: true }));
     await symlink(process.execPath, join(side, "node"));
-    const command = [process.execPath, collieBin, "new", "--pass"];
+    const command = [process.execPath, w.bin, "new", "--pass"];
     const scriptArgs = flavour === "util-linux" ? ["-q", "-e", "-c", command.map(quote).join(" "), "/dev/null"] : ["-q", "/dev/null", ...command];
     const fifo = join(side, "keys");
     const out = join(side, "pty.out");
@@ -333,7 +498,8 @@ describe.skipIf(flavour === undefined)("the pass at a real terminal (journey 1 s
 
     // Every process's arguments, as `ps` gives them: the command is there, waiting on the prompt, with none of the pass.
     const processes = () => spawnSync("ps", ["-axww", "-o", "pid=,args="], { encoding: "utf8" }).stdout.split("\n");
-    const ours = processes().filter((line) => line.includes(collieBin) && !line.includes("script"));
+    // Ours by this world's own path to the command, so a `collie new` from another file running at once is never read as this one.
+    const ours = processes().filter((line) => line.includes(w.bin) && !line.includes("script"));
     expect(ours.length, processes().join("\n")).toBeGreaterThanOrEqual(1);
     for (const line of ours) expect(line).toMatch(/ new --pass$/);
 
@@ -346,7 +512,7 @@ describe.skipIf(flavour === undefined)("the pass at a real terminal (journey 1 s
     // The fake holds the post for two seconds: read every process's arguments while the command is inside it.
     expect(await until(() => w.state.requests.length === 1)).toBe(true);
     const during = processes();
-    expect(during.some((line) => line.includes(collieBin)), "the command is still running").toBe(true);
+    expect(during.some((line) => line.includes(w.bin) && !line.includes("script")), "the command is still running").toBe(true);
     for (const line of during) expect(line.includes(PASS_TOKEN), `a process carries the pass in its arguments: ${line}`).toBe(false);
 
     keys.end();
@@ -429,7 +595,7 @@ describe("the log (journey 1 steps 5 and 6)", () => {
 
   it("--follow asks for the rows after the last every two seconds, prints each as it lands, and ends at Ctrl-C with 0", { timeout: 60_000 }, async () => {
     const w = await world({ lines: LINES.slice(0, 2) });
-    const child = spawn(process.execPath, [collieBin, "log", "--follow"], { env: w.env(), cwd: w.dir, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(process.execPath, [w.bin, "log", "--follow"], { env: w.env(), cwd: w.dir, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString("utf8")));

@@ -51,7 +51,8 @@ export interface FakeState {
   rollout: "none" | "progressing-then-completed" | "mirrored" | "rolling-stays" | "failed" | "dies";
   rolloutPolls: number;
   /** `build` is what the deploy defined into the Worker (smit phase 0), null when it defined none, as the release's deploy does. */
-  deploys: { name: string; container: string; image: string; vars: string[]; kv: { binding: string; id?: string }[]; build?: { commit: string; builtAt: string | null } | null }[];
+  /** `container` and `image` are null for a Worker with no container (collie phase 2: the collie's). */
+  deploys: { name: string; container: string | null; image: string | null; vars: string[]; kv: { binding: string; id?: string }[]; build?: { commit: string; builtAt: string | null } | null }[];
   /** Each Worker's secret names, as the fake wrangler's `secret put` registers them: never a value, as the real API answers. */
   secrets: Record<string, string[]>;
   /**
@@ -103,6 +104,8 @@ export function fakeAccount(state: FakeState): Promise<{ server: Server; url: st
       const body = (await json(request)) as FakeState["deploys"][number];
       state.deploys.push(body);
       if (!state.workers.includes(body.name)) state.workers.push(body.name);
+      // A Worker with no container (the collie's) makes no application.
+      if (body.container === null || body.image === null) return response.end("{}");
       const existing = state.applications.find((application) => application.name === body.container);
       if (existing === undefined) state.applications.push({ id: `app-${state.applications.length + 1}`, name: body.container, image: body.image });
       else if (state.rollout === "none" || existing.image === body.image) existing.image = body.image;
@@ -262,6 +265,14 @@ export function fakeAccount(state: FakeState): Promise<{ server: Server; url: st
           return envelope(response, null);
         }
       }
+    }
+    // A Worker deleted through the API (collie phase 2), `force` taking its Durable Objects with it; a Worker the account lacks is a 404.
+    const script = /^\/accounts\/[^/]+\/workers\/scripts\/([^/]+)$/.exec(path);
+    if (script && request.method === "DELETE") {
+      if (!state.workers.includes(script[1]!)) return refuse(response, 404, 10007, "workers.api.error.script_not_found");
+      state.workers = state.workers.filter((name) => name !== script[1]);
+      delete state.secrets[script[1]!];
+      return envelope(response, null);
     }
     const deleting = /^\/accounts\/[^/]+\/containers\/applications\/([^/]+)$/.exec(path);
     if (deleting && request.method === "DELETE") {

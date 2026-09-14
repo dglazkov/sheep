@@ -23,22 +23,22 @@ export const SHEEP_WIDTH = 35;
 /** The sheep's height in cells: fourteen pixel rows, two to a cell. */
 export const SHEEP_ROWS = 7;
 
-/** A pixel canvas: 0 is nothing, anything else a 256-colour index. */
-interface Canvas {
+/** A pixel canvas: 0 is nothing, anything else a 256-colour index. Shared with the collie (`collie.ts`), drawn the same way. */
+export interface Canvas {
   w: number;
   h: number;
   px: number[][];
 }
 
-type Ink = number | ((x: number, y: number) => number);
+export type Ink = number | ((x: number, y: number) => number);
 
-function canvas(w: number, h: number): Canvas {
+export function canvas(w: number, h: number): Canvas {
   return { w, h, px: Array.from({ length: h }, () => new Array<number>(w).fill(0)) };
 }
 
 const inkAt = (ink: Ink, x: number, y: number): number => (typeof ink === "function" ? ink(x, y) : ink);
 
-function ellipse(cv: Canvas, cx: number, cy: number, rx: number, ry: number, ink: Ink): void {
+export function ellipse(cv: Canvas, cx: number, cy: number, rx: number, ry: number, ink: Ink): void {
   for (let y = 0; y < cv.h; y++) {
     for (let x = 0; x < cv.w; x++) {
       const dx = (x + 0.5 - cx) / rx;
@@ -48,12 +48,12 @@ function ellipse(cv: Canvas, cx: number, cy: number, rx: number, ry: number, ink
   }
 }
 
-function rect(cv: Canvas, x0: number, y0: number, x1: number, y1: number, ink: Ink): void {
+export function rect(cv: Canvas, x0: number, y0: number, x1: number, y1: number, ink: Ink): void {
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) cv.px[y]![x] = inkAt(ink, x, y);
 }
 
 /** Cells from pixels: two rows of pixels per row of cells. */
-function cells(cv: Canvas, paint: Paint): string[] {
+export function cells(cv: Canvas, paint: Paint): string[] {
   const out: string[] = [];
   for (let r = 0; r < cv.h; r += 2) {
     let line = "";

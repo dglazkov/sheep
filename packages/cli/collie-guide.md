@@ -14,10 +14,19 @@ The collie is the shepherd's second machine at isocan: it arrives on a
 **pass** they minted as themselves and holds a **badge** there. So the
 verbs that make, hand over, or end one are theirs, at their own terminal:
 
-- `collie new --pass` and `collie pass` hand the collie a pass. The pass's
-  address is a credential: it is typed at a hidden prompt, or given as one
-  line of stdin, and never an argument. Never ask the shepherd for a pass
-  in the chat, and never put one in a file.
+- `collie setup` is their third sitting, after `sheep setup` and `isocan
+  setup`: it deploys the collie's Worker on their account beside the
+  station. `collie deploy` redeploys it from this package; `collie rm`
+  ends its badges and deletes it, once they type its name. When `collie`
+  says none is set up, or a deploy is wanted, tell the shepherd which of
+  the three to run; do not run them yourself, and never with a token of
+  theirs.
+- `collie new` and `collie pass` mint a pass through the shepherd's own
+  `isocan`, as them, for the directory's canvas (or `--canvas <ref>`),
+  and hand it to the collie; nobody sees it. With `--pass` they take one
+  already minted: its address is a credential, typed at a hidden prompt
+  or given as one line of stdin, and never an argument. Never ask the
+  shepherd for a pass in the chat, and never put one in a file.
 
 The rest reads or switches what already runs, and is yours as much as
 theirs:

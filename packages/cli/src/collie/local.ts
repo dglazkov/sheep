@@ -122,7 +122,8 @@ function logTail(lines = 5): string {
   }
 }
 
-async function stopRig(): Promise<{ stopped: boolean; record: RigRecord | undefined }> {
+/** Stops the rig as `collie local stop` does; `collie rm` on a rig ends with it (collie phase 2). */
+export async function stopRig(): Promise<{ stopped: boolean; record: RigRecord | undefined }> {
   const { record, running } = await rigRunning();
   if (record === undefined) return { stopped: false, record };
   if (!running) {
