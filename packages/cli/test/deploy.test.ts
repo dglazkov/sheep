@@ -28,30 +28,37 @@ const fakeWrangler = new URL("./fake-wrangler.mjs", import.meta.url).pathname;
 const cellConfig = new URL("../../cell/wrangler.jsonc", import.meta.url).pathname;
 const repoRoot = new URL("../../../", import.meta.url).pathname;
 
-/** What this checkout's git says now, asked by the test and not by the command: the seven-character HEAD and whether `git status --porcelain` prints anything. */
-function checkoutGit(): { head: string; dirty: boolean } {
+/**
+ * What this checkout's git says now, asked by the test and not by the command: the seven-character HEAD, and whether
+ * `git status` prints anything with `checkoutStamp`'s flags and under the `HOME` the spawned command runs with. Git's
+ * ignore rules include `~/.config/git/ignore`, so a file ignored only by the person's global ignore is untracked under
+ * the world's scratch `HOME`: the smit's `-dirty` is decided there, and so is this.
+ */
+function checkoutGit(home: string): { head: string; dirty: boolean } {
+  // The spawned command's environment, as `world` builds it: this process's, with `HOME` the world's root.
+  const env: Record<string, string | undefined> = { ...process.env, HOME: home };
   const run = (...args: string[]) => {
-    const done = spawnSync("git", args, { cwd: repoRoot, encoding: "utf8" });
+    const done = spawnSync("git", args, { cwd: repoRoot, encoding: "utf8", env });
     if (done.status !== 0) throw new Error(`git ${args.join(" ")} exited ${done.status}: ${done.stderr}`);
     return done.stdout;
   };
-  return { head: run("rev-parse", "HEAD").trim().slice(0, 7), dirty: run("status", "--porcelain").trim() !== "" };
+  return { head: run("rev-parse", "HEAD").trim().slice(0, 7), dirty: run("status", "--porcelain", "--untracked-files=normal", "--ignore-submodules=none").trim() !== "" };
 }
 
 /** The time as the smit carries it, ISO seconds: what a window around a deploy is compared in. */
 const isoSeconds = (date: Date): string => date.toISOString().replace(/\.\d{3}Z$/, "Z");
 
 /**
- * A window around a deploy: the smit it should carry is this checkout's commit, `-dirty` exactly when this test's own git
- * status prints anything, and a time no earlier than the second the window opened and no later than the one it closed.
+ * A window around a deploy: the smit it should carry is this checkout's commit, `-dirty` exactly when git, asked as the
+ * command asks it under the world's `HOME`, prints anything, and a time no earlier than the second the window opened and no later than the one it closed.
  */
-function smitWindow(): { close: () => void; expectSmit: (build: { commit: string; builtAt: string | null } | null | undefined) => void } {
+function smitWindow(home: string): { close: () => void; expectSmit: (build: { commit: string; builtAt: string | null } | null | undefined) => void } {
   const opened = isoSeconds(new Date());
   let closed: string | undefined;
   return {
     close: () => void (closed = isoSeconds(new Date())),
     expectSmit: (build) => {
-      const git = checkoutGit();
+      const git = checkoutGit(home);
       expect(build?.commit).toBe(`${git.head}${git.dirty ? "-dirty" : ""}`);
       expect(build?.builtAt).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
       expect(build!.builtAt! >= opened, `${build?.builtAt} is before the window opened at ${opened}`).toBe(true);
@@ -301,7 +308,7 @@ describe("sheep home deploy: step 1, the credentials this machine keeps", () => 
 describe("sheep home deploy: steps 2 to 5 against the fake account", () => {
   it("asks the account, deploys over the derived config, puts the three secrets on stdin, writes the config, and reports", async () => {
     const w = await world();
-    const span = smitWindow();
+    const span = smitWindow(w.root);
     const result = await w.sheep(["home", "deploy", "--faux", "--json"]);
     span.close();
     expect(result.code, result.stderr).toBe(0);
@@ -417,7 +424,7 @@ describe("sheep home deploy: steps 2 to 5 against the fake account", () => {
     expect(again.stderr).toContain("sheep: redeploying blog");
 
     // Prose, the third time: the address, the name, the account, and the next sentence.
-    const proseSpan = smitWindow();
+    const proseSpan = smitWindow(w.root);
     const prose = await w.sheep(["home", "deploy", "--faux"]);
     proseSpan.close();
     expect(prose.code).toBe(0);
@@ -634,7 +641,7 @@ describe("sheep home deploy: steps 2 to 5 against the fake account", () => {
 describe("the smit: a checkout's deploy marks its station (smit phase 0)", () => {
   it("defines the smit, waits for the home to report it, and a redeploy of the same tree moves it again (journey 1 steps 1 and 2)", { timeout: 30_000 }, async () => {
     const w = await world();
-    const first = smitWindow();
+    const first = smitWindow(w.root);
     const deployed = await w.sheep(["home", "deploy", "--json"]);
     first.close();
     expect(deployed.code, deployed.stderr).toBe(0);
@@ -662,7 +669,7 @@ describe("the smit: a checkout's deploy marks its station (smit phase 0)", () =>
 
     // A redeploy of the same tree, in a later second: the time moved, so the stamp moved, and the prose says so.
     while (isoSeconds(new Date()) === report.build.deployed.builtAt) await new Promise((resolve) => setTimeout(resolve, 100));
-    const second = smitWindow();
+    const second = smitWindow(w.root);
     const again = await w.sheep(["home", "deploy"]);
     second.close();
     expect(again.code, again.stderr).toBe(0);
