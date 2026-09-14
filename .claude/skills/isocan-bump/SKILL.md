@@ -69,13 +69,16 @@ message that says what it is for, under isocan's own rules (its
 work is isocan's says so in `phases.md`, and the finding that records
 the bump names the isocan commit.
 
-**Move the pin**, once the commit is on isocan's `main` (the release
-branch is what installs, and CI builds it from every commit on main; a
-commit not yet released is pinned by its sha on main and installs from
-the repository directly):
+**Move the pin**, to a commit on isocan's `release` branch, never
+`main`: `isocan/rc`'s `browser` condition names
+`packages/rc/dist/index.mjs`, which only a release commit carries, and
+wrangler's bundler reads that condition. CI builds a release from every
+commit on main; `git log --format='%h %p' origin/release` names each
+release's main parent:
 
 ```sh
-NEW=$(git -C $I rev-parse --short origin/main)   # or the commit the change landed as
+git -C $I fetch -q origin release
+NEW=$(git -C $I log --format=%h -1 origin/release)   # the release built from main's tip, or an older one by its main parent
 sed -i '' "s|github:dglazkov/isocan#$PIN|github:dglazkov/isocan#$NEW|" $C/packages/collie/package.json
 (cd $C && pnpm install)
 ```
@@ -114,8 +117,9 @@ Then commit and push to `main`, per the house rule.
 
 Bumps so far:
 
-- none yet; the first pin is collie phase 1's, at the commit that closed
-  collie phase 0 in isocan.
+- none yet; the first pin is collie phase 1's, at the release commit
+  built from 30e9902e or later (isocan's project `room` closed #294 there,
+  14 Sep 2026).
 
 ## Things that have gone wrong before (pi-bump's lessons, which apply)
 

@@ -26,9 +26,11 @@ lives in `packages/cli`'s modules and is changed for both.
 
 ---
 
-**Where we are: planned, 13 September 2026.** Nothing built. Collie
-phase 0 is isocan's, filed as isocan#294 and worked there before
-anything here. The shepherd is reviewing the gestures.
+**Where we are: collie phase 0 CLOSED, 14 September 2026, in isocan;
+collie phase 1 is next.** Isocan's project `room` closed #294 in seven
+phases on 13 and 14 Sep, and the module is verified from a scratch
+install of `#release`. Nothing built here yet; the shepherd is reviewing
+the gestures.
 
 Four phases: the brain in isocan, the Worker and the rig, the sitting
 and the walk, and moving in. The last is small and last because it needs
@@ -93,9 +95,17 @@ github:dglazkov/isocan#release` and `node -e 'import("isocan/rc")'`
 resolves, and `esbuild --bundle --platform=browser` over a one-line file
 importing `isocan/rc` succeeds with no `node:` in the bundle's externals.
 
-**Status: NOT STARTED.**
+**Status: CLOSED, 2026-09-14.** Isocan's project `room` (its
+`docs/projects/room/`) closed #294 in seven phases at 30e9902e, and the
+conductor verified the acceptance from a scratch install on 14 Sep.
 
 **Findings:**
+
+- **2026-09-14 — The acceptance held from a scratch directory:** `npm install github:dglazkov/isocan#release`, `import("isocan/rc")` resolving fifteen names, an esbuild browser bundle of 147 KB with no `node:` import; isocan's rc suite 57 for 57 and typecheck 0.
+- **2026-09-14 — The module asks a host for more than the issue named:** `RoomDeps` has `origin`, `cwd`, `whereOf(row)`, `enrol(ask)` (the tray's last hop), and `agentKey(name)`; `SheepCommands` has `pastureSecret`; the collie's body supplies each (collie phase 1).
+- **2026-09-14 — Agent keys are per machine (room phase 3.5):** `agent:<mac>` from a secret the host keeps, so the collie keeps a secret of its own in the object and derives its keys from it; a laptop's agent is handed over by a pass, as before.
+- **2026-09-14 — The pin is a release commit, not one on main:** `isocan/rc`'s `browser` condition names `packages/rc/dist/index.mjs`, built on `release` only, and wrangler's bundler reads that condition; `/isocan-bump` says so.
+- **2026-09-14 — An agent another badge holds is read from the desk's `held-elsewhere` reason,** not a sentence, and the line is "a pass from whoever holds <name> hands it over"; `parkClaim` and `rcHold` refuse `not-your-actor` at the server too.
 
 ---
 
@@ -109,7 +119,9 @@ the fakes; journey 5 steps 3 to 5; journey 6 step 1.
 migration `v1` as `new_sqlite_classes`, `nodejs_compat`, no `pen`
 environment since it rents nothing), a `vitest.config.ts` on the pool
 like the cell's, `package.json` with `isocan` from
-`github:dglazkov/isocan#<the commit that closed collie phase 0>`;
+`github:dglazkov/isocan#<the release commit built from 30e9902e or
+later>`, a release commit because the module's `browser` condition names
+a bundle built there (collie phase 0's finding);
 `scripts/rings.mjs` gains the package's test directory in the checkout
 ring; `scripts/bundle.mjs` adds `packages/cli/src/collie/cli.ts` →
 `dist/collie.mjs` and the Worker by `wrangler deploy --dry-run` →
@@ -124,11 +136,16 @@ build, the rooms' count and state), `POST /passes`, `GET /` the report,
 over a badge store backed by `badges`, `redeemPass`, and then, when the
 pass admitted a canvas, the room and the loop, or, when it endowed an
 agent, the row and a line; `runRoom` per room under `waitUntil` with the
-body's `RoomDeps` — the routes, `rows` over `agents`, `adapterFor` always
-the `SheepAgent` over `src/sheep.ts`, `SheepCommands` as the sheep home's
-routes with `COLLIE_SHEEP_HOME` and `COLLIE_SHEEP_TOKEN` (the design's
-list, the follow as the transcript long poll with entries handed on at
-most once by id), `narrate` as an insert with the room's tag, `state`
+body's `RoomDeps` as the module has them — the routes, `origin` from the
+room, `cwd` a constant naming the object, `rows` over `agents`, `whereOf`
+naming the station, `enrol(ask)` claiming the actor under `agentKey` and
+writing the row and the enroll op as the laptop's last hop does,
+`agentKey(name)` a keyed hash of a secret minted once into the object's
+`state` and the name, `adapterFor` always the `SheepAgent` over
+`src/sheep.ts`, `SheepCommands` as the station's routes with
+`COLLIE_SHEEP_HOME` and `COLLIE_SHEEP_TOKEN` (the design's list plus
+`pastureSecret` as the pasture's secret route, the follow as the
+transcript long poll with entries handed on at most once by id), `narrate` as an insert with the room's tag, `state`
 over the `state` table, the real clock; the alarm armed a lap ahead while
 on, its handler starting any room's loop that is not running; the resume
 rule; `off`, `on`, `end` (the badge ended at each isocan home with
