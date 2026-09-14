@@ -1,0 +1,227 @@
+# Drove: implementation phases
+
+[`design.md`](design.md) is the argument; [`journey.md`](journey.md) is
+the acceptance suite. Each phase names the journey steps it closes, and
+a phase that claims a walk closes only when the walk was walked for
+real. The rules are lamb's ([../lamb/phases.md](../lamb/phases.md)),
+pen's ([../pen/phases.md](../pen/phases.md)), collar's
+([../collar/phases.md](../collar/phases.md)), and earmark's
+([../earmark/phases.md](../earmark/phases.md)): the cell's proofs run
+in workerd, never in Node; the fake container is what a cell test talks
+to; pi is a dependency; findings are one dated line of about forty
+words; `main` stays sources only and a phase's proof runs in a ring;
+steps marked **⚑ provision** create, change, or delete a cloud
+resource, spend money, or need a login, and are asked out loud first.
+`/conduct drove` is the procedure. Phase citations name their project:
+`drove phase 1`, never a bare "phase 1".
+
+**Three rules for this project.**
+
+- **The contract is town's doc, and only the doc.** The program is
+  written from `docs/harness.md` in a town checkout, and no file of
+  town's is imported, copied, or read by a test. Town's scripts,
+  `conform.mjs` and `townd`, are run as programs, from a checkout whose
+  commit each phase's findings name.
+- **The grant is nowhere the model can see.** A proof that finds the
+  token's bytes in a transcript, an export, a status line, the shell's
+  environment, a refusal, a log line, or a route's answer has found
+  the bug, not a detail. Every phase carries the search.
+- **Two checkouts, one branch, one station.** This project is built in
+  `../sheep-drove` on branch `drove` while collie holds `../sheep`; a
+  phase commits on the branch and pushes it, and the branch lands on
+  `main` after collie's, rebased, its phase commits kept. The station
+  it deploys is this checkout's kennel's, and the shepherd's own station
+  and collie's checkout are not touched.
+
+---
+
+**Where we are: planned, 14 September 2026. Nothing built.** The next
+thing to do is `drove phase 0`, the program in the cell against a fake
+town in the checkout ring; no person is needed until drove phase 2's
+one ⚑ step, the second station. Town stands at `80496d2` (road done);
+this checkout at `7aac0c8`.
+
+The order is the order of dependence. Drove phase 0 is the program,
+which everything else runs. Drove phase 1 is the peek and the bridge,
+so road's script can reach the program, and the conformance run that
+is the constellation's first proof. Drove phase 2 is the station and
+the walk, shipped as the stage, which draws the night sky's line.
+
+**Deliberately open.** Postponed on purpose: `town` in the container
+(relay's); a narrower grant (deputy's); the grant set or rotated on a
+sheep after its mint; the peek named to the model. Never: the grant in
+the model's environment.
+
+---
+
+## Phase 0: The program in the cell
+
+**Closes:** journey 3 steps 1 to 5 in the cell's terms, and the
+contract's sections as journey 2 will check them, against a fake town
+in the same isolate; nothing on the command line, no route, no home.
+
+**Work:** `packages/cell/src/env/town-command.ts`: `town` as
+`defineCommand`, the design's "The program" section by section:
+presence decided at the shell's build from the sheep's rows and the
+pasture's, the value read at each run through the one-name lay-over,
+the words as given with `--json` taken out, stdin as given or `null`,
+the request's three headers and three fields to `/call` against the
+grant's origin, the answer's two streams written as given and its exit
+returned, a 500 with three fields an answer, everything else the
+did-not-answer line and exit 1 after at most sixty seconds, §2's
+refusal for a value that is no grant at exit 3, both refusals as the
+five-field envelope under `--json`, no retry, nothing parsed. The
+`fetch` handed in. `packages/cell/src/env/programs.ts`: the
+not-found sentence for `town`, in `look`'s shape, and the prompt's line
+for a sheep that has it. `packages/cell/src/env/execution-env.ts`: the
+program pushed with `look`, its name in the tier-0 set, the grant
+source an option beside `eyes`. `packages/cell/src/cell.ts`: the
+source, `laidOver` for one name over the Directory and the pasture's
+object, and the presence read at the boot. `packages/cell/src/directory.ts`:
+`TOWN_GRANT` beside `GIT_TOKEN` as a secret a pastureless sheep can
+carry; the refusal's sentence names both and why. Tests:
+`packages/cell/test/town.test.ts` in the checkout ring, listed in
+`scripts/rings.mjs`, in `earmark.test.ts`'s shape: a fake town as a
+`fetch` that records each request and answers as the case scripts;
+for each contract section a case that reads the recorded request or
+the returned streams and code, §3's four word shapes, §4's stdin bytes
+and `null`, §5's headers and fields, §6's bytes unchanged and a 500
+with `why`, §7's two refusals with and without `--json`, §8's codes
+passed through, §9's notice lines untouched, §10's one request on a
+500 and on a timeout; presence: no `town` and the annotated not-found
+line for a sheep with neither source, `town` for a pasture's grant,
+the sheep's over the pasture's, a pasture's set after the boot not
+present until the next boot; the search: the token's bytes in no
+returned line, no log line, the shell's `env`, and no row of the
+cell's storage. `packages/cell/test/earmark.test.ts`: the pastureless
+refusal's new sentence.
+
+**Not this phase:** No verb, no route, no bridge, no conformance run,
+no doc outside the project.
+
+**Proof:** `pnpm test` exits 0 with the new file in the checkout ring
+and the rings guard green; `pnpm --filter @sheep/cell typecheck` exits
+0. Falsified by three mutations, each failing the new test and put
+back: a second request after a 500; a newline added to `stdout`; the
+value printed in §2's refusal. **⚑** none.
+
+**Status: NOT STARTED.** 2026-09-14.
+
+**Findings:**
+
+(none yet)
+
+## Phase 1: The peek, the bridge, and conformance
+
+**Closes:** journey 4 in full; journey 2 steps 1 to 4 on the local
+home; journey 3 steps 1 to 5 on the command line.
+
+**Work:** `packages/cell/src/cell.ts`: `POST /sh`, body `{ line,
+stdin? }`, the line through the runtime's `Shell.exec` as a bash call
+of the model's would go, no transcript entry and no model call, the
+answer `{ stdout, stderr, exit }`; a 409 with one sentence while a
+turn is open; the router forwards it under `/s/<id>/sh` as it does the
+rest. `packages/cli/src/cli.ts`, `home.ts`: `sheep sh <id> [-- <line>]`,
+the line joined from the words after `--`, stdin sent when it is a
+pipe or a file, the streams printed as given, the code returned, the
+409 as exit 2 with the sentence, an unknown session as every verb has
+it; the usage's line, and `--agent-help`'s sentence for it.
+`packages/cli/agent-guide.md`, `README.md`, `SKILL.md`: the verb in one
+sentence each; `--secret TOWN_GRANT` beside `GIT_TOKEN` where the
+guide names a pastureless sheep's secret; the guide within its word
+cap. `scripts/conform-sheep.mjs`: the bridge as the design's "The
+bridge": `--kennel <dir>` read for the home and token, `SHEEP_HOME` and
+`SHEEP_TOKEN` when none, `--state <dir>` mapping the hash of
+`TOWN_GRANT` to a sheep id, the mint on first use with or without the
+secret, §4 on the laptop, the peek with the words as given and the
+streams and code returned unread; `--teardown`. Tests:
+`packages/cli/test/journey-drove.test.ts` in the home ring, in
+`journey5.test.ts`'s shape against the faux provider: journey 4 steps
+1 to 4 and 6 with the faux model holding a turn for step 4; journey 3
+steps 1, 2, and 4 through `sheep sh` against a fake town the test
+starts on a free port, which `wrangler dev`'s workerd reaches; the
+grant's bytes in no line `sheep log`, `sheep export`, `sheep status`,
+and `sheep sh <id> -- env` print. `packages/cell/test/`: the route's
+409 and its shape, in the checkout ring, in `cell.test.ts`'s file or
+a sibling in the same ring.
+
+**Not this phase:** No station, no box, no stage.
+
+**Proof:** `pnpm test` exits 0 across all three inner rings, the home
+ring's new file carrying journey 4; `pnpm --filter @sheep/cli
+typecheck` and `pnpm --filter @sheep/cell typecheck` exit 0. Then
+journey 2 steps 1 to 4, typed by the conductor: a local home up in
+this checkout's kennel (`sheep home local`, no container needed), a
+town checkout built at a commit the findings name, and
+
+```
+node <town>/scripts/conform.mjs -- node <sheep-drove>/scripts/conform-sheep.mjs --kennel <sheep-drove>/.sheep --state <tmp>
+```
+
+printing `conformant: 30 checks` and exit 0, twice, `sheep ls` showing
+four bridge sheep and no more after the second run, and `--teardown`
+ending them. Falsified by one mutation in the cell, a retry on 500,
+which fails conformance's no-retry check through the bridge and is put
+back: that is the proof the bridge answers for §4 and nothing else.
+**⚑** none.
+
+**Status: NOT STARTED.** 2026-09-14.
+
+**Findings:**
+
+(none yet)
+
+## Phase 2: The station, the stage, and the walk
+
+**Closes:** journey 5 in full; journey 2 step 5; journey 1 in full,
+walked on the second station against the box. This is the night sky's
+line.
+
+**Work:** `scripts/drove.mjs`: the stage as the design's "The stage":
+`--box`, `--repo`, `--townd`, `--kennel`, `--keep`; `--status` and
+`--teardown` over a root under the system's temporary directory
+holding `walk.json`, the log, the audit, and the report, and never the
+token; the pass through `townd admin --town`, the grant compacted to
+one line and piped to `sheep new --secret TOWN_GRANT --detach`, the
+sentence through `sheep attach`, `sheep wait`, the log through `sheep
+log --json`, the audit through `townd admin --town <box> audit --pass`,
+the search across the log, the export, the status, and the peek's
+`env`, the revoke, the end; the report as one block; every `townd` and
+`sheep` call a child process, its exit read. `README.md`: the walk in
+one paragraph, the command and what it leaves. `scripts/hermetic.mjs`:
+nothing this phase; the account ring's station is its own, and the
+stage is what stranger will wrap.
+
+**⚑ provision, one step.** The second station: `sheep home deploy` from
+`../sheep-drove`, a Worker and a container application named by
+kennel's rule from the directory on the account's Workers Paid plan
+that already exists; its cost the objects' storage at idle, a
+container's minutes while a sheep rents one, and the Worker's
+requests. It stays after the walk as the standing second station, and
+`sheep home delete` from the same kennel is its end. Asked once, with
+this sentence.
+
+**Proof:** `pnpm test` exits 0 across the three inner rings. Then, in
+order, typed by the conductor and recorded in the findings with town's
+commit and the station's stamp:
+
+1. The deploy above, `sheep home` naming the station, its smit mark
+   this checkout's commit, and a healthy instance.
+2. Journey 2 step 5: conformance from the town checkout with `--town
+   <box>` and the bridge on this kennel, `conformant: 30 checks`, exit
+   0, twice, the bridge's sheep torn down after.
+3. Journey 1, steps 1 to 6, typed against the station and the box.
+4. Journey 5, steps 1 to 4: the stage run twice, two issues on the
+   repository, the search's verdict clean both times, `--status` and
+   `--teardown` on the first run's root.
+
+Falsified by one mutation in the stage, the search made to skip the
+export, which is seen to miss a token planted in a scratch sheep's
+workspace by hand, and put back. A phase with a walk is not CLOSED
+until the walk is walked.
+
+**Status: NOT STARTED.** 2026-09-14.
+
+**Findings:**
+
+(none yet)

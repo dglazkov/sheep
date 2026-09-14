@@ -1,0 +1,302 @@
+# Drove — the design
+
+**14 September 2026.** Design, nothing built. It is the star **drove**
+cut from town's [sheep constellation](https://github.com/dglazkov/town/blob/main/docs/drafts/sheep-constellation.md),
+the third project of town's night sky after baton and
+[road](https://github.com/dglazkov/town/blob/main/docs/projects/road/design.md),
+and the sheep half of the seam road is the town half of: road wrote
+the wire down as a contract any harness may implement, and drove is the
+harness a sheep carries. The project's status lives in
+[journey.md](journey.md)'s front matter. The journeys are the acceptance
+suite, this doc is the argument, and [phases.md](phases.md) is the walk.
+The project is planned and built in a second checkout of this
+repository, `../sheep-drove`, on a branch `drove`, while
+[collie](../collie/design.md) holds the first; the branch lands on
+`main` when collie's does, and the station it deploys is that
+checkout's kennel's, a second station on the account.
+
+The thesis in one line: **town's wire is small enough that its harness
+is a just-bash custom command in the cell: `town` as a tier-0 program
+like `look`, holding the sheep's grant read from the Directory at the
+moment of use, posting through the Worker's own `fetch`, printing what
+comes back, and exiting with the code it was given, so the model never
+sees the grant and a sheep that carries none is told so by the shell's
+own not-found line; and the walk that closes it, a dog minting a sheep
+with a grant from the operator's box that works memory and github, is
+shipped as a script, since every walk after it is run by that script.**
+
+Two rules bind the seam and hold here. Town never imports or reads
+sheep's files, and sheep implements town's wire from its doc,
+[`docs/harness.md`](https://github.com/dglazkov/town/blob/main/docs/harness.md),
+never from its code: the program is written from the ten sections, and
+the proof that it was is road's conformance script, run from a town
+checkout as a program, its commit named in the findings. And earmark's
+rule stays: a secret is never in the model's environment. The grant is
+the program's, not the shell's.
+
+## The names
+
+| Word | What it is | Where it lives |
+| --- | --- | --- |
+| `town`, the program | a just-bash custom command in the shell of a sheep that carries a grant; tier 0, no row in the table, as `look` is | `packages/cell/src/env/town-command.ts`, wired where `look` is in `execution-env.ts` |
+| the grant | `TOWN_GRANT`, the grant itself as one line of JSON, `{ "town": <url>, "token": <token> }`: the sheep's earmark, or the pasture's secret of that name, the sheep's laid over the pasture's | the Directory's `session_secrets` and the pasture's object; read at each run, never the shell's environment |
+| the contract | what a harness posts, prints, refuses, and exits with, in ten numbered sections | town's `docs/harness.md`; §2 the grant, §4 stdin, §7 the refusals, §8 the exit codes |
+| the peek | one line run in a sheep's shell by the dog, outside any turn and outside the transcript, its stdout, stderr, and exit code returned | `POST /s/<id>/sh` on the cell; `sheep sh <id> [-- <line>]` |
+| the bridge | the command town's conformance script runs as the harness: it maps the `TOWN_GRANT` the script sets into a sheep minted with that earmark and runs each check's words through the peek | `scripts/conform-sheep.mjs` |
+| the stage | the walk's set-up and strike, as a script: a pass on the box, a sheep minted with it, the sentence, the wait, the log and the audit, the search, the revoke, the end | `scripts/drove.mjs` |
+| the second station | a station deployed from this checkout's kennel, named by kennel's rule from the directory, beside the shepherd's own | `../sheep-drove/.sheep`, Worker `sheep-drove` or the counter's next |
+
+## What exists, exactly
+
+Read from this checkout at `7aac0c8` and from town at `80496d2`, 14 Sep
+2026.
+
+- **A tier-0 program is a just-bash custom command.** `look` is one:
+  `defineCommand` in `look-command.ts`, pushed onto the shell's
+  `customCommands` in `execution-env.ts` when the home has eyes, its
+  name in a set the router counts as tier 0 beside just-bash's own, and
+  the prompt's paragraph naming it only in a cell that has it. A line
+  that is all tier 0 runs in just-bash whether or not a container is up.
+  A custom command gets its words, its stdin as text when the pipeline
+  gave it some, and returns `{ stdout, stderr, exitCode }`; just-bash
+  swallows thrown shapes, so a refusal is a return.
+- **A sheep's secret is a Directory row, read at the moment of use.**
+  Earmark's `Directory.secrets(id)` is an RPC method with no route;
+  `laidOver` in `cell.ts` reads the pasture's and the sheep's when setup
+  runs and lays the sheep's over by name. The Worker refuses, before any
+  row, a secret on a sheep born into no pasture unless it is
+  `GIT_TOKEN`, since a pastureless sheep has no setup and the value
+  would reach nothing. The model's commands run with no secret in their
+  environment, and no route returns a value.
+- **The wire.** `POST <town>/call`, `authorization: Bearer <token>`,
+  body `{ "argv", "stdin", "json" }`; the answer `{ "stdout", "stderr",
+  "exit" }`, 200 or a 500 with a `why`; anything else is a town that did
+  not answer. `--json` is the harness's wherever it stands. The
+  harness's own four refusals are one line on stderr, or with `--json`
+  a five-field envelope on stdout, and never hold what `TOWN_GRANT`
+  holds. A call is posted once. The town gives a shop thirty seconds.
+- **Conformance runs a command.** `node scripts/conform.mjs [--town
+  <url>] -- <harness command…>` starts a town on a free port, or uses a
+  box with the operator's token townd reads, and runs the harness
+  command once per check from an empty directory under an empty `HOME`,
+  with its own environment less every `TOWN_*` name and `TOWN_GRANT` set
+  as the check says: pass A's grant, revoked pass B's, a value that is
+  no grant, or unset. Stdin is nothing, a pipe, a regular file, or a
+  socket held open and never written. Thirty checks; two seconds on the
+  laptop binary; five over the box.
+- **The dog reaches a cell over `/s/<id>/…`.** The router forwards
+  under the home's token to the cell's own routes: `GET /`, `GET
+  /transcript`, `POST /prompt`, `POST /abort`, `DELETE /`, `GET
+  /export`, and `/faux` when the provider is faux. No route runs a line
+  in the shell. `sheep` has no verb that does.
+- **A kennel has one station, and two kennels two.** `sheep home
+  deploy` from a checkout bundles the cell from source, builds the pen
+  image with Docker, marks the Worker with the checkout's commit and
+  `-dirty`, and names the station by kennel's rule: the directory's
+  name and a counter against what the account already calls something.
+  The hermetic account ring deploys `sheep-hermetic-<sha>` the same way
+  and deletes it after. `SHEEP_HOME` and `SHEEP_TOKEN` reach a home for
+  one command with no kennel.
+- **Town's walk script** sets a stage a conductor walks: a town, a
+  shop, a pass, a grant, an agent's directory with a `town` shim on its
+  PATH; `--status` reads the pass's audit as a tree; `--search` finds
+  the token's bytes under a root; `--teardown` revokes and removes. Over
+  a box, every verb is `townd admin --town <url>`. Nothing in it mints
+  a sheep, and it never will: that script is town's, and a sheep is
+  sheep's.
+
+## The program
+
+`town` is `defineCommand` over the contract, one section at a time,
+and nothing that is not in the contract:
+
+- **Presence (§2, and the constellation's line).** The shell of a
+  sheep has `town` when the sheep carries a grant at the shell's build:
+  its own `TOWN_GRANT` row, or its pasture's secret of that name. A
+  sheep with neither has no `town`, and the line is just-bash's
+  not-found line annotated with the sentence `programs.ts` keeps for
+  it: `town: this sheep carries no grant; mint one with sheep new
+  --secret TOWN_GRANT, or set the pasture's`. The prompt's paragraph
+  names `town` only in a sheep that has it, as it names `look` only in
+  a cell with eyes. The value is read again at each run, through the
+  same lay-over `laidOver` gives setup, one name: a pasture's secret
+  set after the boot is used at the next run; a value that no longer
+  parses as a grant is §2's refusal, exit 3, and the line never holds
+  it.
+- **The words (§3).** Every word as just-bash gave it, in order, empty
+  words and spaces and non-ASCII kept; `--json` taken out wherever it
+  stands and `"json": true` said. The program takes no flag of its own.
+- **Stdin (§4).** What the pipeline gave: text, sent exactly, nothing
+  trimmed and no newline added; nothing given is `null`. There is no
+  terminal, device, or socket in just-bash, so the section's second
+  rule has nothing to decide in the cell; it is decided on the laptop
+  by the bridge, which is the harness's other half there (below). No
+  limit of the program's own: the town's one-mebibyte refusal comes
+  back as an answer.
+- **The request (§5) and the answer (§6).** `fetch` of the Worker's
+  own, `POST` to `/call` resolved against the grant's `town`, the three
+  headers and the three fields; the answer's `stdout` and `stderr`
+  written as given and `exit` returned. A 500 with the three fields is
+  an answer. A status of any other kind, a body that is not the three
+  fields, or a `fetch` that throws, is a town that did not answer:
+  one line, `town: the town at <origin> did not answer (<what>)`, exit
+  1. The program waits sixty seconds for an answer, twice the shop's
+  time, and then says so the same way.
+- **The refusals (§7) and `--json`.** Two are the program's: a grant
+  value that holds no grant, exit 3, and a town that did not answer,
+  exit 1. With `--json` among the words each is the five-field envelope
+  on stdout, one line and a newline, stderr empty. Neither ever prints
+  the value or any part of it, and the test that reads every line of
+  every refusal for the token's bytes is the rule made a test.
+- **Once (§10).** A call is posted once whatever its answer. No retry,
+  no second request on a 500, on a timeout, or on a body that does not
+  parse.
+- **Notices (§9), exit codes (§8).** Passed through and returned;
+  the program parses nothing the town said.
+
+The program holds the grant for the length of one run and writes it
+nowhere: not the environment (`env` in the sheep's shell shows no
+`TOWN_GRANT`), not the transcript, not a log line, not the files table.
+The `fetch` is handed in, as the eyes are handed to `look`, so the
+checkout ring's tests give a fake town that records what it was sent
+and answers as scripted, in the same isolate, and a test of a network
+never runs.
+
+## The peek
+
+Conformance runs a harness command on the laptop, with the grant in
+that command's environment and the check's stdin on its descriptor,
+and reads what it printed and how it exited. The program lives in a
+cell. Something has to carry a line into a sheep's shell and carry its
+three outputs back, and today nothing does: the model's bash tool is
+the only caller `Shell.exec` has. `POST /s/<id>/sh` is that carrier,
+and `sheep sh <id> [-- <line>]` its verb: the line is run in the
+sheep's shell exactly as a bash call of the model's would be, the same
+router, the same tier, the same working directory, its stdin the
+request's `stdin` when there is one, and the cell answers `{ stdout,
+stderr, exit }`. The verb prints the two streams as given and exits
+with the code; with stdin piped or a file, it sends it.
+
+A peek is not a turn: no entry in the transcript, no model call, and
+`sheep log` does not show it. It is refused with a sentence and a 409
+while a turn is open, so a dog and the model never interleave in one
+shell; the dog waits or aborts first. It runs under the home's token
+like every verb, on a station as on a local home, which is why it is a
+verb and not a test-only route behind the faux provider: the proof runs
+against a real station. Its one purpose today is conformance and the
+walk's search; its shape, a dog looking into the pen, is the general
+one, and the sheep skill says so in a sentence.
+
+## The bridge
+
+`scripts/conform-sheep.mjs --kennel <dir> [--state <dir>]` is the
+harness command town's script runs, and it is two things and no more:
+
+- **The mapping.** Its `TOWN_GRANT`, set by the script per check or
+  unset, names which sheep answers: one sheep per distinct value,
+  minted on first use with `--secret TOWN_GRANT` and that value, or
+  with no secret when the variable is unset, kept in `--state`'s
+  directory by the value's hash and reused for the run; four sheep in
+  a full run. The kennel, given by path since the script runs under an
+  empty `HOME`, names the home and holds the token; `SHEEP_HOME` and
+  `SHEEP_TOKEN` are read when no kennel is given. `--teardown` ends
+  every sheep the state names.
+- **§4 on the laptop.** Its own stdin is read to the end when it is a
+  pipe or a regular file, refused as exit 1 before any peek when it is
+  not UTF-8, and left alone when it is anything else; what was read is
+  sent in the peek as `stdin`. This is the one contract rule the
+  bridge answers for, because only it has a descriptor.
+
+Every other check's behaviour is the cell's: the words go to the peek
+as given, and the peek's stdout, stderr, and exit come back unread. A
+mutation of the program, a retry on 500 say, fails conformance through
+the bridge; that is drove phase 1's falsification, and it is how a
+reader knows the bridge is not a harness of its own.
+
+## The grant, and earmark
+
+Two small changes in earmark's territory, both in its terms:
+
+- **A second secret a pastureless sheep can carry.** The Directory's
+  refusal names `GIT_TOKEN` as the one secret a sheep born into no
+  pasture can carry, since only the broker reads anything there.
+  `town` reads `TOWN_GRANT`, so the refusal names two, and its sentence
+  says why each reaches something.
+- **One line, the grant itself.** Earmark's value is one line; `townd
+  admin pass new` prints the grant indented. The dog hands it as one
+  line, `jq -c . < grant.json | sheep new --secret TOWN_GRANT`, and the
+  stage does the same in Node. A value that is a path, road's other
+  form, is not a grant here: a cell has no file at that path, and §2's
+  refusal says so without printing it.
+
+A pasture's `TOWN_GRANT`, `sheep pasture secret set <name> TOWN_GRANT`,
+gives every sheep born there a town, the herd's grant, and a sheep's
+own lays over it. That is the shape growth's walks want, two or three
+sheep in a pasture on one grant, and it costs nothing here.
+
+## The stage
+
+`scripts/drove.mjs` is to drove what `scripts/walk.mjs` is to town: the
+walk's set-up and strike, so the walk itself is the conductor's reading
+and every later walk is one command. It runs the two commands the walk
+needs, `sheep` from this checkout and `townd` from a town checkout or
+install named by `--townd <path>`, and never reads either's files:
+
+```
+node scripts/drove.mjs --box <url> --repo <owner/name> [--townd <path>] [--kennel <dir>] [--keep]
+node scripts/drove.mjs --status <root>
+node scripts/drove.mjs --teardown <root>
+```
+
+The stage, in order: a pass on the box, `townd admin --town <box> pass
+new` with grants at `town/memory` and `town/github` for the repository,
+on the credential the box holds; the grant compacted to one line and
+piped to `sheep new --secret TOWN_GRANT --detach`; the sentence sent
+with `sheep attach <id> -- <sentence>`; `sheep wait <id>`; then the
+reading: `sheep log --json <id>` to the root, `townd admin --town <box>
+audit --pass <id>` beside it, and the search: the token's bytes looked
+for in the log, in `sheep export`, in `sheep status`, and in the peek's
+`env`, and named if found; then `pass revoke`, and `sheep rm` unless
+`--keep`. The report is one block: the sheep's id, the pass's id, the
+calls the audit holds by command and result, the memory row and the
+issue the walk left, and the search's verdict. The token goes from
+townd's stdout to `sheep new`'s stdin and nowhere else: not argv, not a
+file under the root, not the report.
+
+The sentence is the walk's and is written in the stage, so a run is
+the same run: the sheep is told it has `town`, asked to run it with no
+words and read what it can do, to remember one line about this walk
+with the memory shop, to open an issue on the repository with the
+github shop saying what it remembered, and to reply with the issue's
+address and the memory's line.
+
+## The second station
+
+The walk needs a station, and the shepherd's own is in use by collie's
+walks from the first checkout. A station is a kennel's, and this
+checkout has its own kennel, so `sheep home deploy` from
+`../sheep-drove` mints a second one by kennel's rule, `sheep-drove`,
+from this checkout with smit's mark, on the account's Paid plan that
+already exists, and records it in that kennel's config. Nothing about
+the shepherd's station changes, and nothing in collie's checkout. It
+stays after the walk: it is the standing station the infra
+constellation's stranger runs sheep against, and a hermetic run that
+wants a station it did not mint. Its cost at idle is its objects'
+storage; a container's minutes while a sheep rents one; the Worker's
+requests. Deleting it is `sheep home delete` from the same kennel.
+
+## What this does not do, on purpose
+
+- **`town` in the container.** The container's bash has no `town`, and
+  a line that mixes `town` with a tier-2 program, `git log | town memory
+  remember`, is routed whole to the container and refused there. The
+  prompt's paragraph says `town` is the shell's. Giving the container a
+  `town` means giving it the grant, which is relay's shape, a window
+  the town opens, and not drove's.
+- **Narrowing.** A dog holding a grant mints a sheep that can do what
+  the grant can; a narrower, durable grant with a parent is deputy's.
+- **Setting or rotating the grant after the mint.** Earmark left it
+  open and it stays open; a pasture's secret is set at any time and
+  read at the next run, which is the rotation a herd needs.
+- **A `town` for the laptop dog.** The dog has town's own binary.
+- **The peek as a verb the model is told about.** It is the dog's.
