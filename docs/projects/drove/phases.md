@@ -35,14 +35,14 @@ resource, spend money, or need a login, and are asked out loud first.
 
 ---
 
-**Where we are: drove phases 0 and 1 closed, 14 September 2026; drove
-phase 2 is next,** and its first step is the one ⚑ step, the second
-station, which waits on the shepherd's yes. `town` is in every sheep's
-shell, written from town's contract alone; `sheep sh` looks into a
-sheep's shell outside any turn; and town's conformance script printed
-`conformant: 30 checks` twice through the bridge on the local home.
-Journeys 2 (steps 1 to 4), 3, and 4 hold; journey 2 step 5, journey
-1, and journey 5 wait on the station. Town stands at `473687e`, whose
+**Where we are: drove phases 0 and 1 closed and drove phase 2
+part-done, 14 September 2026.** Drove phase 2's journey 5 waits on the
+shepherd: the box's github shop and a `github-token` credential, and
+the repository and issue a walk comments on. The second station
+`sheep-drove` stands at `b589052`; conformance against the box printed
+`conformant: 30 checks` twice through sheep on it, and journey 1 was
+walked there by a real model. Journeys 1, 2, 3, and 4 hold; journey 5
+alone waits, and nothing waits on work. Town stands at `473687e`, whose
 `docs/harness.md` and `scripts/conform.mjs` are road's `80496d2`.
 
 The order is the order of dependence. Drove phase 0 is the program,
@@ -306,8 +306,36 @@ put back. (A workspace file was the plan; `sheep export` holds no
 workspace, so it hid the token from the search whole.) A phase with a walk is not CLOSED
 until the walk is walked.
 
-**Status: NOT STARTED.** 2026-09-14.
+**Status: PART-DONE.** 2026-09-14. Proof steps 1 to 3 held on the
+second station against the box, and the stage's search was falsified
+there; step 4, journey 5, waits on the box's github shop.
 
 **Findings:**
 
-(none yet)
+- **2026-09-14 — The station went up on `sheep home deploy --help`.**
+  The verb takes `--help` for no flag and deployed `sheep-drove` at
+  `b589052`, clean, healthy, before the conductor meant to; the
+  shepherd had said yes.
+- **2026-09-14 — Conformance held over the wire.** Town `473687e`,
+  `--town` the box, the bridge on `sheep-drove`: thirty `ok`, exit 0,
+  twice (14 s, 12 s), seven sheep then thirteen, all ended, the box's
+  shops as before.
+- **2026-09-14 — Journey 1 walked on the station.** A real model ran
+  `town`, the log held the box's help and no token, `env` no grant, the
+  audit three calls, and after the revoke `town` exited 3 in the town's
+  words.
+- **2026-09-14 — pi's export tables are WITHOUT ROWID.** The stage's
+  first search died on a real export; it names a hit by primary key now,
+  and a place that throws is unread and not clean.
+- **2026-09-14 — The falsification held.** A canary prompted into a
+  scratch sheep was found in the log and export; with both skipped the
+  search called it clean, exit 0; put back, exit 1.
+- **2026-09-14 — The box's audit keeps argv's hash, not its words.**
+  The stage reads the memory line and the comment from the transcript.
+- **2026-09-14 — Open: journey 5 waits on the box's github.** A
+  `github-token` credential for `dimitri` from the shepherd's token,
+  then `shop add` of `shops/github`, and the repository and issue to
+  comment on.
+- **2026-09-14 — Open: `setup.test.ts` reads this checkout's kennel.**
+  With a home named there it fails, so the suite runs with the config
+  set aside; the test wants a kennel of its own.

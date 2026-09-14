@@ -389,6 +389,27 @@ and `TOWN_GRANT`, which its shell's `town` reads.
 `sheep ls` names each sheep's secrets in its last column (`"secrets"` in
 `--json`), never a value, and `sheep rm` ends them with the sheep.
 
+The walk of a sheep with a town is one command: `node scripts/drove.mjs
+--box <url> --user <name> --repo <owner/name> --issue <n> --townd
+<path-to-townd> [--kennel <dir>] [--keep]`, with the box's operator token
+where townd reads it and the box holding `town/memory` and `town/github`
+with exactly one `github-token` credential for the user (otherwise it
+refuses, exit 2, and makes nothing). It makes a pass with grants at the
+memory shop and at the github shop's `reply` and `show` on that repository,
+mints a sheep in this checkout's kennel (`.sheep/` unless `--kennel`) with
+the grant on `sheep new --secret TOWN_GRANT`'s stdin, sends the walk's
+sentence, waits, and prints one report: the pass and its grants, the
+sheep, the sentence, its last message, the audit's calls by command and
+result, the memory line and the comment the transcript shows, and whether
+the token's bytes are in the log, the export, the status, or the shell's
+`env`; then it revokes the pass and ends the sheep. It leaves a comment on
+the issue, a row in the box's memory shop, the pass's audit rows, and a
+root under the system's temporary directory holding `walk.json`,
+`log.jsonl`, `audit.txt`, and `report.txt`, never the token. `--status
+<root>` prints the report again; `--teardown <root>` revokes and ends what
+a `--keep` walk (or a killed one) left, and removes the root. `--search
+<id>`, the token on stdin, runs the search alone over one sheep.
+
 On a home with a container, what a sheep's container leaves behind outlives
 it in two places. A sheep's `~` is `/home/sheep`, `HOME` in the container
 and in the cell's shell, kept as rows beside the workspace and synced
