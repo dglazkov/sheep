@@ -136,20 +136,23 @@ home up in this checkout's kennel.
 ## Journey 5: The walk, as a script
 
 The shepherd has the second station in this checkout's kennel, the
-box's operator token where townd reads it, and a repository the box's
-github credential can open issues on.
+box's operator token where townd reads it, the box holding `town/github`
+with a `github-token` credential for a user, and an issue on a
+repository that credential can comment on. Town's github shop lists,
+shows, and replies; it opens no issue, so the walk leaves a comment.
 
-1. `node scripts/drove.mjs --box <box> --repo <owner/name> --townd
-   <path>` prints, in order: the pass it made and the shops granted;
-   the sheep it minted; the sentence it sent; the wait, ending in the
-   sheep's last message, which names an issue's address and a line it
-   remembered; the audit's rows for the pass, by command and result,
-   with `memory remember` and `github issue create` among them; the
+1. `node scripts/drove.mjs --box <box> --user <name> --repo
+   <owner/name> --issue <n> --townd <path>` prints, in order: the pass
+   it made for that user and the shops granted; the sheep it minted;
+   the sentence it sent; the wait, ending in the sheep's last message,
+   which names the comment it left and a line it remembered; the
+   audit's rows for the pass, by command and result, with `memory
+   remember` and `github reply` among them; the
    search's verdict, that the token's bytes were found in none of the
    log, the export, the status, and the shell's environment; the
    revoke; the end. Exit 0.
-2. The issue exists on GitHub, opened by the box's credential, and its
-   body holds the line the memory shop holds. `townd admin --town <box>
+2. The comment is on the issue on GitHub, written with the box's
+   credential, and holds the line the memory shop holds. `townd admin --town <box>
    audit --pass <id>` from the laptop shows the same rows the report
    showed, over the wire.
 3. `node scripts/drove.mjs --status <root>` prints the report again
@@ -157,4 +160,4 @@ github credential can open issues on.
    <root>` removes the root and, if the walk was `--keep`, revokes the
    pass and ends the sheep.
 4. A second run mints a second sheep in one command and leaves a second
-   issue. Nothing was typed between the command and the report.
+   comment. Nothing was typed between the command and the report.

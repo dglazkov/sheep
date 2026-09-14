@@ -275,14 +275,17 @@ needs, `sheep` from this checkout and `townd` from a town checkout or
 install named by `--townd <path>`, and never reads either's files:
 
 ```
-node scripts/drove.mjs --box <url> --repo <owner/name> [--townd <path>] [--kennel <dir>] [--keep]
+node scripts/drove.mjs --box <url> --user <name> --repo <owner/name> --issue <n> [--townd <path>] [--kennel <dir>] [--keep]
 node scripts/drove.mjs --status <root>
 node scripts/drove.mjs --teardown <root>
 ```
 
-The stage, in order: a pass on the box, `townd admin --town <box> pass
-new` with grants at `town/memory` and `town/github` for the repository,
-on the credential the box holds; the grant compacted to one line and
+The stage, in order: a pass on the box for the user, `townd admin
+--town <box> pass new`, with grants at `town/memory` and at
+`town/github`'s `reply` and `show`, the repository held to the one
+given, on the user's `github-token` credential, which the stage finds
+with `credential ls` and refuses to guess when there is none or more
+than one; the grant compacted to one line and
 piped to `sheep new --secret TOWN_GRANT --detach`; the sentence sent
 with `sheep attach <id> -- <sentence>`; `sheep wait <id>`; then the
 reading: `sheep log --json <id>` to the root, `townd admin --town <box>
@@ -291,16 +294,19 @@ for in the log, in `sheep export`, in `sheep status`, and in the peek's
 `env`, and named if found; then `pass revoke`, and `sheep rm` unless
 `--keep`. The report is one block: the sheep's id, the pass's id, the
 calls the audit holds by command and result, the memory row and the
-issue the walk left, and the search's verdict. The token goes from
+comment the walk left, and the search's verdict. The token goes from
 townd's stdout to `sheep new`'s stdin and nowhere else: not argv, not a
 file under the root, not the report.
 
 The sentence is the walk's and is written in the stage, so a run is
 the same run: the sheep is told it has `town`, asked to run it with no
 words and read what it can do, to remember one line about this walk
-with the memory shop, to open an issue on the repository with the
-github shop saying what it remembered, and to reply with the issue's
-address and the memory's line.
+with the memory shop, to reply on the issue with the github shop
+saying what it remembered, and to answer with what the shop printed
+for the comment and the memory's line. Town's github shop lists,
+shows, and replies, and opens no issue (read from its manifest at
+`473687e`), so the walk comments on an issue the shepherd names rather
+than opening one; a shop that opens issues is town's to add.
 
 ## The second station
 

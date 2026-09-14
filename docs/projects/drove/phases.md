@@ -252,7 +252,7 @@ walked on the second station against the box. This is the night sky's
 line.
 
 **Work:** `scripts/drove.mjs`: the stage as the design's "The stage":
-`--box`, `--repo`, `--townd`, `--kennel`, `--keep`; `--status` and
+`--box`, `--user`, `--repo`, `--issue`, `--townd`, `--kennel`, `--keep`; `--status` and
 `--teardown` over a root under the system's temporary directory
 holding `walk.json`, the log, the audit, and the report, and never the
 token; the pass through `townd admin --town`, the grant compacted to
@@ -266,14 +266,21 @@ one paragraph, the command and what it leaves. `scripts/hermetic.mjs`:
 nothing this phase; the account ring's station is its own, and the
 stage is what stranger will wrap.
 
-**⚑ provision, one step.** The second station: `sheep home deploy` from
+**⚑ provision, two steps.** The box's github shop, which it does not
+hold (`shop ls` at 14 Sep 2026: `town/memory`, `town/gdocs`,
+`town/hall`, `dimitri/lookout`): `townd admin --town <box> shop add -`
+from town's `shops/github`, a `github-token` credential for the user,
+whose token is the shepherd's to give, and an issue on a repository
+that token can comment on, which the shepherd names; no cost but the
+box's requests. And the second station: `sheep home deploy` from
 `../sheep-drove`, a Worker and a container application named by
 kennel's rule from the directory on the account's Workers Paid plan
 that already exists; its cost the objects' storage at idle, a
 container's minutes while a sheep rents one, and the Worker's
 requests. It stays after the walk as the standing second station, and
-`sheep home delete` from the same kennel is its end. Asked once, with
-this sentence.
+`sheep home delete` from the same kennel is its end. Each asked once,
+with its sentence; journey 2 step 5 and journey 1 need only the
+station.
 
 **Proof:** `pnpm test` exits 0 across the three inner rings. Then, in
 order, typed by the conductor and recorded in the findings with town's
@@ -285,8 +292,8 @@ commit and the station's stamp:
    <box>` and the bridge on this kennel, `conformant: 30 checks`, exit
    0, twice, the bridge's sheep torn down after.
 3. Journey 1, steps 1 to 6, typed against the station and the box.
-4. Journey 5, steps 1 to 4: the stage run twice, two issues on the
-   repository, the search's verdict clean both times, `--status` and
+4. Journey 5, steps 1 to 4: the stage run twice, two comments on the
+   issue, the search's verdict clean both times, `--status` and
    `--teardown` on the first run's root.
 
 Falsified by one mutation in the stage, the search made to skip the
