@@ -55,6 +55,10 @@ log <id>`; there is no `sheep look`. `sheep home` prints `eyes: yes` or
 `no`, and a home deployed before eyes existed has them once `sheep home
 deploy` upgrades it.
 
+You can look into a sheep's shell yourself: `sheep sh <id> -- '<line>'`
+runs one line where the sheep's own would run, outside any turn and its
+log, and prints what the line printed with its exit code.
+
 With a container as well, a sheep can look at its own dev server: `look
 --serve '<command>' [<path>]` runs the command with `PORT` set, renders
 the page its port serves, and stops it — a server lives for one look and
