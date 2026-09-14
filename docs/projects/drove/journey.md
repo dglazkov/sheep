@@ -2,7 +2,7 @@
 status: partial
 since: 2026-09-14
 see: drove
-note: "planned 14 Sep 2026 from town's sheep constellation, the morning road closed: `town` as a tier-0 program in the cell, the grant a sheep's earmark or its pasture's secret, proved by road's conformance script through a peek into the sheep's shell, and closed by a walk shipped as a script, a dog minting a sheep with a grant from the operator's box that works memory and github. Built in a second checkout, ../sheep-drove, on branch drove, against a second station of its own. Drove phase 0 closed the same day: `town` in every sheep's shell, written from the contract alone, the grant read at each run and kept out of the shell, setup, rows, and logs, proved in workerd against a fake town with three mutations falsified; the peek, the bridge, and conformance are next."
+note: "planned 14 Sep 2026 from town's sheep constellation, the morning road closed: `town` as a tier-0 program in the cell, the grant a sheep's earmark or its pasture's secret, proved by road's conformance script through a peek into the sheep's shell, and closed by a walk shipped as a script, a dog minting a sheep with a grant from the operator's box that works memory and github. Built in a second checkout, ../sheep-drove, on branch drove, against a second station of its own. Drove phase 0 closed the same day: `town` in every sheep's shell, written from the contract alone, the grant read at each run and kept out of the shell, setup, rows, and logs, proved in workerd against a fake town with three mutations falsified. Drove phase 1 closed the same day: `sheep sh`, a peek into a sheep's shell outside any turn, carrying bytes, and the bridge, so town's conformance script at 473687e printed `conformant: 30 checks` twice through sheep on the local home; the second station and the walk against the box are next."
 ---
 
 # Drove — the journeys
@@ -93,8 +93,9 @@ home up in this checkout's kennel.
 1. `sheep new --detach` with no secret mints a sheep; `sheep sh <id> --
    town` exits 3 with one line on stderr: this sheep carries no grant,
    mint one with `sheep new --secret TOWN_GRANT`, or set the pasture's.
-   The sheep's system prompt, read through `sheep export`, does not
-   name `town`.
+   The sheep's system prompt does not name `town`: on a faux home, a
+   faux step that answers with the prompt it was given puts it where
+   `sheep export` reads it.
 2. `sheep pasture new herd` then `jq -c . < grant.json | sheep pasture
    secret set herd TOWN_GRANT`; `sheep new --pasture herd --detach`;
    `sheep sh <id> -- town` exits 0 with the town's help: a sheep born

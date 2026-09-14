@@ -18,7 +18,9 @@
  * for it), from the same station: a verb it has no route for, `sheep
  * pasture ls <name>` asking a tree the fake never serves, refused with the
  * floor's sentence when the header is absent or older than `OLDEST_HOME`,
- * and bare at the floor, for a 500, and for a 401.
+ * and bare at the floor, for a 500, and for a 401. Drove phase 1: `sheep
+ * sh` against a station whose cell answers its bare `not found` for the
+ * peek's route, which carries the floor's words whatever the header says.
  */
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
@@ -248,6 +250,17 @@ describe("the floor (journey 4)", () => {
     const at = await world({ build: { commit: "f00d000", builtAt: OLDEST_HOME } });
     const bare = await at.sheep(["pasture", "ls", "fold"], off);
     expect(bare).toMatchObject({ code: 2, stdout: "", stderr: `sheep: no\n${skewLine({ commit: "f00d000", builtAt: OLDEST_HOME }, CLI, false) ?? ""}` });
+  });
+
+  it("drove phase 1: refuses `sheep sh` with the floor's words when the home's cell answers its bare not found, whatever the header's time", { timeout: 60_000 }, async () => {
+    const id = SESSIONS[0]!.id;
+    const at = { commit: "f00d000", builtAt: OLDEST_HOME };
+    const { sheep } = await world({ build: at, routes: { [`/s/${id}/sh`]: { status: 404, body: "not found" } } });
+    const lacked = await sheep(["sh", id, "--", "true"], off);
+    expect(lacked).toMatchObject({ code: 2, stdout: "", stderr: `sheep: ${floor(`${at.commit} (${at.builtAt})`)}\n${skewLine(at, CLI, false) ?? ""}` });
+    // An id the home lacks is still its sentence, exit 2, and carries no floor from a home at it.
+    const refused = await (await world({ build: at, routes: { [`/s/${id}/sh`]: { status: 404, body: `no session ${id} at this home` } } })).sheep(["sh", id, "--", "true"], off);
+    expect(refused).toMatchObject({ code: 2, stdout: "", stderr: `sheep: no session ${id} at this home\n${skewLine(at, CLI, false) ?? ""}` });
   });
 
   it("leaves a 500 with no header bare, as workerd answers a route that threw, and a 401 too", { timeout: 60_000 }, async () => {

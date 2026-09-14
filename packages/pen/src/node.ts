@@ -243,12 +243,16 @@ export function nodeRunner(root: string, extra: Record<string, string> = {}): Ru
       const cwd = request.cwd === DEFAULT_WORKSPACE || request.cwd.startsWith(`${DEFAULT_WORKSPACE}/`)
         ? join(root, request.cwd.slice(DEFAULT_WORKSPACE.length))
         : request.cwd;
-      const child = spawn("bash", ["-c", request.command], {
-        cwd,
-        env: { ...process.env, ...extra, ...request.env },
-        stdio: ["ignore", "pipe", "pipe"],
-        detached: true,
-      });
+      const options = { cwd, env: { ...process.env, ...extra, ...request.env }, detached: true };
+      // Drove phase 1: stdin is the run's bytes when it carries some, decoded from base64, written whole and closed; nothing otherwise, as before.
+      const child = request.stdin === undefined
+        ? spawn("bash", ["-c", request.command], { ...options, stdio: ["ignore", "pipe", "pipe"] })
+        : spawn("bash", ["-c", request.command], { ...options, stdio: ["pipe", "pipe", "pipe"] });
+      if (request.stdin !== undefined && child.stdin !== null) {
+        // A command that never reads its stdin closes the pipe under the write; that is the command's business, not a failure.
+        child.stdin.on("error", () => {});
+        child.stdin.end(Buffer.from(request.stdin, "base64"));
+      }
       const decoders = { stdout: new TextDecoder(), stderr: new TextDecoder() };
       child.stdout.on("data", (chunk: Uint8Array) => output.stdout(decoders.stdout.decode(chunk, { stream: true })));
       child.stderr.on("data", (chunk: Uint8Array) => output.stderr(decoders.stderr.decode(chunk, { stream: true })));

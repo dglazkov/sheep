@@ -37,9 +37,15 @@ export function setFauxScript(script: FauxScript): void {
  * the nth step answers the nth model call since the last user message, and
  * the last step repeats. A step is a tool call or a text reply, after an
  * optional delay so a turn is observably running.
+ *
+ * Drove phase 1: a step with `system: true` answers with the system prompt
+ * that call was given, so a test outside the isolate reads the prompt a
+ * sheep was built with in its transcript, `sheep log` and `sheep export`
+ * among them; nothing but the faux provider has the step.
  */
 export interface FauxStep {
   text?: string;
+  system?: boolean;
   tool?: { name: string; args: Record<string, unknown> };
   delayMs?: number;
 }
@@ -54,8 +60,9 @@ export function isFauxProgram(value: unknown): value is FauxProgram {
   if (!Array.isArray(steps) || steps.length === 0) return false;
   return steps.every((step: unknown) => {
     if (typeof step !== "object" || step === null) return false;
-    const { text, tool, delayMs } = step as FauxStep;
+    const { text, tool, delayMs, system } = step as FauxStep;
     if (text !== undefined && typeof text !== "string") return false;
+    if (system !== undefined && typeof system !== "boolean") return false;
     if (delayMs !== undefined && (typeof delayMs !== "number" || delayMs < 0)) return false;
     if (tool !== undefined && (typeof tool !== "object" || tool === null || typeof tool.name !== "string" || typeof tool.args !== "object" || tool.args === null)) return false;
     return true;
@@ -71,6 +78,7 @@ export async function answerFromProgram(program: FauxProgram, conversation: Conv
   const step = program.steps[Math.min(sinceUser, program.steps.length - 1)]!;
   if (step.delayMs !== undefined && step.delayMs > 0) await delay(step.delayMs, options?.signal);
   if (step.tool !== undefined) return fauxAssistantMessage([fauxToolCall(step.tool.name, step.tool.args)], { stopReason: "toolUse" });
+  if (step.system === true) return fauxAssistantMessage(conversation.systemPrompt ?? "");
   return fauxAssistantMessage(step.text ?? "");
 }
 

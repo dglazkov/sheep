@@ -183,6 +183,26 @@ export function floorSentence(response: Response): string | undefined {
   return `the home's build ${named} is older than this command speaks to; \`sheep home deploy\` from this package updates it`;
 }
 
+/**
+ * The sentence for a route the home does not have (drove phase 1): a cell
+ * that answers its own bare `not found` for `POST /s/<id>/sh` is a home
+ * built before the peek, whatever its time says, since the id was the
+ * home's (the router's refusal of an unknown one is a sentence, not this).
+ * The floor's own words, naming the build the header named.
+ */
+export function lackedSentence(response: Response): string {
+  const build = parseBuildHeader(response.headers.get(BUILD_HEADER));
+  const named = build === undefined ? "(a build from before the header)" : build.builtAt === null ? build.commit : `${build.commit} (${build.builtAt})`;
+  return `the home's build ${named} is older than this command speaks to; \`sheep home deploy\` from this package updates it`;
+}
+
+/** `POST /s/<id>/sh`'s answer (drove phase 1): the line's two streams as it wrote them, and its code. */
+export interface PeekAnswer {
+  stdout: string;
+  stderr: string;
+  exit: number;
+}
+
 /** A refusal's text with the floor's sentence after it, when the response is below the floor: still one line. */
 function withFloor(text: string, response: Response): string {
   const floor = floorSentence(response);
@@ -369,6 +389,32 @@ export class Home {
     return (await (
       await this.ask(`/s/${encodeURIComponent(id)}/prompt`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) })
     ).json()) as PromptResponse;
+  }
+
+  /**
+   * The peek (drove phase 1): `POST /s/<id>/sh` with `{ line, stdin? }`, stdin the bytes as base64,
+   * answered `{ stdout, stderr, exit }`. Refused as `ask` refuses, so a session the
+   * home does not have is its sentence and a refusal from below the floor
+   * carries the floor's; the 409 of a sheep mid-turn is a `Sentence` with
+   * that status, for the verb to tell apart. A home whose cell answers its
+   * bare `not found` has no peek, and says so in the floor's words.
+   */
+  async sh(id: string, line: string, stdin?: Uint8Array): Promise<PeekAnswer> {
+    const path = `/s/${encodeURIComponent(id)}/sh`;
+    const headers = new Headers({ "content-type": "application/json" });
+    if (this.token !== undefined) headers.set("authorization", `Bearer ${this.token}`);
+    const response = this.hear(await fetch(new URL(path, this.url), { method: "POST", headers, body: JSON.stringify(stdin === undefined ? { line } : { line, stdin: Buffer.from(stdin).toString("base64") }) }));
+    if (response.status === 404) {
+      const body = await response.text();
+      if (body.trim() === "not found") throw new Sentence(lackedSentence(response), 404);
+      throw new Sentence(withFloor(body, response), 404);
+    }
+    if (!response.ok) {
+      const body = await response.text();
+      if (response.status >= 400 && response.status < 500 && body.length > 0 && response.status !== 401) throw new Sentence(withFloor(body, response), response.status);
+      throw new Error(withFloor(`POST ${path}: ${response.status} ${body}`, response));
+    }
+    return (await response.json()) as PeekAnswer;
   }
 
   async transcript(id: string): Promise<TranscriptView> {

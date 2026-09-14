@@ -283,7 +283,7 @@ export type CellFrame =
   /** Fold phase 1: asks the container to describe `/cache` as a record, answered by `cache` under this id; `max` is the cap, past which the agent stops writing and says so by `bytes`. */
   | { type: "cache"; id: string; max?: number }
   /** Runs `command` through the container's own bash under `cwd`; `stdout` and `stderr` frames follow as they happen, then `exit` or `killed`, then `changed`. */
-  | { type: "run"; id: string; command: string; cwd: string; env: Record<string, string>; /** seconds; absent for no limit */ timeout?: number }
+  | { type: "run"; id: string; command: string; cwd: string; env: Record<string, string>; /** seconds; absent for no limit */ timeout?: number; /** Drove phase 1: the bytes written to the command's stdin, as base64, then closed; absent, stdin is nothing. The dog's peek sends it; a tool's line never does. */ stdin?: string }
   /** Ends the run under this id early; `killed` answers it. A kill for a run that has already ended is ignored. */
   | { type: "kill"; id: string; reason: string }
   /** Asks the container to describe what changed since the last sync, as `changed` under this id. */

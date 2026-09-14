@@ -48,6 +48,12 @@
  * as the manifest's third root. On a home with none, nothing moves: `HOME`
  * is `/workspace`, `~` resolves there, and `/home/sheep` is outside the
  * fence. Which of the two a home is, is decided once, at construction.
+ * Drove phase 1: `peek` is the dog's way into the same shell: one line
+ * routed by the same table to the same tier a bash call of the model's
+ * would take, with stdin when the dog sent some, and the two streams and
+ * the code returned apart rather than pushed into one capture. It is not a
+ * second shell: `exec` and `peek` share the route and the runners, and
+ * differ only in where the output goes.
  * Fold phase 1: with a pasture whose tree has `setup.sh`, the first sync-in
  * of a socket carries the pasture's cache when it has one for that
  * script's hash, and the `Lease` records what was put back; after a setup
@@ -81,7 +87,7 @@ import { CacheRestore, cacheSize, type CacheStore, OWN_SECRET_REFUSAL, setupName
 import { Checkout, CheckoutInterrupted } from "../pen/checkout.ts";
 import { Forward, type ForwardResponse } from "../pen/forward.ts";
 import { type Isolate, IsolateEnded } from "../pen/isolate.ts";
-import { ContainerRun, KillUnanswered, type RunEnd, RunInterrupted } from "../pen/run.ts";
+import { ContainerRun, KillUnanswered, type RunEnd, RunInterrupted, type RunListeners } from "../pen/run.ts";
 import { CellFs } from "../workspace/cell-fs.ts";
 import { CELL_ROOTS, CELL_ROOTS_WITH_HOME, type FileRow, FilesTable, FsError, HOME_ROOT, MAX_FILE_BYTES, normalizePath, TEMP_ROOT, WORKSPACE_ROOT } from "../workspace/files.ts";
 import { annotateReadOnly, isPasturePath, PASTURE_ROOT, PastureCall, type PastureRow, type PastureSource, readOnly } from "../workspace/mount.ts";
@@ -171,6 +177,43 @@ export interface ContainerLineResult {
 
 /** When setup runs around a line in the container: before it, as a tool's line has it; after it, as a birth's clone does; or not at all. */
 export type SetupWhen = "before" | "after" | "none";
+
+/** Drove phase 1: a peek's answer, the route's `{ stdout, stderr, exit }`: each stream as the line wrote it, and its code. */
+export interface PeekResult {
+  stdout: string;
+  stderr: string;
+  exit: number;
+}
+
+/**
+ * Where a run's output goes (drove phase 1): a tool call's one capture,
+ * which is both streams in the order they came, or a peek's two strings.
+ * `one`, when present, is the capture itself, for a runner that already
+ * has the two streams interleaved (the isolate's `output`); a peek has
+ * none, and gets the two apart.
+ */
+interface Streams {
+  stdout(data: string): void;
+  stderr(data: string): void;
+  one?(data: string): void;
+}
+
+/** A tool call's streams: everything into its capture, in arrival order. */
+function captured(capture: OutputCapture): Streams {
+  const push = (data: string) => capture.push(data);
+  return { stdout: push, stderr: push, one: push };
+}
+
+/**
+ * Bytes as just-bash hands them to a command (drove phase 1): one latin1
+ * char per byte, which is what a pipe in the shell gives, so a program reads
+ * a peek's stdin as it reads `printf`'s, bytes that are not UTF-8 included.
+ */
+export function latin1Of(bytes: Uint8Array): string {
+  let out = "";
+  for (let at = 0; at < bytes.length; at += 0x8000) out += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
+  return out;
+}
 
 export interface ContainerLineOptions {
   cwd?: string;
@@ -414,6 +457,8 @@ export class CellExecutionEnv implements ExecutionEnv {
   /** The record for the container socket most recently rented; one per socket, so per container. */
   private lease: Lease | undefined;
   private runs = 0;
+  /** Drove phase 1: the peeks running now. A tool's line waits for every one to end, so a dog and the model never share the shell at once. */
+  private readonly peeks = new Set<Promise<PeekResult>>();
 
   constructor(sql: SqlStorage, options: CellExecutionEnvOptions = {}) {
     this.cwd = options.cwd ?? WORKSPACE_ROOT;
@@ -683,6 +728,18 @@ export class CellExecutionEnv implements ExecutionEnv {
         return err(new ExecutionError("timeout", `Invalid timeout: maximum is ${MAX_TIMEOUT_MS / 1000} seconds`));
       }
     }
+    // Drove phase 1: a peek running now holds the shell; the tool's line starts when it has answered, or not at all if aborted first.
+    if (this.peeks.size > 0) {
+      await new Promise<void>((resolve) => {
+        const done = () => {
+          signal?.removeEventListener("abort", done);
+          resolve();
+        };
+        signal?.addEventListener("abort", done, { once: true });
+        void this.peeksSettled().then(done);
+      });
+      if (signal?.aborted) return err(new ExecutionError("aborted", "aborted"));
+    }
     const cwd = options?.cwd ? this.resolvePath(options.cwd) : this.cwd;
     // The call boundary for the shell: one bash tool call, one `PastureCall`, dropped when the command ends. Its one
     // manifest hop happens at the first touch of `/pasture`, so a command that never looks there never pays it.
@@ -707,17 +764,9 @@ export class CellExecutionEnv implements ExecutionEnv {
       return err(new ExecutionError("unknown", cause.message, cause));
     }
 
-    // No container: the shell of a home with no container, line for line; just-bash's own not-found line, annotated, is the refusal.
-    // The one exception, on a home with the loader, is the tier-1 line, which the table is asked for either way.
-    const home = this.container === undefined ? this.home : await this.homeNow();
-    let route: Route = { tier: 0, programs: [] };
-    if (this.container !== undefined || this.isolate !== undefined) {
-      // The custom commands are tier 0: a line of `pasture put …` in a pastured cell, `look …` in a cell with eyes, or `town …`
-      // in a sheep's shell, stays in just-bash on a home with a container too.
-      const classified = classify(command, home, (file) => this.isWorkspaceFile(file, cwd), this.custom);
-      if (this.container !== undefined || ("tier" in classified && classified.tier === 1)) route = classified;
-    }
+    const { home, route } = await this.routeOf(command, cwd);
     const environment = options?.inheritEnv === false ? { ...options.env } : { ...this.shellEnv, ...options?.env };
+    const streams = captured(capture);
 
     try {
       let ran: Ran;
@@ -726,11 +775,11 @@ export class CellExecutionEnv implements ExecutionEnv {
         capture.push(line);
         ran = { full: line, outcome: { exitCode: 127 } };
       } else if (route.tier === 0) {
-        ran = await this.runInShell(command, cwd, environment, options, signal, capture, home, call === undefined ? this.fs : new CellFs(this.files, call));
+        ran = await this.runInShell(command, cwd, environment, options, signal, streams, home, call === undefined ? this.fs : new CellFs(this.files, call));
       } else if (route.tier === 1) {
-        ran = await this.runInIsolate(route.file, route.args, cwd, options, signal, capture, home);
+        ran = await this.runInIsolate(route.file, route.args, cwd, options, signal, streams, home);
       } else {
-        ran = await this.runInContainer(command, cwd, environment, options, signal, capture);
+        ran = await this.runInContainer(command, cwd, environment, options, signal, streams);
       }
       capture.finish();
       await this.spill(capture, ran.full, options, context);
@@ -751,6 +800,94 @@ export class CellExecutionEnv implements ExecutionEnv {
   }
 
   /**
+   * The route a line takes (drove phase 1, out of `exec` so the peek asks
+   * the same question the same way): with no container, the shell of a home
+   * with no container, line for line, just-bash's own not-found line,
+   * annotated, being the refusal; the one exception, on a home with the
+   * loader, is the tier-1 line, which the table is asked for either way.
+   */
+  private async routeOf(command: string, cwd: string): Promise<{ home: Home; route: Route }> {
+    const home = this.container === undefined ? this.home : await this.homeNow();
+    let route: Route = { tier: 0, programs: [] };
+    if (this.container !== undefined || this.isolate !== undefined) {
+      // The custom commands are tier 0: a line of `pasture put …` in a pastured cell, `look …` in a cell with eyes, or `town …`
+      // in a sheep's shell, stays in just-bash on a home with a container too.
+      const classified = classify(command, home, (file) => this.isWorkspaceFile(file, cwd), this.custom);
+      if (this.container !== undefined || ("tier" in classified && classified.tier === 1)) route = classified;
+    }
+    return { home, route };
+  }
+
+  /**
+   * The peek (drove phase 1): one line in this sheep's shell for the dog,
+   * outside any tool call, with stdin when there is some, answered as
+   * `{ stdout, stderr, exit }`. The line is routed by `routeOf`, in the
+   * shell's working directory with the shell's environment, and run by the
+   * runner a bash call of the model's would get: just-bash with the same
+   * custom commands, the isolate, or the container with setup before its
+   * first command. Nothing is captured, spilled, or written to the
+   * transcript; the cell decides whether a peek may run at all.
+   *
+   * A refusal from the table is its line on stderr and 127, as the tool's
+   * is. A run that ends with no code (the container went away, a kill left
+   * unanswered, a rental that failed) is its sentence on stderr and exit 1:
+   * the dog is told what the model would have been told.
+   *
+   * While it runs, a tool's line waits in `exec` for it to answer, whoever
+   * drives the turn: the dog and the model never share the shell at once.
+   * `stdin` is bytes, handed to the line as a pipe would hand them; whether
+   * they are text is the line's business (`town` refuses bytes that are not
+   * UTF-8 after it has found the grant, as §7 orders it).
+   */
+  async peek(line: string, options: { stdin?: Uint8Array } = {}): Promise<PeekResult> {
+    const running = this.runPeek(line, options);
+    this.peeks.add(running);
+    try {
+      return await running;
+    } finally {
+      this.peeks.delete(running);
+    }
+  }
+
+  /** Resolves when no peek is running (drove phase 1): what a tool's line and the cell's prompt wait on. */
+  async peeksSettled(): Promise<void> {
+    while (this.peeks.size > 0) await Promise.allSettled([...this.peeks]);
+  }
+
+  private async runPeek(line: string, options: { stdin?: Uint8Array }): Promise<PeekResult> {
+    let stdout = "";
+    let stderr = "";
+    const streams: Streams = {
+      stdout: (data) => void (stdout += data),
+      stderr: (data) => void (stderr += data),
+    };
+    const cwd = this.cwd;
+    const call = this.pasture === undefined ? undefined : new PastureCall(this.pasture);
+    const cwdKind = call !== undefined && isPasturePath(cwd) ? (await call.get(cwd))?.kind : this.files.get(cwd)?.kind;
+    if (cwdKind !== "directory") return { stdout: "", stderr: `Working directory does not exist: ${cwd}\n`, exit: 1 };
+    const { home, route } = await this.routeOf(line, cwd);
+    const environment = { ...this.shellEnv };
+    let ran: Ran;
+    if ("refused" in route) {
+      const refusal = refusalLine(route.refused, home);
+      streams.stderr(refusal);
+      ran = { full: refusal, outcome: { exitCode: 127 } };
+    } else if (route.tier === 0) {
+      ran = await this.runInShell(line, cwd, environment, undefined, undefined, streams, home, call === undefined ? this.fs : new CellFs(this.files, call), options.stdin);
+    } else if (route.tier === 1) {
+      // The isolate has no stdin to give a script, for a tool's line or a peek's.
+      ran = await this.runInIsolate(route.file, route.args, cwd, undefined, undefined, streams, home);
+    } else {
+      ran = await this.runInContainer(line, cwd, environment, undefined, undefined, streams, "before", options.stdin);
+    }
+    if ("error" in ran.outcome) {
+      const message = ran.outcome.error.message;
+      return { stdout, stderr: `${stderr}${message.endsWith("\n") ? message : `${message}\n`}`, exit: 1 };
+    }
+    return { stdout, stderr, exit: ran.outcome.exitCode };
+  }
+
+  /**
    * Tier 0: just-bash over the rows, as the shell always ran it; `fs`
    * carries this call's mount when the cell has a pasture, and then, and
    * only then, just-bash is made with the `pasture` command over it; with
@@ -763,9 +900,10 @@ export class CellExecutionEnv implements ExecutionEnv {
     environment: Record<string, string>,
     options: ShellExecOptions | undefined,
     signal: AbortSignal | undefined,
-    capture: OutputCapture,
+    streams: Streams,
     home: Home,
     fs: CellFs,
+    stdin?: Uint8Array,
   ): Promise<Ran> {
     const controller = new AbortController();
     let timedOut = false;
@@ -798,7 +936,8 @@ export class CellExecutionEnv implements ExecutionEnv {
       let stderr = "";
       let exitCode: number;
       try {
-        const result = await bash.exec(command, { signal: controller.signal, cwd });
+        // Drove phase 1: a peek's stdin, as the bytes a pipe in the shell would hand the line; a tool's line has none.
+        const result = await bash.exec(command, { signal: controller.signal, cwd, ...(stdin === undefined ? {} : { stdin: latin1Of(stdin), stdinKind: "bytes" as const }) });
         stdout = result.stdout;
         stderr = annotateCommandNotFound(result.stderr, (program) => refusalSentence(program, home));
         if (fs.pasture !== undefined) stderr = annotateReadOnly(stderr, fs.pasture.refusals);
@@ -808,8 +947,8 @@ export class CellExecutionEnv implements ExecutionEnv {
         stderr = `${messageOf(error)}\n`;
         exitCode = 1;
       }
-      capture.push(stdout);
-      capture.push(stderr);
+      streams.stdout(stdout);
+      streams.stderr(stderr);
       const full = stdout + stderr;
       if (timedOut) return { full, outcome: { error: new ExecutionError("timeout", `timeout:${options?.timeout}`) } };
       if (signal?.aborted) return { full, outcome: { error: new ExecutionError("aborted", "aborted") } };
@@ -847,7 +986,7 @@ export class CellExecutionEnv implements ExecutionEnv {
     cwd: string,
     options: ShellExecOptions | undefined,
     signal: AbortSignal | undefined,
-    capture: OutputCapture,
+    streams: Streams,
     home: Home,
   ): Promise<Ran> {
     const isolate = this.isolate;
@@ -866,16 +1005,23 @@ export class CellExecutionEnv implements ExecutionEnv {
         if (error.reason === "aborted") return { full: "", outcome: { error: new ExecutionError("aborted", "aborted") } };
         if (error.reason === "timeout" || options?.timeout !== undefined) return { full: "", outcome: { error: new ExecutionError("timeout", `timeout:${options?.timeout}`) } };
         const line = `pen: the script ran for ${Math.round(wallMs / 1000)} s without ending and was given up; nothing it printed came back\n`;
-        capture.push(line);
+        streams.stderr(line);
         return { full: line, outcome: { exitCode: 1 } };
       }
       throw error;
     }
-    const output = result.output
-      .replace(/This worker is not permitted to access the internet[^\n]*/g, fetchRefused(home))
-      .replace(/Disallowed operation called within global scope\.[^\n]*/g, isolateScopeRefused(home))
-      .replace(/^(\w*Error: operation not permitted)$/gm, `$1 (${isolateReadOnly(home)})`);
-    capture.push(output);
+    const named = (text: string) =>
+      text
+        .replace(/This worker is not permitted to access the internet[^\n]*/g, fetchRefused(home))
+        .replace(/Disallowed operation called within global scope\.[^\n]*/g, isolateScopeRefused(home))
+        .replace(/^(\w*Error: operation not permitted)$/gm, `$1 (${isolateReadOnly(home)})`);
+    const output = named(result.output);
+    // A tool call's capture takes the two streams as they interleaved; a peek takes them apart, each named the same way.
+    if (streams.one !== undefined) streams.one(output);
+    else {
+      streams.stdout(named(result.stdout));
+      streams.stderr(named(result.stderr));
+    }
     console.info(`[pen] isolate ${file} exit ${result.exitCode} after ${Date.now() - started} ms, ${count} files`);
     if (signal?.aborted) return { full: output, outcome: { error: new ExecutionError("aborted", "aborted") } };
     return { full: output, outcome: { exitCode: result.exitCode } };
@@ -972,7 +1118,7 @@ export class CellExecutionEnv implements ExecutionEnv {
         this.shellEnv,
         options.timeout === undefined ? undefined : { timeout: options.timeout },
         undefined,
-        capture,
+        captured(capture),
         options.setup ?? "before",
       );
       capture.finish();
@@ -1005,8 +1151,9 @@ export class CellExecutionEnv implements ExecutionEnv {
     environment: Record<string, string>,
     options: ShellExecOptions | undefined,
     signal: AbortSignal | undefined,
-    capture: OutputCapture,
+    streams: Streams,
     setup: SetupWhen = "before",
+    stdin?: Uint8Array,
   ): Promise<Ran> {
     const container = this.container;
     if (container === undefined) throw new Error("runInContainer without a container");
@@ -1035,7 +1182,7 @@ export class CellExecutionEnv implements ExecutionEnv {
 
       // Setup, before this container's first command: a failure is the tool result, and the command does not run.
       if (setup === "before") {
-        const warmed = await this.warm(lease, tree, signal, capture, setupFailedLine);
+        const warmed = await this.warm(lease, tree, signal, (text) => streams.stderr(text), setupFailedLine);
         if (!warmed.skipped && warmed.failed !== undefined) return warmed.failed;
       }
 
@@ -1044,11 +1191,17 @@ export class CellExecutionEnv implements ExecutionEnv {
       const id = `run-${++this.runs}`;
       const frame = await this.runFrame(
         socket,
-        { id, command, cwd, env: { ...runEnv, PWD: cwd }, ...(options?.timeout === undefined ? {} : { timeout: options.timeout }) },
+        { id, command, cwd, env: { ...runEnv, PWD: cwd }, ...(options?.timeout === undefined ? {} : { timeout: options.timeout }), ...(stdin === undefined ? {} : { stdin: btoa(latin1Of(stdin)) }) },
         signal,
-        (data) => {
-          full += data;
-          capture.push(data);
+        {
+          stdout: (data) => {
+            full += data;
+            streams.stdout(data);
+          },
+          stderr: (data) => {
+            full += data;
+            streams.stderr(data);
+          },
         },
         () => full,
       );
@@ -1068,7 +1221,7 @@ export class CellExecutionEnv implements ExecutionEnv {
       for (const entry of refused) {
         const line = `pen: ${entry.path} (${entry.size} bytes) is over the per-file limit and was not synced\n`;
         full += line;
-        capture.push(line);
+        streams.stderr(line);
       }
 
       if (frame.timedOut) return { full, outcome: { error: new ExecutionError("timeout", `timeout:${options?.timeout}`) } };
@@ -1081,7 +1234,7 @@ export class CellExecutionEnv implements ExecutionEnv {
 
       // Setup after the line, for a birth: on the clone, in the same container; how it ended is said beside the clone's.
       if (setup === "after" && end.exit === 0) {
-        const warmed = await this.warm(lease, tree, signal, capture, setupFailedAfterLine);
+        const warmed = await this.warm(lease, tree, signal, (text) => streams.stderr(text), setupFailedAfterLine);
         if (!warmed.skipped) {
           if (warmed.failed !== undefined) full += warmed.failed.full;
           return { full, outcome: { exitCode: end.exit }, setup: warmed.end, ...(warmed.cache === undefined ? {} : { cache: warmed.cache }) };
@@ -1142,7 +1295,7 @@ export class CellExecutionEnv implements ExecutionEnv {
       // Setup, before the server, as a tool's tier-2 line has it: a failure is this look's error line, and the script's output is its tail.
       const setup = new OutputCapture({ limits: { maxBytes: 16 * 1024, maxLines: SERVER_LINES, retain: "tail" } }, BACKGROUND_CONTEXT, { onError: () => {} });
       try {
-        const warmed = await this.warm(lease, tree, signal, setup, setupFailedLine);
+        const warmed = await this.warm(lease, tree, signal, (text) => setup.push(text), setupFailedLine);
         if (!warmed.skipped && warmed.failed !== undefined) {
           setup.finish();
           const error = "exit" in warmed.end ? setupFailedLine(warmed.end.exit) : warmed.end.error;
@@ -1261,14 +1414,14 @@ export class CellExecutionEnv implements ExecutionEnv {
    */
   private async runFrame(
     socket: WebSocket,
-    request: { id: string; command: string; cwd: string; env: Record<string, string>; timeout?: number },
+    request: { id: string; command: string; cwd: string; env: Record<string, string>; timeout?: number; stdin?: string },
     signal: AbortSignal | undefined,
-    output: (data: string) => void,
+    output: RunListeners,
     full: () => string,
   ): Promise<{ end: RunEnd; timedOut: boolean; aborted: boolean } | { failed: Ran }> {
     const container = this.container;
     if (container === undefined) throw new Error("runFrame without a container");
-    const run = new ContainerRun(socket, request, { stdout: output, stderr: output }, this.killTimeoutMs === undefined ? {} : { killTimeoutMs: this.killTimeoutMs });
+    const run = new ContainerRun(socket, request, output, this.killTimeoutMs === undefined ? {} : { killTimeoutMs: this.killTimeoutMs });
     let timedOut = false;
     let aborted = false;
     const timeoutId = request.timeout === undefined
@@ -1324,7 +1477,7 @@ export class CellExecutionEnv implements ExecutionEnv {
    * pasture, no `setup.sh` in the tree — are no setup at all and say
    * nothing, which is journey 3's quiet sheep.
    */
-  private async warm(lease: Lease, tree: ManifestEntry[] | undefined, signal: AbortSignal | undefined, capture: OutputCapture, line: (exit: number) => string): Promise<Warmed> {
+  private async warm(lease: Lease, tree: ManifestEntry[] | undefined, signal: AbortSignal | undefined, push: (text: string) => void, line: (exit: number) => string): Promise<Warmed> {
     const pasture = this.pasture;
     if (lease.warmed || pasture === undefined) return { skipped: true };
     const key = setupKey(tree);
@@ -1334,7 +1487,7 @@ export class CellExecutionEnv implements ExecutionEnv {
     await this.tellSetup({ phase: "start", at, command: SETUP_COMMAND });
     let ran: Ended;
     try {
-      ran = await this.runSetup(lease, pasture, key, signal, capture, line, at, (data) => {
+      ran = await this.runSetup(lease, pasture, key, signal, push, line, at, (data) => {
         output += data;
       }, () => output);
     } catch (error) {
@@ -1362,7 +1515,7 @@ export class CellExecutionEnv implements ExecutionEnv {
     pasture: SetupSecrets & CacheStore,
     key: string,
     signal: AbortSignal | undefined,
-    capture: OutputCapture,
+    push: (text: string) => void,
     line: (exit: number) => string,
     started: number,
     onData: (data: string) => void,
@@ -1383,7 +1536,7 @@ export class CellExecutionEnv implements ExecutionEnv {
       : { found: "cold", bytes: 0, files: 0, ms: 0 };
     const failed = (outcome: Outcome): Ran => {
       const text = "error" in outcome ? full() : `${line(outcome.exitCode)}\n${full()}`;
-      capture.push(text);
+      push(text);
       return { full: text, outcome };
     };
     const unavailable = (message: string, cause?: Error): Ended => ({ skipped: false, end: { error: message }, failed: failed({ error: new ExecutionError("shell_unavailable", message, cause) }), cache: found });
@@ -1401,7 +1554,7 @@ export class CellExecutionEnv implements ExecutionEnv {
       lease.socket,
       { id, command: SETUP_COMMAND, cwd: WORKSPACE_ROOT, env: { ...runEnv, ...secrets.environment, PWD: WORKSPACE_ROOT }, timeout: SETUP_TIMEOUT_S },
       signal,
-      onData,
+      { stdout: onData, stderr: onData },
       full,
     );
     if ("failed" in frame) {

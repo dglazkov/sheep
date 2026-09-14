@@ -34,6 +34,9 @@ usage:
                                             [setup] block where each of this sheep's setup.sh runs happened, with
                                             how it ended and the tail of what it printed (the last twenty are kept)
   sheep export <id> [file]                  write the session as a pi SQLite file (default <id>.sqlite)
+  sheep sh <id> [-- <line>]                 run one line in the sheep's shell as its bash tool would, outside any turn and
+                                            its log, stdin sent when it is a pipe or a file; the line's stdout and stderr
+                                            as given and its exit code. Exit 2 with a sentence while a turn is open
   sheep config                              print the resolved home and this directory's kennel (never the token)
   sheep setup [--explain] [--no-install]    at a terminal: the sitting that readies this machine, seven steps that fill
                                             in — the command, where the settings go, the Cloudflare account token, the

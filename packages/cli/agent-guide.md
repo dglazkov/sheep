@@ -1,7 +1,6 @@
 # sheep: the guide for the dog
 
-Sheep is for coding agents that herd coding agents. A
-**sheep** is a pi session in a **cell**: one small database with an
+A **sheep** is a pi session in a **cell**: one small database with an
 address, holding the transcript, a workspace, and the loop that drives the
 agent, at a **home**. You are the **sheepdog**, the agent with the
 terminal; the person you work for is the **shepherd**. A person does not
@@ -31,8 +30,7 @@ terminal, `sheep setup` asks nothing: it installs the skill here and its
 report's `home:` line says whether a home is reachable.
 
 `sheep home` reports the kennel, the home, whether it answers, and which
-credentials are kept (never a value); `--home <url>` or `SHEEP_HOME`
-selects another for one command. `sheep home delete` is the shepherd's,
+credentials are kept; `--home <url>` or `SHEEP_HOME` selects another. `sheep home delete` is the shepherd's,
 and so is a second machine: `sheep setup` at their terminal there joins
 the station the account already has.
 
@@ -85,6 +83,9 @@ stderr as `sheep: …` with exit 2.
   what it printed. A model call a restart cut off ends `[error] <why>`.
 - `sheep export <id> [file]` writes the session as a pi SQLite file
   (`<id>.sqlite` by default).
+- `sheep sh <id> -- '<line>'` runs one line in a sheep's shell, stdin
+  when piped, outside any turn and its log: the line's stdout, stderr,
+  and exit code; exit 2 while a turn is open.
 
 A sheep has pi's tools: `read`, `write`, and `edit` on a workspace in its
 cell, and `bash` with the usual text tools. With a container the
@@ -117,10 +118,10 @@ repository should know.
 - `sheep pasture secret set <name> <KEY>` reads the value from stdin,
   never an argument (`GIT_TOKEN` is what a sheep pushes with); `secret ls
   <name>` prints the names, never a value.
-- `sheep new --pasture <name> --secret <NAME> --detach` gives one sheep a
-  secret of its own, one line of stdin per `--secret`, in order, laid over
-  the pasture's of that name and ended with the sheep; `sheep ls` shows
-  names, never values.
+- `sheep new [--pasture <name>] --secret <NAME> --detach` gives one sheep
+  a secret of its own, one line of stdin per `--secret`, laid over the
+  pasture's of that name; with no pasture, only `GIT_TOKEN` or
+  `TOWN_GRANT`.
 - `setup.sh` in the tree runs once per fresh container. Its `npm install
   -g` lands in `/cache`, which the pasture keeps for that exact script and
   puts back first next time, so write `command -v <tool> >/dev/null ||
@@ -136,16 +137,14 @@ once when it ends; stdout is the reply and nothing else. `sheep status
 <id>` from another terminal answers in about a second from the sheep's
 row, which speaks while the cell cannot. `sheep log <id>` has the `[setup]` block, with the tail of
 what setup printed. Wait while it says `running`; read the block when it
-says `failed`. A sheep with no `setup.sh` says `setup: none` and none of
-this.
+says `failed`.
 
 ## How to herd
 
 Split the goal, give each piece to a sheep with `--detach`, keep working,
 then `sheep wait` on all of them and read what came back. Name sheep
 (`--name docs`) so `sheep ls` reads. Read `sheep log <id>` before deciding
-a sheep failed. A sheep you are finished with is ended with `sheep rm
-<id>` (`sheep export <id>` first if the transcript matters).
+a sheep failed. End a sheep you are finished with: `sheep rm <id>`.
 
 ## What needs a person
 

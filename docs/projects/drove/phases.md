@@ -35,14 +35,14 @@ resource, spend money, or need a login, and are asked out loud first.
 
 ---
 
-**Where we are: drove phase 0 closed, 14 September 2026; drove phase 1
-is next,** the peek, `sheep sh`, the bridge, and conformance on the
-local home. `town` is in every sheep's shell, written from town's
-contract and proved in workerd against a fake town: the grant read at
-each run, the sheep's over the pasture's, refused at exit 3 when there
-is none or it is no grant, and nowhere a shell, a row, a log line, or
-setup can see. No person is needed until drove phase 2's one ⚑ step,
-the second station. Town stands at `473687e`, whose
+**Where we are: drove phases 0 and 1 closed, 14 September 2026; drove
+phase 2 is next,** and its first step is the one ⚑ step, the second
+station, which waits on the shepherd's yes. `town` is in every sheep's
+shell, written from town's contract alone; `sheep sh` looks into a
+sheep's shell outside any turn; and town's conformance script printed
+`conformant: 30 checks` twice through the bridge on the local home.
+Journeys 2 (steps 1 to 4), 3, and 4 hold; journey 2 step 5, journey
+1, and journey 5 wait on the station. Town stands at `473687e`, whose
 `docs/harness.md` and `scripts/conform.mjs` are road's `80496d2`.
 
 The order is the order of dependence. Drove phase 0 is the program,
@@ -211,11 +211,39 @@ conformance's call-once check through the bridge and is put back: that
 is the proof the bridge answers for §4 and nothing else.
 **⚑** none.
 
-**Status: NOT STARTED.** 2026-09-14.
+**Status: CLOSED.** 2026-09-14. The inner rings exit 0 with the peek
+in both; conformance at town `473687e` printed `conformant: 30 checks`
+twice through the bridge on the local home, seven sheep then thirteen,
+all torn down; the retry mutation failed call-once.
 
 **Findings:**
 
-(none yet)
+- **2026-09-14 — Conformance makes a new town every run.** Six of the
+  bridge's seven grants change between runs, so a second run mints six
+  sheep and reuses only the no-grant one; journey 2 step 3 said seven.
+- **2026-09-14 — Its town answers every call at HTTP 200.** A retry
+  keyed on 500 passed all thirty checks; a second post of a call whose
+  exit is not 0 failed call-once with two audit rows.
+- **2026-09-14 — The peek carries bytes.** A bridge checking UTF-8
+  would make a no-grant sheep's bad stdin exit 1; the cell's program
+  finds the grant first, exit 3, as §7 orders.
+- **2026-09-14 — Checks run concurrently.** The first bridge minted
+  three sheep in one millisecond and lost state; the look-up and mint
+  are under a lock in the state directory.
+- **2026-09-14 — `sheep export` holds no system prompt.** pi keeps no
+  copy, so "the prompt does not name `town`" passed for every sheep; a
+  faux `system` step now answers with the prompt it was given.
+- **2026-09-14 — Node's `stdio: "pipe"` is a socketpair.** §4 leaves a
+  socket unread, so the bridge hands the verb its stdin as a file.
+- **2026-09-14 — `ls /` never reaches the container.** It is all tier
+  0; journey 4 step 5 is `ls / && git status`, proved against the fake.
+- **2026-09-14 — The home ring grew to six files.** The guard's cap
+  moved from five for `journey-drove.test.ts`.
+- **2026-09-14 — A local home in the kennel fails `setup.test.ts`.**
+  Run the suite before the walk, and empty `.sheep/` after it.
+- **2026-09-14 — Open: `OLDEST_HOME` does not know `/sh`.** It moves
+  with the first release that ships the peek; until then a bare `not
+  found` gets the floor's sentence.
 
 ## Phase 2: The station, the stage, and the walk
 

@@ -199,6 +199,8 @@ export interface RunRequest {
   env: Record<string, string>;
   /** Seconds; absent for no limit. The runner's own backstop, beside the cell's timer. */
   timeout?: number;
+  /** Drove phase 1: the bytes the command reads on stdin, as base64, then end of file; absent, stdin is nothing. */
+  stdin?: string;
 }
 
 /** Where a run's output goes as it happens. Chunks are text; the runner decodes. */
@@ -659,7 +661,7 @@ class Agent {
     let handle: RunHandle;
     try {
       handle = this.runner.run(
-        { id, command: frame.command, cwd: frame.cwd, env: frame.env, ...(frame.timeout === undefined ? {} : { timeout: frame.timeout }) },
+        { id, command: frame.command, cwd: frame.cwd, env: frame.env, ...(frame.timeout === undefined ? {} : { timeout: frame.timeout }), ...(frame.stdin === undefined ? {} : { stdin: frame.stdin }) },
         {
           stdout: (data) => this.send({ type: "stdout", id, data }),
           stderr: (data) => this.send({ type: "stderr", id, data }),

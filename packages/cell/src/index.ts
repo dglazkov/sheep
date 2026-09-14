@@ -37,6 +37,10 @@
  * bearer, a bearer whose key is not there — is the same bare 404 as a
  * route that does not exist, saying nothing. A KV write is not a Worker
  * version, so nothing running here restarts (issue #10).
+ * Drove phase 1: `POST /s/<id>/sh` is forwarded like the cell's other
+ * routes, under the home's token: the peek, one line in that sheep's shell
+ * for the dog, answered `{ stdout, stderr, exit }`, a 409 and a sentence
+ * while a turn is open.
  * Shear phase 0: every response the Worker returns carries
  * `x-sheep-build: <commit> <builtAt>`, set once where `fetch` returns, so
  * any command hears which build answered it; a WebSocket's 101 too.
@@ -287,7 +291,7 @@ const router = {
     if (url.pathname === "/faux" && request.method === "POST" && env.SHEEP_PROVIDER === "faux") {
       // Test-only: the program every cell without one of its own answers from.
       const program: unknown = await request.json();
-      if (program !== null && !isFauxProgram(program)) return new Response("a faux program is { steps: [{ text | tool: { name, args }, delayMs? }, …] }", { status: 400 });
+      if (program !== null && !isFauxProgram(program)) return new Response("a faux program is { steps: [{ text | tool: { name, args } | system: true, delayMs? }, …] }", { status: 400 });
       await directory.setFauxProgram(program as FauxProgram | null);
       return Response.json({ steps: program === null ? 0 : (program as FauxProgram).steps.length });
     }

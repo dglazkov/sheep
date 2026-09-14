@@ -98,6 +98,7 @@ export const RINGS = {
     "packages/cell/test/pasture-command.test.ts",
     "packages/cell/test/pasture.test.ts",
     "packages/cell/test/pen.test.ts",
+    "packages/cell/test/peek.test.ts",
     "packages/cell/test/repo-conformance.test.ts",
     "packages/cell/test/router.test.ts",
     "packages/cell/test/serve.test.ts",
@@ -137,7 +138,7 @@ export const RINGS = {
     "packages/pen/test/birth.test.ts",
     "packages/pen/test/git.test.ts",
   ],
-  home: ["packages/cli/test/bell.test.ts", "packages/cli/test/collie-home.test.ts", "packages/cli/test/journey5.test.ts", "packages/cli/test/pasture-herd.test.ts", "packages/cli/test/pasture.test.ts", "packages/cli/test/tether.test.ts"],
+  home: ["packages/cli/test/bell.test.ts", "packages/cli/test/collie-home.test.ts", "packages/cli/test/journey-drove.test.ts", "packages/cli/test/journey5.test.ts", "packages/cli/test/pasture-herd.test.ts", "packages/cli/test/pasture.test.ts", "packages/cli/test/tether.test.ts"],
 };
 
 /** The ring a file is declared to be in, or `undefined` when it is in none. */

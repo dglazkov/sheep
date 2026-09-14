@@ -89,6 +89,8 @@ describe("the inner rings", () => {
     // deliberately and say why in the commit. Raised to five by tether phase 0: its file restarts the home it started,
     // which no other file's home can share without being restarted under it. Raised to six by collie phase 2: the rig's
     // walk stands a kennel's own local home, the collie's Worker, and an isocan daemon together, and restarts two of them.
-    expect(RINGS.home.length).toBeLessThanOrEqual(6);
+    // Raised to seven by drove phase 1, landed after it: its file starts a fake town beside its home, and journey 4 holds a
+    // turn open and aborts it on a sheep of its own.
+    expect(RINGS.home.length).toBeLessThanOrEqual(7);
   });
 });

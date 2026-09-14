@@ -7,6 +7,7 @@ import { runAbort, runEnd, runLog, runPrompt, runStatus, runWait, watchSetup } f
 import { Home, type PromptResponse } from "./home.js";
 import { type BuildSide, cliBuild, describeBuild, describeImage, eyesSentence, isRefused, localStatus, readStamp, skewLine, startLocalHome, stopLocalHome, whoAnswers } from "./local.js";
 import { PASTURE_NAME, runPasture } from "./pasture.js";
+import { readPeekStdin, runPeek } from "./peek.js";
 import { runPiClient } from "./pi.js";
 import { formatSetup, INSTALL_SPEC, kennelTracked, readGuide, setup, trackedWarning } from "./setup.js";
 import { atTerminal, stile } from "./stile/screen.js";
@@ -51,6 +52,8 @@ interface Parsed {
   secretNames: (string | undefined)[];
   /** The secrets read from stdin before the mint (earmark phase 1), name to value; set by `main`, sent by `new`. */
   secrets?: Record<string, string>;
+  /** Drove phase 1: the peek's stdin, its bytes, read before the home is asked, as the secrets are; set by `run`, sent by `sh`. */
+  stdin?: Uint8Array;
   rest: string[];
 }
 
@@ -169,6 +172,8 @@ async function run(command: string, parsed: Parsed, heard: Heard): Promise<numbe
   const earmarked = await earmarks(command, { names: parsed.secretNames, pasture: parsed.pasture, detach: parsed.detach, prompt: parsed.prompt });
   if ("refused" in earmarked) return fail(earmarked.refused);
   parsed.secrets = earmarked.secrets;
+  // The peek's stdin (drove phase 1), here for the same reason: `dispatch` may run twice, and stdin is read once.
+  if (command === "sh") parsed.stdin = readPeekStdin();
   try {
     return await dispatch(command, parsed, config, output, heard);
   } catch (error) {
@@ -255,6 +260,12 @@ async function dispatch(command: string, parsed: Parsed, config: SheepConfig, ou
     }
     case "pasture":
       return await runPasture(home, { rest: parsed.rest.slice(1), repo: parsed.repo, branch: parsed.branch }, output);
+    case "sh": {
+      // Drove phase 1: the peek. The line is the words after `--`; none is the empty line, which runs nothing.
+      const id = parsed.rest[1];
+      if (id === undefined) return fail("sh needs a session id");
+      return await runPeek(home, id, parsed.prompt ?? "", parsed.stdin, { out: output.out, err: output.err });
+    }
     case "export": {
       const id = parsed.rest[1];
       if (id === undefined) return fail("export needs a session id");

@@ -66,6 +66,8 @@ export interface RunRequest {
   env: Record<string, string>;
   /** Seconds; absent for no limit. */
   timeout?: number;
+  /** Drove phase 1: the bytes the command reads on stdin, as base64; absent, stdin is nothing. A peek's, never a tool's. */
+  stdin?: string;
 }
 
 export interface RunListeners {

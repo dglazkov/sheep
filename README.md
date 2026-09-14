@@ -361,6 +361,7 @@ sheep attach <id> [-- <prompt>]           # attach to a session; works from any 
 sheep ls                                  # sessions at the home; the last column names each one's secrets, never a value
 sheep rm <id>                             # end a session: turn aborted, container and browser released, rows gone; the pasture stays
 sheep export <id> [file]                  # a pi SQLite session file
+sheep sh <id> -- '<line>'                 # one line in a sheep's shell, stdin when piped, outside any turn: its stdout, stderr, and code
 sheep --home <url> ...                    # a different home for one command
 ```
 
@@ -383,7 +384,8 @@ the command wants `--detach` or a prompt rather than pi's terminal. A
 sheep's secret lies over its pasture's of the same name in setup, and its
 `GIT_TOKEN` over the pasture's and the home's `PEN_GIT_TOKEN` when git
 asks; neither kind is ever in the model's environment. A sheep born into
-no pasture has no setup, so `GIT_TOKEN` is the one secret it can carry.
+no pasture has no setup, so it carries only `GIT_TOKEN`, which git reads,
+and `TOWN_GRANT`, which its shell's `town` reads.
 `sheep ls` names each sheep's secrets in its last column (`"secrets"` in
 `--json`), never a value, and `sheep rm` ends them with the sheep.
 

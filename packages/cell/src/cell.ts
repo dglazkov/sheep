@@ -32,7 +32,7 @@ import { DurableObject } from "cloudflare:workers";
 import { BIRTH_ENTRY, BIRTH_TAIL_BYTES, BIRTH_TAIL_LINES, BIRTH_TIMEOUT_S, type BirthData, type BirthRecord, birthCommand, birthProjector } from "./birth.ts";
 import { SETUP_KEPT, SETUP_KEY_PREFIX, type SetupRecord, setupRecordKey, setupTail } from "./bleat.ts";
 import { type LaneState, taskOf } from "./directory.ts";
-import { CellExecutionEnv, type ContainerLineResult, type SetupEnd, type SetupEvent, type SetupSecrets } from "./env/execution-env.ts";
+import { CellExecutionEnv, type ContainerLineResult, type PeekResult, type SetupEnd, type SetupEvent, type SetupSecrets } from "./env/execution-env.ts";
 import { parseGrant, TOWN_GRANT, type TownFetch, type TownSource } from "./env/town-command.ts";
 import { eyesFor, sessionFor } from "./eyes/eyes.ts";
 import { type CellModels, createCellModels, type FauxProgram, isFauxProgram } from "./models.ts";
@@ -59,6 +59,18 @@ export const HEARTBEAT_MS = 5_000;
  * on; the drive is cancelled in the next step either way.
  */
 export const END_SETTLE_MARGIN_MS = 2_000;
+
+/**
+ * The peek's refusal while a turn is open (drove phase 1): one sentence, the
+ * route's 409 body and the verb's line. A dog and the model never share the
+ * shell at once, so the dog waits for the turn or aborts it first.
+ */
+export function midTurnPeek(id: string): string {
+  return `the sheep ${id} is mid-turn; wait or abort first (sheep wait ${id}, sheep abort ${id}), since a peek would share the shell the turn is using`;
+}
+
+/** The peek's answer when a turn is open: refused, with the sentence; otherwise the line's three outputs. */
+export type PeekAnswer = PeekResult | { refused: string };
 
 /** The end's answer: `aborted` is whether step 1 found a turn to stop. */
 export interface EndReport {
@@ -729,6 +741,8 @@ export class SessionCell extends DurableObject<Env> {
    */
   async prompt(text: string): Promise<PromptResponse> {
     const runtime = await this.runtime();
+    // Drove phase 1: a peek running now ends before the prompt is taken.
+    await runtime.env.peeksSettled();
     const admission = await runtime.lane.accept({ kind: "prompt", prompt: text }, BACKGROUND_CONTEXT);
     if (!admission.ok) {
       if (admission.error._tag !== "LaneBusy") throw new Error(`Prompt refused: ${admission.error._tag}`);
@@ -739,6 +753,21 @@ export class SessionCell extends DurableObject<Env> {
     const { operationId } = admission.value;
     this.detach(runtime, (context) => runtime.lane.drive({ operationId, waitForRetry: true, pollDeferred: true }, context));
     return { accepted: true, operationId, error: null };
+  }
+
+  /**
+   * The peek (drove phase 1): one line in this sheep's shell for the dog,
+   * `CellExecutionEnv.peek`, refused while a turn is open. Not a turn: the
+   * lane is asked whether one is open and is not otherwise touched, so no
+   * entry is written, no model is called, and the Directory's state and
+   * the heartbeat are as they were. A prompt that arrives while one runs
+   * waits for it (`prompt` below), and a turn's tool line started any other
+   * way waits in the env, so the two never interleave in the shell.
+   */
+  async peek(line: string, stdin: Uint8Array | undefined): Promise<PeekAnswer> {
+    const runtime = await this.runtime();
+    if ((await runtime.lane.inspectExecution(BACKGROUND_CONTEXT)).current !== null) return { refused: midTurnPeek(this.sessionId) };
+    return runtime.env.peek(line, stdin === undefined ? {} : { stdin });
   }
 
   async abort(): Promise<{ aborted: boolean }> {
@@ -929,13 +958,31 @@ export class SessionCell extends DurableObject<Env> {
         if (typeof body.text !== "string" || body.text.length === 0) return new Response("text required", { status: 400 });
         return Response.json(await this.prompt(body.text));
       }
+      if (route === "POST /sh") {
+        // Drove phase 1: `{ line, stdin? }`, stdin the bytes as base64, answered `{ stdout, stderr, exit }`, or a 409 and the
+        // sentence while a turn is open.
+        const body = (await request.json().catch(() => undefined)) as { line?: unknown; stdin?: unknown } | undefined;
+        if (typeof body?.line !== "string") return new Response("a peek is { line, stdin? }: the line a string, and stdin its bytes as base64 when there is one", { status: 400 });
+        let stdin: Uint8Array | undefined;
+        if (body.stdin !== undefined && body.stdin !== null) {
+          if (typeof body.stdin !== "string") return new Response("a peek's stdin is its bytes as base64", { status: 400 });
+          try {
+            stdin = Uint8Array.from(atob(body.stdin), (char) => char.charCodeAt(0));
+          } catch {
+            return new Response("a peek's stdin is its bytes as base64, and this is not base64", { status: 400 });
+          }
+        }
+        const answer = await this.peek(body.line, stdin);
+        if ("refused" in answer) return new Response(answer.refused, { status: 409 });
+        return Response.json({ stdout: answer.stdout, stderr: answer.stderr, exit: answer.exit });
+      }
       if (route === "POST /abort") return Response.json(await this.abort());
       if (route === "DELETE /") return Response.json(await this.end());
       if (route === "GET /export") return Response.json(await this.exportRows());
       if (route === "POST /faux" && this.env.SHEEP_PROVIDER === "faux") {
         // Test-only: the program this cell's faux model answers from.
         const program: unknown = await request.json();
-        if (!isFauxProgram(program)) return new Response("a faux program is { steps: [{ text | tool: { name, args }, delayMs? }, …] }", { status: 400 });
+        if (!isFauxProgram(program)) return new Response("a faux program is { steps: [{ text | tool: { name, args } | system: true, delayMs? }, …] }", { status: 400 });
         await this.ctx.storage.put("faux-program", program);
         return Response.json({ steps: program.steps.length });
       }
