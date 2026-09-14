@@ -256,7 +256,8 @@ and ask nothing. `collie deploy [--now]` (sheep's guard: a turn the
 collie holds is listed and refused without `--now`); `collie rm` (the
 listing, the name typed, the badges ended, the Worker deleted through the
 account API, the config cleared). `collie new` and `collie pass` through
-isocan's API: `connect()` for this machine's identity, `resolveCanvas`
+isocan's API, imported from the `isocan` on PATH as design.md says (none,
+refused at **isocan**; sheep's release manifest gains no isocan): `connect()` for this machine's identity, `resolveCanvas`
 from the directory or `--canvas`, the canvas's home address, a loopback
 home refused before minting, `mintPass(canvasId, actorId)` with the
 shepherd's actor (or, `pass --agent`, the named agent's, collie phase 3),

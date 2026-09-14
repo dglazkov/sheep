@@ -259,8 +259,16 @@ dog's to mint. It stands on both sides at once, which is why it is a
 command of its own: it reads the kennel with `config.ts` as `sheep` does
 (`.sheep/` at or above the directory, else `~/.sheep`) for the station's
 address and token, and `credentials.ts` for the account token, and it
-imports isocan's Node API (`import { connect } from "isocan"`) for the
-identity, the bound canvas, and the mint. The `sheep` command is not
+imports isocan's Node API (`connect` from `isocan`) for the
+identity, the bound canvas, and the mint. That isocan is the one the
+shepherd installed in their second sitting, never a copy in sheep's
+release: the `isocan` on PATH, its package found by walking up from the
+bin's real path to the manifest named `isocan`, and imported by that
+manifest's own `.` export, which is the same for a release install and a
+linked checkout. So sheep's install carries no isocan and `collie`
+installs nothing, the identity is read by the isocan that wrote it, and
+no `isocan` on PATH is refused at **isocan** with `isocan setup` named.
+The `sheep` command is not
 asked to know isocan, and isocan is not asked to know the kennel.
 
 - **`collie setup`** is the stile's own screen with a collie drawn from
