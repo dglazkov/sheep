@@ -73,13 +73,15 @@ home up in this checkout's kennel.
    their sections.
 2. `node <town>/scripts/conform.mjs -- node <sheep>/scripts/conform-sheep.mjs
    --kennel <kennel> --state <dir>` prints `ok <name> (§n)` thirty
-   times and `conformant: 30 checks`, exit 0. `sheep ls` shows four
-   sheep minted by the bridge, one per grant the checks name: pass A's,
-   pass B's, a value that is no grant, and none.
-3. Run again, the same thirty lines, and `sheep ls` still shows four:
+   times and `conformant: 30 checks`, exit 0. `sheep ls` shows seven
+   sheep minted by the bridge, one per grant the checks name once each
+   is compacted to a line: pass A's, A's with a trailing slash, pass
+   B's, a JSON value that is no grant, a bare token, a grant at a closed
+   port, and none.
+3. Run again, the same thirty lines, and `sheep ls` still shows seven:
    the bridge reused them.
 4. `node <sheep>/scripts/conform-sheep.mjs --state <dir> --teardown`
-   ends the four; `sheep ls` shows none of them.
+   ends the seven; `sheep ls` shows none of them.
 5. With the second station in the kennel instead of the local home and
    `--town <box>` given to conformance, the same thirty lines, exit 0:
    the sheep's `town` reached the box over the wire from the cell.
@@ -87,10 +89,10 @@ home up in this checkout's kennel.
 ## Journey 3: The grant is the sheep's, or the herd's
 
 1. `sheep new --detach` with no secret mints a sheep; `sheep sh <id> --
-   town` exits 127 with just-bash's not-found line and the sentence
-   after it: this sheep carries no grant, mint one with `sheep new
-   --secret TOWN_GRANT`, or set the pasture's. The sheep's system
-   prompt, read through `sheep export`, does not name `town`.
+   town` exits 3 with one line on stderr: this sheep carries no grant,
+   mint one with `sheep new --secret TOWN_GRANT`, or set the pasture's.
+   The sheep's system prompt, read through `sheep export`, does not
+   name `town`.
 2. `sheep pasture new herd` then `jq -c . < grant.json | sheep pasture
    secret set herd TOWN_GRANT`; `sheep new --pasture herd --detach`;
    `sheep sh <id> -- town` exits 0 with the town's help: a sheep born
@@ -106,9 +108,11 @@ home up in this checkout's kennel.
    `ok` false, `exit` 3, an `error` line, empty `output`, empty
    `notices`, and nothing on stderr; the value is in neither.
 5. A pasture's grant set after a sheep was born there, `sheep pasture
-   secret set herd TOWN_GRANT` on a pasture that had none: the sheep
-   born before it still has no `town`, since presence is the shell's
-   build; one born after it does.
+   secret set herd TOWN_GRANT` on a pasture that had none: `sheep sh
+   <id> -- town` on the sheep born before it now answers with the
+   town's help, since the grant is read at each run, while its prompt,
+   built at its boot, still does not name `town`; one born after it
+   is told.
 
 ## Journey 4: The dog looks in the pen
 

@@ -20,8 +20,8 @@ is a just-bash custom command in the cell: `town` as a tier-0 program
 like `look`, holding the sheep's grant read from the Directory at the
 moment of use, posting through the Worker's own `fetch`, printing what
 comes back, and exiting with the code it was given, so the model never
-sees the grant and a sheep that carries none is told so by the shell's
-own not-found line; and the walk that closes it, a dog minting a sheep
+sees the grant and a sheep that carries none is told so in §2's
+refusal; and the walk that closes it, a dog minting a sheep
 with a grant from the operator's box that works memory and github, is
 shipped as a script, since every walk after it is run by that script.**
 
@@ -38,7 +38,7 @@ the program's, not the shell's.
 
 | Word | What it is | Where it lives |
 | --- | --- | --- |
-| `town`, the program | a just-bash custom command in the shell of a sheep that carries a grant; tier 0, no row in the table, as `look` is | `packages/cell/src/env/town-command.ts`, wired where `look` is in `execution-env.ts` |
+| `town`, the program | a just-bash custom command in every sheep's shell; tier 0, no row in the table, as `look` is | `packages/cell/src/env/town-command.ts`, wired where `look` is in `execution-env.ts` |
 | the grant | `TOWN_GRANT`, the grant itself as one line of JSON, `{ "town": <url>, "token": <token> }`: the sheep's earmark, or the pasture's secret of that name, the sheep's laid over the pasture's | the Directory's `session_secrets` and the pasture's object; read at each run, never the shell's environment |
 | the contract | what a harness posts, prints, refuses, and exits with, in ten numbered sections | town's `docs/harness.md`; §2 the grant, §4 stdin, §7 the refusals, §8 the exit codes |
 | the peek | one line run in a sheep's shell by the dog, outside any turn and outside the transcript, its stdout, stderr, and exit code returned | `POST /s/<id>/sh` on the cell; `sheep sh <id> [-- <line>]` |
@@ -80,8 +80,12 @@ Read from this checkout at `7aac0c8` and from town at `80496d2`, 14 Sep
   box with the operator's token townd reads, and runs the harness
   command once per check from an empty directory under an empty `HOME`,
   with its own environment less every `TOWN_*` name and `TOWN_GRANT` set
-  as the check says: pass A's grant, revoked pass B's, a value that is
-  no grant, or unset. Stdin is nothing, a pipe, a regular file, or a
+  as the check says, eight ways: pass A's grant as townd printed it,
+  indented; the same wrapped in white space; the same with a trailing
+  slash on its `town`, compacted; revoked pass B's; a JSON value that is
+  no grant; a bare token; a grant at a port nothing listens on; or
+  unset. Before any town, it runs the harness once with no grant and no
+  words, and an exit of 126 or 127 there is no verdict. Stdin is nothing, a pipe, a regular file, or a
   socket held open and never written. Thirty checks; two seconds on the
   laptop binary; five over the box.
 - **The dog reaches a cell over `/s/<id>/…`.** The router forwards
@@ -110,19 +114,22 @@ Read from this checkout at `7aac0c8` and from town at `80496d2`, 14 Sep
 `town` is `defineCommand` over the contract, one section at a time,
 and nothing that is not in the contract:
 
-- **Presence (§2, and the constellation's line).** The shell of a
-  sheep has `town` when the sheep carries a grant at the shell's build:
-  its own `TOWN_GRANT` row, or its pasture's secret of that name. A
-  sheep with neither has no `town`, and the line is just-bash's
-  not-found line annotated with the sentence `programs.ts` keeps for
-  it: `town: this sheep carries no grant; mint one with sheep new
-  --secret TOWN_GRANT, or set the pasture's`. The prompt's paragraph
-  names `town` only in a sheep that has it, as it names `look` only in
-  a cell with eyes. The value is read again at each run, through the
-  same lay-over `laidOver` gives setup, one name: a pasture's secret
-  set after the boot is used at the next run; a value that no longer
-  parses as a grant is §2's refusal, exit 3, and the line never holds
-  it.
+- **The grant (§2).** `town` is in every sheep's shell. At each run
+  the value is read through the same lay-over `laidOver` gives setup,
+  one name: the sheep's own `TOWN_GRANT` row over its pasture's secret
+  of that name. A sheep with neither is §2's first refusal, exit 3, one
+  line: `town: this sheep carries no grant; mint one with sheep new
+  --secret TOWN_GRANT, or set the pasture's`. A value that does not
+  parse as a grant, white space around the JSON allowed, is §2's
+  second, exit 3, and its line never holds the value. So a pasture's
+  secret set after a sheep's boot is used at that sheep's next run. The
+  prompt's paragraph names `town` only in a sheep that carries a grant
+  at its boot, as it names `look` only in a cell with eyes; the model
+  is told of a town it has, and the shell answers for the rest. (The
+  constellation's line gave a sheep with no grant no `town` and
+  just-bash's not-found line; conformance's no-grant checks want exit
+  3, and its probe takes 127 for a harness that cannot run, so the
+  contract wins.)
 - **The words (§3).** Every word as just-bash gave it, in order, empty
   words and spaces and non-ASCII kept; `--json` taken out wherever it
   stands and `"json": true` said. The program takes no flag of its own.
@@ -142,10 +149,12 @@ and nothing that is not in the contract:
   one line, `town: the town at <origin> did not answer (<what>)`, exit
   1. The program waits sixty seconds for an answer, twice the shop's
   time, and then says so the same way.
-- **The refusals (§7) and `--json`.** Two are the program's: a grant
-  value that holds no grant, exit 3, and a town that did not answer,
-  exit 1. With `--json` among the words each is the five-field envelope
-  on stdout, one line and a newline, stderr empty. Neither ever prints
+- **The refusals (§7) and `--json`.** Three are the program's: no
+  grant, exit 3; a grant value that holds no grant, exit 3; and a town
+  that did not answer, exit 1. The fourth, stdin that is not UTF-8,
+  cannot reach the cell, since just-bash hands a command text; it is
+  the bridge's. With `--json` among the words each is the five-field
+  envelope on stdout, one line and a newline, stderr empty. None ever prints
   the value or any part of it, and the test that reads every line of
   every refusal for the token's bytes is the rule made a test.
 - **Once (§10).** A call is posted once whatever its answer. No retry,
@@ -196,8 +205,12 @@ harness command town's script runs, and it is two things and no more:
   unset, names which sheep answers: one sheep per distinct value,
   minted on first use with `--secret TOWN_GRANT` and that value, or
   with no secret when the variable is unset, kept in `--state`'s
-  directory by the value's hash and reused for the run; four sheep in
-  a full run. The kennel, given by path since the script runs under an
+  directory by the value's hash and reused for the run. Earmark's value
+  is one line and townd prints a grant indented, so a value that parses
+  as JSON is compacted first, as the dog's `jq -c .` does, and one that
+  does not is sent as given; the spaced grant lands on pass A's sheep,
+  and a full run mints seven: pass A's, A's with the slash, B's, the
+  JSON that is no grant, the bare token, the closed port's, and none. The kennel, given by path since the script runs under an
   empty `HOME`, names the home and holds the token; `SHEEP_HOME` and
   `SHEEP_TOKEN` are read when no kennel is given. `--teardown` ends
   every sheep the state names.
@@ -208,7 +221,7 @@ harness command town's script runs, and it is two things and no more:
   bridge answers for, because only it has a descriptor.
 
 Every other check's behaviour is the cell's: the words go to the peek
-as given, and the peek's stdout, stderr, and exit come back unread. A
+as given, each quoted for the shell, and the peek's stdout, stderr, and exit come back unread. A
 mutation of the program, a retry on 500 say, fails conformance through
 the bridge; that is drove phase 1's falsification, and it is how a
 reader knows the bridge is not a harness of its own.

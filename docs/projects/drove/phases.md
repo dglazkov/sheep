@@ -38,8 +38,11 @@ resource, spend money, or need a login, and are asked out loud first.
 **Where we are: planned, 14 September 2026. Nothing built.** The next
 thing to do is `drove phase 0`, the program in the cell against a fake
 town in the checkout ring; no person is needed until drove phase 2's
-one ⚑ step, the second station. Town stands at `80496d2` (road done);
-this checkout at `7aac0c8`.
+one ⚑ step, the second station. Town stands at `473687e`, whose
+`docs/harness.md` and `scripts/conform.mjs` are road's `80496d2`; this
+checkout at `7aac0c8`. Before drove phase 0 the docs were brought to
+conformance's own terms: `town` is in every sheep's shell, a sheep with
+no grant refused at exit 3, and the bridge mints seven sheep, not four.
 
 The order is the order of dependence. Drove phase 0 is the program,
 which everything else runs. Drove phase 1 is the peek and the bridge,
@@ -58,28 +61,32 @@ the model's environment.
 
 **Closes:** journey 3 steps 1 to 5 in the cell's terms, and the
 contract's sections as journey 2 will check them, against a fake town
-in the same isolate; nothing on the command line, no route, no home.
+in the same isolate; no verb, no route, no home of its own.
 
 **Work:** `packages/cell/src/env/town-command.ts`: `town` as
-`defineCommand`, the design's "The program" section by section:
-presence decided at the shell's build from the sheep's rows and the
-pasture's, the value read at each run through the one-name lay-over,
+`defineCommand`, the design's "The program" section by section: in
+every sheep's shell, the value read at each run through the one-name
+lay-over,
 the words as given with `--json` taken out, stdin as given or `null`,
 the request's three headers and three fields to `/call` against the
 grant's origin, the answer's two streams written as given and its exit
 returned, a 500 with three fields an answer, everything else the
-did-not-answer line and exit 1 after at most sixty seconds, §2's
-refusal for a value that is no grant at exit 3, both refusals as the
+did-not-answer line and exit 1 after at most sixty seconds, §2's two
+refusals, no grant and a value that is no grant, at exit 3, all three
+refusals as the
 five-field envelope under `--json`, no retry, nothing parsed. The
-`fetch` handed in. `packages/cell/src/env/programs.ts`: the
-not-found sentence for `town`, in `look`'s shape, and the prompt's line
-for a sheep that has it. `packages/cell/src/env/execution-env.ts`: the
+`fetch` handed in. `packages/cell/src/env/programs.ts`: the prompt's
+line for a sheep that carries a grant at its boot, in `look`'s shape. `packages/cell/src/env/execution-env.ts`: the
 program pushed with `look`, its name in the tier-0 set, the grant
 source an option beside `eyes`. `packages/cell/src/cell.ts`: the
 source, `laidOver` for one name over the Directory and the pasture's
-object, and the presence read at the boot. `packages/cell/src/directory.ts`:
+object, and whether a grant is carried read at the boot for the
+prompt's line. `packages/cell/src/directory.ts`:
 `TOWN_GRANT` beside `GIT_TOKEN` as a secret a pastureless sheep can
-carry; the refusal's sentence names both and why. Tests:
+carry; the refusal's sentence names both and why.
+`packages/cli/src/earmark.ts`: the verb's twin of that refusal, the
+same two names and the home's sentence word for word, since the verb
+refuses before it asks. Tests:
 `packages/cell/test/town.test.ts` in the checkout ring, listed in
 `scripts/rings.mjs`, in `earmark.test.ts`'s shape: a fake town as a
 `fetch` that records each request and answers as the case scripts;
@@ -88,20 +95,22 @@ the returned streams and code, §3's four word shapes, §4's stdin bytes
 and `null`, §5's headers and fields, §6's bytes unchanged and a 500
 with `why`, §7's two refusals with and without `--json`, §8's codes
 passed through, §9's notice lines untouched, §10's one request on a
-500 and on a timeout; presence: no `town` and the annotated not-found
-line for a sheep with neither source, `town` for a pasture's grant,
-the sheep's over the pasture's, a pasture's set after the boot not
-present until the next boot; the search: the token's bytes in no
+500 and on a timeout; the grant's source: §2's no-grant line at exit
+3 and a prompt silent on `town` for a sheep with neither, a pasture's
+grant used and named in the prompt, the sheep's over the pasture's, a
+pasture's set after the boot used at the next run while the prompt
+stays the boot's; §2's white space around the JSON a grant; the search: the token's bytes in no
 returned line, no log line, the shell's `env`, and no row of the
-cell's storage. `packages/cell/test/earmark.test.ts`: the pastureless
-refusal's new sentence.
+cell's storage. `packages/cell/test/earmark.test.ts`, `packages/cli/test/earmark.test.ts`,
+and `packages/cli/test/journey5.test.ts`: the pastureless refusal's new
+sentence, and `TOWN_GRANT` taken on a pastureless mint.
 
 **Not this phase:** No verb, no route, no bridge, no conformance run,
 no doc outside the project.
 
 **Proof:** `pnpm test` exits 0 with the new file in the checkout ring
-and the rings guard green; `pnpm --filter @sheep/cell typecheck` exits
-0. Falsified by three mutations, each failing the new test and put
+and the rings guard green; `pnpm --filter @sheep/cell typecheck` and
+`pnpm --filter @sheep/cli typecheck` exit 0. Falsified by three mutations, each failing the new test and put
 back: a second request after a 500; a newline added to `stdout`; the
 value printed in §2's refusal. **⚑** none.
 
@@ -132,8 +141,9 @@ guide names a pastureless sheep's secret; the guide within its word
 cap. `scripts/conform-sheep.mjs`: the bridge as the design's "The
 bridge": `--kennel <dir>` read for the home and token, `SHEEP_HOME` and
 `SHEEP_TOKEN` when none, `--state <dir>` mapping the hash of
-`TOWN_GRANT` to a sheep id, the mint on first use with or without the
-secret, §4 on the laptop, the peek with the words as given and the
+`TOWN_GRANT`, compacted when it parses as JSON, to a sheep id, the mint
+on first use with or without the secret, §4 on the laptop, the peek
+with the words as given, each quoted for the shell, and the
 streams and code returned unread; `--teardown`. Tests:
 `packages/cli/test/journey-drove.test.ts` in the home ring, in
 `journey5.test.ts`'s shape against the faux provider: journey 4 steps
@@ -159,7 +169,7 @@ node <town>/scripts/conform.mjs -- node <sheep-drove>/scripts/conform-sheep.mjs 
 ```
 
 printing `conformant: 30 checks` and exit 0, twice, `sheep ls` showing
-four bridge sheep and no more after the second run, and `--teardown`
+seven bridge sheep and no more after the second run, and `--teardown`
 ending them. Falsified by one mutation in the cell, a retry on 500,
 which fails conformance's no-retry check through the bridge and is put
 back: that is the proof the bridge answers for §4 and nothing else.
