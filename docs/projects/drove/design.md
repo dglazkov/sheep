@@ -216,8 +216,9 @@ harness command town's script runs, and it is two things and no more:
   and a full run mints seven: pass A's, A's with the slash, B's, the
   JSON that is no grant, the bare token, the closed port's, and none. The kennel, given by path since the script runs under an
   empty `HOME`, names the home and holds the token; `SHEEP_HOME` and
-  `SHEEP_TOKEN` are read when no kennel is given. `--teardown` ends
-  every sheep the state names.
+  `SHEEP_TOKEN` are read when no kennel is given. The state records the
+  kennel or home it minted on beside the ids, so `--teardown` ends every
+  sheep the state names with nothing else given.
 - **§4 on the laptop.** Its own stdin is read to the end when it is a
   pipe or a regular file, refused as exit 1 before any peek when it is
   not UTF-8, and left alone when it is anything else; what was read is

@@ -169,8 +169,10 @@ cap. `scripts/conform-sheep.mjs`: the bridge as the design's "The
 bridge": `--kennel <dir>` read for the home and token, `SHEEP_HOME` and
 `SHEEP_TOKEN` when none, `--state <dir>` mapping the hash of
 `TOWN_GRANT`, compacted when it parses as JSON, to a sheep id, the mint
-on first use with or without the secret, §4 on the laptop, the peek
-with the words as given, each quoted for the shell, and the
+on first use with or without the secret, the home it minted on
+written beside the ids so `--teardown` needs only `--state`, §4 on the
+laptop, the peek with the words as given, each quoted for the shell,
+and the
 streams and code returned unread; `--teardown`. Tests:
 `packages/cli/test/journey-drove.test.ts` in the home ring, in
 `journey5.test.ts`'s shape against the faux provider: journey 4 steps
@@ -180,7 +182,9 @@ starts on a free port, which `wrangler dev`'s workerd reaches; the
 grant's bytes in no line `sheep log`, `sheep export`, `sheep status`,
 and `sheep sh <id> -- env` print. `packages/cell/test/`: the route's
 409 and its shape, in the checkout ring, in `cell.test.ts`'s file or
-a sibling in the same ring.
+a sibling in the same ring, and journey 4 step 5 against the fake
+container: a pastured sheep's peek of a line the router sends to the
+container answers with the container's streams and code.
 
 **Not this phase:** No station, no box, no stage.
 
