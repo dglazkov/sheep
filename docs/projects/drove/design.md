@@ -186,14 +186,17 @@ the only caller `Shell.exec` has. `POST /s/<id>/sh` is that carrier,
 and `sheep sh <id> [-- <line>]` its verb: the line is run in the
 sheep's shell exactly as a bash call of the model's would be, the same
 router, the same tier, the same working directory, its stdin the
-request's `stdin` when there is one, and the cell answers `{ stdout,
-stderr, exit }`. The verb prints the two streams as given and exits
-with the code; with stdin piped or a file, it sends it.
+request's `stdin`, the bytes as base64, when there is one, and the cell
+answers `{ stdout, stderr, exit }`. A line the router sends to the
+container carries those bytes in its `run` frame. The verb prints the
+two streams as given and exits with the code; with stdin piped or a
+file, it sends the bytes as read, and decides nothing about them.
 
 A peek is not a turn: no entry in the transcript, no model call, and
 `sheep log` does not show it. It is refused with a sentence and a 409
-while a turn is open, so a dog and the model never interleave in one
-shell; the dog waits or aborts first. It runs under the home's token
+while a turn is open, and a prompt that arrives while a peek runs
+waits for the peek to end, so a dog and the model never interleave in
+one shell; the dog waits or aborts first. It runs under the home's token
 like every verb, on a station as on a local home, which is why it is a
 verb and not a test-only route behind the faux provider: the proof runs
 against a real station. Its one purpose today is conformance and the
@@ -209,7 +212,9 @@ harness command town's script runs, and it is two things and no more:
   unset, names which sheep answers: one sheep per distinct value,
   minted on first use with `--secret TOWN_GRANT` and that value, or
   with no secret when the variable is unset, kept in `--state`'s
-  directory by the value's hash and reused for the run. Earmark's value
+  directory by the value's hash and reused for the run; conformance
+  makes a new town and passes each run, so a second run's grants are
+  new sheep, and only the no-grant sheep outlives a run. Earmark's value
   is one line and townd prints a grant indented, so a value that parses
   as JSON is compacted first, as the dog's `jq -c .` does, and one that
   does not is sent as given; the spaced grant lands on pass A's sheep,
@@ -220,15 +225,19 @@ harness command town's script runs, and it is two things and no more:
   kennel or home it minted on beside the ids, so `--teardown` ends every
   sheep the state names with nothing else given.
 - **§4 on the laptop.** Its own stdin is read to the end when it is a
-  pipe or a regular file, refused as exit 1 before any peek when it is
-  not UTF-8, and left alone when it is anything else; what was read is
-  sent in the peek as `stdin`. This is the one contract rule the
-  bridge answers for, because only it has a descriptor.
+  pipe or a regular file and left alone when it is anything else; what
+  was read is sent in the peek as bytes. Whether to read is the one
+  contract rule the bridge answers for, because only it has a
+  descriptor. Whether the bytes are text is the program's, after the
+  grant is found, as §7 orders them: a sheep with no grant and bytes
+  that are not UTF-8 is exit 3, which a bridge that checked first would
+  have made exit 1.
 
 Every other check's behaviour is the cell's: the words go to the peek
 as given, each quoted for the shell, and the peek's stdout, stderr, and exit come back unread. A
-mutation of the program, a retry on 500 say, fails conformance through
-the bridge; that is drove phase 1's falsification, and it is how a
+mutation of the program, a second post of a call whose answer's exit
+is not 0 say, fails conformance through the bridge (its town answers
+every call at 200, so a retry keyed on a 500 is never seen); that is drove phase 1's falsification, and it is how a
 reader knows the bridge is not a harness of its own.
 
 ## The grant, and earmark

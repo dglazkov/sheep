@@ -153,15 +153,17 @@ exit 0, and each of the three mutations fails the new test.
 home; journey 3 steps 1 to 5 on the command line.
 
 **Work:** `packages/cell/src/cell.ts`: `POST /sh`, body `{ line,
-stdin? }`, the line through the runtime's `Shell.exec` as a bash call
-of the model's would go, no transcript entry and no model call, the
-answer `{ stdout, stderr, exit }`; a 409 with one sentence while a
-turn is open; the router forwards it under `/s/<id>/sh` as it does the
-rest. `packages/cli/src/cli.ts`, `home.ts`: `sheep sh <id> [-- <line>]`,
+stdin? }`, `stdin` the bytes as base64, the line through the runtime's
+router and tiers as a bash call of the model's would go, no transcript
+entry and no model call, the answer `{ stdout, stderr, exit }`; a 409
+with one sentence while a turn is open, and a prompt that arrives
+during a peek waiting for it; the router forwards it under
+`/s/<id>/sh` as it does the rest. `packages/pen/src/`: the `run`
+frame's optional stdin, the bytes, piped into a container line. `packages/cli/src/cli.ts`, `home.ts`: `sheep sh <id> [-- <line>]`,
 the line joined from the words after `--`, stdin sent when it is a
 pipe or a file, the streams printed as given, the code returned, the
 409 as exit 2 with the sentence, an unknown session as every verb has
-it; the usage's line, and `--agent-help`'s sentence for it.
+it, exit 2; the usage's line, and `--agent-help`'s sentence for it.
 `packages/cli/agent-guide.md`, `README.md`, `SKILL.md`: the verb in one
 sentence each; `--secret TOWN_GRANT` beside `GIT_TOKEN` where the
 guide names a pastureless sheep's secret; the guide within its word
@@ -171,14 +173,15 @@ bridge": `--kennel <dir>` read for the home and token, `SHEEP_HOME` and
 `TOWN_GRANT`, compacted when it parses as JSON, to a sheep id, the mint
 on first use with or without the secret, the home it minted on
 written beside the ids so `--teardown` needs only `--state`, §4 on the
-laptop, the peek with the words as given, each quoted for the shell,
-and the
-streams and code returned unread; `--teardown`. Tests:
+laptop, whether to read and nothing about what was read, the peek with
+the words as given, each quoted for the shell, and the streams and
+code returned unread; `--teardown`. Tests:
 `packages/cli/test/journey-drove.test.ts` in the home ring, in
 `journey5.test.ts`'s shape against the faux provider: journey 4 steps
 1 to 4 and 6 with the faux model holding a turn for step 4; journey 3
-steps 1, 2, and 4 through `sheep sh` against a fake town the test
-starts on a free port, which `wrangler dev`'s workerd reaches; the
+steps 1 to 5 through `sheep sh` against a fake town the test starts on
+a free port, which `wrangler dev`'s workerd reaches, step 1's prompt
+read through `sheep export`; the
 grant's bytes in no line `sheep log`, `sheep export`, `sheep status`,
 and `sheep sh <id> -- env` print. `packages/cell/test/`: the route's
 409 and its shape, in the checkout ring, in `cell.test.ts`'s file or
@@ -189,7 +192,8 @@ container answers with the container's streams and code.
 **Not this phase:** No station, no box, no stage.
 
 **Proof:** `pnpm test` exits 0 across all three inner rings, the home
-ring's new file carrying journey 4; `pnpm --filter @sheep/cli
+ring's new file carrying journey 4, run with no local home in the
+kennel (`setup.test.ts` reads this checkout's kennel); `pnpm --filter @sheep/cli
 typecheck` and `pnpm --filter @sheep/cell typecheck` exit 0. Then
 journey 2 steps 1 to 4, typed by the conductor: a local home up in
 this checkout's kennel (`sheep home local`, no container needed), a
@@ -200,10 +204,11 @@ node <town>/scripts/conform.mjs -- node <sheep-drove>/scripts/conform-sheep.mjs 
 ```
 
 printing `conformant: 30 checks` and exit 0, twice, `sheep ls` showing
-seven bridge sheep and no more after the second run, and `--teardown`
-ending them. Falsified by one mutation in the cell, a retry on 500,
-which fails conformance's no-retry check through the bridge and is put
-back: that is the proof the bridge answers for §4 and nothing else.
+seven bridge sheep after the first run and thirteen after the second,
+and `--teardown` ending all of them. Falsified by one mutation in the
+cell, a second post of a call whose answer's exit is not 0, which fails
+conformance's call-once check through the bridge and is put back: that
+is the proof the bridge answers for §4 and nothing else.
 **⚑** none.
 
 **Status: NOT STARTED.** 2026-09-14.

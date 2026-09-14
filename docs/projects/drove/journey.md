@@ -78,10 +78,12 @@ home up in this checkout's kennel.
    is compacted to a line: pass A's, A's with a trailing slash, pass
    B's, a JSON value that is no grant, a bare token, a grant at a closed
    port, and none.
-3. Run again, the same thirty lines, and `sheep ls` still shows seven:
-   the bridge reused them.
+3. Run again with the same `--state`, the same thirty lines, exit 0.
+   `sheep ls` shows thirteen: conformance makes a new town and new
+   passes each run, so six of its grants are new sheep, and the sheep
+   with no grant is the one reused.
 4. `node <sheep>/scripts/conform-sheep.mjs --state <dir> --teardown`
-   ends the seven; `sheep ls` shows none of them.
+   ends every sheep the state names; `sheep ls` shows none of them.
 5. With the second station in the kennel instead of the local home and
    `--town <box>` given to conformance, the same thirty lines, exit 0:
    the sheep's `town` reached the box over the wire from the cell.
@@ -123,10 +125,11 @@ home up in this checkout's kennel.
 4. While a turn is open, `sheep sh <id> -- true` exits 2 with one
    sentence: the sheep is mid-turn; wait or abort first. `sheep abort
    <id>`, and the same peek exits 0.
-5. `sheep sh <id> -- 'ls /'` on a sheep in a pasture with a container
-   runs where the router sends it, and prints the container's root: a
-   peek is the shell, whole, and not a second shell.
-6. `sheep sh nosuch -- true` exits 1 with the home's sentence for an
+5. `sheep sh <id> -- 'ls / && git status'` on a sheep in a pasture with
+   a container runs where the router sends it, the container, and
+   prints the container's root: a peek is the shell, whole, and not a
+   second shell.
+6. `sheep sh nosuch -- true` exits 2 with the home's sentence for an
    unknown session, the one every verb gives.
 
 ## Journey 5: The walk, as a script
