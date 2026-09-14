@@ -157,7 +157,10 @@ nothing else:
 - **The routes**, `DaemonRoutes` over `fetch`, with the badge store as a
   parameter (`read`, `keep`) rather than `@isocan/server`'s file. The door
   hands a badge to a badge-less caller and the client keeps it; the host
-  decides where.
+  decides where. The room declares the calls it makes as `RoomRoutes`,
+  and `isocan/rc` exports `DaemonRoutes` itself, so a host constructs
+  isocan's client over its own `fetch` and never writes the wire again
+  (collie phase 1 asks isocan for that export).
 - **The rows**: the rc half of the enrolment record, as an interface with
   the five verbs isocan's `rc.ts` has.
 - **The adapter**: `ensureSession`, `prompt`, `close`, as today; and

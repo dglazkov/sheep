@@ -114,6 +114,15 @@ conductor verified the acceptance from a scratch install on 14 Sep.
 **Closes:** journeys 1 (steps 5 to 7), 2 (steps 2 and 4), and 3 against
 the fakes; journey 5 steps 3 to 5; journey 6 step 1.
 
+**Work (isocan, first):** `DaemonRoutes` reachable from `isocan/rc`, the
+entry with no Node in it, so a host constructs isocan's own route client
+over its `fetch` and a badge store rather than writing one: the room
+declares `RoomRoutes` and exports no implementation, the package's root
+entry is tsx-registered Node, and `redeemPass`, `mintPass`, and
+`killBadge`, which the body needs beside the room's thirteen, are
+`DaemonRoutes`' too. A commit on isocan's `main` under its conventions,
+its boundary test extended to the export, and the pin below its release.
+
 **Work:** `packages/collie`, new, `@sheep/collie`, the Worker:
 `wrangler.jsonc` (name `collie`, `Collie` in `durable_objects` and
 migration `v1` as `new_sqlite_classes`, `nodejs_compat`, no `pen`
@@ -128,11 +137,12 @@ ring; `scripts/bundle.mjs` adds `packages/cli/src/collie/cli.ts` →
 `collie/worker.mjs` with `collie/wrangler.jsonc`, `scripts/release.mjs`
 carries them, the root manifest's `bin` gains `collie`, and
 `.gitignore` gains `/collie/`. `src/index.ts`, the router: the bearer (`COLLIE_TOKEN`), the
-`x-collie-build` header, `GET /` answering `collie`, `GET /home` (the
-build, the rooms' count and state), `POST /passes`, `GET /` the report,
+`x-collie-build` header, `GET /` answering `collie` without the bearer
+as the station's answers `sheep`, `GET /home` (the
+build, the rooms' count and state), `POST /passes`, `GET /report` the report,
 `GET /log?since=`, `POST /off`, `POST /on`, `DELETE /` the end;
 `src/collie.ts`, the object: tables `badges`, `rooms`, `agents`, `state`,
-`narration`; `passes(address)` — the routes client for that isocan home
+`narration`; `passes(address)` — isocan's `DaemonRoutes` for that isocan home
 over a badge store backed by `badges`, `redeemPass`, and then, when the
 pass admitted a canvas, the room and the loop, or, when it endowed an
 agent, the row and a line; `runRoom` per room under `waitUntil` with the
@@ -174,7 +184,7 @@ watch, park claim and delivered and advance, hold with an ask, ops,
 sessions on one; `/sessions`, `/sessions/<id>` with a setup state,
 `/pastures`, the file routes, `/s/<id>/prompt`, a transcript long poll
 that answers tip by tip, `/s/<id>` `DELETE` on the other — and the cases
-are journey 1 steps 3 to 5 (the ask enrols; a mention births a sheep into
+are journey 1 steps 5 to 7 (the ask enrols; a mention births a sheep into
 `isocan-percy` with `ISOCAN_PASS` in its secrets; the summons text equals
 isocan's for the same entries; the face's beats and end; the cursor
 advanced; the narration's lines), journey 3 (off releases the hold before
@@ -185,7 +195,7 @@ cell's turn ends; the alarm's restart rejoins and advances once) and
 step 4 (the fake isocan refusing connections for a while; `back after`),
 journey 5 steps 3 and 5 (isocan's spent and expired sentences relayed;
 the sheep-home floor's sentence). `packages/collie/test/router.test.ts`: every route
-carries the header and refuses without the bearer.
+carries the header, and every route but `GET /` refuses without the bearer.
 `packages/cli/test/collie.test.ts` (command): the verbs against a fake
 collie Worker beside the fake station — `--pass` at a hidden
 prompt and on stdin, the address in no argument (the spawned command's
