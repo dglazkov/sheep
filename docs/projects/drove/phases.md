@@ -270,9 +270,10 @@ stage is what stranger will wrap.
 hold (`shop ls` at 14 Sep 2026: `town/memory`, `town/gdocs`,
 `town/hall`, `dimitri/lookout`): `townd admin --town <box> shop add -`
 from town's `shops/github`, a `github-token` credential for the user,
-whose token is the shepherd's to give, and an issue on a repository
-that token can comment on, which the shepherd names; no cost but the
-box's requests. And the second station: `sheep home deploy` from
+whose token is the shepherd's to give, added before the shop, since
+`shop add --user` runs the shop's tests on that credential, and an
+issue on a repository that token can comment on, which the shepherd
+names; no cost but the box's requests. And the second station: `sheep home deploy` from
 `../sheep-drove`, a Worker and a container application named by
 kennel's rule from the directory on the account's Workers Paid plan
 that already exists; its cost the objects' storage at idle, a
@@ -282,7 +283,9 @@ requests. It stays after the walk as the standing second station, and
 with its sentence; journey 2 step 5 and journey 1 need only the
 station.
 
-**Proof:** `pnpm test` exits 0 across the three inner rings. Then, in
+**Proof:** `pnpm test` exits 0 across the three inner rings, with the
+kennel's config set aside for the run and put back (`setup.test.ts`
+reads this checkout's kennel, which names the station). Then, in
 order, typed by the conductor and recorded in the findings with town's
 commit and the station's stamp:
 
@@ -297,8 +300,10 @@ commit and the station's stamp:
    `--teardown` on the first run's root.
 
 Falsified by one mutation in the stage, the search made to skip the
-export, which is seen to miss a token planted in a scratch sheep's
-workspace by hand, and put back. A phase with a walk is not CLOSED
+log and the export, which is seen through `--search` to miss a token
+planted in a scratch sheep's transcript by a prompt that holds it, and
+put back. (A workspace file was the plan; `sheep export` holds no
+workspace, so it hid the token from the search whole.) A phase with a walk is not CLOSED
 until the walk is walked.
 
 **Status: NOT STARTED.** 2026-09-14.

@@ -56,7 +56,7 @@ The dog holds a grant for the operator's box, minted with `townd admin
    among it. No line of the log holds the token's bytes.
 4. `sheep sh <id> -- env` prints the shell's environment, and
    `TOWN_GRANT` is not in it. `sheep sh <id> -- 'town memory
-   remember "the drove walk"'` exits 0, and the town's audit, `townd
+   remember --key drove/walk --value "the drove walk"'` exits 0, and the town's audit, `townd
    admin --town <box> audit --pass <id>`, shows both calls under this
    pass with their results.
 5. `townd admin --town <box> pass revoke <id>`, then `sheep sh <id> --

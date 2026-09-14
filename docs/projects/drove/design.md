@@ -278,6 +278,7 @@ install named by `--townd <path>`, and never reads either's files:
 node scripts/drove.mjs --box <url> --user <name> --repo <owner/name> --issue <n> [--townd <path>] [--kennel <dir>] [--keep]
 node scripts/drove.mjs --status <root>
 node scripts/drove.mjs --teardown <root>
+node scripts/drove.mjs --search <id> [--kennel <dir>] < token
 ```
 
 The stage, in order: a pass on the box for the user, `townd admin
@@ -291,8 +292,12 @@ with `sheep attach <id> -- <sentence>`; `sheep wait <id>`; then the
 reading: `sheep log --json <id>` to the root, `townd admin --town <box>
 audit --pass <id>` beside it, and the search: the token's bytes looked
 for in the log, in `sheep export`, in `sheep status`, and in the peek's
-`env`, and named if found; then `pass revoke`, and `sheep rm` unless
-`--keep`. The report is one block: the sheep's id, the pass's id, the
+`env`, and named if found; then `pass revoke` and `sheep rm`, both
+unless `--keep`, whose pass and sheep `--teardown` revokes and ends.
+`--search` is the search alone over one sheep, the token on stdin, so
+the search can be seen to fail. `sheep export` is pi's tables, the
+transcript and the session's values, and never the workspace, so the
+places a token can reach are the transcript's and the shell's. The report is one block: the sheep's id, the pass's id, the
 calls the audit holds by command and result, the memory row and the
 comment the walk left, and the search's verdict. The token goes from
 townd's stdout to `sheep new`'s stdin and nowhere else: not argv, not a
