@@ -35,14 +35,15 @@ resource, spend money, or need a login, and are asked out loud first.
 
 ---
 
-**Where we are: planned, 14 September 2026. Nothing built.** The next
-thing to do is `drove phase 0`, the program in the cell against a fake
-town in the checkout ring; no person is needed until drove phase 2's
-one ⚑ step, the second station. Town stands at `473687e`, whose
-`docs/harness.md` and `scripts/conform.mjs` are road's `80496d2`; this
-checkout at `7aac0c8`. Before drove phase 0 the docs were brought to
-conformance's own terms: `town` is in every sheep's shell, a sheep with
-no grant refused at exit 3, and the bridge mints seven sheep, not four.
+**Where we are: drove phase 0 closed, 14 September 2026; drove phase 1
+is next,** the peek, `sheep sh`, the bridge, and conformance on the
+local home. `town` is in every sheep's shell, written from town's
+contract and proved in workerd against a fake town: the grant read at
+each run, the sheep's over the pasture's, refused at exit 3 when there
+is none or it is no grant, and nowhere a shell, a row, a log line, or
+setup can see. No person is needed until drove phase 2's one ⚑ step,
+the second station. Town stands at `473687e`, whose
+`docs/harness.md` and `scripts/conform.mjs` are road's `80496d2`.
 
 The order is the order of dependence. Drove phase 0 is the program,
 which everything else runs. Drove phase 1 is the peek and the bridge,
@@ -114,11 +115,37 @@ and the rings guard green; `pnpm --filter @sheep/cell typecheck` and
 back: a second request after a 500; a newline added to `stdout`; the
 value printed in §2's refusal. **⚑** none.
 
-**Status: NOT STARTED.** 2026-09-14.
+**Status: CLOSED.** 2026-09-14. `pnpm test` exits 0 across the three
+inner rings with `town.test.ts` in the checkout ring, both typechecks
+exit 0, and each of the three mutations fails the new test.
 
 **Findings:**
 
-(none yet)
+- **2026-09-14 — Conformance decided presence.** Its no-grant checks
+  want exit 3, and its probe takes 127 for a harness that cannot run, so
+  `town` is in every shell and the not-found line was dropped before
+  building. Town at `473687e`.
+- **2026-09-14 — The answer is the three fields at any status.** §6
+  says so; the design's 200-or-500 would have made a revoked pass's exit
+  3 at a 401 an exit 1. The design was corrected.
+- **2026-09-14 — just-bash hands a command bytes.** Stdin is a latin1
+  string, so `town < file` can carry non-UTF-8, and §4's exit-1 refusal
+  is the program's as well as the bridge's.
+- **2026-09-14 — The first build put the grant in setup's environment.**
+  `laidOver` stripped `GIT_TOKEN` only; the conductor's reading sent it
+  back, and a test now reads setup's `run` frames, bleat's record, and
+  the logs for the token.
+- **2026-09-14 — A `town` with a path, query, or user is no grant.** §5
+  allows refusing it or posting at its origin; refusing never sends a
+  token somewhere the grant did not name exactly.
+- **2026-09-14 — "Carried at its boot" means the value parses.** A
+  sheep minted with a value that is no grant is not told of `town`; its
+  shell refuses at exit 3.
+- **2026-09-14 — A checkout with no kennel failed `setup.test.ts`.**
+  `~/.sheep/config` on this machine was reachable from `../sheep-drove`,
+  so setup made no kennel; the checkout now has its own `.sheep/`.
+- **2026-09-14 — The phase took about an hour and a half** of wall
+  clock, the builder's first pass seventeen minutes, the full suite two.
 
 ## Phase 1: The peek, the bridge, and conformance
 

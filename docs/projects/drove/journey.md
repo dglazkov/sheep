@@ -1,8 +1,8 @@
 ---
-status: planned
+status: partial
 since: 2026-09-14
 see: drove
-note: "planned 14 Sep 2026 from town's sheep constellation, the morning road closed: `town` as a tier-0 program in the cell, the grant a sheep's earmark or its pasture's secret, proved by road's conformance script through a peek into the sheep's shell, and closed by a walk shipped as a script, a dog minting a sheep with a grant from the operator's box that works memory and github. Built in a second checkout, ../sheep-drove, on branch drove, against a second station of its own."
+note: "planned 14 Sep 2026 from town's sheep constellation, the morning road closed: `town` as a tier-0 program in the cell, the grant a sheep's earmark or its pasture's secret, proved by road's conformance script through a peek into the sheep's shell, and closed by a walk shipped as a script, a dog minting a sheep with a grant from the operator's box that works memory and github. Built in a second checkout, ../sheep-drove, on branch drove, against a second station of its own. Drove phase 0 closed the same day: `town` in every sheep's shell, written from the contract alone, the grant read at each run and kept out of the shell, setup, rows, and logs, proved in workerd against a fake town with three mutations falsified; the peek, the bridge, and conformance are next."
 ---
 
 # Drove — the journeys

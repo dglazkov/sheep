@@ -33,6 +33,7 @@ import { BIRTH_ENTRY, BIRTH_TAIL_BYTES, BIRTH_TAIL_LINES, BIRTH_TIMEOUT_S, type 
 import { SETUP_KEPT, SETUP_KEY_PREFIX, type SetupRecord, setupRecordKey, setupTail } from "./bleat.ts";
 import { type LaneState, taskOf } from "./directory.ts";
 import { CellExecutionEnv, type ContainerLineResult, type SetupEnd, type SetupEvent, type SetupSecrets } from "./env/execution-env.ts";
+import { parseGrant, TOWN_GRANT, type TownFetch, type TownSource } from "./env/town-command.ts";
 import { eyesFor, sessionFor } from "./eyes/eyes.ts";
 import { type CellModels, createCellModels, type FauxProgram, isFauxProgram } from "./models.ts";
 import type { CacheCommit, Pasture } from "./pasture.ts";
@@ -126,6 +127,11 @@ export interface EvictionTestHooks {
   /** Tool effects observed, by tool name. */
   effects: Record<string, number>;
   starter?: ContainerStarter;
+  /**
+   * Drove phase 0: the town the `town` program posts to, in place of the Worker's own `fetch`; asked at each call, so a
+   * test may set it before or after the boot. A fake town that records each request and answers as its case scripts.
+   */
+  fetch?: TownFetch;
 }
 
 /** The text of a user entry's message: the string it was, or its text parts, an image being no words. */
@@ -139,7 +145,9 @@ function promptText(entry: MessageEntry): string {
 /**
  * Setup's environment for one sheep (earmark phase 0): the pasture's
  * secrets, then the sheep's own laid over them by name, `GIT_TOKEN` out of
- * both, each read at the moment setup runs and kept nowhere. The env asks
+ * both, and (drove phase 0) `TOWN_GRANT` out of both as well, since the
+ * grant is the `town` program's and never a shell's environment; each read
+ * at the moment setup runs and kept nowhere. The env asks
  * at each setup run; this is what it asks. Fold phase 1: the answer says
  * which names were the sheep's own, from the same read, so a setup whose
  * environment held one never keeps the pasture's cache; no second read of
@@ -149,10 +157,26 @@ export function laidOver(pasture: { secrets(): Promise<Record<string, string>> }
   return {
     async setupEnvironment() {
       const [herds, own] = await Promise.all([pasture.secrets(), sheep.secrets()]);
-      const { [PASTURE_GIT_TOKEN]: _pastureToken, ...shared } = herds;
-      const { [PASTURE_GIT_TOKEN]: _sheepToken, ...mine } = own;
+      const { [PASTURE_GIT_TOKEN]: _pastureToken, [TOWN_GRANT]: _pastureGrant, ...shared } = herds;
+      // A sheep's own grant is not in `own` either, so it neither reaches setup nor, by itself, keeps the pasture's cache from being kept.
+      const { [PASTURE_GIT_TOKEN]: _sheepToken, [TOWN_GRANT]: _sheepGrant, ...mine } = own;
       return { environment: { ...shared, ...mine }, own: Object.keys(mine).sort() };
     },
+  };
+}
+
+/**
+ * One secret's value for one sheep (drove phase 0), `laidOver`'s rule for
+ * a single name: the sheep's own row, from the Directory, over its
+ * pasture's secret of that name, both read now and kept nowhere; `undefined`
+ * when neither has one. A pastureless sheep has only its own. The `town`
+ * program asks this at every run, so a pasture's secret set after the
+ * boot is the next run's.
+ */
+export function laidOverOne(name: string, pasture: { secret(name: string): Promise<string | undefined> } | undefined, sheep: SheepSecrets): () => Promise<string | undefined> {
+  return async () => {
+    const [herds, own] = await Promise.all([pasture === undefined ? undefined : pasture.secret(name), sheep.secrets()]);
+    return own[name] ?? herds ?? undefined;
   };
 }
 
@@ -249,6 +273,17 @@ export class SessionCell extends DurableObject<Env> {
     // The sheep's own secrets (earmark phase 0), from the Directory, at the moment of each use: setup's run and the broker.
     const sheep: SheepSecrets = { secrets: () => directory.secrets(this.sessionId) };
     const lease = this.leaseFor(pasture === undefined || object === undefined ? undefined : { name: pasture.name, object }, sheep);
+    // Drove phase 0: the grant, `TOWN_GRANT` laid over by name, read at each run of `town`; and once here, at the boot, for
+    // whether the prompt names `town` at all. Only whether it holds a grant is kept, never the value.
+    const grant = laidOverOne(TOWN_GRANT, object, sheep);
+    const carried = await grant().then(
+      (value) => value !== undefined && parseGrant(value) !== undefined,
+      (error: unknown) => {
+        console.error(`[cell ${this.sessionId}] could not read whether this sheep carries a grant:`, error instanceof Error ? error.message : error);
+        return false;
+      },
+    );
+    const town: TownSource = { grant, carried, fetch: (input, init) => (this.test.fetch ?? fetch)(input, init) };
     this.#lease = lease;
     // Tier 1 belongs to any home with the loader, container or not; `lease.socket` is whether a container is up.
     const loader = this.env.LOADER;
@@ -258,6 +293,8 @@ export class SessionCell extends DurableObject<Env> {
       // The eyes (eyes phase 1), over the env's own files table and this cell's SQLite for the session row; `eyesFor` decides
       // whether this home has any, and a home without the binding gets none and no `look`.
       eyes: (files) => eyesFor(this.env, files, this.ctx.storage.sql),
+      // The town program (drove phase 0), in every sheep's shell: the grant's source and the Worker's own `fetch`.
+      town,
       // Bleat phase 0: the sink, closing over the Directory stub and this cell's storage and nothing else — the lane is
       // not made yet when the birth's setup runs through it, and is not what a setup has anything to say to.
       onSetup: (event) => this.recordSetup(directory, event),

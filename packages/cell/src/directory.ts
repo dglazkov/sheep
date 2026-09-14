@@ -35,6 +35,7 @@ import { uuidv7 } from "@earendil-works/pi-ai";
 import { DurableObject } from "cloudflare:workers";
 import { type SetupState, setupEndedState, setupEvictedState, setupStartedState, setupStateOf } from "./bleat.ts";
 import type { SetupEnd } from "./env/execution-env.ts";
+import { TOWN_GRANT } from "./env/town-command.ts";
 import type { FauxProgram } from "./models.ts";
 import { badPastureName, isPastureName, isSecretName, SETUP_EXCLUDED_SECRET } from "./pasture.ts";
 
@@ -81,14 +82,22 @@ export function noContainerForRepository(name: string): string {
   return `pasture ${name} has a repository, and this home has no container to clone it with; a pasture with no repository would work here`;
 }
 
-/** The one secret a sheep born into no pasture can carry: it has no setup, so only the broker's `GIT_TOKEN` reaches anything. */
-export const PASTURELESS_SECRET = SETUP_EXCLUDED_SECRET;
+/**
+ * The secrets a sheep born into no pasture can carry: it has no setup, so only a secret something else reads reaches
+ * anything: the broker's `GIT_TOKEN`, and (drove phase 0) `TOWN_GRANT`, which the `town` program reads.
+ */
+export const PASTURELESS_SECRETS: readonly string[] = [SETUP_EXCLUDED_SECRET, TOWN_GRANT];
+
+/** The refusal of any other name on a pastureless sheep: the two names, and why each reaches something. The verb says it word for word. */
+export function pasturelessRefusal(name: string): string {
+  return `a sheep born into no pasture has no setup, so it can carry only ${SETUP_EXCLUDED_SECRET}, which the broker reads, and ${TOWN_GRANT}, which town reads; not ${name}`;
+}
 
 /**
  * A mint's `secrets` (earmark phase 0), checked before any row: an object of
  * name to value, each name an environment variable's, each value a
  * non-empty string of one line, and, for a sheep born into no pasture, no
- * name but `GIT_TOKEN`. Absent or `null` is none. The refusal is one
+ * name but `GIT_TOKEN` and `TOWN_GRANT`. Absent or `null` is none. The refusal is one
  * sentence that names a name at most, never a value.
  */
 export function mintSecrets(given: unknown, pasture: string | null): { secrets: Record<string, string> } | { refused: string } {
@@ -98,9 +107,7 @@ export function mintSecrets(given: unknown, pasture: string | null): { secrets: 
   for (const [name, value] of entries) {
     if (!isSecretName(name)) return { refused: `a secret's name is an environment variable's, not ${JSON.stringify(name)}` };
     if (typeof value !== "string" || value === "" || /[\r\n]/.test(value)) return { refused: `the value of the secret ${name} is not a non-empty string of one line` };
-    if (pasture === null && name !== PASTURELESS_SECRET) {
-      return { refused: `a sheep born into no pasture has no setup, so ${PASTURELESS_SECRET} is the only secret it can carry, not ${name}` };
-    }
+    if (pasture === null && !PASTURELESS_SECRETS.includes(name)) return { refused: pasturelessRefusal(name) };
   }
   return { secrets: Object.fromEntries(entries as Array<[string, string]>) };
 }

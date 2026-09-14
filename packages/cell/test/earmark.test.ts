@@ -402,9 +402,9 @@ describe("earmark phase 0: the mint's refusals, before any row", () => {
       { body: { pasture: "refusing", secrets: { PROBE: 42 } }, sentence: "the value of the secret PROBE is not a non-empty string of one line" },
       { body: { pasture: "refusing", secrets: ["PROBE"] }, sentence: 'a sheep\'s secrets are an object of name to value, as {"NAME": "value"}', direct: true },
       { body: { pasture: "refusing", secrets: "PROBE=v3-2a7c" }, sentence: 'a sheep\'s secrets are an object of name to value, as {"NAME": "value"}', value: "v3-2a7c" },
-      // Journey 3 step 4: a sheep born into no pasture has no setup, so GIT_TOKEN is all it can carry.
-      { body: { secrets: { NPM_TOKEN: NPM_TOKEN } }, sentence: "a sheep born into no pasture has no setup, so GIT_TOKEN is the only secret it can carry, not NPM_TOKEN", value: NPM_TOKEN, direct: true },
-      { body: { name: "loner", secrets: { GIT_TOKEN: "git-9e4b", PROBE: SHEEP_PROBE } }, sentence: "a sheep born into no pasture has no setup, so GIT_TOKEN is the only secret it can carry, not PROBE", value: SHEEP_PROBE },
+      // Journey 3 step 4: a sheep born into no pasture has no setup, so GIT_TOKEN and TOWN_GRANT (drove phase 0) are all it can carry.
+      { body: { secrets: { NPM_TOKEN: NPM_TOKEN } }, sentence: "a sheep born into no pasture has no setup, so it can carry only GIT_TOKEN, which the broker reads, and TOWN_GRANT, which town reads; not NPM_TOKEN", value: NPM_TOKEN, direct: true },
+      { body: { name: "loner", secrets: { GIT_TOKEN: "git-9e4b", PROBE: SHEEP_PROBE } }, sentence: "a sheep born into no pasture has no setup, so it can carry only GIT_TOKEN, which the broker reads, and TOWN_GRANT, which town reads; not PROBE", value: SHEEP_PROBE },
     ];
     const before = await (await api("/sessions")).text();
     for (const { body, sentence, value, direct } of cases) {
@@ -428,7 +428,8 @@ describe("earmark phase 0: the mint's refusals, before any row", () => {
     expect(mintSecrets(undefined, null)).toEqual({ secrets: {} });
     expect(mintSecrets(null, "refusing")).toEqual({ secrets: {} });
 
-    // What is not refused: GIT_TOKEN alone on a sheep with no pasture, and no secrets at all. The mint is the row with the names.
+    // What is not refused: GIT_TOKEN alone on a sheep with no pasture, TOWN_GRANT alone or beside it (drove phase 0), and no
+    // secrets at all. The mint is the row with the names.
     const loner = await api("/sessions", { method: "POST", body: JSON.stringify({ name: "loner", secrets: { GIT_TOKEN: "git-token-0c5e8a2d7f1b4639-the-loners" } }) });
     expect(loner.status).toBe(201);
     const lonerBody = await loner.text();
@@ -436,6 +437,18 @@ describe("earmark phase 0: the mint's refusals, before any row", () => {
     const lonerSummary = JSON.parse(lonerBody) as SessionSummary;
     expect(lonerSummary).toMatchObject({ name: "loner", pasture: null, secrets: [PASTURE_GIT_TOKEN] });
     expect(await tablesOf(lonerSummary.id)).toEqual([]);
+    const grant = '{"town":"http://127.0.0.1:7000","token":"town-token-5b2e9d7a1c4f4083-the-loners"}';
+    for (const secrets of [{ TOWN_GRANT: grant }, { GIT_TOKEN: "git-token-8d3f1a6c2e9b4057-beside-it", TOWN_GRANT: grant }]) {
+      const granted = await api("/sessions", { method: "POST", body: JSON.stringify({ name: "granted", secrets }) });
+      expect(granted.status).toBe(201);
+      const grantedBody = await granted.text();
+      for (const value of Object.values(secrets)) expect(grantedBody).not.toContain(value);
+      const grantedSummary = JSON.parse(grantedBody) as SessionSummary;
+      expect(grantedSummary).toMatchObject({ name: "granted", pasture: null, secrets: Object.keys(secrets).sort() });
+      expect(await secretRows(grantedSummary.id)).toEqual(Object.entries(secrets).sort().map(([name, value]) => ({ name, value })));
+      expect(await tablesOf(grantedSummary.id)).toEqual([]);
+    }
+    expect(mintSecrets({ TOWN_GRANT: grant }, null)).toEqual({ secrets: { TOWN_GRANT: grant } });
     const plain = (await (await api("/sessions", { method: "POST", body: JSON.stringify({ name: "plain", secrets: {} }) })).json()) as SessionSummary;
     expect(plain).toMatchObject({ name: "plain", pasture: null, secrets: [] });
     const all = await (await api("/sessions")).text();

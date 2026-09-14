@@ -32,6 +32,10 @@
  * command (`env/look-command.ts`) over this env's files table, and the
  * router counts the name as tier 0; `home.eyes` says so. Without, just-bash
  * is made as before and `look` is its not-found line with the eyes' sentence.
+ * Drove phase 0: with `town`, the shell of each run is made with the `town`
+ * command (`env/town-command.ts`) over that source, and the router counts
+ * the name as tier 0; the cell hands every sheep one, so every sheep's shell
+ * has `town`, and `home.town` says whether a grant was carried at the boot.
  * Serve phase 1: on a home with a container as well, that `look` is handed
  * this env as its rental, and `rentServer` is what it calls — a sibling of
  * `runInContainer` whose run is not awaited to its end but looked at while
@@ -83,6 +87,7 @@ import { CELL_ROOTS, CELL_ROOTS_WITH_HOME, type FileRow, FilesTable, FsError, HO
 import { annotateReadOnly, isPasturePath, PASTURE_ROOT, PastureCall, type PastureRow, type PastureSource, readOnly } from "../workspace/mount.ts";
 import { LOOK_PROGRAMS, lookCommand, type Served } from "./look-command.ts";
 import { PASTURE_PROGRAMS, type PastureProgram, pastureCommand } from "./pasture-command.ts";
+import { TOWN_PROGRAMS, townCommand, type TownSource } from "./town-command.ts";
 import {
   annotateCommandNotFound,
   BUDGET_SPENT_NOTICE,
@@ -325,6 +330,11 @@ export interface CellExecutionEnvOptions {
    */
   eyes?: (files: FilesTable) => Eyes | undefined;
   /**
+   * Drove phase 0: the grant's source and the `fetch` the program posts through, so the shell of each run has `town`
+   * reading the value at that run. Absent, the shell has no `town` and `home.town` is absent.
+   */
+  town?: TownSource;
+  /**
    * Bleat phase 0: told at the start of every setup run and at its end,
    * whatever the ending. Absent, nothing outside `warm()` learns that
    * setup ran, which is what every home was before this project.
@@ -387,6 +397,8 @@ export class CellExecutionEnv implements ExecutionEnv {
   readonly pastureProgram: PastureProgram | undefined;
   /** The eyes, or `undefined` on a home without them, whose shell is made without `look`. */
   readonly eyes: Eyes | undefined;
+  /** The town program's source, or `undefined` for an env made without one, whose shell has no `town`. */
+  private readonly town: TownSource | undefined;
   /** What this cell's just-bash has beyond the registry — the custom commands its shell is made with — for the router to count as tier 0; `undefined` when there are none. */
   private readonly custom: ReadonlySet<string> | undefined;
   private readonly shellEnv: Record<string, string>;
@@ -414,7 +426,12 @@ export class CellExecutionEnv implements ExecutionEnv {
     this.cacheMaxBytes = options.cacheMaxBytes ?? CACHE_MAX_BYTES;
     this.pastureProgram = options.pastureProgram;
     this.eyes = options.eyes?.(this.files);
-    const custom = [...(this.pastureProgram === undefined ? [] : PASTURE_PROGRAMS), ...(this.eyes === undefined ? [] : LOOK_PROGRAMS)];
+    this.town = options.town;
+    const custom = [
+      ...(this.pastureProgram === undefined ? [] : PASTURE_PROGRAMS),
+      ...(this.eyes === undefined ? [] : LOOK_PROGRAMS),
+      ...(this.town === undefined ? [] : TOWN_PROGRAMS),
+    ];
     this.custom = custom.length === 0 ? undefined : new Set(custom);
     this.container = options.container;
     this.containerUp = options.containerUp;
@@ -433,7 +450,14 @@ export class CellExecutionEnv implements ExecutionEnv {
 
   /** What this home has, as the table sees it: the static half, without asking about the budget. */
   get home(): Home {
-    return { container: this.container !== undefined, isolate: this.isolate !== undefined, containerUp: this.containerUp?.() === true, eyes: this.eyes !== undefined };
+    return {
+      container: this.container !== undefined,
+      isolate: this.isolate !== undefined,
+      containerUp: this.containerUp?.() === true,
+      eyes: this.eyes !== undefined,
+      // Drove phase 0: said only of a sheep that carried a grant at its boot, so every other home is the shape it was.
+      ...(this.town?.carried === true ? { town: true } : {}),
+    };
   }
 
   /** What this home has right now: the static half plus the budget, asked of the lease. */
@@ -688,8 +712,8 @@ export class CellExecutionEnv implements ExecutionEnv {
     const home = this.container === undefined ? this.home : await this.homeNow();
     let route: Route = { tier: 0, programs: [] };
     if (this.container !== undefined || this.isolate !== undefined) {
-      // The custom commands are tier 0: a line of `pasture put …` in a pastured cell, or `look …` in a cell with eyes, stays in
-      // just-bash on a home with a container too.
+      // The custom commands are tier 0: a line of `pasture put …` in a pastured cell, `look …` in a cell with eyes, or `town …`
+      // in a sheep's shell, stays in just-bash on a home with a container too.
       const classified = classify(command, home, (file) => this.isWorkspaceFile(file, cwd), this.custom);
       if (this.container !== undefined || ("tier" in classified && classified.tier === 1)) route = classified;
     }
@@ -759,6 +783,8 @@ export class CellExecutionEnv implements ExecutionEnv {
     if (program !== undefined && fs.pasture !== undefined) customCommands.push(pastureCommand(program, fs.pasture));
     // With a container, `look` is handed this env as its rental, and `--serve` has somewhere to run; without one it is the eyes' program alone.
     if (this.eyes !== undefined) customCommands.push(lookCommand(this.eyes, this.files, this.container === undefined ? undefined : this));
+    // Drove phase 0: the grant is the program's, read at this run; the shell's environment never holds it.
+    if (this.town !== undefined) customCommands.push(townCommand(this.town));
     const bash = new Bash({
       fs,
       cwd,

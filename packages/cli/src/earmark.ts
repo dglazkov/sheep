@@ -7,12 +7,20 @@
  * refusal here is before anything is asked of the home, and names a name
  * at most, never a value. Where the home refuses the same thing (a bad
  * name, a value that is not one line, a pastureless sheep's name other
- * than `GIT_TOKEN`), the sentence is the home's, word for word.
+ * than `GIT_TOKEN` and `TOWN_GRANT`), the sentence is the home's, word for word.
  */
 import { SECRET_NAME } from "./pasture.js";
 
-/** The one secret a sheep born into no pasture can carry: it has no setup, so only the broker's `GIT_TOKEN` reaches anything. */
-export const PASTURELESS_SECRET = "GIT_TOKEN";
+/**
+ * The secrets a sheep born into no pasture can carry: it has no setup, so only a secret something else reads reaches
+ * anything: the broker's `GIT_TOKEN`, and (drove phase 0) `TOWN_GRANT`, which the `town` program reads. The home's list.
+ */
+export const PASTURELESS_SECRETS: readonly string[] = ["GIT_TOKEN", "TOWN_GRANT"];
+
+/** The home's refusal of any other name on a pastureless sheep, word for word: the verb refuses before it asks. */
+export function pasturelessRefusal(name: string): string {
+  return `a sheep born into no pasture has no setup, so it can carry only GIT_TOKEN, which the broker reads, and TOWN_GRANT, which town reads; not ${name}`;
+}
 
 /** Stdin a terminal (journey 3 step 1): the pasture's rule, and the one sentence that says how to give the value. */
 export const SECRET_NOT_TYPED = "a secret's value is read from stdin, never taken as an argument and never typed: pipe it in, one line per --secret";
@@ -24,7 +32,7 @@ export const SECRET_AT_MINT = "a sheep's secrets are given at its mint: --secret
 /**
  * The names' refusal, before stdin is read (journey 3 steps 3 and 4): a
  * name that is not an environment variable's, a name given twice, and any
- * name but `GIT_TOKEN` for a sheep born into no pasture. `undefined` is a
+ * name but `GIT_TOKEN` and `TOWN_GRANT` for a sheep born into no pasture. `undefined` is a
  * `--secret` with nothing after it.
  */
 export function refuseNames(names: readonly (string | undefined)[], pasture: string | undefined): string | undefined {
@@ -33,7 +41,7 @@ export function refuseNames(names: readonly (string | undefined)[], pasture: str
     if (name === undefined || !SECRET_NAME.test(name)) return `a secret's name is an environment variable's, not ${JSON.stringify(name ?? "")}`;
     if (seen.has(name)) return `a secret's name is an environment variable's, once: ${name} is given twice`;
     seen.add(name);
-    if (pasture === undefined && name !== PASTURELESS_SECRET) return `a sheep born into no pasture has no setup, so ${PASTURELESS_SECRET} is the only secret it can carry, not ${name}`;
+    if (pasture === undefined && !PASTURELESS_SECRETS.includes(name)) return pasturelessRefusal(name);
   }
   return undefined;
 }

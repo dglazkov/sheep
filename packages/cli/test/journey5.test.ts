@@ -405,7 +405,7 @@ describe.skipIf(typeof home === "string")("journey 5: a dog and its flock, throu
       { args: ["new", "--pasture", "meadow", "--secret", "A", "--secret", "B", "--detach"], stdin: `${aValue}\n\n`, sentence: "one line of stdin per --secret name, in order: the line for B is empty" },
       { args: ["new", "--pasture", "meadow", "--secret", "1BAD", "--detach"], stdin: `${aValue}\n`, sentence: `a secret's name is an environment variable's, not "1BAD"` },
       { args: ["new", "--pasture", "meadow", "--secret", "PROBE", "--secret", "PROBE", "--detach"], stdin: `${aValue}\n${bValue}\n`, sentence: "a secret's name is an environment variable's, once: PROBE is given twice" },
-      { args: ["new", "--secret", "NPM_TOKEN", "--detach"], stdin: `${aValue}\n`, sentence: "a sheep born into no pasture has no setup, so GIT_TOKEN is the only secret it can carry, not NPM_TOKEN" },
+      { args: ["new", "--secret", "NPM_TOKEN", "--detach"], stdin: `${aValue}\n`, sentence: "a sheep born into no pasture has no setup, so it can carry only GIT_TOKEN, which the broker reads, and TOWN_GRANT, which town reads; not NPM_TOKEN" },
       { args: ["new", "--secret", "PROBE", "--pasture", "meadow"], stdin: `${aValue}\n`, sentence: SECRET_NEEDS_STDIN },
       { args: ["attach", sibling, "--secret", "PROBE", "--", "hello"], stdin: `${aValue}\n`, sentence: SECRET_AT_MINT },
       { args: ["-c", "--secret", "PROBE", "--", "hello"], stdin: `${aValue}\n`, sentence: SECRET_AT_MINT },
@@ -417,7 +417,20 @@ describe.skipIf(typeof home === "string")("journey 5: a dog and its flock, throu
     // Step 4 is the home's refusal too, in the same words, for a client that is not this CLI; still no row.
     const direct = await fetch(`${home.url}/sessions`, { method: "POST", headers: { authorization: `Bearer ${home.token}`, "content-type": "application/json" }, body: JSON.stringify({ secrets: { NPM_TOKEN: aValue } }) });
     expect(direct.status).toBe(400);
-    expect(await direct.text()).toBe("a sheep born into no pasture has no setup, so GIT_TOKEN is the only secret it can carry, not NPM_TOKEN");
+    expect(await direct.text()).toBe("a sheep born into no pasture has no setup, so it can carry only GIT_TOKEN, which the broker reads, and TOWN_GRANT, which town reads; not NPM_TOKEN");
+    expect(await run(["ls", "--json"])).toEqual(before);
+
+    // Drove phase 0: TOWN_GRANT is the other name a pastureless sheep carries, since the town program reads it. The verb takes it,
+    // the home mints it, `ls` names it and prints no value, and the sheep ends with it.
+    const grantValue = '{"town":"http://127.0.0.1:9","token":"town-token-6e2a9c4f1d"}';
+    values.push(grantValue, "town-token-6e2a9c4f1d");
+    const granted = await run(["new", "--secret", "TOWN_GRANT", "--detach"], `${grantValue}\n`);
+    expect(granted.code).toBe(0);
+    expect(granted.stderr).toBe("");
+    expect(granted.stdout).toMatch(/^[0-9a-f-]{36}\n$/);
+    const grantedId = granted.stdout.trim();
+    expect((await listed()).find((row) => row.id === grantedId)).toMatchObject({ pasture: null, secrets: ["TOWN_GRANT"] });
+    expect(await run(["rm", grantedId])).toEqual({ code: 0, stdout: `${grantedId}\tended\n`, stderr: "" });
     expect(await run(["ls", "--json"])).toEqual(before);
 
     // Step 5: the earmarked sheep ended with the one line; it is gone from `ls`, and the pasture's PROBE is untouched.

@@ -105,6 +105,7 @@ export const RINGS = {
     "packages/cell/test/spool.test.ts",
     "packages/cell/test/storage-conformance.test.ts",
     "packages/cell/test/storage-timing.test.ts",
+    "packages/cell/test/town.test.ts",
     "packages/cell/test/wire.test.ts",
     "packages/collie/test/collie.test.ts",
     "packages/collie/test/router.test.ts",

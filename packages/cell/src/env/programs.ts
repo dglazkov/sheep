@@ -47,6 +47,11 @@ export interface Home {
   containerUp?: boolean;
   /** Eyes phase 1: whether this home has the browser binding, so `look` is in the shell. Absent, it is not: a station deployed before that release. */
   eyes?: boolean;
+  /**
+   * Drove phase 0: whether this sheep carried a grant at its boot, so the prompt names `town`. Absent, it did not; the
+   * shell has `town` either way, and the program's own refusal answers a sheep with none.
+   */
+  town?: boolean;
 }
 
 export const NO_CONTAINER: Home = { container: false };
@@ -224,8 +229,28 @@ export function refusalSentence(program: string, home: Home): string {
   return shellNotice(home);
 }
 
-/** The line the system prompt says about the shell. The line from before pen, byte for byte, when the home has no container. */
+/**
+ * The paragraph a sheep that carried a grant at its boot is told (drove
+ * phase 0), in `look`'s shape: said only of a sheep that has a town, and
+ * never of one that has none, whose shell answers `town` with the
+ * program's refusal. What `town` does, the two words that start it, that
+ * `--json` is the harness's, that it is the shell's and not the
+ * container's, and that the grant is not the shell's to see.
+ */
+export const TOWN_PARAGRAPH =
+  "This sheep carries a grant at a town: `town` in the bash tool sends its words, and stdin when a pipe or a file gives it some, to that town, prints what the town answers, and exits with the town's code. " +
+  "`town` with no words prints what the grant can do, and `town <shop> --help` a shop's commands and the grant's limits; `--json` anywhere in the words makes the answer one line of JSON. " +
+  "`town` is the shell's and not the container's: a line that also names a program only the container has runs whole in the container, where there is no `town`, so give it stdin from a file or a text tool instead. " +
+  "The grant is held outside the shell and is never in its environment, and a call is made once and never retried, since a command that wrote may write again.";
+
+/** The line the system prompt says about the shell: `shellLine`'s, and with a town (drove phase 0) the town's paragraph after it, its own line. */
 export function shellSystemPromptLine(home: Home): string {
+  const line = shellLine(home);
+  return home.town === true ? `${line}\n${TOWN_PARAGRAPH}` : line;
+}
+
+/** The shell's own line. The line from before pen, byte for byte, when the home has no container. */
+function shellLine(home: Home): string {
   const opening = `The bash tool runs a shell interpreter inside the session with the usual text tools (${list(TEXT_TOOLS_SHOWN)}) over the workspace at /workspace. `;
   if (!home.container) {
     // The line from before pen, byte for byte; with the isolate, the one exception is said in its own sentence.

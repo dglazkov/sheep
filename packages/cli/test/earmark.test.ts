@@ -91,14 +91,18 @@ function sheep(args: string[], options: { stdin?: string; tty?: boolean } = {}):
 const refused = (sentence: string): Result => ({ code: 2, stdout: "", stderr: `sheep: ${sentence}\n` });
 
 describe("sheep new --secret: the rules, as functions", () => {
-  it("refuses a bad name, a name twice, and any name but GIT_TOKEN with no pasture, in the home's words", () => {
+  it("refuses a bad name, a name twice, and any name but GIT_TOKEN and TOWN_GRANT with no pasture, in the home's words", () => {
     expect(refuseNames(["PROBE", "_x", "A1"], "p")).toBeUndefined();
     expect(refuseNames(["GIT_TOKEN"], undefined)).toBeUndefined();
+    // Drove phase 0: TOWN_GRANT is the other name a pastureless sheep carries, since the town program reads it.
+    expect(refuseNames(["TOWN_GRANT"], undefined)).toBeUndefined();
+    expect(refuseNames(["GIT_TOKEN", "TOWN_GRANT"], undefined)).toBeUndefined();
+    expect(refuseNames(["TOWN_GRANT", "PROBE"], undefined)).toBe("a sheep born into no pasture has no setup, so it can carry only GIT_TOKEN, which the broker reads, and TOWN_GRANT, which town reads; not PROBE");
     expect(refuseNames(["1BAD"], "p")).toBe(`a secret's name is an environment variable's, not "1BAD"`);
     expect(refuseNames(["A-B"], "p")).toBe(`a secret's name is an environment variable's, not "A-B"`);
     expect(refuseNames([undefined], "p")).toBe(`a secret's name is an environment variable's, not ""`);
     expect(refuseNames(["PROBE", "PROBE"], "p")).toBe("a secret's name is an environment variable's, once: PROBE is given twice");
-    expect(refuseNames(["NPM_TOKEN"], undefined)).toBe("a sheep born into no pasture has no setup, so GIT_TOKEN is the only secret it can carry, not NPM_TOKEN");
+    expect(refuseNames(["NPM_TOKEN"], undefined)).toBe("a sheep born into no pasture has no setup, so it can carry only GIT_TOKEN, which the broker reads, and TOWN_GRANT, which town reads; not NPM_TOKEN");
   });
 
   it("matches one line per name in order: a final newline and a \\r before one dropped; a count off or an empty line refused", () => {
@@ -150,7 +154,7 @@ describe("sheep new --secret: refused before any request", () => {
       { args: ["new", "--pasture", "meadow", "--secret", "PROBE", "--secret=PROBE", "--detach"], stdin: `${VALUE}\n${SECOND}\n`, sentence: "a secret's name is an environment variable's, once: PROBE is given twice" },
       { args: ["new", "--pasture", "meadow", "--detach", "--secret"], stdin: `${VALUE}\n`, sentence: `a secret's name is an environment variable's, not ""` },
       // Step 4: a name but GIT_TOKEN with no pasture.
-      { args: ["new", "--secret", "NPM_TOKEN", "--detach"], stdin: `${VALUE}\n`, sentence: "a sheep born into no pasture has no setup, so GIT_TOKEN is the only secret it can carry, not NPM_TOKEN" },
+      { args: ["new", "--secret", "NPM_TOKEN", "--detach"], stdin: `${VALUE}\n`, sentence: "a sheep born into no pasture has no setup, so it can carry only GIT_TOKEN, which the broker reads, and TOWN_GRANT, which town reads; not NPM_TOKEN" },
       // Step 5: neither --detach nor a prompt: pi's terminal would want the stdin the values come from.
       { args: ["new", "--secret", "PROBE", "--pasture", "meadow"], stdin: `${VALUE}\n`, sentence: SECRET_NEEDS_STDIN },
       // Step 6: on attach and -c, with or without a prompt.
@@ -177,6 +181,12 @@ describe("sheep new --secret: the mint and the names", () => {
     const pastureless = await sheep(["new", "--secret", "GIT_TOKEN", "--detach", "--json"], { stdin: `${VALUE}\r\n` });
     expect(pastureless).toEqual({ code: 0, stdout: `${ID}\n`, stderr: "" });
     expect(JSON.parse(asked[0]!.body)).toEqual({ secrets: { GIT_TOKEN: VALUE } });
+    // A pastureless sheep's TOWN_GRANT (drove phase 0), the grant compacted to one line as `jq -c .` gives it.
+    asked.length = 0;
+    const grant = '{"town":"http://127.0.0.1:7000","token":"town-token-3c8a1e5f7b2d4096"}';
+    expect(await sheep(["new", "--secret", "TOWN_GRANT", "--detach"], { stdin: `${grant}\n` })).toEqual({ code: 0, stdout: `${ID}\n`, stderr: "" });
+    expect(asked).toHaveLength(1);
+    expect(JSON.parse(asked[0]!.body)).toEqual({ secrets: { TOWN_GRANT: grant } });
     // Without --secret the request carries no secrets, and stdin is not read: a mint with nothing piped still mints.
     asked.length = 0;
     expect((await sheep(["new", "--detach"])).code).toBe(0);
