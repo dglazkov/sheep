@@ -26,7 +26,7 @@ import type { Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { elapsed, SETUP_NO_LANE, setupSaying, SetupVoice } from "../src/herd.js";
+import { elapsed, SETUP_NO_LANE, SETUP_POLL_MS, setupSaying, SetupVoice } from "../src/herd.js";
 import type { SetupRecord, SetupState } from "../src/home.js";
 import { bin, type Result } from "./local-home.js";
 
@@ -257,7 +257,12 @@ describe("journey 1 step 1 and journey 2: the line on stderr while a prompt is h
     const held = await sheep(["attach", id, "--detach", "--", "hello"]);
     expect(held.code).toBe(0);
     expect(held.stdout).toBe(`${id}\n`);
-    expect(held.stderr).toMatch(/^setup running \(0\.\d s\)\nsetup failed \(exit 1, 12\.4 s\)\n$/);
+    // Two lines and nothing else: the running line the first poll said, then the ending said at the stop. The running line's
+    // elapsed is the 400 ms above plus the command's start, which a loaded runner stretches past a second; what the journey
+    // needs of it is that it came before the next poll could have, so it is held under the poll's interval, not a literal.
+    const said = /^setup running \((\d+\.\d) s\)\nsetup failed \(exit 1, 12\.4 s\)\n$/.exec(held.stderr);
+    expect(said, held.stderr).not.toBeNull();
+    expect(Number(said![1]) * 1000).toBeLessThan(SETUP_POLL_MS);
   });
 });
 
