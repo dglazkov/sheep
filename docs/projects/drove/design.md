@@ -70,8 +70,8 @@ Read from this checkout at `7aac0c8` and from town at `80496d2`, 14 Sep
   environment, and no route returns a value.
 - **The wire.** `POST <town>/call`, `authorization: Bearer <token>`,
   body `{ "argv", "stdin", "json" }`; the answer `{ "stdout", "stderr",
-  "exit" }`, 200 or a 500 with a `why`; anything else is a town that did
-  not answer. `--json` is the harness's wherever it stands. The
+  "exit" }` whatever the status, a 500 with a `why` among them; anything
+  else is a town that did not answer. `--json` is the harness's wherever it stands. The
   harness's own four refusals are one line on stderr, or with `--json`
   a five-field envelope on stdout, and never hold what `TOWN_GRANT`
   holds. A call is posted once. The town gives a shop thirty seconds.
@@ -133,27 +133,31 @@ and nothing that is not in the contract:
 - **The words (§3).** Every word as just-bash gave it, in order, empty
   words and spaces and non-ASCII kept; `--json` taken out wherever it
   stands and `"json": true` said. The program takes no flag of its own.
-- **Stdin (§4).** What the pipeline gave: text, sent exactly, nothing
-  trimmed and no newline added; nothing given is `null`. There is no
-  terminal, device, or socket in just-bash, so the section's second
-  rule has nothing to decide in the cell; it is decided on the laptop
-  by the bridge, which is the harness's other half there (below). No
-  limit of the program's own: the town's one-mebibyte refusal comes
-  back as an answer.
+- **Stdin (§4).** What the pipeline gave, sent exactly as text, nothing
+  trimmed and no newline added; nothing given is `null`. just-bash
+  hands a custom command bytes (a latin1 string), so `town < file` can
+  carry bytes that are not UTF-8, and the program refuses them, exit 1,
+  after the grant is found. There is no terminal, device, or socket in
+  just-bash, so the section's second rule has nothing to decide in the
+  cell; it is decided on the laptop by the bridge, which is the
+  harness's other half there (below). No limit of the program's own:
+  the town's one-mebibyte refusal comes back as an answer.
 - **The request (§5) and the answer (§6).** `fetch` of the Worker's
   own, `POST` to `/call` resolved against the grant's `town`, the three
   headers and the three fields; the answer's `stdout` and `stderr`
-  written as given and `exit` returned. A 500 with the three fields is
-  an answer. A status of any other kind, a body that is not the three
-  fields, or a `fetch` that throws, is a town that did not answer:
+  written as given and `exit` returned. The three fields are the answer
+  at any status, a 500 with a `why` included, since §6 says so and a
+  town may answer a revoked pass's exit 3 at a 401. A body that is not
+  the three fields, a redirect, or a `fetch` that throws, is a town that
+  did not answer:
   one line, `town: the town at <origin> did not answer (<what>)`, exit
   1. The program waits sixty seconds for an answer, twice the shop's
   time, and then says so the same way.
-- **The refusals (§7) and `--json`.** Three are the program's: no
-  grant, exit 3; a grant value that holds no grant, exit 3; and a town
-  that did not answer, exit 1. The fourth, stdin that is not UTF-8,
-  cannot reach the cell, since just-bash hands a command text; it is
-  the bridge's. With `--json` among the words each is the five-field
+- **The refusals (§7) and `--json`.** All four are the program's: no
+  grant, exit 3; a grant value that holds no grant, exit 3, a `town`
+  holding more than an origin among them, which §5 lets a harness
+  refuse; stdin that is not UTF-8, exit 1; and a town that did not
+  answer, exit 1. With `--json` among the words each is the five-field
   envelope on stdout, one line and a newline, stderr empty. None ever prints
   the value or any part of it, and the test that reads every line of
   every refusal for the token's bytes is the rule made a test.
@@ -228,13 +232,18 @@ reader knows the bridge is not a harness of its own.
 
 ## The grant, and earmark
 
-Two small changes in earmark's territory, both in its terms:
+Three small changes in earmark's territory, all in its terms:
 
 - **A second secret a pastureless sheep can carry.** The Directory's
   refusal names `GIT_TOKEN` as the one secret a sheep born into no
   pasture can carry, since only the broker reads anything there.
   `town` reads `TOWN_GRANT`, so the refusal names two, and its sentence
-  says why each reaches something.
+  says why each reaches something. The verb's word-for-word twin of it
+  changes with it.
+- **Not setup's.** Setup's environment is a pasture's secrets with the
+  sheep's laid over them, `GIT_TOKEN` out of both. `TOWN_GRANT` is out
+  of both too: setup runs in the container's shell and prints what it
+  likes, and the grant is the program's and never a shell's.
 - **One line, the grant itself.** Earmark's value is one line; `townd
   admin pass new` prints the grant indented. The dog hands it as one
   line, `jq -c . < grant.json | sheep new --secret TOWN_GRANT`, and the
