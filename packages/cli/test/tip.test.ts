@@ -4,7 +4,7 @@
  * functions over scratch paths. Nothing is fetched and nothing is spawned;
  * `shear.test.ts` drives the same rules through the built command.
  */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
@@ -115,6 +115,29 @@ describe("sayAtExit and the child", () => {
       const text = sayAtExit(home, false, path);
       expect(text).toContain("is older than this command's");
       expect(readSaid(path)).toEqual({ asked, tip: NEWER, skew: `${home.commit}:${COMMAND.commit}` });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("keeps the collie's skew pair through sheep's own writes: the ask, then the notice and the skew line at the end (collie phase 1)", () => {
+    vi.stubEnv("CI", "");
+    vi.stubEnv("SHEEP_TIP", "https://tip.invalid/package.json");
+    vi.stubEnv("SHEEP_TEST_CLI_BUILD", `${COMMAND.commit} ${COMMAND.builtAt}`);
+    try {
+      const path = join(scratch(), ".sheep", "tip.json");
+      const collieSkew = `9e9e9e9:${COMMAND.commit}`;
+      // As `collie` left it: its pair beside a tip newer than this command, not yet noticed.
+      writeSaid({ tip: NEWER, collieSkew }, path);
+      expect(readSaid(path)).toEqual({ tip: NEWER, collieSkew });
+      // `startTip`'s write of the ask, as sheep makes it: what was read, and the ask.
+      writeSaid({ ...readSaid(path), asked: "2026-09-13T19:00:00.000Z" }, path);
+      // Then sheep's end: the notice and a skew line of its own, each marked over the file.
+      const home = { commit: "1111111", builtAt: "2026-09-10T00:00:00Z" };
+      const text = sayAtExit(home, false, path);
+      expect(text).toContain("a newer build");
+      expect(text).toContain("is older than this command's");
+      expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ tip: NEWER, asked: "2026-09-13T19:00:00.000Z", noticed: NEWER.commit, skew: `${home.commit}:${COMMAND.commit}`, collieSkew });
     } finally {
       vi.unstubAllEnvs();
     }

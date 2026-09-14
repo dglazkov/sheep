@@ -267,8 +267,8 @@ function zombie(pid: number): boolean {
   return ps.status === 0 && ps.stdout.trim().startsWith("Z");
 }
 
-/** There is such a process and it has not exited: a zombie has, whatever `kill(pid, 0)` says. */
-function alive(pid: number): boolean {
+/** There is such a process and it has not exited: a zombie has, whatever `kill(pid, 0)` says. Shared with the collie's rig. */
+export function alive(pid: number): boolean {
   try {
     process.kill(pid, 0);
   } catch (error) {
@@ -303,7 +303,8 @@ export async function localStatus(): Promise<LocalStatus> {
   return { record, running, answers };
 }
 
-function freePort(): Promise<number> {
+/** A port nothing on this machine listens on now. Shared with the collie's rig. */
+export function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const server = createServer();
     server.once("error", reject);
@@ -315,7 +316,7 @@ function freePort(): Promise<number> {
 }
 
 /** The port the record names when it is still free, so the address survives a stop; a fresh one otherwise. */
-function pickPort(preferred: number | undefined): Promise<number> {
+export function pickPort(preferred: number | undefined): Promise<number> {
   if (preferred === undefined) return freePort();
   return new Promise((resolve) => {
     const server = createServer();
@@ -324,12 +325,12 @@ function pickPort(preferred: number | undefined): Promise<number> {
   });
 }
 
-/** `.dev.vars` as pairs; blank lines and `#` comments dropped. */
-function readDevVars(): Map<string, string> {
+/** A `.dev.vars` file as pairs; blank lines and `#` comments dropped; empty when there is no file. Shared with the collie's rig. */
+export function readDevVarsFile(path: string): Map<string, string> {
   const vars = new Map<string, string>();
   let text: string;
   try {
-    text = readFileSync(devVarsPath(), "utf8");
+    text = readFileSync(path, "utf8");
   } catch {
     return vars;
   }
@@ -341,6 +342,19 @@ function readDevVars(): Map<string, string> {
     vars.set(trimmed.slice(0, equals).trim(), trimmed.slice(equals + 1).trim());
   }
   return vars;
+}
+
+/**
+ * A `.dev.vars` file written as `vars`, mode 600, only when its text differs from `before`'s (or there is no file);
+ * whether it changed. The mode is set again either way. Shared with the collie's rig.
+ */
+export function writeDevVarsFile(path: string, before: Map<string, string>, vars: Map<string, string>): boolean {
+  const render = (pairs: Map<string, string>) => [...pairs.entries()].map(([name, value]) => `${name}=${value}`).join("\n") + "\n";
+  const text = render(vars);
+  const changed = !existsSync(path) || text !== render(before);
+  if (changed) writeFileSync(path, text, { mode: 0o600 });
+  chmodSync(path, 0o600);
+  return changed;
 }
 
 /**
@@ -356,7 +370,7 @@ function readDevVars(): Map<string, string> {
  * the station read one place, so a shepherd's one sitting serves both.
  */
 function writeDevVars(faux: boolean | undefined): { token: string; key: "held" | "not held" | "faux"; changed: boolean } {
-  const before = readDevVars();
+  const before = readDevVarsFile(devVarsPath());
   const vars = new Map(before);
   if (!vars.get("SHEEP_TOKEN")) vars.set("SHEEP_TOKEN", randomBytes(24).toString("hex"));
   if (faux === true) {
@@ -367,10 +381,7 @@ function writeDevVars(faux: boolean | undefined): { token: string; key: "held" |
     const kept = modelKey();
     if (kept !== undefined) vars.set("SHEEP_ANTHROPIC_API_KEY", kept.value);
   }
-  const text = [...vars.entries()].map(([name, value]) => `${name}=${value}`).join("\n") + "\n";
-  const changed = !existsSync(devVarsPath()) || text !== [...before.entries()].map(([name, value]) => `${name}=${value}`).join("\n") + "\n";
-  if (changed) writeFileSync(devVarsPath(), text, { mode: 0o600 });
-  chmodSync(devVarsPath(), 0o600);
+  const changed = writeDevVarsFile(devVarsPath(), before, vars);
   const key = vars.get("SHEEP_PROVIDER") === "faux" ? "faux" : vars.get("SHEEP_ANTHROPIC_API_KEY") ? "held" : "not held";
   return { token: vars.get("SHEEP_TOKEN")!, key, changed };
 }
@@ -525,8 +536,8 @@ function logTail(lines = 5): string {
   }
 }
 
-/** Signals the daemon's whole process group (it is a session leader, detached), falling back to the pid alone. */
-function signal(pid: number, sig: NodeJS.Signals): void {
+/** Signals the daemon's whole process group (it is a session leader, detached), falling back to the pid alone. Shared with the collie's rig. */
+export function signal(pid: number, sig: NodeJS.Signals): void {
   try {
     process.kill(-pid, sig);
   } catch {

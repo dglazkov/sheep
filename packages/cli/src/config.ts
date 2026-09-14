@@ -33,6 +33,21 @@ export interface SheepConfig {
    * until a deploy; a local home never has one.
    */
   name?: string;
+  /**
+   * The collie (collie phase 1): the `collie` command's Worker beside the
+   * station, its name on the account, its address, and the bearer token it
+   * expects. Written by `collie setup` (collie phase 2) into this file,
+   * mode 600 like the rest, and read by every `collie` verb; `sheep`
+   * never reads it. Absent until a collie is deployed from this kennel.
+   */
+  collie?: CollieConfig;
+}
+
+/** The kennel's `collie` block: which collie Worker, and how it proves itself at its door. */
+export interface CollieConfig {
+  name?: string;
+  address: string;
+  token: string;
 }
 
 function isDirectory(path: string): boolean {
@@ -143,6 +158,7 @@ export async function loadConfig(overrides: Partial<SheepConfig> = {}): Promise<
         ...(typeof record.token === "string" ? { token: record.token } : {}),
         ...(record.local === true ? { local: true } : {}),
         ...(typeof record.name === "string" ? { name: record.name } : {}),
+        ...(collieBlock(record.collie) ?? {}),
       };
     }
   } catch (error) {
@@ -156,6 +172,14 @@ export async function loadConfig(overrides: Partial<SheepConfig> = {}): Promise<
   // An address from the environment or the command line is some home, never the local one, whatever the file says.
   if (fromEnv.home !== undefined || overrides.home !== undefined) delete resolved.local;
   return resolved;
+}
+
+/** The `collie` block as `SheepConfig` carries it, or nothing when it is absent or lacks an address or a token. */
+function collieBlock(value: unknown): { collie: CollieConfig } | undefined {
+  if (value === null || typeof value !== "object") return undefined;
+  const block = value as Record<string, unknown>;
+  if (typeof block.address !== "string" || block.address === "" || typeof block.token !== "string" || block.token === "") return undefined;
+  return { collie: { ...(typeof block.name === "string" ? { name: block.name } : {}), address: block.address, token: block.token } };
 }
 
 function stripUndefined<T extends object>(value: T): Partial<T> {

@@ -10,12 +10,13 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 // The script is plain ESM at the repository root; vitest loads it as is.
 // @ts-expect-error no declarations for the release script
-import { BIN_SHEEP_JS, expectedReleaseFiles, IMAGE_REPOSITORY, PREPARATION_KEYS, releaseManifest, SKILL_FILE } from "../../../scripts/release.mjs";
+import { BIN_COLLIE_JS, BIN_SHEEP_JS, expectedReleaseFiles, IMAGE_REPOSITORY, PREPARATION_KEYS, releaseManifest, SKILL_FILE } from "../../../scripts/release.mjs";
 // @ts-expect-error no declarations for the bundle script
-import { assertEyes, assertJoin, EYES_BINDING, IMAGE_DIGEST, imageBy, imageReference, JOIN_BINDING, shippedConfig } from "../../../scripts/bundle.mjs";
+import { assertEyes, assertJoin, EYES_BINDING, IMAGE_DIGEST, imageBy, imageReference, JOIN_BINDING, shippedCollieConfig, shippedConfig } from "../../../scripts/bundle.mjs";
 import { parseJsonc } from "../src/deploy.js";
 
 const cellConfigPath = new URL("../../cell/wrangler.jsonc", import.meta.url).pathname;
+const collieConfigPath = new URL("../../collie/wrangler.jsonc", import.meta.url).pathname;
 
 const DIGEST = "sha256:48101e13000000000000000000000000000000000000000000000000abcdef01";
 const STAMP = { commit: "194656e", builtAt: "2026-09-07T17:00:00Z", wrangler: "4.129.0", image: `docker.io/dglazkov2/sheep-pen@${DIGEST}` };
@@ -56,19 +57,24 @@ describe("the release manifest", () => {
   it("names the command, the Node floor, and the build stamp under a sheep key, the image in it (station phase 2)", () => {
     expect(manifest.name).toBe("sheep");
     expect(manifest.type).toBe("module");
-    expect(manifest.bin).toEqual({ sheep: "bin/sheep.js" });
+    expect(manifest.bin).toEqual({ sheep: "bin/sheep.js", collie: "bin/collie.js" });
     expect(manifest.engines).toEqual({ node: ">=22.19" });
     expect(manifest.sheep).toEqual(STAMP);
     expect(Object.keys(manifest.sheep as object)).toEqual(["commit", "builtAt", "wrangler", "image"]);
     expect(manifest).not.toHaveProperty("commit");
     expect(BIN_SHEEP_JS).toMatch(/^#!\/usr\/bin\/env node\nimport \{ main \} from "\.\.\/dist\/sheep\.mjs";\n/);
+    // The second command (collie phase 1): the same shape, aimed at its own bundle.
+    expect(BIN_COLLIE_JS).toBe(BIN_SHEEP_JS.replace("sheep.mjs", "collie.mjs"));
   });
 
-  it("lists the guide beside the bundle and the skill at the root, and refuses a build without either", () => {
-    const built = [{ file: "dist/sheep.mjs" }, { file: "dist/pi-client.mjs" }, { file: "dist/agent-guide.md" }, { file: "home/worker.mjs" }, { file: "home/wrangler.jsonc" }];
+  it("lists both guides beside the bundles, both bins, both Workers, and the skill at the root, and refuses a build without a guide, the collie's Worker, or the skill", () => {
+    const built = [{ file: "dist/sheep.mjs" }, { file: "dist/collie.mjs" }, { file: "dist/pi-client.mjs" }, { file: "dist/agent-guide.md" }, { file: "dist/collie-guide.md" }, { file: "home/worker.mjs" }, { file: "home/wrangler.jsonc" }, { file: "collie/worker.mjs" }, { file: "collie/wrangler.jsonc" }];
     const skill = [SKILL_FILE];
-    expect(expectedReleaseFiles(built, skill)).toEqual(["LICENSE", "README.md", "SKILL.md", "bin/sheep.js", "dist/agent-guide.md", "dist/pi-client.mjs", "dist/sheep.mjs", "home/worker.mjs", "home/wrangler.jsonc", "package.json"]);
+    expect(expectedReleaseFiles(built, skill)).toEqual(["LICENSE", "README.md", "SKILL.md", "bin/collie.js", "bin/sheep.js", "collie/worker.mjs", "collie/wrangler.jsonc", "dist/agent-guide.md", "dist/collie-guide.md", "dist/collie.mjs", "dist/pi-client.mjs", "dist/sheep.mjs", "home/worker.mjs", "home/wrangler.jsonc", "package.json"]);
     expect(() => expectedReleaseFiles(built.filter((file) => file.file !== "dist/agent-guide.md"), skill)).toThrow(/agent-guide/);
+    expect(() => expectedReleaseFiles(built.filter((file) => file.file !== "dist/collie-guide.md"), skill)).toThrow(/collie-guide/);
+    expect(() => expectedReleaseFiles(built.filter((file) => file.file !== "collie/worker.mjs"), skill)).toThrow(/collie\/worker\.mjs/);
+    expect(() => expectedReleaseFiles(built.filter((file) => file.file !== "collie/wrangler.jsonc"), skill)).toThrow(/collie\/wrangler\.jsonc/);
     expect(() => expectedReleaseFiles(built, [])).toThrow(/SKILL\.md/);
   });
 
@@ -148,6 +154,22 @@ describe("the release manifest", () => {
     const shipped = assertJoin(shippedConfig(cell, { commit: STAMP.commit, builtAt: STAMP.builtAt, imageDigest: DIGEST })) as { kv_namespaces: unknown; env: { pen: { kv_namespaces: unknown } } };
     expect(shipped.kv_namespaces).toEqual(kv);
     expect(shipped.env.pen.kv_namespaces).toEqual(kv);
+  });
+
+  it("ships the collie's own config with main the emitted Worker and no_bundle, its object and migration kept, and refuses an environment (collie phase 1)", () => {
+    const collie = parseJsonc(readFileSync(collieConfigPath, "utf8"));
+    const shipped = shippedCollieConfig(collie) as Record<string, unknown>;
+    expect(shipped).not.toHaveProperty("$schema");
+    expect(shipped).toEqual({
+      name: "collie",
+      main: "worker.mjs",
+      no_bundle: true,
+      compatibility_date: collie.compatibility_date,
+      compatibility_flags: ["nodejs_compat"],
+      durable_objects: { bindings: [{ name: "COLLIE", class_name: "Collie" }] },
+      migrations: [{ tag: "v1", new_sqlite_classes: ["Collie"] }],
+    });
+    expect(() => shippedCollieConfig({ ...collie, env: { pen: {} } })).toThrow(/rents nothing/);
   });
 
   it("refuses a stamp with a piece missing", () => {

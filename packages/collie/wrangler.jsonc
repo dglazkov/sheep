@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // The collie (collie phase 1): isocan's rc room hosted beside the station, one Durable Object that never sleeps. It rents
+  // nothing, so there is no `pen` environment; it reaches the station over HTTP with COLLIE_SHEEP_HOME and COLLIE_SHEEP_TOKEN.
+  "name": "collie",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [{ "name": "COLLIE", "class_name": "Collie" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Collie"] }]
+}

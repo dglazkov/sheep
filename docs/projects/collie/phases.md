@@ -26,11 +26,14 @@ lives in `packages/cli`'s modules and is changed for both.
 
 ---
 
-**Where we are: collie phase 0 CLOSED, 14 September 2026, in isocan;
-collie phase 1 is next.** Isocan's project `room` closed #294 in seven
-phases on 13 and 14 Sep, and the module is verified from a scratch
-install of `#release`. Nothing built here yet; the shepherd is reviewing
-the gestures.
+**Where we are: collie phases 0 and 1 CLOSED, 14 September 2026;
+collie phase 2 is next.** The brain is isocan's `isocan/rc` (project
+`room`, #294), and since isocan 14f39ba5 it carries `DaemonRoutes` too;
+`packages/collie` pins its release 2f15360e. The Worker holds the room in
+workerd against scripted fakes, the command speaks to it, and the rig
+walked by hand. Next is `collie setup`, `deploy`, `rm`, the mint through
+isocan's API, and the walks. Three Open debts below are isocan's work,
+wanted before the phase 2 walk; nothing waits on a person.
 
 Four phases: the brain in isocan, the Worker and the rig, the sitting
 and the walk, and moving in. The last is small and last because it needs
@@ -215,9 +218,18 @@ local --faux` in a scratch kennel and against a fake isocan served from
 the test's fixture on a port, `collie new --pass` with a fixture pass,
 and `collie` reporting a room.
 
-**Status: NOT STARTED.**
+**Status: CLOSED, 2026-09-14.** `pnpm test` exits 0 across the three rings, both typechecks and the bundle hold, the three mutations fail their cases, and the rig by hand stood by, enrolled Percy, birthed its sheep, and switched off and on.
 
 **Findings:**
+
+- **2026-09-14 — `isocan/rc` exported no route client,** so the phase opened with isocan 14f39ba5 re-exporting `DaemonRoutes` (blob methods `Uint8Array`); `packages/collie` pins its release 2f15360e and writes none of the wire.
+- **2026-09-14 — The pool (0.22) has no `fetchMock`:** the fakes replace `globalThis.fetch` in the shared isolate, and poll rather than resolve a case's promise, which workerd refuses across objects.
+- **2026-09-14 — A refused pass leaves nothing:** the door's badge waits in memory for the redeem, and the station's floor is probed before the pass is spent.
+- **2026-09-14 — Shared modules moved, not copied:** `setup-words.ts` serves `herd.ts` and the Worker; `local.ts` exports the rig's helpers; `tip.ts` keeps `collieSkew`.
+- **2026-09-14 — A scratch `HOME` loses Docker's buildx;** `sheep home local` there needs `DOCKER_CONFIG` at the real `~/.docker`.
+- **2026-09-14 — Open: the resume rule reads isocan's text.** The host's `attach` rejoins a marked turn, re-prompting only for an entry `summonsPrompt`'s JSON tail does not mark `redelivered`; a rejoin hook is isocan's work.
+- **2026-09-14 — Open: three host pieces are the laptop's only.** `parseCanvasAddress`/`canvasUrlWithPass` are rewritten in `collie.ts`; `endCellBadge` is skipped, so a withdrawn sheep's badge stays live; `back after <n>s — rejoined <name>'s turn` is unsaid. Isocan's work, before collie phase 2's walk.
+- **2026-09-14 — Open: a dropped station is retried silently** for five minutes; journey 2 step 3 wants the drop said once. Collie phase 2.
 
 ---
 

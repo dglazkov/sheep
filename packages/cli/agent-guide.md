@@ -19,6 +19,9 @@ the command, then `sheep home deploy` the home, keeping every session; it
 refuses while a sheep is mid-turn, since a deploy restarts the turn, and
 `--now` deploys anyway. `SHEEP_TIP=0` stops the looking for a newer build.
 
+The package's second command, `collie`, hosts isocan's rc beside the
+station: `collie --agent-help`.
+
 Every verb talks to a **home**: the shepherd's station on their
 Cloudflare account, where every sheep lives with a container to clone,
 build, test, and push in. You never make one. The shepherd does, once, at

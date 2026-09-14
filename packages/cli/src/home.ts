@@ -1,27 +1,11 @@
 import type { Entry } from "@earendil-works/pi-agent-core";
 import type { SheepConfig } from "./config.js";
+import type { SetupState } from "./setup-words.js";
 
 /** What a cell last told the Directory its lane was doing. */
 export type LaneState = "idle" | "running" | "waiting";
 
-/** What a setup is doing, as the sheep's row says it (bleat phase 0's `SetupPhase`). */
-export type SetupPhase = "running" | "ok" | "failed";
-
-/**
- * The `setup` on a sheep's Directory row, mirroring
- * `packages/cell/src/bleat.ts`: the live state of the pasture's `setup.sh`
- * in this sheep's container. `ms` is absent three ways — while it runs, on
- * a `failed` an eviction cut off (the length is unknowable, not zero), and
- * on one whose end never came — and every surface must render each.
- */
-export interface SetupState {
-  state: SetupPhase;
-  /** When the setup started; `Date.now() - at` is the elapsed time while it runs. */
-  at: number;
-  ms?: number;
-  exit?: number;
-  error?: string;
-}
+export type { SetupPhase, SetupState } from "./setup-words.js";
 
 /**
  * One setup as the cell kept it (bleat phase 0's `SetupRecord`), handed to

@@ -16,7 +16,9 @@
  * The said file is `~/.sheep/tip.json`, beside `tools`, never per kennel:
  * the tip last fetched and when, when a command last asked for it, the tip
  * commit the notice was last said for, and the pair of builds the skew
- * line was last said for. A missing or unreadable file is empty, so the
+ * line was last said for; and, for the package's second command, the pair
+ * `collie`'s skew line was last said for (collie phase 1), kept by every
+ * read and write here so neither command erases the other's. A missing or unreadable file is empty, so the
  * worst a broken one costs is a line said again.
  */
 import { spawn } from "node:child_process";
@@ -47,6 +49,8 @@ export interface Said {
   noticed?: string;
   /** The pair the skew line was last said for, `<home commit>:<cli commit>`. */
   skew?: string;
+  /** The pair `collie`'s skew line was last said for, `<collie Worker commit>:<cli commit>` (collie phase 1). */
+  collieSkew?: string;
 }
 
 /** The said file: the machine's, under `HOME`, so a ring's fresh `HOME` has its own. */
@@ -76,13 +80,14 @@ export function readSaid(path: string = saidPath()): Said {
     return {};
   }
   if (parsed === null || typeof parsed !== "object") return {};
-  const raw = parsed as { tip?: Partial<NonNullable<Said["tip"]>>; asked?: unknown; noticed?: unknown; skew?: unknown };
+  const raw = parsed as { tip?: Partial<NonNullable<Said["tip"]>>; asked?: unknown; noticed?: unknown; skew?: unknown; collieSkew?: unknown };
   const said: Said = {};
   const tip = raw.tip;
   if (tip && typeof tip.commit === "string" && typeof tip.builtAt === "string" && typeof tip.at === "string") said.tip = { commit: tip.commit, builtAt: tip.builtAt, at: tip.at };
   if (typeof raw.asked === "string") said.asked = raw.asked;
   if (typeof raw.noticed === "string") said.noticed = raw.noticed;
   if (typeof raw.skew === "string") said.skew = raw.skew;
+  if (typeof raw.collieSkew === "string") said.collieSkew = raw.collieSkew;
   return said;
 }
 

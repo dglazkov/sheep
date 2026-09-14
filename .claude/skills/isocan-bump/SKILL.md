@@ -117,9 +117,10 @@ Then commit and push to `main`, per the house rule.
 
 Bumps so far:
 
-- none yet; the first pin is collie phase 1's, at the release commit
-  built from 30e9902e or later (isocan's project `room` closed #294 there,
-  14 Sep 2026).
+- **2026-09-14 — the first pin, 2f15360e** (release of isocan 14f39ba5,
+  after `room`'s 30e9902e): collie phase 1 needed `DaemonRoutes` from
+  `isocan/rc` and made that commit in isocan first; about forty minutes
+  from the commit to the release branch, `test:deep` included.
 
 ## Things that have gone wrong before (pi-bump's lessons, which apply)
 

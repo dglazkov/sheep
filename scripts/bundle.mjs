@@ -13,9 +13,12 @@
  * ignored so packages resolve as installed packages do. Two entries:
  *
  *   packages/cli/src/cli.ts                          → dist/sheep.mjs
+ *   packages/cli/src/collie/cli.ts                   → dist/collie.mjs
  *   vendor/pi/packages/coding-agent/src/experimental/cli.ts → dist/pi-client.mjs
  *
- * The first is the CLI with pi's client and services inside it. The
+ * The first is the CLI with pi's client and services inside it; the
+ * collie's command (collie phase 1) is the second bin of the same package,
+ * built from the same modules with the same options. The
  * second is pi's experimental CLI, whole, which is what attach mode spawns
  * (`packages/cli/src/pi.ts`); the published `pi` excludes it, so it has
  * to come from the fork. Chord goes inside both; the packages left to
@@ -25,7 +28,8 @@
  *
  * Beside the bundles, the guide: `packages/cli/agent-guide.md` becomes
  * `dist/agent-guide.md`, which `sheep --agent-help` prints from beside the
- * bundle (collar phase 2). And what the client path reads at runtime
+ * bundle (collar phase 2), and `packages/cli/collie-guide.md` becomes
+ * `dist/collie-guide.md` the same way for `collie --agent-help`. And what the client path reads at runtime
  * relative to its package: pi's built-in theme JSON (`dist/modes/interactive/theme/`,
  * where `getThemesDir()` looks from a package with no `src/`) and the
  * image-resize worker (`dist/image-resize-worker.js`, resolved beside the
@@ -51,6 +55,13 @@
  * a checkout build (`0.0.0-checkout`) and the config keeps the Dockerfile
  * line, which is what `wrangler dev --env pen` from a checkout builds.
  *
+ * The collie's Worker (collie phase 1) the same way: `wrangler deploy
+ * --dry-run --outdir` over `packages/collie`, where isocan's module
+ * resolves through its `browser` condition, renamed to
+ * `collie/worker.mjs`, with `COLLIE_BUILD` defined from the same stamp;
+ * `collie/wrangler.jsonc` is its config with `main` pointed at it and
+ * `no_bundle` set. It rents nothing, so there is no environment to rewrite.
+ *
  * The eyes (eyes phase 2). The cell's config binds `BROWSER` at the top
  * level and in `env.pen`, and `shippedConfig` carries both through
  * untouched (eyes phase 0's finding); `assertEyes` is the guard that says
@@ -72,6 +83,8 @@ const codingAgent = join(piRoot, "packages", "coding-agent");
 const cellDir = join(root, "packages", "cell");
 export const distDir = join(root, "dist");
 export const homeDir = join(root, "home");
+const collieWorkerDir = join(root, "packages", "collie");
+export const collieDir = join(root, "collie");
 
 const banner = {
   js: 'import { createRequire as __piCreateRequire } from "node:module"; const require = __piCreateRequire(import.meta.url);',
@@ -361,6 +374,56 @@ function emitWorker(stamp) {
 }
 
 /**
+ * The collie's shipped config (collie phase 1): its own, with `main` the
+ * Worker wrangler emitted beside it and `no_bundle` set; nothing else
+ * changes, since the collie has no container and no environment.
+ */
+export function shippedCollieConfig(config) {
+  const { $schema: _schema, name, main: _main, env, ...rest } = config;
+  if (env !== undefined) throw new Error("the collie's config names an environment; the collie rents nothing and ships its top level alone");
+  return { name, main: "worker.mjs", no_bundle: true, ...rest };
+}
+
+/**
+ * The collie's Worker (collie phase 1): `wrangler deploy --dry-run` over
+ * `packages/collie`, with `COLLIE_BUILD` defined from the stamp as
+ * `SHEEP_BUILD` is for the station, into `collie/worker.mjs` and
+ * `collie/wrangler.jsonc`.
+ */
+function emitCollie(stamp) {
+  const wrangler = join(collieWorkerDir, "node_modules", "wrangler", "bin", "wrangler.js");
+  if (!existsSync(wrangler)) throw new Error(`wrangler is not installed at ${wrangler}; run pnpm install`);
+  const out = mkdtempSync(join(tmpdir(), "sheep-collie-"));
+  const define = stamp === undefined ? [] : ["--define", `COLLIE_BUILD:${JSON.stringify(JSON.stringify({ commit: stamp.commit, builtAt: stamp.builtAt }))}`];
+  try {
+    const done = spawnSync(process.execPath, [wrangler, "deploy", "--dry-run", "--outdir", out, ...define], {
+      cwd: collieWorkerDir,
+      encoding: "utf8",
+      env: { ...process.env, CI: "1", WRANGLER_SEND_METRICS: "false" },
+    });
+    if (done.status !== 0) throw new Error(`wrangler deploy --dry-run over packages/collie failed:\n${done.stdout}${done.stderr}`);
+    const emitted = join(out, "index.js");
+    if (!existsSync(emitted)) throw new Error(`wrangler did not write ${emitted}; it wrote ${readdirSync(out).join(", ")}`);
+    const extra = readdirSync(out).filter((name) => !["index.js", "index.js.map", "README.md"].includes(name));
+    if (extra.length > 0) throw new Error(`wrangler emitted files beside the collie's Worker that collie/ does not carry: ${extra.join(", ")}`);
+    mkdirSync(collieDir, { recursive: true });
+    copyFileSync(emitted, join(collieDir, "worker.mjs"));
+  } finally {
+    rmSync(out, { recursive: true, force: true });
+  }
+  const worker = readFileSync(join(collieDir, "worker.mjs"), "utf8");
+  if (stamp !== undefined && !worker.includes(stamp.commit)) throw new Error(`wrangler emitted the collie's Worker without the stamp ${stamp.commit} in it; was --define dropped?`);
+  if (stamp === undefined && !worker.includes("0.0.0-checkout")) throw new Error("wrangler emitted the collie's Worker without the checkout stamp in it");
+  if (!worker.includes("runRoom") && !worker.includes("answering on")) throw new Error("the collie's Worker does not carry isocan's room; did the isocan/rc import resolve?");
+  const written = shippedCollieConfig(parseJsonc(readFileSync(join(collieWorkerDir, "wrangler.jsonc"), "utf8")));
+  const header =
+    "// GENERATED by scripts/bundle.mjs from packages/collie/wrangler.jsonc: `main` is the collie's Worker wrangler emitted\n" +
+    `// beside this file and \`no_bundle\` serves it as is; ${stamp === undefined ? "a checkout build (0.0.0-checkout)" : `stamped ${stamp.commit}`}.\n`;
+  writeFileSync(join(collieDir, "wrangler.jsonc"), header + JSON.stringify(written, null, 2) + "\n");
+  return { bytes: worker.length };
+}
+
+/**
  * A test seam for the release guard (collar phase 3). `SHEEP_BUNDLE_BREAK=sheep`
  * or `=pi-client` appends a top-level `throw` to that bundle after it is
  * built and checked, so a release made with it fails the package ring at
@@ -379,7 +442,7 @@ function breakOnPurpose() {
 }
 
 /**
- * Builds `dist/` and `home/` from scratch; returns the wrangler version the
+ * Builds `dist/`, `home/`, and `collie/` from scratch; returns the wrangler version the
  * Worker was built with, the image reference the config names (undefined
  * for a checkout build), and the files written. `stamp` is the release's
  * `{ commit, builtAt, imageDigest? }`, defined into the Worker and named
@@ -398,10 +461,12 @@ export async function buildRelease(stamp) {
   }
   rmSync(distDir, { recursive: true, force: true });
   rmSync(homeDir, { recursive: true, force: true });
+  rmSync(collieDir, { recursive: true, force: true });
   mkdirSync(distDir, { recursive: true });
 
   const files = [];
   files.push(await bundleEntry("dist/sheep.mjs", join(root, "packages", "cli", "src", "cli.ts"), join(distDir, "sheep.mjs")));
+  files.push(await bundleEntry("dist/collie.mjs", join(root, "packages", "cli", "src", "collie", "cli.ts"), join(distDir, "collie.mjs")));
   files.push(await bundleEntry("dist/pi-client.mjs", join(codingAgent, "src", "experimental", "cli.ts"), join(distDir, "pi-client.mjs")));
   files.push(await bundleEntry("dist/image-resize-worker.js", join(codingAgent, "src", "utils", "image-resize-worker.ts"), join(distDir, "image-resize-worker.js")));
   chmodSync(join(distDir, "pi-client.mjs"), 0o755);
@@ -410,6 +475,9 @@ export async function buildRelease(stamp) {
   const guide = join(root, "packages", "cli", "agent-guide.md");
   copyFileSync(guide, join(distDir, "agent-guide.md"));
   files.push({ file: "dist/agent-guide.md", bytes: readFileSync(guide).length });
+  const collieGuide = join(root, "packages", "cli", "collie-guide.md");
+  copyFileSync(collieGuide, join(distDir, "collie-guide.md"));
+  files.push({ file: "dist/collie-guide.md", bytes: readFileSync(collieGuide).length });
 
   const themeSource = join(codingAgent, "src", "modes", "interactive", "theme");
   const themeTarget = join(distDir, "modes", "interactive", "theme");
@@ -422,6 +490,9 @@ export async function buildRelease(stamp) {
   const worker = emitWorker(stamp);
   files.push({ file: "home/worker.mjs", bytes: worker.bytes });
   files.push({ file: "home/wrangler.jsonc", bytes: readFileSync(join(homeDir, "wrangler.jsonc")).length });
+  const collie = emitCollie(stamp);
+  files.push({ file: "collie/worker.mjs", bytes: collie.bytes });
+  files.push({ file: "collie/wrangler.jsonc", bytes: readFileSync(join(collieDir, "wrangler.jsonc")).length });
   return { wrangler: worker.wrangler, image: worker.image, files };
 }
 

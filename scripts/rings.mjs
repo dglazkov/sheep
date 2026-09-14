@@ -106,6 +106,8 @@ export const RINGS = {
     "packages/cell/test/storage-conformance.test.ts",
     "packages/cell/test/storage-timing.test.ts",
     "packages/cell/test/wire.test.ts",
+    "packages/collie/test/collie.test.ts",
+    "packages/collie/test/router.test.ts",
     "packages/cli/test/bridge.test.ts",
     "packages/cli/test/credentials.test.ts",
     "packages/cli/test/name.test.ts",
@@ -118,6 +120,7 @@ export const RINGS = {
   command: [
     "packages/cli/test/bleat.test.ts",
     "packages/cli/test/cli.test.ts",
+    "packages/cli/test/collie.test.ts",
     "packages/cli/test/deploy.test.ts",
     "packages/cli/test/earmark.test.ts",
     "packages/cli/test/join.test.ts",

@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "bin": {
-    "sheep": "./bin/sheep.js"
+    "sheep": "./bin/sheep.js",
+    "collie": "./bin/collie.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

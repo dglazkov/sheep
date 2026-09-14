@@ -110,6 +110,10 @@ The kennel is .sheep/ at or above the working directory, found the way git finds
 none: this directory's config, and the home it names. sheep setup settles where it goes; two directories share
 nothing but the command, and cd is how you switch.
 
+The package has a second command, collie: isocan's rc standing by at the shepherd's Cloudflare account beside
+the station, so a canvas's agents answer with every laptop shut, each prompting a sheep here. collie --help is
+its reference and collie --agent-help its guide; the verbs that hand it a pass are the shepherd's.
+
 With a prompt after --, the reply streams and sheep exits when the turn ends. A prompt to a busy session is
 queued behind the running turn, as pi queues a prompt typed mid-turn; sheep prints "queued <id>" and exits 0.
 Without a prompt, sheep attaches pi's interactive terminal. wait exits 124 on timeout, with what had finished.

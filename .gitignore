@@ -153,3 +153,4 @@ vite.config.ts.timestamp-*
 # collar: the release's built files. main is sources only; scripts/release.mjs commits these onto the release branch.
 /dist/
 /home/
+/collie/
