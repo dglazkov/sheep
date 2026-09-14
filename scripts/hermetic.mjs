@@ -4408,8 +4408,11 @@ async function collieOnAccount(ring, api, station, { harness, token, needles, ho
     // co5: the ask at the doorbell, as the tray's Add an agent sends it, on the person's own hosted badge; Percy enrolled here.
     const asked = await tray("POST", `/api/projects/${made.canvasId}/agents/ask`, { name: "Percy", from: person.actor });
     if (asked.status !== 200 || asked.body.ok !== true) ring.fail("co5", `POST ${COLLIE_ISOCAN_HOME}/api/projects/${made.canvasId}/agents/ask {name: Percy}`, { stdout: JSON.stringify(asked.body), stderr: `status ${asked.status}; expected {ok: true}`, code: 1 });
-    await until("co5", "collie log --json (the enrolment)", narration, (lines) => lines.includes("Hermetic asked from the canvas to add Percy — enrolling here"), 120_000);
+    await until("co5", "collie log --json (the ask narrated)", narration, (lines) => lines.includes("Hermetic asked from the canvas to add Percy — enrolling here"), 120_000);
     state.enrolled = true;
+    // The room's own word that the enrolment landed and this badge answers for Percy, before isocan's `who` is asked: a failure
+    // names the first thing that did not happen, the narration's or the canvas's.
+    await until("co5", "collie log --json (the enrolment narrated: \"enrolled Percy — answerable here\")", narration, (lines) => lines.some((line) => /enrolled Percy — answerable here/.test(line)), 120_000);
     const who = await until("co5", "isocan --json who (Percy answerable)", () => isocanRead(["who"]), (value) => value?.standing?.some((row) => row.actor.name === "Percy" && row.state === "answerable"), 120_000, 3_000);
     const percy = who.standing.find((row) => row.actor.name === "Percy");
     if (percy.policy?.owner?.id !== person.actor.id) ring.fail("co5", "isocan --json who", { stdout: JSON.stringify(percy), stderr: `expected Percy listening to ${person.actor.id}`, code: 1 });
@@ -4511,6 +4514,33 @@ async function collieOnAccount(ring, api, station, { harness, token, needles, ho
     );
   } catch (error) {
     failure = error;
+    // The collie's side of any failure from co3 on (the ring's evidence was the ring's alone): the whole narration, the report,
+    // the tray's read of the rc, and isocan's `who`, each read once now, redacted as every other failure is.
+    const step = error?.ring?.step;
+    if (typeof step === "string" && /^co[3-9]$/.test(step)) {
+      const read = async (label, fn) => {
+        try {
+          return `--- ${label} ---\n${await fn()}`;
+        } catch (readError) {
+          return `--- ${label} ---\n(could not be read: ${readError.message})`;
+        }
+      };
+      const shown = (result) => `exit ${result.code}\n${result.stdout.trimEnd()}${result.stderr.trim() ? `\n(stderr) ${result.stderr.trimEnd()}` : ""}`;
+      const parts = [
+        await read("collie log --json --last 1000", async () => shown(await at(["collie", "log", "--json", "--last", "1000"]))),
+        await read("collie --json", async () => shown(await at(["collie", "--json"]))),
+        await read(`GET ${COLLIE_ISOCAN_HOME}/api/projects/${state.canvasId}/rc (the person's badge)`, async () => {
+          if (state.canvasId === undefined) return "(no canvas yet)";
+          const answer = await tray("GET", `/api/projects/${state.canvasId}/rc`);
+          return `status ${answer.status}\n${JSON.stringify(answer.body, null, 2)}`;
+        }),
+        await read("isocan --json who", async () => shown(await at(["isocan", "--json", "who"]))),
+      ];
+      const secrets = [token, stationToken, ...needles].filter((one) => typeof one === "string" && one.length >= 8);
+      // A pass travels as an address's fragment (`/p/<id>#<token>`); any such fragment is redacted with the known secrets.
+      const redact = (text) => secrets.reduce((acc, one) => acc.split(one).join("<secret>"), text).replace(/(\/p\/[A-Za-z0-9_-]+)#[^\s"'\\]+/g, "$1#<pass>");
+      error.ring.result = { ...error.ring.result, stderr: `${error.ring.result?.stderr ?? ""}\n\n=== the collie's side, read at the failure ===\n${redact(parts.join("\n"))}` };
+    }
   } finally {
     // Whatever failed: the enrolment withdrawn, the canvas archived, the daemon stopped, and the collie's Worker gone from the account.
     if (state.enrolled || state.canvasId !== undefined) {

@@ -36,6 +36,8 @@
  * report, and the end. Every ring strips it.
  */
 import { randomBytes } from "node:crypto";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { configPath, readConfigFile, sheepDir, writeConfigFile } from "../config.js";
@@ -140,30 +142,63 @@ export function collieMidTurnText(refusal: MidTurn): string {
 
 const sleep = (ms: number) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
 
-/** How long a deploy waits for the collie to answer with its token: ninety seconds; `SHEEP_TEST_COLLIE_READY_MS` shortens it in a test. */
+/** How long a deploy waits for the collie to be up: two minutes; `SHEEP_TEST_COLLIE_READY_MS` shortens it in a test. */
 export function readyWaitMs(): number {
   const seam = Number(process.env.SHEEP_TEST_COLLIE_READY_MS);
-  return process.env.SHEEP_TEST_COLLIE_READY_MS !== undefined && Number.isFinite(seam) && seam >= 0 ? seam : 90_000;
+  return process.env.SHEEP_TEST_COLLIE_READY_MS !== undefined && Number.isFinite(seam) && seam >= 0 ? seam : 120_000;
+}
+
+/** How many authorized answers in a row make the collie up. */
+export const READY_IN_A_ROW = 5;
+
+/** The gap between two asks: a second; `SHEEP_TEST_COLLIE_READY_GAP_MS` shortens it in a test. */
+function readyGapMs(): number {
+  const seam = Number(process.env.SHEEP_TEST_COLLIE_READY_GAP_MS);
+  return process.env.SHEEP_TEST_COLLIE_READY_GAP_MS !== undefined && Number.isFinite(seam) && seam >= 0 ? seam : 1_000;
+}
+
+/** One `GET /home` with the bearer on a connection of its own (no agent, so no kept-alive socket answers twice): the status and whether the header came. */
+function askHome(url: string, token: string): Promise<{ status: number; build: boolean }> {
+  const target = new URL("/home", url);
+  const client = target.protocol === "https:" ? httpsRequest : httpRequest;
+  return new Promise((resolveAsk, rejectAsk) => {
+    const request = client(target, { method: "GET", agent: false, headers: { authorization: `Bearer ${token}`, connection: "close" }, timeout: 5_000 }, (response) => {
+      response.resume();
+      response.once("end", () => resolveAsk({ status: response.statusCode ?? 0, build: response.headers["x-collie-build"] !== undefined }));
+      response.once("error", rejectAsk);
+    });
+    request.once("timeout", () => request.destroy(new Error("no answer in 5s")));
+    request.once("error", rejectAsk);
+    request.end();
+  });
 }
 
 /**
- * Polls `GET /home` with the bearer until it answers 200 with the `x-collie-build` header, a second apart, up to
- * `readyWaitMs()`: the collie's own door, which answers exactly when the version serving holds this token.
+ * Whether the collie is up: `GET /home` with the bearer answering 200 with `x-collie-build` `READY_IN_A_ROW` times in a
+ * row, a gap apart, each on a fresh connection, within `readyWaitMs()`; anything else starts the count again. For a
+ * while after a deploy and its secret puts the edge answers from no Worker (404), from a version without the token
+ * (401), and from the right one, request by request (release ca1eec6's co4), so one authorized answer is not up.
+ * `progress` hears the count as it moves. `last` names the last few answers, newest last.
  */
-export async function readyWithToken(url: string, token: string): Promise<{ ready: boolean; last: string }> {
+export async function readyWithToken(url: string, token: string, progress: (inARow: number) => void = () => {}): Promise<{ ready: boolean; last: string }> {
   const deadline = Date.now() + readyWaitMs();
-  let last = "nothing yet";
+  const answers: string[] = [];
+  let inARow = 0;
   for (;;) {
+    let answer: string;
     try {
-      const response = await fetch(new URL("/home", url), { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(5_000) });
-      await response.body?.cancel();
-      if (response.status === 200 && response.headers.get("x-collie-build") !== null) return { ready: true, last: "200" };
-      last = `${response.status}${response.headers.get("x-collie-build") === null ? ", no x-collie-build" : ""}`;
+      const got = await askHome(url, token);
+      answer = got.status === 200 && !got.build ? "200 without x-collie-build" : String(got.status);
+      inARow = got.status === 200 && got.build ? inARow + 1 : 0;
     } catch (error) {
-      last = error instanceof Error ? error.message : String(error);
+      answer = error instanceof Error ? error.message : String(error);
+      inARow = 0;
     }
-    if (Date.now() >= deadline) return { ready: false, last };
-    await sleep(Math.min(1_000, Math.max(0, deadline - Date.now())));
+    answers.push(answer);
+    progress(inARow);
+    if (inARow >= READY_IN_A_ROW) return { ready: true, last: answers.slice(-READY_IN_A_ROW).join(", ") };
+    if (Date.now() >= deadline) return { ready: false, last: answers.slice(-5).join(", ") };
+    await sleep(Math.min(readyGapMs(), Math.max(0, deadline - Date.now())));
   }
 }
 
@@ -244,10 +279,16 @@ export async function deployCollie(options: CollieDeployOptions): Promise<Collie
     writeConfigFile({ ...rest, collie: { name, address: collieAddress, token: bearer } });
     // Ready is an authorized answer: `GET /` answers `collie` from the first version, before any secret, and each put is a
     // new version, so only `GET /home` with the token just put (or kept) says the version that holds it is serving.
-    say(`collie: waiting for ${collieAddress.replace(/^https?:\/\//, "")} to answer with its token\n`);
-    const waited = await readyWithToken(collieProbe(collieAddress), bearer);
+    // The count leads the line, so the stage's key (up to its first comma) stays one line that moves rather than a stack.
+    say(`collie: answers with its token in a row, 0 of ${READY_IN_A_ROW}\n`);
+    let said = 0;
+    const waited = await readyWithToken(collieProbe(collieAddress), bearer, (inARow) => {
+      if (inARow === said) return;
+      said = inARow;
+      say(`collie: answers with its token in a row, ${inARow} of ${READY_IN_A_ROW}\n`);
+    });
     if (!waited.ready) {
-      throw new Error(`${collieAddress} did not answer GET /home with this kennel's token within ${Math.round(readyWaitMs() / 1000)}s (the last answer: ${waited.last}), so the Worker that holds it is not serving yet`);
+      throw new Error(`${collieAddress} did not answer GET /home with this kennel's token ${READY_IN_A_ROW} times in a row within ${Math.round(readyWaitMs() / 1000)}s (the last answers: ${waited.last}), so the Worker that holds it is not serving everywhere yet`);
     }
     const answers = true;
     return { name, address: collieAddress, state, token: kept === undefined ? "minted" : "kept", secrets: secrets.map(([secret]) => secret), answers, build: mark, interrupted, config: configPath(), wrangler: config };

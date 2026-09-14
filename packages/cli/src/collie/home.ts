@@ -109,13 +109,15 @@ export class CollieHome {
         const error = errorOf(text);
         if (error !== undefined) throw new Sentence(error, response.status);
       }
-      if (response.status === 401) throw new Sentence(`the collie at ${this.url.origin} refused this kennel's token (${method} ${path}: 401 ${text.trim()})`, 401);
-      throw new Error(`${method} ${path}: ${response.status} ${text.trim()}`);
+      if (response.status === 401) throw new Sentence(`the collie at ${this.url.origin} refused this kennel's token (${method} ${path}: 401 ${gist(text)})`, 401);
+      // Not the contract's answer (collie phase 2, release ca1eec6's co4): the edge's own page, never printed whole.
+      const moments = response.status === 404 || response.status >= 500 ? "; a collie deployed moments ago can take a minute to answer everywhere — try again, or `collie setup` again" : "";
+      throw new Sentence(`the collie at ${this.url.origin} answered ${method} ${path} with ${response.status} and no answer of its own (${gist(text)})${moments}`, response.status);
     }
     try {
       return JSON.parse(text) as T;
     } catch {
-      throw new Error(`${method} ${path}: the collie answered ${response.status} with something that is not JSON: ${text.slice(0, 120)}`);
+      throw new Error(`the collie at ${this.url.origin} answered ${method} ${path} with ${response.status} and something that is not its JSON (${gist(text)}); \`collie setup\` again deploys it from this package`);
     }
   }
 
@@ -152,6 +154,15 @@ export class CollieHome {
   end(): Promise<{ ended: { origin: string; badge: string }[] }> {
     return this.request("DELETE", "/");
   }
+}
+
+/** A body as a sentence may quote it: an HTML page's `<title>`, else its first 80 characters on one line; never the page. */
+export function gist(text: string): string {
+  const title = /<title[^>]*>([^<]*)<\/title>/i.exec(text)?.[1]?.replace(/\s+/g, " ").trim();
+  if (title !== undefined && title !== "") return title;
+  const flat = text.replace(/\s+/g, " ").trim();
+  if (flat === "") return "an empty body";
+  return flat.length > 80 ? `${flat.slice(0, 80)}…` : flat;
 }
 
 /** A refusal's sentence, when the body is `{ "error": "<sentence>" }`; undefined for anything else. */

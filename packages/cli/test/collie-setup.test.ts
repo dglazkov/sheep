@@ -57,6 +57,16 @@ interface CollieWorker {
   secretLagMs?: number;
   /** When a request first saw the put, for the lag. */
   putSeenAt?: number;
+  /**
+   * The edge settling after a deploy (release ca1eec6's co4): for this long after the put is first seen, every bearer
+   * request is answered in turn from the right version (200), from no Worker (Cloudflare's 404 page), and from a version
+   * without the token (401).
+   */
+  flapMs?: number;
+  /** How many bearer requests have been answered while flapping, for the turn. */
+  flaps?: number;
+  /** Every bearer route answered with this status and an HTML page, as an edge's page is, when set. */
+  htmlStatus?: number;
   rooms: (typeof ROOM & { owner: string; agents: Json[] })[];
   requests: { method: string; path: string; auth: string | undefined }[];
   /** Whether `DELETE /` was answered: the badges ended, the rows dropped. */
@@ -96,12 +106,27 @@ async function fakeCollieWorker(state: CollieWorker): Promise<{ server: Server; 
     }
     const held = state.token ?? state.put?.() ?? null;
     if (held !== null && state.putSeenAt === undefined) state.putSeenAt = Date.now();
+    const page = (status: number) => {
+      response.statusCode = status;
+      response.setHeader("content-type", "text/html");
+      return response.end(`<!DOCTYPE html>\n<html><head><meta charset="utf-8"><title>Page not found</title></head><body><h1>There is nothing here yet</h1><p>If you expect something here, it may take some time. Please check back again later.</p></body></html>\n`);
+    };
+    if (state.htmlStatus !== undefined) return page(state.htmlStatus);
+    if (state.flapMs !== undefined && state.putSeenAt !== undefined && Date.now() < state.putSeenAt + state.flapMs) {
+      const turn = (state.flaps = (state.flaps ?? 0) + 1) % 3;
+      if (turn === 2) return page(404);
+      if (turn === 0) {
+        response.statusCode = 401;
+        return response.end("unauthorized\n");
+      }
+    }
     const serving = state.secretLagMs === undefined || (state.putSeenAt !== undefined && Date.now() >= state.putSeenAt + state.secretLagMs);
     if (held === null || !serving || request.headers.authorization !== `Bearer ${held}`) {
       response.statusCode = 401;
       return response.end("unauthorized\n");
     }
     if (key === "GET /home") return json(200, { build: { commit: "0.0.0-checkout", builtAt: null }, on: true, since: null, rooms: state.rooms.length });
+    if (key === "GET /log") return json(200, { lines: [], last: 0 });
     if (key === "GET /report") return json(200, { on: true, since: "2026-09-14T03:42:10Z", limits: { turnsPerHour: 20, chain: 5 }, rooms: state.rooms });
     if (key === "DELETE /") {
       const ended = [...new Set(state.rooms.map((room) => room.origin))].map((origin) => ({ origin, badge: "bdg_1" }));
@@ -234,6 +259,8 @@ export async function resolveIdentity(client, home) {
       SHEEP_TEST_WRANGLER_LOG: log,
       SHEEP_TEST_STATION_URL: stationServer.url,
       SHEEP_TEST_COLLIE_URL: workerServer.url,
+      // Readiness asks five times in a row; a tenth of a second apart here, a second apart on an account.
+      SHEEP_TEST_COLLIE_READY_GAP_MS: "100",
       ...extra,
     };
     for (const name of Object.keys(merged)) if (merged[name] === undefined) delete merged[name];
@@ -329,7 +356,7 @@ describe("collie setup with --json, against the fake account (journey 1 step 3)"
     expect(w.config()).toMatchObject({ home: STATION.home, token: STATION.token, name: STATION.name });
     expect(statSync(join(w.kennel, "config")).mode & 0o777).toBe(0o600);
     // Ready is the authorized door: `GET /home` with the token just put, and nothing else asked of a first deploy.
-    expect(w.worker.requests).toEqual([{ method: "GET", path: "/home", auth: `Bearer ${block.token as string}` }]);
+    expect(w.worker.requests).toEqual(Array.from({ length: 5 }, () => ({ method: "GET", path: "/home", auth: `Bearer ${block.token as string}` })));
     expect(w.worker.put!()).toBe(block.token);
   });
 
@@ -408,16 +435,59 @@ describe("collie setup and deploy wait for the collie to answer with its token (
     const run = await w.collie(["setup", "--json"], { env: { SHEEP_TEST_COLLIE_READY_MS: "2000" } });
     expect(run.code).toBe(1);
     const failed = JSON.parse(run.stdout) as { failed: string };
-    expect(failed.failed).toContain(`${COLLIE.address} did not answer GET /home with this kennel's token within 2s (the last answer: 401)`);
+    expect(failed.failed).toContain(`${COLLIE.address} did not answer GET /home with this kennel's token 5 times in a row within 2s (the last answers: 401, 401, 401, 401, 401)`);
     expect(failed.failed).toContain("`collie setup` again finishes it");
     // At the screen: red at the collie step, the sentence under the screen, exit 1.
     const screen = driveStile({ command: process.execPath, args: [w.bin, "setup"], cwd: w.dir, env: w.env({ SHEEP_TEST_COLLIE_READY_MS: "2000" }) });
     cleanups.push(async () => screen.kill());
     const exit = await screen.exited;
     expect(exit.code).toBe(1);
-    expect(exit.stderr).toContain("did not answer GET /home with this kennel's token within 2s");
+    expect(exit.stderr).toContain("did not answer GET /home with this kennel's token 5 times in a row within 2s");
     expect(screen.frame()).toContain("✗ the collie did not come up");
     expect(screen.frame()).not.toContain("what is left");
+  });
+});
+
+describe("an edge that answers some requests from no Worker and some from an older version (release ca1eec6's co4)", () => {
+  it("setup is up only after five authorized answers in a row, so the commands right after it are all let in", { timeout: 60_000 }, async () => {
+    const w = await world();
+    w.worker.flapMs = 3_000;
+    const run = await w.collie(["setup", "--json"]);
+    expect(run.code, run.stderr).toBe(0);
+    const pointed = { ...w.config(), collie: { ...(w.config().collie as Json), address: w.workerUrl } };
+    await w.writeConfig(pointed);
+    // Three commands at once after the sitting, as a shepherd types `collie new`, `collie log`, `collie`: every one let in.
+    const after = [await w.collie(["--json"]), await w.collie(["log", "--json"]), await w.collie(["--json"])];
+    for (const one of after) expect(one.stderr).toBe("");
+    // The readiness asks, in order: while flapping, no five 200s in a row; the last five 200.
+    const statuses = w.worker.requests.filter((request) => request.path === "/home").length;
+    expect(statuses).toBeGreaterThanOrEqual(5);
+  });
+
+  it("the spinner's line counts the answers in a row", { timeout: 60_000 }, async () => {
+    const w = await world();
+    w.worker.flapMs = 2_500;
+    const run = driveStile({ command: process.execPath, args: [w.bin, "setup"], cwd: w.dir, env: w.env({ SHEEP_TEST_COLLIE_READY_GAP_MS: "400" }) });
+    cleanups.push(async () => run.kill());
+    await run.waitFor(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] answers with its token in a row, [1-4] of 5 +0m/, { timeoutMs: 30_000 });
+    expect((await run.exited).code).toBe(0);
+  });
+
+  it("a refusal that is an edge's HTML page is never printed whole: the status, the page's title, and what to do", { timeout: 60_000 }, async () => {
+    const w = await world();
+    await w.writeConfig({ ...w.config(), collie: { name: COLLIE.name, address: w.workerUrl, token: "any" } });
+    w.worker.htmlStatus = 404;
+    const passed = await w.collie(["new", "--pass"], { stdin: "https://isocan.io/p/cnv_7f3a#Zq4Wm8Rt2Yx6Kb9Hd3Lp7Nc5Vf1Gj0\n" });
+    expect(passed).toEqual({
+      code: 1,
+      stdout: "",
+      stderr: `collie: the collie at ${w.workerUrl} answered POST /passes with 404 and no answer of its own (Page not found); a collie deployed moments ago can take a minute to answer everywhere — try again, or \`collie setup\` again\n`,
+    });
+    w.worker.htmlStatus = 502;
+    const report = await w.collie([]);
+    expect(report.code).toBe(1);
+    expect(report.stderr).toBe(`collie: the collie at ${w.workerUrl} answered GET /report with 502 and no answer of its own (Page not found); a collie deployed moments ago can take a minute to answer everywhere — try again, or \`collie setup\` again\n`);
+    for (const one of [passed, report]) expect(one.stderr).not.toContain("<!DOCTYPE");
   });
 });
 
@@ -679,7 +749,7 @@ describe("collie setup at a terminal (the stile's screen, 80 by 24)", () => {
       const port = await new Promise<string>((resolve) => door.stdout.once("data", (chunk: Buffer) => resolve(String(chunk).trim())));
       const run = driveStile({ command: process.execPath, args: [w.bin, "setup"], cwd: w.dir, env: w.env({ SHEEP_TEST_COLLIE_URL: `http://127.0.0.1:${port}` }), secrets: [TOKEN] });
       cleanups.push(async () => run.kill());
-      await run.waitFor(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] waiting for blog-collie\.fake\.workers\.dev to answer/, { timeoutMs: 30_000 });
+      await run.waitFor(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] answers with its token in a row, 0 of 5 +0m/, { timeoutMs: 30_000 });
       door.stdin.write("open\n");
       // The reader busy with something else from before the door opens until the command has exited (a zombie, or gone, in
       // `ps`, polled synchronously so no event of the child's is read): the finish's bytes and the exit reach it together.
