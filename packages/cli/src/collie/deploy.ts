@@ -140,6 +140,33 @@ export function collieMidTurnText(refusal: MidTurn): string {
 
 const sleep = (ms: number) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
 
+/** How long a deploy waits for the collie to answer with its token: ninety seconds; `SHEEP_TEST_COLLIE_READY_MS` shortens it in a test. */
+export function readyWaitMs(): number {
+  const seam = Number(process.env.SHEEP_TEST_COLLIE_READY_MS);
+  return process.env.SHEEP_TEST_COLLIE_READY_MS !== undefined && Number.isFinite(seam) && seam >= 0 ? seam : 90_000;
+}
+
+/**
+ * Polls `GET /home` with the bearer until it answers 200 with the `x-collie-build` header, a second apart, up to
+ * `readyWaitMs()`: the collie's own door, which answers exactly when the version serving holds this token.
+ */
+export async function readyWithToken(url: string, token: string): Promise<{ ready: boolean; last: string }> {
+  const deadline = Date.now() + readyWaitMs();
+  let last = "nothing yet";
+  for (;;) {
+    try {
+      const response = await fetch(new URL("/home", url), { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(5_000) });
+      await response.body?.cancel();
+      if (response.status === 200 && response.headers.get("x-collie-build") !== null) return { ready: true, last: "200" };
+      last = `${response.status}${response.headers.get("x-collie-build") === null ? ", no x-collie-build" : ""}`;
+    } catch (error) {
+      last = error instanceof Error ? error.message : String(error);
+    }
+    if (Date.now() >= deadline) return { ready: false, last };
+    await sleep(Math.min(1_000, Math.max(0, deadline - Date.now())));
+  }
+}
+
 /** The agents mid-turn at the collie, from `GET /report` with the kept token; undefined when it does not answer, since then nothing can be known. */
 async function midTurnAtCollie(address: string, token: string): Promise<MidTurnSheep[] | undefined> {
   const probe = collieProbe(address);
@@ -215,16 +242,14 @@ export async function deployCollie(options: CollieDeployOptions): Promise<Collie
     // The block: this Worker, its address, its token; the rest of the config as it was.
     const { collie: _collie, ...rest } = readConfigFile() ?? {};
     writeConfigFile({ ...rest, collie: { name, address: collieAddress, token: bearer } });
-    say(`collie: waiting for ${collieAddress.replace(/^https?:\/\//, "")} to answer\n`);
-    const deadline = Date.now() + 60_000;
-    let answers = false;
-    while (Date.now() < deadline) {
-      if (await answersCollie(collieProbe(collieAddress))) {
-        answers = true;
-        break;
-      }
-      await sleep(1_000);
+    // Ready is an authorized answer: `GET /` answers `collie` from the first version, before any secret, and each put is a
+    // new version, so only `GET /home` with the token just put (or kept) says the version that holds it is serving.
+    say(`collie: waiting for ${collieAddress.replace(/^https?:\/\//, "")} to answer with its token\n`);
+    const waited = await readyWithToken(collieProbe(collieAddress), bearer);
+    if (!waited.ready) {
+      throw new Error(`${collieAddress} did not answer GET /home with this kennel's token within ${Math.round(readyWaitMs() / 1000)}s (the last answer: ${waited.last}), so the Worker that holds it is not serving yet`);
     }
+    const answers = true;
     return { name, address: collieAddress, state, token: kept === undefined ? "minted" : "kept", secrets: secrets.map(([secret]) => secret), answers, build: mark, interrupted, config: configPath(), wrangler: config };
   } catch (error) {
     throw new Error(`the Worker ${name} is deployed at ${collieAddress}, and what followed failed; \`collie setup\` again finishes it\n${error instanceof Error ? error.message : String(error)}`);

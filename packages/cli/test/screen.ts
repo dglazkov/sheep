@@ -153,7 +153,11 @@ export interface StileRun {
   leaks(): Leak[];
   /** How many keys have been pressed. */
   keys(): number;
-  /** The command's exit, once it has one. */
+  /**
+   * The command's exit, once it has one — and once the emulator has taken every byte the command wrote, so a `frame()` or
+   * `buffer()` read the moment this resolves is the command's last screen (collie phase 2, the account ring's co3: a
+   * reader whose last chunk and the child's close landed in one turn read the frame before the finish).
+   */
   exited: Promise<Exit>;
   kill(): void;
 }
@@ -206,7 +210,12 @@ export function driveStile(options: StileOptions): StileRun {
   child.stderr.on("data", (chunk: Buffer) => err.push(chunk));
   const exited = new Promise<Exit>((resolveExit, rejectExit) => {
     child.once("error", rejectExit);
-    child.once("close", (code, signal) => resolveExit({ code: code ?? (signal ? 1 : 0), stderr: Buffer.concat(err).toString("utf8") }));
+    // Every `data` event comes before `close`, so the chain as it stands at `close` holds every write; the emulator parses on a
+    // timer of its own, and a reader that reads the buffer the moment the command exits must see the last of it.
+    child.once("close", (code, signal) => {
+      const exit = { code: code ?? (signal ? 1 : 0), stderr: Buffer.concat(err).toString("utf8") };
+      void parsed.then(() => resolveExit(exit));
+    });
   });
   let done = false;
   void exited.then(() => (done = true));

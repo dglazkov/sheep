@@ -245,7 +245,14 @@ export async function runCollieFlow(options: CollieFlowOptions): Promise<CollieS
 
   // 4. collie. The Worker, its secrets, the door, and the block in the config.
   driver.say("collie", `${readConfigFile()?.collie === undefined ? "deploying" : "redeploying"} ${collieName(station.name)} to ${account.name}`);
-  const deployed = await deployCollie({ station, token, account, secrets: true, say: (text) => driver.say("collie", text.replace(/^collie: /, "").trim()) });
+  let deployed: CollieDeployReport;
+  try {
+    deployed = await deployCollie({ station, token, account, secrets: true, say: (text) => driver.say("collie", text.replace(/^collie: /, "").trim()) });
+  } catch (error) {
+    // The step says it did not come up, in red, rather than the screen ending on a spinner; the sentence follows under it.
+    if (!(error instanceof Refusal) && !(error instanceof MidTurn)) driver.say("collie", "the collie did not come up; the reason is under this screen", "refused");
+    throw error;
+  }
   driver.say("collie", deployed.answers ? deployed.address : `${deployed.address} (not answering yet)`);
 
   // 5. next.

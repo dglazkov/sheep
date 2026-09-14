@@ -23,6 +23,7 @@
  *   --name <worker>                        account ring: the station's name (default sheep-hermetic-<sha>)
  *   --older <ref>                          account ring: the release deployed first and upgraded from (default: the ref's first parent when it is a release commit; refused otherwise)
  *   --collie                               account ring: collie journey 1 whole on the stile's station, as an isocan identity of the ring's own at dev.isocan.io (collie phase 2)
+ *   --collie-only                          account ring: the install, t1's sitting, and the collie's walk alone, on a station named sheep-hermetic-<sha>-c (implies --collie; issue #13's smallest cut)
  *   --budget <usd>                         dog ring: Claude Code's --max-budget-usd (default 5)
  *   --timeout <minutes>                    dog ring: the container is killed after this long (default 30)
  *   --agent <name>                         dog ring: claude-code, the only dog so far
@@ -476,6 +477,16 @@
  * from `isocan badges` and the Worker from the account. In a `finally`,
  * Percy withdrawn, the canvas archived, the ring's daemon stopped, and the
  * collie's Worker deleted through the account API if `collie rm` did not.
+ *
+ * `--collie-only` (issue #13's smallest cut, for the collie) is that walk
+ * alone, for when the full ring falls over on a step the collie does not
+ * need: the preflight (the account, its listing, the image, dev.isocan.io,
+ * both tokens), the install of the ref itself into the fresh world, t1's
+ * sitting on `sheep-hermetic-<sha>-c-t` without its dog, co0 to co9 and
+ * their cleanup, that station deleted, and the account's listing equal to
+ * the one before (`collieOnlyWalk`). No older release, no upgrade, no second
+ * machine, and none of a1 to a8, sh, up, st, m1, e2, s2, n1, s1, f1, f2, b1,
+ * b2, r1; the not-checked list names them.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
@@ -671,7 +682,7 @@ const GITHUB_URLS = ["https://github.com/dglazkov/sheep.git", "git+https://githu
 
 function usage(message) {
   console.error(
-    `hermetic: ${message}\nusage: pnpm hermetic --ring package|machine [ref] [--repo <path>] [--spec <spec> [--commit <sha>]] [--image <name>] [--docker] [--no-eyes] [--keep]\n       pnpm hermetic --ring dog [ref|${INSTALL_SPEC}] [--repo <path>] [--commit <sha>] [--image <name>] [--yes] [--dry-run] [--budget <usd>] [--timeout <minutes>] [--agent claude-code] [--keep]\n       pnpm hermetic --ring account [ref|${INSTALL_SPEC}] [--repo <path>] [--commit <sha>] [--older <ref>] [--collie] [--yes] [--dry-run] [--name <worker>] [--keep]`,
+    `hermetic: ${message}\nusage: pnpm hermetic --ring package|machine [ref] [--repo <path>] [--spec <spec> [--commit <sha>]] [--image <name>] [--docker] [--no-eyes] [--keep]\n       pnpm hermetic --ring dog [ref|${INSTALL_SPEC}] [--repo <path>] [--commit <sha>] [--image <name>] [--yes] [--dry-run] [--budget <usd>] [--timeout <minutes>] [--agent claude-code] [--keep]\n       pnpm hermetic --ring account [ref|${INSTALL_SPEC}] [--repo <path>] [--commit <sha>] [--older <ref>] [--collie | --collie-only] [--yes] [--dry-run] [--name <worker>] [--keep]`,
   );
   process.exit(2);
 }
@@ -700,6 +711,8 @@ function parseArgs(argv) {
     older: undefined,
     // The account ring's collie (collie phase 2): journey 1 whole on the stile's station, with an isocan identity of the ring's at dev.isocan.io.
     collie: false,
+    // The account ring's collie alone (issue #13, the collie's cut): the install, t1's sitting, co0 to co9, and t1's station deleted; nothing else.
+    collieOnly: false,
     // The container's half of the dog ring, and what the outer half tells it: never typed by hand.
     inside: false,
     redirect: false,
@@ -738,6 +751,7 @@ function parseArgs(argv) {
     else if (flag === "--name") parsed.name = value(flag);
     else if (flag === "--older") parsed.older = value(flag);
     else if (flag === "--collie") parsed.collie = true;
+    else if (flag === "--collie-only") parsed.collieOnly = parsed.collie = true;
     else if (flag === "--inside") parsed.inside = true;
     else if (flag === "--redirect") parsed.redirect = true;
     else if (flag === "--expect") parsed.expect = value(flag);
@@ -779,6 +793,8 @@ function parseArgs(argv) {
   if (parsed.name !== undefined && parsed.ring !== "account") usage("--name is the account ring's");
   if (parsed.name !== undefined && !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(parsed.name)) usage(`--name ${parsed.name} is not a Worker name`);
   if (parsed.older !== undefined && parsed.ring !== "account") usage("--older is the account ring's");
+  if (parsed.collieOnly && parsed.ring !== "account") usage("--collie-only is the account ring's: it is the account ring's collie walk alone, and the other rings deploy nothing");
+  if (parsed.collieOnly && parsed.older !== undefined) usage("--collie-only deploys no older release; --older is the full account ring's");
   if (parsed.collie && parsed.ring !== "account") usage("--collie is the account ring's: the package ring walks the collie's refusal on every run, and the machine and dog rings have no account to deploy it on");
   if (parsed.images.length > 0 && parsed.ring === "account") usage("--image is the machine and dog rings'");
   if (parsed.ring === "dog") {
@@ -2828,6 +2844,16 @@ function accountApi(token) {
     async deleteKvNamespace(accountId, namespaceId) {
       await call("DELETE", `/accounts/${accountId}/storage/kv/namespaces/${namespaceId}`);
     },
+    /** A Worker's bindings as the account holds them (collie phase 2, co0): `[{type, name, text?, json?}]`, secrets named without values. */
+    async scriptBindings(accountId, name) {
+      const result = (await call("GET", `/accounts/${accountId}/workers/scripts/${encodeURIComponent(name)}/settings`)).result;
+      return Array.isArray(result?.bindings) ? result.bindings : [];
+    },
+    /** A Worker's deployments, newest first, each with its versions and percentages: co0's evidence when a replaced version still answers. */
+    async deployments(accountId, name) {
+      const result = (await call("GET", `/accounts/${accountId}/workers/scripts/${encodeURIComponent(name)}/deployments`)).result;
+      return (Array.isArray(result?.deployments) ? result.deployments : []).slice(0, 3).map((deployment) => ({ id: deployment.id, created_on: deployment.created_on, versions: deployment.versions }));
+    },
     /** A Worker deleted with its Durable Objects (collie phase 2): the collie's, when a walk failed before `collie rm` ended it. */
     async deleteWorker(accountId, name) {
       await call("DELETE", `/accounts/${accountId}/workers/scripts/${encodeURIComponent(name)}?force=true`);
@@ -2930,7 +2956,7 @@ async function registryDigest(image) {
  * ring's, and `env()` drops every `CLOUDFLARE_*` and `SHEEP_TEST_*`
  * variable, so the token reaches one command's environment by name.
  */
-async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: wantedName, older: olderRef, collie }) {
+async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: wantedName, older: olderRef, collie, collieOnly }) {
   const token = process.env.CLOUDFLARE_API_TOKEN;
   if (!token) {
     console.error("hermetic: the account ring needs CLOUDFLARE_API_TOKEN in its environment: the shepherd's token for the account the station goes on, which sheep home deploy takes the same way; nothing was done");
@@ -2951,8 +2977,12 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
   } catch (error) {
     usage(`${ref}: ${error.message}`);
   }
+  // --collie-only (issue #13, the collie's cut) names its station from the ref, and a spec has none without --commit.
+  if (collieOnly && wantedName === undefined && ring.sha === undefined && commit === undefined) usage("--collie-only with a spec names its station from --commit (sheep-hermetic-<sha>-c); pass --commit <sha> or --name <worker>");
   // The older release (station phase 3): named by --older, or the ref's first parent when the ref is a release commit; never guessed.
+  // The collie-only walk deploys no older release and upgrades nothing, so it reads none.
   let older;
+  if (!collieOnly) {
   try {
     older = olderRelease({ ring, repo, ref, spec, olderRef });
   } catch (error) {
@@ -2967,6 +2997,7 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
     usage(`--older ${older.ref}: ${error.message}`);
   }
   if (!carriesChild) usage(`--older ${older.ref} is ${older.stamp.commit}, which does not carry the tip's detached child (no ASK_FRESH_MS in the history of packages/cli/src/tip.ts): its command's notice never lands, or it says none and its home sends no header, which the walk reads; name a release built from a commit that carries it`);
+  }
   const api = accountApi(token);
   // The second machine is a container (station phase 2): Docker is needed for the walk, and its absence is known before anything is made.
   const docker = spawnSync("docker", ["version", "--format", "{{.Server.Version}} {{.Server.Os}}/{{.Server.Arch}}"], { encoding: "utf8" });
@@ -2975,9 +3006,10 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
   const station = { deployed: false, name: undefined, home: undefined, account: undefined, subdomain: undefined, image: undefined, digest: undefined, tagDigest: undefined, engine, older, minted: [], ended: [], pastures: [], collie: collie === true };
   try {
     // Preflight: the account, the plan, the subdomain, the listing, and the images both configs name, on the registry.
-    if (spec === undefined) console.log(`account ring: ${ref} = ${ring.sha}${repo === root ? "" : ` in ${repo}`}; sheep ${ring.stamp.commit} (${ring.stamp.builtAt}), the newer`);
-    else console.log(`account ring: ${spec}${commit ? `, expected to be a build of ${commit}` : ""}, the newer`);
-    console.log(`older: ${older.ref} = ${older.sha}${repo === root ? "" : ` in ${repo}`}; sheep ${older.stamp.commit} (${older.stamp.builtAt}), deployed first and upgraded from`);
+    const role = collieOnly ? "collie only: installed, t1's sitting, the collie's walk" : "the newer";
+    if (spec === undefined) console.log(`account ring: ${ref} = ${ring.sha}${repo === root ? "" : ` in ${repo}`}; sheep ${ring.stamp.commit} (${ring.stamp.builtAt}), ${role}`);
+    else console.log(`account ring: ${spec}${commit ? `, expected to be a build of ${commit}` : ""}, ${role}`);
+    if (!collieOnly) console.log(`older: ${older.ref} = ${older.sha}${repo === root ? "" : ` in ${repo}`}; sheep ${older.stamp.commit} (${older.stamp.builtAt}), deployed first and upgraded from`);
     station.account = await api.account();
     const plan = await api.plan(station.account.id);
     if (plan === undefined) throw new Error(`the account ${station.account.name} (${station.account.id}) is not on the Workers Paid plan, which containers need; deploy would refuse it, and the ring stops here`);
@@ -2990,25 +3022,34 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
     // The join stores (stile phase 2): the listing read the account's KV namespaces, which is also the check that the token has Workers KV Storage.
     console.log(`  KV namespaces: ${before.namespaces.join(", ") || "(none)"}`);
     // The older's image, from its tree; then the newer's, from its tree or, for a spec, from the install after the upgrade.
-    older.image = imageOf(parseJsonc(older.git("show", `${older.sha}:home/wrangler.jsonc`)));
-    if (typeof older.image !== "string") throw new Error(`${older.ref}'s home/wrangler.jsonc names no image in its pen container; a release does`);
-    await checkImage(older, older.stamp, "older image");
+    if (!collieOnly) {
+      older.image = imageOf(parseJsonc(older.git("show", `${older.sha}:home/wrangler.jsonc`)));
+      if (typeof older.image !== "string") throw new Error(`${older.ref}'s home/wrangler.jsonc names no image in its pen container; a release does`);
+      await checkImage(older, older.stamp, "older image");
+    }
     if (ring.sha !== undefined) {
       station.image = imageOf(parseJsonc(ring.git("show", `${ring.sha}:home/wrangler.jsonc`)));
       if (typeof station.image !== "string") throw new Error(`${ref}'s home/wrangler.jsonc names no image in its pen container; a release does`);
       await checkImage(station, ring.stamp, "image");
     } else console.log("image: read from the install's home/wrangler.jsonc after the upgrade (a spec has no tree to read before)");
-    console.log(engine === undefined ? "docker: none answers; the second machine (a7) is a container, so the walk needs it" : `docker: ${engine}; the second machine (a7) is a container from node:24-slim`);
-    if (engine === undefined && !dryRun) throw new Error(`the account ring's second machine is a container, and no Docker answers here (docker version: ${docker.error ? docker.error.message : (docker.stderr || docker.stdout || "").trim()}); nothing was deployed`);
+    if (!collieOnly) console.log(engine === undefined ? "docker: none answers; the second machine (a7) is a container, so the walk needs it" : `docker: ${engine}; the second machine (a7) is a container from node:24-slim`);
+    if (engine === undefined && !dryRun && !collieOnly) throw new Error(`the account ring's second machine is a container, and no Docker answers here (docker version: ${docker.error ? docker.error.message : (docker.stderr || docker.stdout || "").trim()}); nothing was deployed`);
     // The name: the newer's sha (a spec has none until the upgrade, so --commit names it, else the older's sha and a note).
-    station.name = wantedName ?? `sheep-hermetic-${(ring.sha ?? commit ?? older.sha).slice(0, 7)}`;
+    // --collie-only's station is `-c`, so it never meets a full run's of the same release on the account.
+    station.name = wantedName ?? (collieOnly ? `sheep-hermetic-${(ring.sha ?? commit).slice(0, 7)}-c` : `sheep-hermetic-${(ring.sha ?? commit ?? older.sha).slice(0, 7)}`);
+    // The collie-only walk deploys `<name>-t` alone; a leftover of that name is refused as the station's is.
+    const deploysNamed = collieOnly ? [`${station.name}-t`] : [station.name];
+    if (collieOnly && deploysNamed.some((named) => before.workers.includes(named) || before.applications.some((application) => application.name === named))) {
+      throw new Error(`the account already holds ${deploysNamed[0]}; a ring that left it behind failed: delete it first (sheep home delete --name ${deploysNamed[0]})`);
+    }
     if (station.name !== undefined && (before.workers.includes(station.name) || before.applications.some((application) => application.name === station.name))) {
       throw new Error(`the account already holds ${station.name}; a ring that left it behind failed, and deploy would refuse the name: delete it first (sheep home delete --name ${station.name}, or wrangler delete and wrangler containers delete)`);
     }
     // A join store of either station's name left by a ring that failed would be kept by the deploy and read by t2: refused, as the name is.
     const leftStores = before.namespaces.filter((title) => title === `${station.name}-join` || title === `${station.name}-t-join`);
     if (leftStores.length > 0) throw new Error(`the account already holds the KV namespace ${leftStores.join(" and ")}; a ring that left it behind failed: delete it first (wrangler kv namespace delete --namespace-id <id>)`);
-    console.log(`station: ${station.name} at https://${station.name}.${station.subdomain}.workers.dev, deleted at the end whatever happens`);
+    if (collieOnly) console.log(`station: ${station.name}-t at https://${station.name}-t.${station.subdomain}.workers.dev, deployed by t1's sitting and deleted at the end whatever happens; nothing named ${station.name} is deployed`);
+    else console.log(`station: ${station.name} at https://${station.name}.${station.subdomain}.workers.dev, deleted at the end whatever happens`);
     // The collie (collie phase 2): its Worker goes beside the stile's station, so a leftover of that name is refused as the
     // station's is; the isocan home it stands by at is asked whether it answers, with a GET and nothing else.
     if (station.collie) {
@@ -3026,10 +3067,18 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
       [
         "",
         "the account ring spends on the shepherd's account.",
-        `  the Workers Paid plan is already paid, ${PLAN_PRICE}; the walk deploys one Worker with a container application from the older release, runs containers for a`,
-        "  few commands (minutes at Cloudflare's per-minute container rate: cents), redeploys it from the newer release and once more, and deletes both at the end, or on failure.",
-        `  the key is used for nothing: the station runs the faux provider (ANTHROPIC_API_KEY ${key ? "is in the environment and becomes the secret" : "is not set; a placeholder string becomes the secret"}).`,
-        "  the token and the key go to sheep home deploy's environment, and to nothing else of this ring.",
+        ...(collieOnly
+          ? [
+              `  the Workers Paid plan is already paid, ${PLAN_PRICE}; the collie-only walk deploys one station, ${station.name}-t, through the stile's sitting, redeploys it once`,
+              "  off the faux provider, runs one sheep's container for its setup and one turn (minutes at the per-minute container rate: cents), and deletes it at the end, or on failure.",
+              "  the token and the key are typed into the sitting, which keeps them where `sheep` and `collie` read them, and go to nothing else of this ring.",
+            ]
+          : [
+              `  the Workers Paid plan is already paid, ${PLAN_PRICE}; the walk deploys one Worker with a container application from the older release, runs containers for a`,
+              "  few commands (minutes at Cloudflare's per-minute container rate: cents), redeploys it from the newer release and once more, and deletes both at the end, or on failure.",
+              `  the key is used for nothing: the station runs the faux provider (ANTHROPIC_API_KEY ${key ? "is in the environment and becomes the secret" : "is not set; a placeholder string becomes the secret"}).`,
+              "  the token and the key go to sheep home deploy's environment, and to nothing else of this ring.",
+            ]),
         ...(station.collie
           ? [
               "  --collie: the collie's Worker costs nothing beyond the plan the station already needs: one Durable Object awake for the walk's minutes (list price about",
@@ -3055,6 +3104,14 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
       }
       console.log("");
 
+      if (collieOnly) {
+        // The world and the install: the package ring's, of the ref itself; then t1's sitting and the collie's walk, and nothing else.
+        ring.assertFresh();
+        await ring.install();
+        console.log(`installed: sheep ${ring.stamp.commit} (${ring.stamp.builtAt}), wrangler ${ring.stamp.wrangler}; the collie-only walk`);
+        station.walked = true;
+        await collieOnlyWalk(ring, api, station, { token, key, before });
+      } else {
       // The world and the install: the package ring's, of the older release; the newer is what the upgrade step installs over it.
       const newer = ring.use(older);
       ring.assertFresh();
@@ -3065,6 +3122,7 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
       station.home = `https://${station.name}.${station.subdomain}.workers.dev`;
       station.walked = true;
       await accountWalk(ring, api, station, { token, key: keyForDeploy, placeholder: key === undefined || key === "", before, spec, commit, newer });
+      }
     }
   } catch (error) {
     failure = error;
@@ -3092,6 +3150,21 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
       process.exit(1);
     }
     console.log("\naccount ring: dry run ok (the preflight held; nothing deployed)");
+    return;
+  }
+  if (collieOnly) {
+    ring.unchecked.push(
+      "the full account ring's walk, left to `pnpm hermetic --ring account --collie`: the older release deployed and upgraded (a1, a2, a2b, sh1 to sh4, up), the station walked (a3 to a6, st, m1, e2, s2, n1), the second machine and the join (a7, t2), pasture and earmark (a8, s1), fold, spool, bleat, bell, and tether (f1, f2, b1, b2, r1)",
+      "stile journey 1 and 4 step 4's dog on t1's station: `sheep new --detach` and the faux redeploy with nothing in the environment; the collie-only walk sits t1 and goes straight to the collie",
+      "stile journey 1: the plan's yes, and a person's fingers at a real terminal: t1 typed through the harness's terminal (pipes, SHEEP_TEST_TERMINAL)",
+    );
+    ring.report(failure, "account");
+    ring.cleanup();
+    if (failure) {
+      console.log(`\naccount ring: FAILED at ${failure.ring?.step ?? "preflight"} (collie only)`);
+      process.exit(1);
+    }
+    console.log(`\naccount ring: ok (collie only; ${ring.lines.filter((line) => line.startsWith("ok")).length} lines held)`);
     return;
   }
   ring.unchecked.push(
@@ -3955,7 +4028,7 @@ async function accountWalk(ring, api, station, { token, key, placeholder, before
  * the count. The walk's `ps` watch is running through all of it, with the
  * token and the key among its needles.
  */
-async function stileOnAccount(ring, api, station, { token, key, needles = [], step = "t1" }) {
+async function stileOnAccount(ring, api, station, { token, key, needles = [], step = "t1", collieOnly = false }) {
   const harness = await stileHarness();
   if (harness.why !== undefined) {
     ring.skip(step, `the shepherd's sitting on the account: ${harness.why}`, "stile journey 1");
@@ -3998,22 +4071,27 @@ async function stileOnAccount(ring, api, station, { token, key, needles = [], st
   if (t1Store === undefined) fail(`expected the account to hold ${name}-join, the join store the sitting's deploy makes`);
   ring.ok(step, typed, `${seconds}s, the shepherd played through the ring's terminal: ${name} deployed at ${address}; count: ${count.typed} values typed, ${count.yes} yes, ${count.defaults} defaults, ${count.askedTwice} asked twice, ${count.variables.length === 0 ? "no variable" : count.variables.join(", ")}; no run of eight of either value on the terminal or in the output after any of ${run.keys()} keys; ~/.sheep/credentials mode 600`);
 
-  // The dog, after: nothing in its environment, in the same directory.
+  // The dog, after: nothing in its environment, in the same directory. The collie-only walk skips the dog's mint and faux
+  // redeploy (the full ring's), and goes from the sitting to the collie and the delete.
   const dog = (args, options = {}) => run0("sheep", args, { env, cwd, ...options });
-  const minted = await dog(["new", "--detach"]);
-  const id = /^([0-9a-f-]{36})\n$/.exec(minted.stdout)?.[1];
-  if (minted.code !== 0 || id === undefined) ring.fail(step, "sheep new --detach (nothing in the environment)", minted);
-  const upStarted = Date.now();
-  const upgraded = await dog(["home", "deploy", "--faux", "--json"]);
-  const upSeconds = ((Date.now() - upStarted) / 1000).toFixed(0);
-  let report;
-  try {
-    report = JSON.parse(upgraded.stdout);
-  } catch {
-    ring.fail(step, "sheep home deploy --faux --json (nothing in the environment)", upgraded);
-  }
-  if (upgraded.code !== 0 || report.name !== name || report.home !== address || report.state !== "redeployed" || report.key !== "put") {
-    ring.fail(step, "sheep home deploy --faux --json (nothing in the environment)", { ...upgraded, stderr: `${upgraded.stderr}\nexpected exit 0, ${name} redeployed at ${address}, and the key put from what the sitting kept` });
+  if (!collieOnly) {
+    const minted = await dog(["new", "--detach"]);
+    const id = /^([0-9a-f-]{36})\n$/.exec(minted.stdout)?.[1];
+    if (minted.code !== 0 || id === undefined) ring.fail(step, "sheep new --detach (nothing in the environment)", minted);
+    const upStarted = Date.now();
+    const upgraded = await dog(["home", "deploy", "--faux", "--json"]);
+    const upSeconds = ((Date.now() - upStarted) / 1000).toFixed(0);
+    let report;
+    try {
+      report = JSON.parse(upgraded.stdout);
+    } catch {
+      ring.fail(step, "sheep home deploy --faux --json (nothing in the environment)", upgraded);
+    }
+    if (upgraded.code !== 0 || report.name !== name || report.home !== address || report.state !== "redeployed" || report.key !== "put") {
+      ring.fail(step, "sheep home deploy --faux --json (nothing in the environment)", { ...upgraded, stderr: `${upgraded.stderr}\nexpected exit 0, ${name} redeployed at ${address}, and the key put from what the sitting kept` });
+    }
+    station.t1.minted = id;
+    station.t1.upSeconds = upSeconds;
   }
   // Collie phase 2, with --collie: journey 1's third sitting and the rest of it on this station, before it is deleted below.
   if (station.collie) await collieOnAccount(ring, api, station, { harness, token, needles, home, cwd, env, name, address, stationToken: config.token });
@@ -4022,10 +4100,13 @@ async function stileOnAccount(ring, api, station, { token, key, needles = [], st
   station.t1.deployed = false;
   const after = await api.listing(station.account.id);
   if (after.workers.includes(name) || after.applications.some((application) => application.name === name) || after.namespaces.includes(`${name}-join`)) ring.fail(step, `the account's listing after deleting ${name}`, { stdout: JSON.stringify(after), stderr: `expected no Worker, no container application, and no join store named ${name}`, code: 1 });
-  ring.ok(step, `sheep new --detach; sheep home deploy --faux --json; sheep home delete --name ${name} (in <ring>/${step}/work, nothing in the environment)`, `${id} minted; redeployed in ${upSeconds}s with the key put from ~/.sheep/credentials and nothing asked; ${name} deleted, the name on stdin, and the account holds neither its Worker nor its application nor its join store ${name}-join (${t1Store.id})`);
+  ring.ok(step, `${collieOnly ? "" : "sheep new --detach; sheep home deploy --faux --json; "}sheep home delete --name ${name} (in <ring>/${step}/work, nothing in the environment)`, `${collieOnly ? "" : `${station.t1.minted} minted; redeployed in ${station.t1.upSeconds}s with the key put from ~/.sheep/credentials and nothing asked; `}${name} deleted, the name on stdin, and the account holds neither its Worker nor its application nor its join store ${name}-join (${t1Store.id})`);
 }
 
 /* The collie on the account (collie phase 2, journey 1 whole; journey 3 steps 1 to 3). */
+
+/** How long co0 asks `POST /faux` after the redeploy before a station still answering from the faux provider is a failure: a rollout's window. */
+const CO0_FAUX_GONE_MS = 90_000;
 
 /** Percy's question, carrying the walk's nonce so the summons in `sheep log` is known for this mention's. */
 const COLLIE_QUESTION = "@Percy the empty state reads wrong";
@@ -4091,7 +4172,13 @@ async function collieOnAccount(ring, api, station, { harness, token, needles, ho
   const title = `collie-hermetic-${sha7}`;
   const nonce = randomBytes(6).toString("hex");
   const collieWorker = `${name}-collie`;
-  const isocanHome = join(home, ".isocan");
+  // Real paths for everything isocan is given (co2 on 185d9db): isocan retires any `<dir>/.isocan/identity.json` it walks past
+  // from the working directory up to HOME unless that `.isocan` is ISOCAN_HOME, comparing strings. The ring's temp directory is
+  // `/var/…` by name and `/private/var/…` as the working directory resolves, so HOME was never reached and the home identity was
+  // taken for a stranded directory one and renamed aside. With both sides real, the walk stops at HOME and the person stays.
+  const realHome = realpathSync(home);
+  const realCwd = realpathSync(cwd);
+  const isocanHome = join(realHome, ".isocan");
   const port = await freePort();
   // The PATH: the ring's, without a directory whose isocan is not the ring's; node, npm, and npx kept through links of the ring's.
   const tools = join(ring.dir, "co-node");
@@ -4105,11 +4192,11 @@ async function collieOnAccount(ring, api, station, { harness, token, needles, ho
     shadowed.push(found);
     return false;
   });
-  const env = { ...shepherdEnv, PATH: [path[0], tools, ...path.slice(1)].join(":"), ISOCAN_HOME: isocanHome, ISOCAN_PORT: String(port), ISOCAN_DEFAULT_HOME: COLLIE_ISOCAN_HOME };
-  for (const key of ["HOME", "ISOCAN_HOME"]) if (!env[key].startsWith(ring.dir + sep)) ring.fail("co1", "the shepherd's isocan environment", { stdout: `${key}=${env[key]}`, stderr: `expected ${key} inside the ring ${ring.dir}: the identity is the ring's own, never the shepherd's ~/.isocan`, code: 1 });
+  const env = { ...shepherdEnv, HOME: realHome, PATH: [path[0], tools, ...path.slice(1)].join(":"), ISOCAN_HOME: isocanHome, ISOCAN_PORT: String(port), ISOCAN_DEFAULT_HOME: COLLIE_ISOCAN_HOME };
+  for (const key of ["HOME", "ISOCAN_HOME"]) if (!env[key].startsWith(realpathSync(ring.dir) + sep)) ring.fail("co1", "the shepherd's isocan environment", { stdout: `${key}=${env[key]}`, stderr: `expected ${key} inside the ring ${ring.dir}: the identity is the ring's own, never the shepherd's ~/.isocan`, code: 1 });
   const carried = Object.keys(env).filter((key) => HARNESS_VARIABLES.includes(key) || key === "ISOCAN_SESSION_ID" || key === "ISOCAN_HARNESS" || key.startsWith("SHEEP_TEST_") || key.startsWith("CLOUDFLARE_"));
   if (carried.length > 0) ring.fail("co1", "the shepherd's isocan environment", { stdout: carried.join("\n"), stderr: "expected no harness session, no seam, and no credential in it", code: 1 });
-  const at = (args, options = {}) => run0(args[0], args.slice(1), { env, cwd, ...options });
+  const at = (args, options = {}) => run0(args[0], args.slice(1), { env, cwd: realCwd, ...options });
   const isocanJson = async (step, args) => {
     const result = await at(["isocan", "--json", ...args]);
     try {
@@ -4182,9 +4269,40 @@ async function collieOnAccount(ring, api, station, { harness, token, needles, ho
     if (real.code !== 0 || realReport.name !== name || realReport.state !== "redeployed" || realReport.faux !== false || realReport.key !== "put" || realReport.answers !== true) {
       ring.fail("co0", "sheep home deploy --json (no --faux, in <ring>/t1/work)", { ...real, stderr: `${real.stderr}\nexpected exit 0, ${name} redeployed, faux false, the key put from ~/.sheep/credentials, answering` });
     }
-    const fauxGone = await fetch(`${address}/faux`, { method: "POST", headers: { authorization: `Bearer ${stationToken}`, "content-type": "application/json" }, body: "null", signal: AbortSignal.timeout(30_000) });
-    if (fauxGone.status === 200) ring.fail("co0", `POST ${address}/faux`, { stdout: await fauxGone.text(), stderr: "status 200: the faux provider's route still answers, so the station still runs the faux provider", code: 1 });
-    ring.ok("co0", "sheep home deploy --json (no --faux, in <ring>/t1/work, nothing in the environment)", `${((Date.now() - realStarted) / 1000).toFixed(0)}s; ${name} redeployed, faux false, the key put from ~/.sheep/credentials; POST /faux answers ${fauxGone.status}: the station runs its model`);
+    const deployedSeconds = ((Date.now() - realStarted) / 1000).toFixed(0);
+    // The real condition, first: the Worker's bindings as the account holds them. A `SHEEP_PROVIDER` var still `faux` is the
+    // var surviving a plain redeploy, which would be sheep's bug and not the ring's to wait out; it fails here with the bindings.
+    const bindings = await api.scriptBindings(station.account.id, name);
+    const provider = bindings.find((binding) => binding.name === "SHEEP_PROVIDER");
+    const varsSaid = bindings.filter((binding) => binding.type === "plain_text" || binding.type === "json").map((binding) => `${binding.name}=${JSON.stringify(binding.text ?? binding.json)}`).join(", ") || "(no vars)";
+    if (provider !== undefined && (provider.text ?? provider.json) === "faux") {
+      ring.fail("co0", `GET /accounts/${station.account.id}/workers/scripts/${name}/settings`, { stdout: JSON.stringify(bindings, null, 2), stderr: "SHEEP_PROVIDER is still faux on the Worker after `sheep home deploy` with no --faux: the var survived the redeploy, so a faux home stays faux after a plain redeploy (a sheep bug, not a rollout)", code: 1 });
+    }
+    // Then the route, asked until the new version answers everywhere it is asked: a rollout window is waited out, a kept
+    // version is not (the bindings above already say the var is gone), and the wait is said.
+    const deployments = await api.deployments(station.account.id, name).catch((error) => ({ error: error.message }));
+    const fauxStarted = Date.now();
+    let fauxStatus = 200;
+    let fauxBody = "";
+    let asks = 0;
+    while (Date.now() - fauxStarted < CO0_FAUX_GONE_MS) {
+      asks++;
+      try {
+        const answer = await fetch(`${address}/faux`, { method: "POST", headers: { authorization: `Bearer ${stationToken}`, "content-type": "application/json" }, body: "null", signal: AbortSignal.timeout(30_000) });
+        fauxStatus = answer.status;
+        fauxBody = await answer.text();
+      } catch (error) {
+        fauxStatus = 0;
+        fauxBody = error.message;
+      }
+      if (fauxStatus !== 200 && fauxStatus !== 0) break;
+      await new Promise((resolveSleep) => setTimeout(resolveSleep, 2_000));
+    }
+    const fauxMs = Date.now() - fauxStarted;
+    if (fauxStatus === 200 || fauxStatus === 0) {
+      ring.fail("co0", `POST ${address}/faux (asked ${asks} times over ${Math.round(fauxMs / 1000)}s)`, { stdout: `last: ${fauxStatus} ${fauxBody}\nbindings: ${varsSaid}\ndeployments: ${JSON.stringify(deployments)}`, stderr: `the faux provider's route still answered ${CO0_FAUX_GONE_MS / 1000}s after the redeploy, though the Worker's bindings hold no SHEEP_PROVIDER=faux: the account serves a version the deploy replaced`, code: 1 });
+    }
+    ring.ok("co0", "sheep home deploy --json (no --faux, in <ring>/t1/work, nothing in the environment); GET …/workers/scripts/<name>/settings; POST /faux (until it stops)", `${deployedSeconds}s; ${name} redeployed, faux false, the key put from ~/.sheep/credentials; the Worker's vars: ${varsSaid}, no SHEEP_PROVIDER; POST /faux answered ${fauxStatus} after ${fauxMs} ms (${asks} asks): the station runs its model`);
 
     // co1: isocan's own sitting, from its release, in the shepherd's directory: installed into the ring's prefix, a daemon of the ring's.
     const setupStarted = Date.now();
@@ -4203,18 +4321,42 @@ async function collieOnAccount(ring, api, station, { harness, token, needles, ho
     }
     const which = spawnSync("sh", ["-c", "command -v isocan"], { env, encoding: "utf8" }).stdout.trim();
     if (setup.code !== 0 || which !== isocanBin) ring.fail("co1", "npx github:dglazkov/isocan#release setup --no-open", { ...setup, stderr: `${setup.stderr}\nexpected exit 0 and isocan installed at ${isocanBin}, first on PATH; command -v isocan is ${which}` });
-    ring.ok("co1", "npx github:dglazkov/isocan#release setup --no-open (in <ring>/t1/work)", `${((Date.now() - setupStarted) / 1000).toFixed(0)}s; isocan at <ring>/prefix/bin/isocan (${isocanRoot.replace(ring.dir, "<ring>")}); ISOCAN_HOME <ring>/t1/.isocan, HOME <ring>/t1, a daemon on 127.0.0.1:${port}${shadowed.length > 0 ? `; left off this PATH: ${shadowed.join(", ")}` : ""}`);
+    // npx's setup started the daemon from npx's cache; the collie and every later command run the prefix's copy, so the daemon
+    // is restarted from PATH and its health must name the prefix's package as the copy running.
+    const restarted = await isocanJson("co1", ["restart"]);
+    const runningRoot = (() => {
+      try {
+        return realpathSync(restarted.root);
+      } catch {
+        return String(restarted.root);
+      }
+    })();
+    if (runningRoot !== realpathSync(isocanRoot)) ring.fail("co1", "isocan --json restart (from PATH)", { stdout: JSON.stringify(restarted), stderr: `expected the daemon running the prefix's isocan, ${isocanRoot}; it runs ${restarted.root}`, code: 1 });
+    ring.ok("co1", "npx github:dglazkov/isocan#release setup --no-open; isocan --json restart (in <ring>/t1/work)", `${((Date.now() - setupStarted) / 1000).toFixed(0)}s; isocan at <ring>/prefix/bin/isocan (${isocanRoot.replace(ring.dir, "<ring>")}), the daemon restarted from PATH and running that copy (pid ${restarted.pid}); ISOCAN_HOME <ring>/t1/.isocan, HOME <ring>/t1, a daemon on 127.0.0.1:${port}${shadowed.length > 0 ? `; left off this PATH: ${shadowed.join(", ")}` : ""}`);
 
     // co2: the ring's person, the birth home, a scratch canvas made at dev.isocan.io by a fresh badge, and the directory bound to it.
     const named = await at(["isocan", "identity", "--home", "--name", "Hermetic"]);
     if (named.code !== 0) ring.fail("co2", "isocan identity --home --name Hermetic", named);
+    // Every isocan command after this one must leave the person where it is and run one copy: neither note may be said.
+    const noted = (result, command) => {
+      if (/held a directory identity|running another copy of isocan/.test(result.stderr)) ring.fail("co2", command, { ...result, stderr: `${result.stderr}\nexpected neither isocan's note that it retired an identity nor that the daemon runs another copy` });
+    };
     const homed = await isocanJson("co2", ["home", COLLIE_ISOCAN_HOME]);
     if (String(homed.birth ?? "").replace(/\/+$/, "") !== COLLIE_ISOCAN_HOME) ring.fail("co2", `isocan --json home ${COLLIE_ISOCAN_HOME}`, { stdout: JSON.stringify(homed), stderr: `expected the birth home ${COLLIE_ISOCAN_HOME}`, code: 1 });
-    const made = await isocanJson("co2", ["canvas", "create", title]);
+    const created = await at(["isocan", "--json", "canvas", "create", title]);
+    noted(created, `isocan --json canvas create ${title}`);
+    let made;
+    try {
+      made = created.code === 0 ? JSON.parse(created.stdout) : undefined;
+    } catch {
+      made = undefined;
+    }
+    if (made === undefined) ring.fail("co2", `isocan --json canvas create ${title}`, created);
     if (!/^prj_/.test(made.canvasId ?? "")) ring.fail("co2", `isocan --json canvas create ${title}`, { stdout: JSON.stringify(made), stderr: "expected a canvasId", code: 1 });
     state.canvasId = made.canvasId;
     const bound = await at(["isocan", "use", made.canvasId]);
-    const binding = existsSync(join(cwd, ".isocan", "project.json")) ? JSON.parse(readFileSync(join(cwd, ".isocan", "project.json"), "utf8")) : undefined;
+    noted(bound, `isocan use ${made.canvasId}`);
+    const binding = existsSync(join(realCwd, ".isocan", "project.json")) ? JSON.parse(readFileSync(join(realCwd, ".isocan", "project.json"), "utf8")) : undefined;
     if (bound.code !== 0 || binding?.projectId !== made.canvasId) ring.fail("co2", `isocan use ${made.canvasId}`, { ...bound, stderr: `${bound.stderr}\nexpected <ring>/t1/work/.isocan/project.json naming ${made.canvasId}` });
     const person = badge();
     if (person === undefined) ring.fail("co2", `cat ${join(isocanHome, "identity.json")}`, { stdout: "", stderr: `expected a badge for ${COLLIE_ISOCAN_HOME} in the identity's auth, which the canvas's create knocked for`, code: 1 });
@@ -4226,7 +4368,7 @@ async function collieOnAccount(ring, api, station, { harness, token, needles, ho
     const { driveStile } = harness.screen;
     const typed = `collie setup (at a 80x24 terminal the ring owns, in <ring>/t1/work)`;
     const setupAt = Date.now();
-    const sitting = driveStile({ command: join(ring.prefix, "bin", "collie"), args: ["setup"], cwd, env, columns: 80, rows: 24, secrets: [token, stationToken] });
+    const sitting = driveStile({ command: join(ring.prefix, "bin", "collie"), args: ["setup"], cwd: realCwd, env, columns: 80, rows: 24, secrets: [token, stationToken] });
     let exit;
     try {
       exit = await Promise.race([sitting.exited, new Promise((resolveLate) => setTimeout(() => resolveLate(undefined), 300_000))]);
@@ -4398,6 +4540,31 @@ async function collieOnAccount(ring, api, station, { harness, token, needles, ho
   }
   if (failure !== undefined) throw failure;
   ring.ok("co", "isocan rc remove Percy; isocan canvas archive; isocan stop", said.join("; "));
+}
+
+/**
+ * `--collie-only` (issue #13, the collie's cut): after the install, t1's
+ * sitting on `<name>-t` and the collie's walk on it (co0 to co9 and its
+ * cleanup), then that station deleted, and the account listed equal to the
+ * listing before. `ps` is polled for the account token, the key, and every
+ * secret the walk adds to the needles, as the full walk polls it. A failure
+ * leaves the t1 station to `accountRing`'s own `finally`, which deletes it.
+ */
+async function collieOnlyWalk(ring, api, station, { token, key, before }) {
+  const needles = [token, key];
+  const watch = watchPs(needles, 25);
+  try {
+    await stileOnAccount(ring, api, station, { token, key, needles, collieOnly: true });
+    const after = await api.listing(station.account.id);
+    if (JSON.stringify(after) !== JSON.stringify(before)) ring.fail("c-end", "the account's listing after the collie-only walk", { stdout: JSON.stringify(after), stderr: `expected the listing from before the walk: ${JSON.stringify(before)}`, code: 1 });
+    ring.ok("c-end", "the account's listing after the walk", `equal to the one before it: ${after.workers.length} Workers, ${after.applications.length} container applications, ${after.namespaces.length} KV namespaces; no ${station.name}-t, ${station.name}-t-collie, or ${station.name}-t-join`);
+    watch.stop();
+    const leak = watch.line();
+    if (leak) ring.fail("walk", "ps -Ao pid=,args= (polled)", { stdout: leak.split(token).join("<CLOUDFLARE_API_TOKEN>").split(key).join("<ANTHROPIC_API_KEY>"), stderr: "a secret was seen in a process's arguments during the walk", code: 1 });
+    ring.ok("walk", "ps (polled every 25 ms from the sitting)", `${watch.samples()} samples; the token, the key, the hosted badge's secret, and the collie's token in no process's arguments`);
+  } finally {
+    watch.stop();
+  }
 }
 
 /** The t1 station, when a walk failed with it still up: deleted with the token in the command's environment, as the ring's own station is. */

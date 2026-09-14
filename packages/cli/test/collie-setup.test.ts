@@ -49,14 +49,22 @@ const SHEEP_ID = "11111111-2222-3333-4444-555555555555";
 type Json = Record<string, unknown>;
 
 interface CollieWorker {
-  /** The bearer the Worker holds; null answers every bearer route 401. */
+  /** The bearer the Worker holds, when a case says; otherwise the last `COLLIE_TOKEN` the fake wrangler's record shows put, as the real Worker's secret is. */
   token: string | null;
+  /** The token as the account holds it: the fake wrangler's record, read at each request. */
+  put?: () => string | null;
+  /** A new version taking the secret over this long after the put is first seen: every bearer route 401s meanwhile, while `GET /` answers at once. */
+  secretLagMs?: number;
+  /** When a request first saw the put, for the lag. */
+  putSeenAt?: number;
   rooms: (typeof ROOM & { owner: string; agents: Json[] })[];
   requests: { method: string; path: string; auth: string | undefined }[];
   /** Whether `DELETE /` was answered: the badges ended, the rows dropped. */
   ended: boolean;
   /** The rig's process: while set, `GET /` answers `collie` only while it lives, as a rig's `wrangler dev` does. */
   rigPid?: number;
+  /** A fresh Worker's door: `GET /` answers 404 until this time (ms since the epoch), as workers.dev does for a few seconds after a first deploy. */
+  doorUpAt?: number;
 }
 
 async function fakeCollieWorker(state: CollieWorker): Promise<{ server: Server; url: string }> {
@@ -71,6 +79,11 @@ async function fakeCollieWorker(state: CollieWorker): Promise<{ server: Server; 
       response.end(JSON.stringify(value));
     };
     if (key === "GET /") {
+      if (state.putSeenAt === undefined && state.token === null && state.put?.() != null) state.putSeenAt = Date.now();
+      if (state.doorUpAt !== undefined && Date.now() < state.doorUpAt) {
+        response.statusCode = 404;
+        return response.end("There is nothing here yet\n");
+      }
       if (state.rigPid !== undefined) {
         try {
           process.kill(state.rigPid, 0);
@@ -81,10 +94,14 @@ async function fakeCollieWorker(state: CollieWorker): Promise<{ server: Server; 
       }
       return response.end("collie\n");
     }
-    if (state.token === null || request.headers.authorization !== `Bearer ${state.token}`) {
+    const held = state.token ?? state.put?.() ?? null;
+    if (held !== null && state.putSeenAt === undefined) state.putSeenAt = Date.now();
+    const serving = state.secretLagMs === undefined || (state.putSeenAt !== undefined && Date.now() >= state.putSeenAt + state.secretLagMs);
+    if (held === null || !serving || request.headers.authorization !== `Bearer ${held}`) {
       response.statusCode = 401;
       return response.end("unauthorized\n");
     }
+    if (key === "GET /home") return json(200, { build: { commit: "0.0.0-checkout", builtAt: null }, on: true, since: null, rooms: state.rooms.length });
     if (key === "GET /report") return json(200, { on: true, since: "2026-09-14T03:42:10Z", limits: { turnsPerHour: 20, chain: 5 }, rooms: state.rooms });
     if (key === "DELETE /") {
       const ended = [...new Set(state.rooms.map((room) => room.origin))].map((origin) => ({ origin, badge: "bdg_1" }));
@@ -233,6 +250,10 @@ export async function resolveIdentity(client, home) {
       child.once("close", (code) => resolve({ code: code ?? -1, stdout: Buffer.concat(out).toString("utf8"), stderr: Buffer.concat(err).toString("utf8") }));
       child.stdin.end(run.stdin ?? "");
     });
+  worker.put = () => {
+    const puts = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as WranglerCall).filter((call) => call.args[0] === "secret" && call.args[2] === "COLLIE_TOKEN") : [];
+    return puts.length === 0 ? null : puts.at(-1)!.stdin.trim();
+  };
   const made: World = {
     dir,
     bin: commandLink,
@@ -256,7 +277,8 @@ export async function resolveIdentity(client, home) {
 /** The collie Worker's token as the config keeps it, which the fake Worker is then told to hold. */
 function heldToken(w: World): string {
   const block = w.config().collie as { token: string };
-  w.worker.token = block.token;
+  // The config's token is the one put: the fake Worker holds what wrangler's record shows put, so a mismatch is a 401.
+  expect(block.token).toBe(w.worker.put!());
   return block.token;
 }
 
@@ -306,7 +328,9 @@ describe("collie setup with --json, against the fake account (journey 1 step 3)"
     // The rest of the config kept, mode 600; the door asked, the report not (a first deploy has nothing to guard).
     expect(w.config()).toMatchObject({ home: STATION.home, token: STATION.token, name: STATION.name });
     expect(statSync(join(w.kennel, "config")).mode & 0o777).toBe(0o600);
-    expect(w.worker.requests.map((request) => `${request.method} ${request.path}`)).toEqual(["GET /"]);
+    // Ready is the authorized door: `GET /home` with the token just put, and nothing else asked of a first deploy.
+    expect(w.worker.requests).toEqual([{ method: "GET", path: "/home", auth: `Bearer ${block.token as string}` }]);
+    expect(w.worker.put!()).toBe(block.token);
   });
 
   it("run again, redeploys the same Worker and keeps its token, asking the collie who is mid-turn first", { timeout: 60_000 }, async () => {
@@ -339,6 +363,61 @@ describe("collie setup with --json, against the fake account (journey 1 step 3)"
     expect(JSON.parse(fromEnv.stdout)).toMatchObject({ account: { token: "environment" }, collie: { state: "deployed" } });
     // Kept nowhere new: no credentials file was written.
     expect(existsSync(join(w.kennel, "credentials"))).toBe(false);
+  });
+});
+
+describe("collie setup and deploy wait for the collie to answer with its token (co4)", () => {
+  it("setup ends only once GET /home takes the token just put, though GET / answered from the first version, so `collie` right after it is let in", { timeout: 60_000 }, async () => {
+    const w = await world();
+    w.worker.secretLagMs = 3_000;
+    const started = Date.now();
+    const run = await w.collie(["setup", "--json"]);
+    expect(run.code, run.stderr).toBe(0);
+    const took = Date.now() - started;
+    expect(JSON.parse(run.stdout)).toMatchObject({ collie: { name: COLLIE.name, answers: true } });
+    const token = heldToken(w);
+    // The shepherd's next command, at once: the report, with the kennel's token, is let in. (The block's address pointed at
+    // the fake the seam stands in for, since `collie`'s own client has no seam.)
+    const pointed = () => w.writeConfig({ ...w.config(), collie: { ...(w.config().collie as Json), address: w.workerUrl } });
+    await pointed();
+    const report = await w.collie(["--json"]);
+    expect(report.stderr).toBe("");
+    expect(report.code).toBe(0);
+    expect(JSON.parse(report.stdout)).toMatchObject({ on: true, rooms: [] });
+    expect(took).toBeGreaterThanOrEqual(3_000);
+    const home = w.worker.requests.filter((request) => request.path === "/home");
+    expect(home.length).toBeGreaterThan(1);
+    expect(home.every((request) => request.auth === `Bearer ${token}`)).toBe(true);
+
+    // A redeploy with the secrets kept is a new version too, and waits the same way.
+    w.worker.putSeenAt = Date.now();
+    w.worker.secretLagMs = 2_500;
+    const before = w.worker.requests.length;
+    const redeploy = await w.collie(["deploy"]);
+    expect(redeploy.code, redeploy.stderr).toBe(0);
+    expect(redeploy.stdout).toContain(`collie: ${COLLIE.name} redeployed at ${COLLIE.address} (answers)\n`);
+    const waited = w.worker.requests.slice(before).filter((request) => request.path === "/home");
+    expect(waited.length).toBeGreaterThan(1);
+    await pointed();
+    expect((await w.collie(["--json"])).code).toBe(0);
+  });
+
+  it("a collie that never takes its token in time is not a success: the step says so and the command exits 1", { timeout: 60_000 }, async () => {
+    const w = await world();
+    w.worker.secretLagMs = 600_000;
+    const run = await w.collie(["setup", "--json"], { env: { SHEEP_TEST_COLLIE_READY_MS: "2000" } });
+    expect(run.code).toBe(1);
+    const failed = JSON.parse(run.stdout) as { failed: string };
+    expect(failed.failed).toContain(`${COLLIE.address} did not answer GET /home with this kennel's token within 2s (the last answer: 401)`);
+    expect(failed.failed).toContain("`collie setup` again finishes it");
+    // At the screen: red at the collie step, the sentence under the screen, exit 1.
+    const screen = driveStile({ command: process.execPath, args: [w.bin, "setup"], cwd: w.dir, env: w.env({ SHEEP_TEST_COLLIE_READY_MS: "2000" }) });
+    cleanups.push(async () => screen.kill());
+    const exit = await screen.exited;
+    expect(exit.code).toBe(1);
+    expect(exit.stderr).toContain("did not answer GET /home with this kennel's token within 2s");
+    expect(screen.frame()).toContain("✗ the collie did not come up");
+    expect(screen.frame()).not.toContain("what is left");
   });
 });
 
@@ -585,6 +664,41 @@ describe("collie setup at a terminal (the stile's screen, 80 by 24)", () => {
   it("holds every step's words to the stile's rule: eight lines at eighty, seven where the box sits under them", () => {
     for (const step of COLLIE_STEPS) expect(collieWordsAt(step, 80).length, step).toBeLessThanOrEqual(step === "account" ? 7 : 8);
     expect(collieWordsAt("account", 80).map((line) => line.label).filter(Boolean)).toEqual(["what", "where", "cost", "collie"]);
+  });
+
+  it("ends on the finish in the reader's buffer when the Worker's door opens late and the reader is busy as the sitting ends, as the account ring drove it (co3)", { timeout: 180_000 }, async () => {
+    // Three sittings: whether the last chunk and the close land in one of the reader's turns is the scheduler's to say, and
+    // before the harness waited on its emulator, at least one in three read the frame before the finish.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const w = await world();
+      // The door in a process of its own, as a real Worker's is: 404 until told to open, then `collie`, and a mark on disk the
+      // moment it first answers so, which this test (busy, below) can read without its event loop.
+      const opened = join(w.dir, "door-answered");
+      const door = spawn(process.execPath, ["-e", `const fs = require("node:fs"); let open = false; process.stdin.on("data", () => (open = true)); require("node:http").createServer((q, r) => { if (!open) { r.statusCode = 404; return r.end("There is nothing here yet"); } fs.writeFileSync(${JSON.stringify(opened)}, "1"); r.setHeader("x-collie-build", "0.0.0-checkout"); r.end(q.url === "/home" ? "{}" : "collie\\n"); }).listen(0, "127.0.0.1", function () { console.log(this.address().port); });`], { stdio: ["pipe", "pipe", "inherit"] });
+      cleanups.push(async () => void door.kill());
+      const port = await new Promise<string>((resolve) => door.stdout.once("data", (chunk: Buffer) => resolve(String(chunk).trim())));
+      const run = driveStile({ command: process.execPath, args: [w.bin, "setup"], cwd: w.dir, env: w.env({ SHEEP_TEST_COLLIE_URL: `http://127.0.0.1:${port}` }), secrets: [TOKEN] });
+      cleanups.push(async () => run.kill());
+      await run.waitFor(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] waiting for blog-collie\.fake\.workers\.dev to answer/, { timeoutMs: 30_000 });
+      door.stdin.write("open\n");
+      // The reader busy with something else from before the door opens until the command has exited (a zombie, or gone, in
+      // `ps`, polled synchronously so no event of the child's is read): the finish's bytes and the exit reach it together.
+      const busy = Date.now() + 30_000;
+      const ended = (): boolean => {
+        const rows = spawnSync("ps", ["-axo", "stat=,args="], { encoding: "utf8" }).stdout.split("\n").filter((row) => row.includes(w.bin));
+        return rows.every((row) => row.trim().startsWith("Z"));
+      };
+      while (!(existsSync(opened) && ended()) && Date.now() < busy) {}
+      expect(existsSync(opened)).toBe(true);
+      const exit = await run.exited;
+      expect(exit).toEqual({ code: 0, stderr: "" });
+      const buffer = run.buffer();
+      expect(run.output()).toContain("what is left");
+      expect(buffer, `sitting ${attempt + 1}:\n${buffer}`).toContain(`  ✓ collie    ${COLLIE.address}`);
+      expect(buffer).toContain(`  collie       ${COLLIE.address} (deployed)`);
+      expect(buffer).toContain("│ collie new, in a directory bound to a canvas");
+      for (const step of ["sheep", "isocan", "account", "collie", "next"]) expect(buffer).toContain(`  ✓ ${step.padEnd(8)}  `);
+    }
   });
 
   it("stops at isocan in red when there is no identity, and deploys nothing", { timeout: 60_000 }, async () => {
