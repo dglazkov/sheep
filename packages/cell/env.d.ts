@@ -14,6 +14,12 @@ declare namespace Cloudflare {
      * no `Eyes`, `/home` says `eyes: false`, and the sheep is told nothing about looking.
      */
     BROWSER?: Fetcher;
+    /**
+     * Hill phase 1: the hill's page, the `assets` binding over `packages/hill/dist` (a release's `home/hill`), bound at the
+     * top level and in `env.pen`. The Worker runs first on every request and hands `/hill/*` to it. Absent (a home deployed
+     * before the hill), `/hill/` answers the gate that says the page was not built.
+     */
+    HILL?: Fetcher;
     /** Bearer token every request must carry. */
     SHEEP_TOKEN?: string;
     /**

@@ -57,9 +57,22 @@
  * no `Upgrade` header, and is the bare 401 otherwise. The upgrade is the one
  * GET that is not a read: `/s/<id>/ws` is pi's protocol, which writes. The
  * seat is asked of the Directory before any cell is reached.
+ * Hill phase 1: the page, before the door, since a browser with no seat must
+ * meet the gate and not the 401. `GET` and `HEAD` of `/hill` are a 302 to
+ * `/hill/`, and of anything under `/hill/` but the seat and the passes are
+ * the `HILL` assets binding's: a built file for a file's path, `index.html`
+ * for every other path (the Worker maps `/hill/<file>` to the binding's
+ * `/<file>`, and asks for `/index.html` when that is not a file), so a
+ * pasted or reloaded address opens the page. `index.html` is served
+ * `no-store`, with no referrer and a policy of `'self'` and no frames; every
+ * file with `nosniff`. A binding with no `index.html` (a checkout never
+ * built) answers a small gate that says `pnpm build`. `GET /` from a
+ * browser, an `Accept` naming `text/html`, is a 302 to `/hill/`; from
+ * anything else it is `sheep\n` as it was.
  */
 import { type Budget, mintSecrets, PASS_EXPIRED, PASS_USED, SEAT_COOKIE, SEAT_MS, unknownPasture, unknownSession } from "./directory.ts";
 import { hasEyes } from "./eyes/eyes.ts";
+import { NO_BUILD } from "./hill-words.ts";
 import { type FauxProgram, isFauxProgram } from "./models.ts";
 import { badPastureName, isPastureName, isSecretName } from "./pasture.ts";
 
@@ -140,6 +153,69 @@ async function leaveAnswer(request: Request, env: Env): Promise<Response> {
   const seat = seatOf(request);
   if (seat !== undefined) await env.DIRECTORY.getByName("home").leave(seat);
   return new Response(null, { status: 204, headers: { "cache-control": "no-store", "set-cookie": seatCookie("", 0) } });
+}
+
+/**
+ * The page's policy (hill phase 1): scripts, styles, the icon, and requests from this origin alone, and never inside a
+ * frame. The page has no inline script or style and no remote font, so it needs nothing more.
+ */
+const HILL_POLICY = "default-src 'self'; frame-ancestors 'none'";
+
+/** What every hill response carries, and what `index.html` carries besides: the address held a pass a moment ago. */
+const HILL_FILE_HEADERS = { "x-content-type-options": "nosniff" };
+const HILL_PAGE_HEADERS = { ...HILL_FILE_HEADERS, "cache-control": "no-store", "referrer-policy": "no-referrer", "content-security-policy": HILL_POLICY };
+
+/** Whether a path is the hill's page, served before the door: `/hill` and under it, but the seat and the passes, which are routes. */
+function isHillPage(pathname: string): boolean {
+  if (pathname === "/hill/seat" || pathname === "/hill/passes") return false;
+  return pathname === "/hill" || pathname.startsWith("/hill/");
+}
+
+/** An asset's response made again around its body, its headers kept and the hill's laid over them; a `HEAD` gets no body. */
+function hillResponse(asset: Response, method: string, headers: Record<string, string>): Response {
+  const merged = new Headers(asset.headers);
+  for (const [name, value] of Object.entries(headers)) merged.set(name, value);
+  return new Response(method === "HEAD" ? null : asset.body, { status: asset.status, statusText: asset.statusText, headers: merged });
+}
+
+/** The gate a checkout with no build answers: one sentence, no script, and the page's own headers. */
+function noBuild(method: string): Response {
+  const body = `<!doctype html>\n<meta charset="utf-8">\n<title>the hill</title>\n<p>${NO_BUILD.replace("pnpm build", "<code>pnpm build</code>")}</p>\n`;
+  return new Response(method === "HEAD" ? null : body, { status: 503, headers: { ...HILL_PAGE_HEADERS, "content-type": "text/html; charset=utf-8", "content-security-policy": "default-src 'none'; frame-ancestors 'none'" } });
+}
+
+/**
+ * `GET` or `HEAD` of the hill's page (hill phase 1), before the door. `/hill` is a 302 to `/hill/`, its query kept. Under
+ * `/hill/`, a path that is a built file is that file, `nosniff` and revalidated; any other is `index.html`, for the page
+ * to route. The binding is asked for `/<file>` with the prefix taken off, since the built directory is the page's root.
+ */
+export async function hillAnswer(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const method = request.method;
+  if (url.pathname === "/hill") return new Response(null, { status: 302, headers: { ...HILL_FILE_HEADERS, location: `/hill/${url.search}` } });
+  const assets = env.HILL;
+  if (assets === undefined) return noBuild(method);
+  const rest = url.pathname.slice("/hill".length);
+  if (rest !== "/") {
+    const conditional = request.headers.get("if-none-match");
+    // The path set on a URL of this origin, never resolved against it: `//elsewhere` stays a path.
+    const at = new URL(url.origin);
+    at.pathname = rest;
+    const file = await assets.fetch(new Request(at, { headers: conditional === null ? {} : { "if-none-match": conditional } }));
+    if (file.status === 200 || file.status === 304) return hillResponse(file, method, { ...HILL_FILE_HEADERS, "cache-control": "no-cache" });
+    await file.body?.cancel();
+  }
+  const page = await assets.fetch(new Request(new URL("/index.html", url.origin)));
+  if (page.status !== 200) {
+    await page.body?.cancel();
+    return noBuild(method);
+  }
+  return hillResponse(page, method, HILL_PAGE_HEADERS);
+}
+
+/** Whether `GET /` is a browser's (hill phase 1): an `Accept` that names `text/html`. No command's `Accept` does. */
+function wantsPage(request: Request): boolean {
+  return /\btext\/html\b/i.test(request.headers.get("accept") ?? "");
 }
 
 /** The key a join token is looked up by: `join:` and the hex of its SHA-256. The raw token is never stored, and never compared. */
@@ -309,7 +385,8 @@ async function pastureRoute(request: Request, env: Env, name: string, path: stri
 const router = {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url);
-    if (url.pathname === "/" && request.method === "GET") return new Response("sheep\n");
+    // `/` (hill phase 1): a browser is sent to the hill; everything else hears `sheep`, as every command has.
+    if (url.pathname === "/" && request.method === "GET") return wantsPage(request) ? new Response(null, { status: 302, headers: { location: "/hill/" } }) : new Response("sheep\n");
     const directory = env.DIRECTORY.getByName("home");
 
     // The container's door, before the home's: the cell checks the minted token, and only this path passes.
@@ -329,6 +406,9 @@ const router = {
     // The hill's seat (hill phase 0), before the home's door as the join is: taken with a pass, given up with the cookie.
     if (url.pathname === "/hill/seat" && request.method === "GET") return seatAnswer(request, env);
     if (url.pathname === "/hill/seat" && request.method === "DELETE") return leaveAnswer(request, env);
+    // The page itself (hill phase 1), before the door too: a browser with no seat meets the gate, not the 401. It carries
+    // nothing secret; what it shows comes from the routes behind the door.
+    if (isHillPage(url.pathname) && (request.method === "GET" || request.method === "HEAD")) return hillAnswer(request, env);
 
     const refused = await admitted(request, env);
     if (refused) return refused;

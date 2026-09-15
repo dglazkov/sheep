@@ -89,6 +89,7 @@ export const RINGS = {
     "packages/cell/test/fold-cache.test.ts",
     "packages/cell/test/fold-home.test.ts",
     "packages/cell/test/forward.test.ts",
+    "packages/cell/test/hill-page.test.ts",
     "packages/cell/test/hill.test.ts",
     "packages/cell/test/isolate.test.ts",
     "packages/cell/test/join.test.ts",
@@ -119,6 +120,9 @@ export const RINGS = {
     "packages/cli/test/settle.test.ts",
     "packages/cli/test/surface.test.ts",
     "packages/cli/test/tip.test.ts",
+    "packages/hill/test/flow.test.ts",
+    "packages/hill/test/page.test.ts",
+    "packages/hill/test/words.test.ts",
   ],
   command: [
     "packages/cli/test/bleat.test.ts",
@@ -140,7 +144,7 @@ export const RINGS = {
     "packages/pen/test/birth.test.ts",
     "packages/pen/test/git.test.ts",
   ],
-  home: ["packages/cli/test/bell.test.ts", "packages/cli/test/collie-home.test.ts", "packages/cli/test/journey-drove.test.ts", "packages/cli/test/journey5.test.ts", "packages/cli/test/pasture-herd.test.ts", "packages/cli/test/pasture.test.ts", "packages/cli/test/tether.test.ts"],
+  home: ["packages/cli/test/bell.test.ts", "packages/cli/test/collie-home.test.ts", "packages/cli/test/hill-home.test.ts", "packages/cli/test/journey-drove.test.ts", "packages/cli/test/journey5.test.ts", "packages/cli/test/pasture-herd.test.ts", "packages/cli/test/pasture.test.ts", "packages/cli/test/tether.test.ts"],
 };
 
 /** The ring a file is declared to be in, or `undefined` when it is in none. */

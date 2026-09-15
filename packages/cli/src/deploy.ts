@@ -563,7 +563,9 @@ type Json = Record<string, unknown>;
 /**
  * The rule, pure over the base config's text and path: `$schema` dropped,
  * `main` made absolute against the base's directory (a relative image path
- * or build context too, which only a checkout's config has), and the three
+ * or build context too, which only a checkout's config has; and the hill's
+ * `assets.directory` at the top level and in `env.pen`, hill phase 1, which
+ * a release's and a checkout's config both name relatively), and the three
  * names set to the Worker's: the top level's, `env.pen`'s, and
  * `env.pen.containers[0]`'s. The output is plain JSON.
  */
@@ -587,14 +589,14 @@ export function deriveConfig(baseText: string, basePath: string, name: string, j
   const { kv_namespaces: topKv, ...top } = config;
   const topKept = (Array.isArray(topKv) ? (topKv as Json[]) : []).filter((binding) => typeof binding.id === "string");
   const derived: Json = {
-    ...top,
+    ...withAbsoluteAssets(top, dir),
     ...(topKept.length === 0 ? {} : { kv_namespaces: topKept }),
     name,
     main: resolve(dir, config.main),
     env: {
       ...env,
       pen: {
-        ...penRest,
+        ...withAbsoluteAssets(penRest, dir),
         ...(kv.length === 0 ? {} : { kv_namespaces: kv }),
         name,
         containers: [{ ...container, name, image: absolute(container.image), ...(container.image_build_context === undefined ? {} : { image_build_context: absolute(container.image_build_context) }) }],
@@ -602,6 +604,17 @@ export function deriveConfig(baseText: string, basePath: string, name: string, j
     },
   };
   return { text: `${JSON.stringify(derived, null, 2)}\n`, name, image: container.image };
+}
+
+/**
+ * A config place with its `assets.directory` made absolute against `dir` (hill phase 1): the derived config is written
+ * under the kennel, where the base's relative `./hill` or `../hill/dist` would name nothing. A place with no assets is
+ * returned as it is. Shared with the local home's derived config (`local.ts`).
+ */
+export function withAbsoluteAssets<T extends Record<string, unknown>>(place: T, dir: string): T {
+  const assets = place.assets as Record<string, unknown> | undefined;
+  if (assets === undefined || typeof assets.directory !== "string") return place;
+  return { ...place, assets: { ...assets, directory: resolve(dir, assets.directory) } };
 }
 
 /** Where the derived config lives: under the kennel, beside `local/`. */

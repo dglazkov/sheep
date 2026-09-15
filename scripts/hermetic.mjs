@@ -1521,6 +1521,9 @@ class Ring {
     if (listed.code !== 0 || !listed.stdout.split("\n").some((line) => line.startsWith(`${id}\t`))) this.fail("step 3", "sheep ls", listed);
     this.ok("step 3", "sheep new -- hello; sheep ls (in blog)", `${FAUX_REPLY}; session ${id} listed`);
 
+    // Hill phase 1, h0: the release's page on blog's local home, served from the package's home/hill by the config beside it.
+    await this.hillWalk(url);
+
     // Kennel journey 1 step 2: the second dog's home, in its own directory. A different port, a different token, and the tool already fetched.
     const pi = await this.startHome(this.pi, "k1.2", "started");
     if (pi.url === url) this.fail("k1.2", "sheep home local --faux --json (in pi)", { stdout: pi.url, stderr: `pi's home is at blog's address ${url}: two kennels must run two daemons`, code: 1 });
@@ -1875,6 +1878,47 @@ class Ring {
    * Chrome cache under it is absent before the walk and holds one build
    * after: the first look fetched it, and its time says what that costs.
    */
+  /**
+   * Hill phase 1, `h0` (journey 4 step 1 and journey 5 step 2, on the
+   * package's local home): `GET /hill/` answers the release's
+   * `home/hill/index.html`, with the page's title and its security headers,
+   * to a request with no seat and no bearer; and `sheep hill`, the installed
+   * command in blog, prints one line, a link at this home whose pass `fetch`
+   * takes for a 204 and the seat's cookie. The browser's half is the
+   * conductor's walk.
+   */
+  async hillWalk(url) {
+    const shippedPage = join(this.pkg, "home", "hill", "index.html");
+    if (!existsSync(shippedPage)) this.fail("h0", `ls ${join(this.pkg, "home", "hill")}`, { stdout: existsSync(join(this.pkg, "home")) ? readdirSync(join(this.pkg, "home")).join("\n") : "", stderr: "the release carries no home/hill/index.html", code: 1 });
+    const page = await fetch(`${url}/hill/`, { redirect: "manual", signal: AbortSignal.timeout(10_000) });
+    const html = await page.text();
+    const headers = {
+      "content-type": page.headers.get("content-type"),
+      "cache-control": page.headers.get("cache-control"),
+      "referrer-policy": page.headers.get("referrer-policy"),
+      "x-content-type-options": page.headers.get("x-content-type-options"),
+      "content-security-policy": page.headers.get("content-security-policy"),
+    };
+    const expected = { "cache-control": "no-store", "referrer-policy": "no-referrer", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'self'; frame-ancestors 'none'" };
+    const title = /<title>([^<]*)<\/title>/.exec(html)?.[1];
+    const headersHeld = Object.entries(expected).every(([name, value]) => headers[name] === value) && /^text\/html/.test(headers["content-type"] ?? "");
+    if (page.status !== 200 || !headersHeld || title === undefined || html !== readFileSync(shippedPage, "utf8")) {
+      this.fail("h0", `curl -i ${url}/hill/`, { stdout: `${page.status}\n${JSON.stringify(headers, null, 2)}\n${html.slice(0, 400)}`, stderr: `expected 200, the release's home/hill/index.html with a <title>, and the headers ${JSON.stringify(expected)}`, code: 1 });
+    }
+    const printed = await this.sheep(["hill"], { cwd: this.blog });
+    const prefix = `${url}/hill/?pass=`;
+    const pass = printed.stdout.startsWith(prefix) ? /^([0-9a-f]{64})\n$/.exec(printed.stdout.slice(prefix.length))?.[1] : undefined;
+    if (printed.code !== 0 || pass === undefined || printed.stderr !== "") this.fail("h0", "sheep hill (in blog)", { ...printed, stderr: `${printed.stderr}\nexpected exit 0, one line ${url}/hill/?pass=<64 hex> on stdout, and nothing on stderr` });
+    const taken = await fetch(`${url}/hill/seat?pass=${pass}`, { signal: AbortSignal.timeout(10_000) });
+    const cookie = taken.headers.get("set-cookie") ?? "";
+    await taken.body?.cancel();
+    if (taken.status !== 204 || !/^sheep-seat=[0-9a-f]{64}; HttpOnly; Secure; SameSite=Strict; Path=\/; Max-Age=\d+$/.test(cookie)) {
+      this.fail("h0", `curl -i ${url}/hill/seat?pass=…`, { stdout: `${taken.status}\nset-cookie: ${cookie.replace(/=[0-9a-f]{64}/, "=…")}`, stderr: "expected a 204 and the sheep-seat cookie with HttpOnly, Secure, SameSite=Strict, Path=/", code: 1 });
+    }
+    this.ok("h0", `curl ${url}/hill/`, `200, the release's home/hill/index.html ("${title}"), no-store, no-referrer, nosniff, CSP ${expected["content-security-policy"]}`);
+    this.ok("h0", "sheep hill (in blog); curl /hill/seat?pass=…", `one line at ${url}/hill/?pass=…; the pass taken for a 204 and sheep-seat=…; HttpOnly; Secure; SameSite=Strict`);
+  }
+
   async eyesWalk(url) {
     const chrome = chromeCacheOf(this.home);
     if (existsSync(chrome)) this.fail("e1", `ls ${chrome}`, { stdout: readdirSync(chrome).join("\n"), stderr: "a Chrome is in the ring's HOME before any look; the first look must be the one that fetches it", code: 1 });

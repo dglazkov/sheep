@@ -20,6 +20,7 @@
  *   bin/collie.js        the same for the second command, ../dist/collie.mjs (collie phase 1)
  *   dist/                the two bundles, the guide, and what they read beside them (scripts/bundle.mjs)
  *   home/                the Worker and its config (scripts/bundle.mjs)
+ *   home/hill/           the hill's page, which the config's assets binding serves at /hill/ (scripts/bundle.mjs; hill phase 1)
  *   collie/              the collie's Worker and its config (scripts/bundle.mjs; collie phase 1)
  *   SKILL.md             the skill, at the root so `npx skills add dglazkov/sheep` offers it alone: the doorway `sheep setup` copies into a directory
  *   README.md, LICENSE   from HEAD
@@ -175,6 +176,8 @@ export function expectedReleaseFiles(built, skill) {
   if (!built.some((file) => file.file === "dist/agent-guide.md")) throw new Error("the bundle build did not write dist/agent-guide.md");
   if (!built.some((file) => file.file === "dist/collie-guide.md")) throw new Error("the bundle build did not write dist/collie-guide.md");
   for (const file of ["collie/worker.mjs", "collie/wrangler.jsonc"]) if (!built.some((entry) => entry.file === file)) throw new Error(`the bundle build did not write ${file}`);
+  // The hill (hill phase 1): whatever the page's build wrote is listed from `built`, and the page itself must be among it.
+  if (!built.some((entry) => entry.file === "home/hill/index.html")) throw new Error("the bundle build did not write home/hill/index.html");
   if (!skill.includes(SKILL_FILE)) throw new Error(`the tree carries no ${SKILL_FILE}`);
   return [
     "package.json",
@@ -262,7 +265,7 @@ async function main() {
     // First parent: where the branch was. Second: the commit this build is of.
     const previous = tryGit("rev-parse", "--verify", "--quiet", "refs/remotes/origin/release") || tryGit("rev-parse", "--verify", "--quiet", "refs/heads/release");
     const parents = [...(previous ? ["-p", previous] : []), "-p", head];
-    const message = `release ${stamp.commit}: ${subject}\n\nBuilt ${builtAt} with wrangler ${built.wrangler}. Two bundles, the guides, the skill, the Worker, and the collie's Worker included, stamped ${stamp.commit}; the pen image is ${stamp.image}, by ${imageBy(stamp.image)}. No prepare script, no workspaces (isocan #47).\n`;
+    const message = `release ${stamp.commit}: ${subject}\n\nBuilt ${builtAt} with wrangler ${built.wrangler}. Two bundles, the guides, the skill, the Worker with the hill's page, and the collie's Worker included, stamped ${stamp.commit}; the pen image is ${stamp.image}, by ${imageBy(stamp.image)}. No prepare script, no workspaces (isocan #47).\n`;
     const dated = { ...env, GIT_AUTHOR_DATE: builtAt, GIT_COMMITTER_DATE: builtAt };
     const commit = git("commit-tree", tree, ...parents, "-m", message, { env: dated });
     console.error(`release: candidate ${commit.slice(0, 7)} built from ${stamp.commit} (${subject}) at ${builtAt}; ${files.length} files`);

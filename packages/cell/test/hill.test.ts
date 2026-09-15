@@ -257,9 +257,13 @@ describe("hill phase 0: a seat reads, and does nothing else", () => {
     expect((await at("/sessions", withSeat(standing))).status).toBe(200);
   });
 
-  it("GET /hill/ is still the 404 it was: no page this phase", async () => {
-    const response = await at("/hill/", { headers: bearer });
-    expect(response.status).toBe(404);
-    expect(await response.text()).toBe("not found");
+  it("GET /hill/ is the page since hill phase 1, the same with a bearer, a seat, or neither (hill-page.test.ts has the rest)", async () => {
+    const standing = await seat((await mint()).pass);
+    const page = await (await at("/hill/")).text();
+    for (const init of [{ headers: bearer }, withSeat(standing), {}]) {
+      const response = await at("/hill/", init);
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe(page);
+    }
   });
 });

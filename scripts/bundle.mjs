@@ -67,6 +67,15 @@
  * untouched (eyes phase 0's finding); `assertEyes` is the guard that says
  * so before the config is written, so a release never deploys a home
  * whose sheep are told it has no eyes.
+ *
+ * The hill (hill phase 1). `packages/hill/build.mjs` builds the page, and
+ * what it wrote is copied to `home/hill/`: `index.html`, `hill.js`,
+ * `hill.css`, and the mark. The shipped config's `assets.directory` is
+ * `./hill` at the top level and in `env.pen`, since a named environment is
+ * given its own; `assertHill` says so before the config is written, and
+ * deploy and the local home make the directory absolute as they make
+ * `main`. The page is built before the Worker, since `wrangler deploy
+ * --dry-run` reads the assets directory the cell's config names.
  */
 import { spawnSync } from "node:child_process";
 import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -75,6 +84,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
+import { buildHill } from "../packages/hill/build.mjs";
 import { IMAGE_REPOSITORY, RELEASE_DEPENDENCIES, RELEASE_OPTIONAL_DEPENDENCIES } from "./release.mjs";
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -272,13 +282,49 @@ export const imageBy = (reference) => (reference.includes("@sha256:") ? "digest"
  */
 export function shippedConfig(config, stamp) {
   const { $schema: _schema, name, main: _main, ...rest } = config;
-  const written = { name, main: "worker.mjs", no_bundle: true, ...rest };
+  const written = withHill({ name, main: "worker.mjs", no_bundle: true, ...rest });
   if (stamp === undefined) return written;
   const containers = written.env?.pen?.containers;
   if (!Array.isArray(containers) || containers.length !== 1) throw new Error("the cell's config must have exactly one container in its pen environment");
   const { name: _containerName, image: _image, image_build_context: _context, ...container } = containers[0];
   written.env = { ...written.env, pen: { ...written.env.pen, containers: [{ image: imageReference(stamp.commit, stamp.imageDigest), ...container }] } };
   return written;
+}
+
+/** Where the page is in the release (hill phase 1): `home/hill/`, beside the Worker, named from the config beside it. */
+export const HILL_DIRECTORY = "./hill";
+
+/** The binding the Worker hands `/hill/*` to (hill phase 1). */
+export const HILL_BINDING = "HILL";
+
+/**
+ * The shipped config's page (hill phase 1): every `assets` block, the top
+ * level's and `env.pen`'s, pointed at `./hill`, the directory this build
+ * copies the page into; everything else about the binding kept.
+ */
+export function withHill(config) {
+  const point = (place) => (place?.assets === undefined ? place : { ...place, assets: { ...place.assets, directory: HILL_DIRECTORY } });
+  const top = point(config);
+  if (top.env?.pen === undefined) return top;
+  return { ...top, env: { ...top.env, pen: point(top.env.pen) } };
+}
+
+/**
+ * The page rides the config (hill phase 1): the shipped config binds `HILL`
+ * over `./hill`, with the Worker first, at the top level (the local home)
+ * and in `env.pen` (the station), or a release would deploy a home whose
+ * `/hill/` is the gate that says the page was never built. Returns the config.
+ */
+export function assertHill(config) {
+  const bound = (place) => place?.assets?.binding === HILL_BINDING && place.assets.directory === HILL_DIRECTORY && place.assets.run_worker_first === true;
+  const missing = [
+    ["the top level", config],
+    ["env.pen", config?.env?.pen],
+  ]
+    .filter(([, place]) => !bound(place))
+    .map(([where]) => where);
+  if (missing.length > 0) throw new Error(`the shipped config has no assets binding named ${HILL_BINDING} over ${HILL_DIRECTORY}, the Worker first, at ${missing.join(" or ")}; the home it deploys would have no hill`);
+  return config;
 }
 
 /** The binding the eyes read (eyes phase 0): what both environments of the shipped config must carry. */
@@ -362,7 +408,7 @@ function emitWorker(stamp) {
   if (stamp !== undefined && !worker.includes(stamp.commit)) throw new Error(`wrangler emitted a Worker without the stamp ${stamp.commit} in it; was --define dropped?`);
   if (stamp !== undefined && !worker.includes(image)) throw new Error(`wrangler emitted a Worker without the image ${image} in it; was --define dropped?`);
   if (stamp === undefined && !worker.includes("0.0.0-checkout")) throw new Error("wrangler emitted a Worker without the checkout stamp in it");
-  const written = assertJoin(assertEyes(shippedConfig(parseJsonc(readFileSync(join(cellDir, "wrangler.jsonc"), "utf8")), stamp)));
+  const written = assertHill(assertJoin(assertEyes(shippedConfig(parseJsonc(readFileSync(join(cellDir, "wrangler.jsonc"), "utf8")), stamp))));
   const header =
     "// GENERATED by scripts/bundle.mjs from packages/cell/wrangler.jsonc: `main` is the Worker wrangler emitted\n" +
     "// beside this file and `no_bundle` serves it as is. The `pen` environment is the deployed home's (station):\n" +
@@ -486,6 +532,17 @@ export async function buildRelease(stamp) {
     copyFileSync(join(themeSource, name), join(themeTarget, name));
     files.push({ file: relative(root, join(themeTarget, name)), bytes: readFileSync(join(themeTarget, name)).length });
   }
+
+  // The hill (hill phase 1): the page built into its package's dist/, which the cell's config names and the dry run reads,
+  // then copied beside the Worker as home/hill/, which the shipped config names.
+  const hillFiles = await buildHill();
+  const hillTarget = join(homeDir, "hill");
+  mkdirSync(hillTarget, { recursive: true });
+  for (const { file, bytes } of hillFiles) {
+    copyFileSync(join(root, "packages", "hill", "dist", file), join(hillTarget, file));
+    files.push({ file: `home/hill/${file}`, bytes });
+  }
+  if (!existsSync(join(hillTarget, "index.html"))) throw new Error("the hill's build wrote no index.html");
 
   const worker = emitWorker(stamp);
   files.push({ file: "home/worker.mjs", bytes: worker.bytes });

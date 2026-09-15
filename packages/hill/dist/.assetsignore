@@ -1,0 +1,2 @@
+# hill phase 1: the one committed file under dist/, so a fresh clone has the directory the cell's assets binding names.
+# `node build.mjs` writes the page beside it. Wrangler reads this file and never uploads it.

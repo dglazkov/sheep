@@ -46,6 +46,8 @@ describe("the inner rings", () => {
     expect(files).toContain("packages/cell/test/eyes.test.ts");
     expect(files).toContain("packages/cli/test/journey5.test.ts");
     expect(files).toContain("packages/pen/test/git.test.ts");
+    // The fifth package (hill phase 1): the page's own logic, in the checkout ring.
+    expect(files).toContain("packages/hill/test/flow.test.ts");
   });
 
   it("puts every test file in exactly one ring", () => {
@@ -90,7 +92,8 @@ describe("the inner rings", () => {
     // which no other file's home can share without being restarted under it. Raised to six by collie phase 2: the rig's
     // walk stands a kennel's own local home, the collie's Worker, and an isocan daemon together, and restarts two of them.
     // Raised to seven by drove phase 1, landed after it: its file starts a fake town beside its home, and journey 4 holds a
-    // turn open and aborts it on a sheep of its own.
-    expect(RINGS.home.length).toBeLessThanOrEqual(7);
+    // turn open and aborts it on a sheep of its own. Raised to eight by hill phase 1: the page is served by the Worker's
+    // assets binding, which only a real `wrangler dev` runs as a station does, and no other file's home is about the page.
+    expect(RINGS.home.length).toBeLessThanOrEqual(8);
   });
 });

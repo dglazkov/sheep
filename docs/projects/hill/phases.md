@@ -35,13 +35,14 @@ resource, spend money, or need a login, and are asked out loud first.
 
 ---
 
-**Where we are: hill phase 0 CLOSED, 14 September 2026.** The door
-stands: `sheep hill` prints a link with a pass, the pass buys a seat, and
-a seat reads and does nothing else, the WebSocket to a cell included. No
-page yet. The next thing to do is `hill phase 1`, the shell and the gate.
-The mockups in [screen/](screen/) wait on the shepherd's yes, which
-closes each phase with a screen and does not hold its build; `hill
-phase 3`'s walk and its account-ring step are ⚑.
+**Where we are: hill phase 0 CLOSED, hill phase 1 PART-DONE, 14
+September 2026; next is hill phase 2, the flock.** The door stands, and the station serves the page at
+`/hill/` from an assets binding, before the door: the gate for a
+browser with no seat, the shell once seated, and a release that carries
+it, walked in Chrome and by the package ring. Hill phase 1 waits on one
+thing, the shepherd's yes on the storyboard and the built gate. `hill
+phase 2` is built ahead of that yes under the project's third rule. `hill phase 3`'s walk and its account-ring
+step are ⚑.
 
 The order is dependency order. Hill phase 0 is the door and the verb:
 a pass, a seat, the cookie admitted for a read, proved in workerd with
@@ -186,7 +187,21 @@ replaced after the seat (the pass stays in the bar; the rewrite test
 fails). **⚑** none. **A hand:** the shepherd's yes on the mockups,
 which closes the phase and does not hold the build.
 
-**Status: NOT STARTED.**
+**Status: PART-DONE.** 2026-09-14. Every proof that can run here held:
+the station serves the gate and the shell at `/hill/` before the door,
+the pass leaves the address on a take and on a refusal, and a release
+built from the phase's commit carries `home/hill/` and held the package
+ring with `h0`. The conductor walked journey 1 steps 1 to 3 and 5 in
+Chrome. It closes on the shepherd's yes.
+
+**Findings:**
+
+- **2026-09-14 — The walk held in Chrome at a scratch kennel's local home.** The link seated the browser and left `/hill/` in the bar, and the same link again said "That pass was already used." in red. Sign out and a reload showed the gate, `/hill/s/<id>` opened the page, and no request carried anything but the pass given.
+- **2026-09-14 — The release ring held on the phase's commit:** `pnpm release --no-push --force` built a candidate with `home/hill/` and held 28 lines. Its two `h0` lines saw the page's headers and a seat taken through the installed `sheep hill`.
+- **2026-09-14 — `sheep.ts` could not be bundled for a browser:** `paint.ts` reads `process.env`. The raster moved to `pixels.ts`, which imports nothing, and the gate and the stile draw one sheep.
+- **2026-09-14 — Deep paths are the Worker's, not the binding's:** with `html_handling` and `not_found_handling` at `none`, the Worker maps `/hill/<file>` and falls back to `index.html`. A fresh clone keeps `dist/` through one placeholder, and no build answers a gate saying `pnpm build`.
+- **2026-09-14 — Two timing assertions failed once each under the full run, never hill's:** lease's budget and stile's one-second first frame. Each passed alone, and the third full run was green. The home ring is eight `wrangler dev`s now.
+- **2026-09-14 — Open: the shepherd's yes on the storyboard and the built gate.** The light theme was drawn without a mockup, and its cream wool nearly melts into the cream ground; the walk's frames are for that taste.
 
 ## Phase 2: The flock
 

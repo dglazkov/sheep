@@ -62,7 +62,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { configPath, readConfigFile, sheepDir, writeConfigFile } from "./config.js";
 import { modelKey } from "./credentials.js";
-import { parseJsonc } from "./deploy.js";
+import { parseJsonc, withAbsoluteAssets } from "./deploy.js";
 
 /** The release's build stamp, `sheep` in the manifest beside the code; absent in a checkout. `image` is the pen image the release named, by digest or by tag (station phase 2); a manifest from before it has none. */
 export interface BuildStamp {
@@ -482,7 +482,8 @@ export interface DerivedLocal {
 
 /**
  * The rule for the derived config, a pure function over the base's text
- * and path: `$schema` dropped, `main` made absolute, and the `pen`
+ * and path: `$schema` dropped, `main` made absolute (and the hill's
+ * `assets.directory`, at the top level and in `env.pen`, hill phase 1), and the `pen`
  * container's `image` replaced by `./Dockerfile` with the build context
  * `.`, both relative to the derived file's own directory; everything else
  * kept. The Dockerfile is exactly `FROM <the base's image reference>`.
@@ -503,9 +504,9 @@ export function deriveLocalConfig(baseText: string, basePath: string): DerivedLo
   if ((image.startsWith(".") || image.startsWith("/")) && existsSync(resolve(dir, image))) return undefined;
   const { image_build_context: _context, ...rest } = container;
   const derived = {
-    ...config,
+    ...withAbsoluteAssets(config, dir),
     main: resolve(dir, config.main),
-    env: { ...env, pen: { ...pen, containers: [{ ...rest, image: "./Dockerfile", image_build_context: "." }] } },
+    env: { ...env, pen: { ...withAbsoluteAssets(pen, dir), containers: [{ ...rest, image: "./Dockerfile", image_build_context: "." }] } },
   };
   return { text: `${JSON.stringify(derived, null, 2)}\n`, dockerfile: `FROM ${image}\n`, image };
 }

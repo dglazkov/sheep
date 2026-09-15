@@ -4,12 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "dev:pen": "wrangler dev --env pen",
-    "deploy": "wrangler deploy",
-    "deploy:pen": "wrangler deploy --env pen",
+    "dev": "node ../hill/build.mjs && wrangler dev",
+    "dev:pen": "node ../hill/build.mjs && wrangler dev --env pen",
+    "deploy": "node ../hill/build.mjs && wrangler deploy",
+    "deploy:pen": "node ../hill/build.mjs && wrangler deploy --env pen",
     "typecheck": "tsc --noEmit",
-    "test": "vitest --run"
+    "test": "node ../hill/build.mjs && vitest --run"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.22.0",

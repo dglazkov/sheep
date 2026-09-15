@@ -840,6 +840,8 @@ describe("the derived config", () => {
     expect(config.env.pen.containers[0]).toMatchObject({ name: "sheep-hermetic-2b71e46", class_name: "PenContainer", instance_type: "basic", max_instances: 3 });
     expect(config.env.pen.containers[0].image).toBe(join(cellConfig, "..", "..", "pen", "Dockerfile"));
     expect(config.env.pen.containers[0].image_build_context).toBe(join(cellConfig, "..", "..", "pen"));
+    // The hill (hill phase 1): the checkout's page, its directory absolute in both places, the rest of the binding kept.
+    for (const place of [config, config.env.pen]) expect(place.assets).toEqual({ directory: join(cellConfig, "..", "..", "hill", "dist"), binding: "HILL", run_worker_first: true, html_handling: "none", not_found_handling: "none" });
     expect(config.$schema).toBeUndefined();
     // The rest is the base's: bindings, migrations, the loader, and the vars.
     expect(config.env.pen.durable_objects.bindings.map((binding: { name: string }) => binding.name)).toEqual(["SESSION_CELL", "DIRECTORY", "PEN_CONTAINER", "PASTURE"]);
@@ -864,12 +866,15 @@ describe("the derived config", () => {
     ]);
   });
 
-  it("leaves a registry image reference alone, as a release's config names one", () => {
-    const base = JSON.stringify({ name: "sheep", main: "worker.mjs", no_bundle: true, env: { pen: { name: "sheep-pen", containers: [{ image: "docker.io/someone/sheep-pen:2b71e46", class_name: "PenContainer" }] } } });
+  it("leaves a registry image reference alone, as a release's config names one, and makes its hill's directory absolute as main is", () => {
+    const assets = { directory: "./hill", binding: "HILL", run_worker_first: true };
+    const base = JSON.stringify({ name: "sheep", main: "worker.mjs", no_bundle: true, assets, env: { pen: { name: "sheep-pen", assets, containers: [{ image: "docker.io/someone/sheep-pen:2b71e46", class_name: "PenContainer" }] } } });
     const derived = deriveConfig(base, "/pkg/home/wrangler.jsonc", "blog");
     const config = JSON.parse(derived.text) as Record<string, any>;
     expect(derived.image).toBe("docker.io/someone/sheep-pen:2b71e46");
     expect(config.main).toBe("/pkg/home/worker.mjs");
+    expect(config.assets).toEqual({ ...assets, directory: "/pkg/home/hill" });
+    expect(config.env.pen.assets).toEqual({ ...assets, directory: "/pkg/home/hill" });
     expect(config.env.pen.containers[0]).toEqual({ image: "docker.io/someone/sheep-pen:2b71e46", class_name: "PenContainer", name: "blog" });
   });
 });

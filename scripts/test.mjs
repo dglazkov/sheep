@@ -71,6 +71,14 @@ if (chosen.length > 0) {
   console.log(`the ${running.join(" and ")} ring${running.length > 1 ? "s" : ""}: ${files} files\n`);
 }
 
+// The hill's page (hill phase 1), built once before any ring: the home ring's `wrangler dev` serves `packages/hill/dist`,
+// and a ring that started a home over an unbuilt page would walk the gate that says `pnpm build` instead of the page.
+const hill = spawnSync(process.execPath, ["packages/hill/build.mjs"], { stdio: ["ignore", "ignore", "inherit"], cwd: new URL("..", import.meta.url).pathname });
+if (hill.status !== 0) {
+  console.error("the hill's page did not build (node packages/hill/build.mjs); no ring was run");
+  process.exit(hill.status ?? 1);
+}
+
 const run = spawnSync("pnpm", ["-r", "--workspace-concurrency=1", "test", ...rest], {
   stdio: "inherit",
   env: chosen.length > 0 ? { ...process.env, SHEEP_RING: chosen.join(",") } : process.env,

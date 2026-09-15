@@ -150,11 +150,9 @@ export const SEEN_MS = 60 * 60 * 1000;
 /** The cookie a seat is carried in. */
 export const SEAT_COOKIE = "sheep-seat";
 
-/** The gate's sentence for a pass whose row is gone: taken already, or never minted (hill phase 0). */
-export const PASS_USED = "that pass was already used; run sheep hill for another";
-
-/** The gate's sentence for a pass older than two minutes (hill phase 0). */
-export const PASS_EXPIRED = "that pass expired; run sheep hill for another";
+// The gate's two sentences live where the page can import them (hill phase 1): a module with no imports, since this one
+// imports `cloudflare:workers` and could never be bundled for a browser.
+export { PASS_EXPIRED, PASS_USED } from "./hill-words.ts";
 
 /** What a take answers: a seat, or why not. */
 export type TakenPass = { taken: "ok"; seat: string } | { taken: "used" } | { taken: "expired" };

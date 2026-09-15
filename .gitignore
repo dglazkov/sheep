@@ -154,3 +154,9 @@ vite.config.ts.timestamp-*
 /dist/
 /home/
 /collie/
+
+# hill phase 1: the page's build is ignored like every dist, but its directory is kept by one placeholder, since wrangler
+# refuses an assets directory that does not exist and a fresh clone must still start a home.
+!/packages/hill/dist/
+/packages/hill/dist/*
+!/packages/hill/dist/.assetsignore

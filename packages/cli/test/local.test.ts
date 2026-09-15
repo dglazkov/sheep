@@ -48,9 +48,11 @@ const releaseConfig = `// GENERATED\n{
   "no_bundle": true,
   "compatibility_date": "2026-08-22",
   "vars": { "SHEEP_MODEL": "claude-sonnet-5" },
+  "assets": { "directory": "./hill", "binding": "HILL", "run_worker_first": true },
   "env": {
     "pen": {
       "name": "sheep-pen",
+      "assets": { "directory": "./hill", "binding": "HILL", "run_worker_first": true },
       "containers": [{ "image": "${IMAGE}", "class_name": "PenContainer", "instance_type": "basic", "max_instances": 3 }],
       "worker_loaders": [{ "binding": "LOADER" }],
       "vars": { "SHEEP_MODEL": "claude-sonnet-5", "PEN_IDLE": "10m" }
@@ -517,6 +519,9 @@ describe("the container (station phase 4)", () => {
     expect(derived!.image).toBe(IMAGE);
     const config = JSON.parse(derived!.text) as { main: string; name: string; no_bundle: boolean; vars: unknown; env: { pen: { name: string; containers: unknown[]; worker_loaders: unknown; vars: unknown } } };
     expect(config.main).toBe("/opt/sheep/home/worker.mjs");
+    // The hill (hill phase 1): the page beside the release's config, named absolutely from under the kennel, in both places.
+    const hill = { directory: "/opt/sheep/home/hill", binding: "HILL", run_worker_first: true };
+    expect(config).toMatchObject({ assets: hill, env: { pen: { assets: hill } } });
     expect(config.env.pen.containers).toEqual([{ image: "./Dockerfile", image_build_context: ".", class_name: "PenContainer", instance_type: "basic", max_instances: 3 }]);
     expect(config).toMatchObject({ name: "sheep", no_bundle: true, vars: { SHEEP_MODEL: "claude-sonnet-5" }, env: { pen: { name: "sheep-pen", worker_loaders: [{ binding: "LOADER" }], vars: { SHEEP_MODEL: "claude-sonnet-5", PEN_IDLE: "10m" } } } });
     expect("$schema" in config).toBe(false);
@@ -634,8 +639,9 @@ describe("the container (station phase 4)", () => {
     expect(args.slice(0, 6)).toEqual(["dev", "--local", "--env", "pen", "--name", "sheep"]);
     expect(args[args.indexOf("--config") + 1]).toBe(derivedPath);
     expect(await readFile(join(w.local, "Dockerfile"), "utf8")).toBe(`FROM ${IMAGE}\n`);
-    const written = JSON.parse(await readFile(derivedPath, "utf8")) as { main: string; env: { pen: { containers: { image: string; image_build_context: string }[] } } };
+    const written = JSON.parse(await readFile(derivedPath, "utf8")) as { main: string; env: { pen: { assets: { directory: string }; containers: { image: string; image_build_context: string }[] } } };
     expect(written.main).toBe(join(w.dir, "home", "worker.mjs"));
+    expect(written.env.pen.assets.directory).toBe(join(w.dir, "home", "hill"));
     expect(written.env.pen.containers[0]).toMatchObject({ image: "./Dockerfile", image_build_context: "." });
     // The prose names the derived config and the line.
     const prose = await w.sheepWith(withDocker, "home", "local", "--faux");

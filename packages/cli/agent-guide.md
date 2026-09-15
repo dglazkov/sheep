@@ -4,16 +4,15 @@ A **sheep** is a pi session in a **cell**: one small database with an
 address, holding the transcript, a workspace, and the loop that drives the
 agent, at a **home**. You are the **sheepdog**, the agent with the
 terminal; the person you work for is the **shepherd**. A person does not
-run `sheep`. You do. `sheep --help` is the verb-by-verb reference for the
-build you run.
+run `sheep`. You do. `sheep --help` is the verb-by-verb reference.
 
 ## The command, and a home
 
 `sheep --version` says which build this is. If the command is missing,
 `npx github:dglazkov/sheep#release setup` installs it and puts the skill
-here. A verb says on stderr, once, that a newer build is out, and once
-that the home's build and this command's differ; `sheep home` says the
-second every time. `npm install -g github:dglazkov/sheep#release` updates
+here. A verb says once on stderr that a newer build is out, or that the
+home's build differs; `sheep home` says the second every time.
+`npm install -g github:dglazkov/sheep#release` updates
 the command, then `sheep home deploy` the home, keeping every session; it
 refuses while a sheep is mid-turn, since a deploy restarts the turn, and
 `--now` deploys anyway. `SHEEP_TIP=0` stops the looking for a newer build.
@@ -24,8 +23,8 @@ station: `collie --agent-help`.
 Every verb talks to a **home**: the shepherd's station on their
 Cloudflare account, where every sheep lives with a container to clone,
 build, test, and push in. You never make one. The shepherd does, once, at
-their own terminal, with `sheep setup`, which asks them for their account
-token and their Anthropic key and keeps both. Run by you, with no
+their own terminal, with `sheep setup`, which asks for their account
+token and Anthropic key and keeps both. Run by you, with no
 terminal, `sheep setup` asks nothing: it installs the skill here and its
 report's `home:` line says whether a home is reachable.
 
@@ -59,8 +58,7 @@ stderr as `sheep: …` with exit 2.
   To a busy sheep it is queued behind the running turn: `queued <id>` on
   stderr, exit 0, or with `--wait` the queued turn streams when it starts.
   With `--json` the turn's entries stream as they land, one pi entry per
-  line, tool calls included, and the last assistant entry is still the last
-  line.
+  line, tool calls included, the last assistant entry last.
 - `sheep ls [--pasture <name>]` lists the home's sheep, one per line,
   tab-separated: id, name, created, lane state (`idle`, `running`, `waiting`),
   pasture, secret names.
@@ -81,11 +79,12 @@ stderr as `sheep: …` with exit 2.
   transcript, oldest first, tool calls and results included, with a
   `[setup]` block where each `setup.sh` ran: how it ended and the tail of
   what it printed. A model call a restart cut off ends `[error] <why>`.
-- `sheep export <id> [file]` writes the session as a pi SQLite file
-  (`<id>.sqlite` by default).
+- `sheep export <id> [file]` writes the session as a pi SQLite file.
 - `sheep sh <id> -- '<line>'` runs one line in a sheep's shell, stdin
   when piped, outside any turn and its log: the line's stdout, stderr,
   and exit code; exit 2 while a turn is open.
+- `sheep hill` prints a link to the home's page for the shepherd's
+  browser; hand it over as it is: it works once, for two minutes.
 
 A sheep has pi's tools: `read`, `write`, and `edit` on a workspace in its
 cell, and `bash` with the usual text tools. With a container the
@@ -134,8 +133,8 @@ A first command in a fresh container waits for its pasture's `setup.sh`,
 which can be minutes. A held prompt says `setup running (1m 40s)` on
 stderr within ten seconds of setup starting, again every half minute, and
 once when it ends; stdout is the reply and nothing else. `sheep status
-<id>` from another terminal answers in about a second from the sheep's
-row, which speaks while the cell cannot. `sheep log <id>` has the `[setup]` block, with the tail of
+<id>` answers in about a second from the sheep's row, even while the
+cell is held. `sheep log <id>` has the `[setup]` block, with the tail of
 what setup printed. Wait while it says `running`; read the block when it
 says `failed`.
 

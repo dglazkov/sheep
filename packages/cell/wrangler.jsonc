@@ -25,6 +25,11 @@
   // Stile phase 2: the join store. No id here: `sheep home deploy` makes the station's `<worker>-join` namespace through the
   // account API and writes its id into the derived config's `pen` environment; wrangler dev and the test pool simulate it locally.
   "kv_namespaces": [{ "binding": "JOIN" }],
+  // Hill phase 1: the page, built by `packages/hill/build.mjs` into its `dist/`. The Worker runs first on every request, so
+  // no route the dog uses is shadowed by a file, and hands `/hill/*` to the binding itself; `html_handling` and
+  // `not_found_handling` are `none` so the binding answers a file's path and nothing else. Repeated in `env.pen` below.
+  // `sheep home deploy` and the local home make `directory` absolute in the configs they derive; the release's is `./hill`.
+  "assets": { "directory": "../hill/dist", "binding": "HILL", "run_worker_first": true, "html_handling": "none", "not_found_handling": "none" },
   "vars": {
     "SHEEP_MODEL": "claude-sonnet-5"
   },
@@ -66,6 +71,8 @@
       "browser": { "binding": "BROWSER" },
       // Stile phase 2: the join store, repeated because a named environment inherits no binding; deploy fills in the id.
       "kv_namespaces": [{ "binding": "JOIN" }],
+      // Hill phase 1: the same page as the top level's, repeated because a named environment is given its own.
+      "assets": { "directory": "../hill/dist", "binding": "HILL", "run_worker_first": true, "html_handling": "none", "not_found_handling": "none" },
       "vars": {
         "SHEEP_MODEL": "claude-sonnet-5",
         "PEN_IDLE": "10m"

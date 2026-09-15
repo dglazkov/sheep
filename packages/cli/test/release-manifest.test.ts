@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 // @ts-expect-error no declarations for the release script
 import { BIN_COLLIE_JS, BIN_SHEEP_JS, expectedReleaseFiles, IMAGE_REPOSITORY, PREPARATION_KEYS, releaseManifest, SKILL_FILE } from "../../../scripts/release.mjs";
 // @ts-expect-error no declarations for the bundle script
-import { assertEyes, assertJoin, EYES_BINDING, IMAGE_DIGEST, imageBy, imageReference, JOIN_BINDING, shippedCollieConfig, shippedConfig } from "../../../scripts/bundle.mjs";
+import { assertEyes, assertHill, assertJoin, EYES_BINDING, HILL_BINDING, HILL_DIRECTORY, IMAGE_DIGEST, imageBy, imageReference, JOIN_BINDING, shippedCollieConfig, shippedConfig, withHill } from "../../../scripts/bundle.mjs";
 import { parseJsonc } from "../src/deploy.js";
 
 const cellConfigPath = new URL("../../cell/wrangler.jsonc", import.meta.url).pathname;
@@ -67,10 +67,12 @@ describe("the release manifest", () => {
     expect(BIN_COLLIE_JS).toBe(BIN_SHEEP_JS.replace("sheep.mjs", "collie.mjs"));
   });
 
-  it("lists both guides beside the bundles, both bins, both Workers, and the skill at the root, and refuses a build without a guide, the collie's Worker, or the skill", () => {
-    const built = [{ file: "dist/sheep.mjs" }, { file: "dist/collie.mjs" }, { file: "dist/pi-client.mjs" }, { file: "dist/agent-guide.md" }, { file: "dist/collie-guide.md" }, { file: "home/worker.mjs" }, { file: "home/wrangler.jsonc" }, { file: "collie/worker.mjs" }, { file: "collie/wrangler.jsonc" }];
+  it("lists both guides beside the bundles, both bins, both Workers, the hill's page, and the skill at the root, and refuses a build without a guide, the collie's Worker, the page, or the skill", () => {
+    const built = [{ file: "dist/sheep.mjs" }, { file: "dist/collie.mjs" }, { file: "dist/pi-client.mjs" }, { file: "dist/agent-guide.md" }, { file: "dist/collie-guide.md" }, { file: "home/hill/index.html" }, { file: "home/hill/hill.js" }, { file: "home/worker.mjs" }, { file: "home/wrangler.jsonc" }, { file: "collie/worker.mjs" }, { file: "collie/wrangler.jsonc" }];
     const skill = [SKILL_FILE];
-    expect(expectedReleaseFiles(built, skill)).toEqual(["LICENSE", "README.md", "SKILL.md", "bin/collie.js", "bin/sheep.js", "collie/worker.mjs", "collie/wrangler.jsonc", "dist/agent-guide.md", "dist/collie-guide.md", "dist/collie.mjs", "dist/pi-client.mjs", "dist/sheep.mjs", "home/worker.mjs", "home/wrangler.jsonc", "package.json"]);
+    expect(expectedReleaseFiles(built, skill)).toEqual(["LICENSE", "README.md", "SKILL.md", "bin/collie.js", "bin/sheep.js", "collie/worker.mjs", "collie/wrangler.jsonc", "dist/agent-guide.md", "dist/collie-guide.md", "dist/collie.mjs", "dist/pi-client.mjs", "dist/sheep.mjs", "home/hill/hill.js", "home/hill/index.html", "home/worker.mjs", "home/wrangler.jsonc", "package.json"]);
+    // The hill's files are whatever its build wrote (hill phase 1), so only the page itself is required by name.
+    expect(() => expectedReleaseFiles(built.filter((file) => file.file !== "home/hill/index.html"), skill)).toThrow(/home\/hill\/index\.html/);
     expect(() => expectedReleaseFiles(built.filter((file) => file.file !== "dist/agent-guide.md"), skill)).toThrow(/agent-guide/);
     expect(() => expectedReleaseFiles(built.filter((file) => file.file !== "dist/collie-guide.md"), skill)).toThrow(/collie-guide/);
     expect(() => expectedReleaseFiles(built.filter((file) => file.file !== "collie/worker.mjs"), skill)).toThrow(/collie\/worker\.mjs/);
@@ -139,6 +141,26 @@ describe("the release manifest", () => {
     expect(shipped.browser).toEqual(browser);
     expect(shipped.env.pen.browser).toEqual(browser);
     expect(assertEyes(shippedConfig(cell, undefined))).toMatchObject({ browser, env: { pen: { browser } } });
+  });
+
+  it("ships the hill's assets binding over ./hill at the top level and in env.pen, the Worker first, and refuses a config without it (hill phase 1)", () => {
+    expect([HILL_BINDING, HILL_DIRECTORY]).toEqual(["HILL", "./hill"]);
+    const cell = parseJsonc(readFileSync(cellConfigPath, "utf8"));
+    // The cell's own config names the checkout's build; the shipped one names the copy beside the Worker, in both places.
+    expect(cell.assets).toMatchObject({ directory: "../hill/dist", binding: "HILL", run_worker_first: true });
+    for (const stamp of [{ commit: STAMP.commit, builtAt: STAMP.builtAt, imageDigest: DIGEST }, undefined]) {
+      const shipped = assertHill(shippedConfig(cell, stamp)) as { assets: unknown; env: { pen: { assets: unknown } } };
+      const assets = { directory: "./hill", binding: "HILL", run_worker_first: true, html_handling: "none", not_found_handling: "none" };
+      expect(shipped.assets).toEqual(assets);
+      expect(shipped.env.pen.assets).toEqual(assets);
+    }
+    const assets = { directory: "./hill", binding: "HILL", run_worker_first: true };
+    const both = { name: "sheep", assets, env: { pen: { name: "sheep-pen", assets } } };
+    expect(assertHill(both)).toBe(both);
+    expect(() => assertHill({ ...both, env: { pen: { name: "sheep-pen" } } })).toThrow(/no assets binding named HILL over \.\/hill, the Worker first, at env\.pen;/);
+    expect(() => assertHill({ ...both, assets: { ...assets, run_worker_first: false } })).toThrow(/at the top level;/);
+    expect(() => assertHill({ name: "sheep" })).toThrow(/at the top level or env\.pen;/);
+    expect(withHill({ name: "sheep" })).toEqual({ name: "sheep" });
   });
 
   it("ships the join store's binding with no id at the top level and in env.pen, and refuses a config without it (stile phase 2)", () => {
