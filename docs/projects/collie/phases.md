@@ -27,13 +27,15 @@ lives in `packages/cli`'s modules and is changed for both.
 ---
 
 **Where we are: collie phases 0 and 1 CLOSED, collie phase 2 PART-DONE,
-14 September 2026; its walks next, then collie phase 3.** The brain is isocan's `isocan/rc` (project `room`,
+14 September 2026, its walks held; collie phase 3 is next.** The brain is isocan's `isocan/rc` (project `room`,
 #294), carrying `DaemonRoutes` and the address helpers since isocan
 14f39ba5 and 8729b9e3; the pin is release 18ca496a. `collie setup`,
 `new`, `pass`, `deploy`, `rm`, and `local` are built, and the home ring
-walks journey 1 on the rig against a real isocan daemon. Next is collie
-phase 2's walks on its release: `pnpm hermetic --ring package`, then
-`--ring account --collie` under the shepherd's standing authorization.
+walks journey 1 on the rig against a real isocan daemon; the package ring
+held, and the account's collie-only walk held on release be3d642 with a
+real model answering on dev.isocan.io. Collie phase 2 stays PART-DONE on
+two isocan issues (#308, off within a second on a hosted home; #306, `who`
+on a replica), the shepherd's call. Next is collie phase 3, moving in.
 Phase 1's Opens on the resume rule and the withdrawn sheep's badge are
 isocan's work still.
 
@@ -304,25 +306,27 @@ of `collie setup` looked at by the conductor as a newcomer would, before
 the walk, since a stile that passes every ring can still be a fish on
 legs (stile, 12 Sep). `pnpm hermetic --ring package` on the phase's
 release holds. **⚑** journey 6 step 3: `pnpm hermetic --ring account
---collie` on the shepherd's account, one station `sheep-hermetic-<sha>`
+--collie-only` on the shepherd's account (the full ring's `--collie`
+re-proves every older project first and lost two runs to their steps,
+sheep#13), one station `sheep-hermetic-<sha>-c-t`
 and its collie Worker, deployed, walked, deleted, under the shepherd's
 standing authorization to run account walks. The ring's isocan identity
 is its own, made in the fresh `HOME` at dev.isocan.io for the walk and
 never the shepherd's; the canvas it makes there is named
 `collie-hermetic-<sha>` and archived by the ring at its end.
 
-**Status: PART-DONE, 2026-09-14.** Every inner ring holds with the home ring's walk against a real isocan daemon, the frames were looked at, and the pin moved to 18ca496a; the package and account rings wait on the phase's release.
+**Status: PART-DONE, 2026-09-14.** Every inner ring holds, the frames were looked at, the package ring held on 185d9db, and the account walk held on be3d642 (18 lines, a real model's reply on dev.isocan.io); journey 3 step 1's "within a second" and journey 1 step 5's `isocan who` wait on isocan#308 and isocan#306.
 
 **Findings:**
 
-- **2026-09-14 — Isocan's hold outlived its socket:** `POST /api/rc/hold` released on `req.raw` close, which Node fires once a POST's body is read, so `collie off` read nobody listening after nine seconds. Isocan 8729b9e3 releases on `reply.raw`; the walk reads 1 ms.
-- **2026-09-14 — The pin moved to 18ca496a** (release of 8729b9e3), which also exports `canvasUrlWithPass`, `parseCanvasAddress`, `isLoopbackBase` from both entries; the collie's copies went, save a pass-less `canvasAddress`, since isocan exports no `canvasUrl`.
-- **2026-09-14 — `collie new` mints through the PATH isocan's own functions,** refusing an isocan too old to export them with `isocan upgrade` named; pnpm's `.bin/isocan` is a shell shim, so the walk puts a symlink on PATH, a global install's shape.
-- **2026-09-14 — The stile takes a second checklist:** `drawChecklist(spec)` carries mascot, steps, words, and finish; the collie's coat is xterm 238, since true black vanished on a dark terminal.
-- **2026-09-14 — The rig's setup is a refusal:** a kennel with a local home refuses at **sheep** naming `collie local`, carrying both sides; `collie rm` on the rig ends the badges and stops the rig, asking the account nothing.
-- **2026-09-14 — Tests reading `ps` collide across rings:** a case claimed every `bin/collie.js` process and met the home ring's `collie new`; each world now runs the command through a symlink of its own.
-- **2026-09-14 — Isocan's routes want `x-isocan-features: canvas-groups-v4`,** and harness variables (`CLAUDE_CODE_SESSION_ID` and kin) make isocan speak as the agent; the walks strip them.
-- **2026-09-14 — A dev.isocan.io thread's replies are read with `isocan --json comment list`;** `isocan context` does not list them.
+- **2026-09-14 — Isocan's hold outlived its socket:** it released on `req.raw` close, which Node fires once a POST's body is read. Isocan 8729b9e3 releases on `reply.raw` (1 ms on the rig) and exports the address helpers; the pin is its release 18ca496a.
+- **2026-09-14 — `collie new` mints through the PATH isocan's own functions;** pnpm's `.bin/isocan` is a shell shim, so walks put a symlink on PATH, a global install's shape.
+- **2026-09-14 — The stile takes a second checklist** (`drawChecklist(spec)`); the collie's coat is xterm 238, since true black vanished on a dark terminal.
+- **2026-09-14 — A fresh Worker's edge disagrees for a while:** secrets put after the deploy left tokenless versions serving past five good answers; the Worker and its secrets now go up as one version (`--secrets-file` on a mode-600 pipe).
+- **2026-09-14 — Four walk probes were wrong, not the collie:** a rollout window at `/faux`, a harness race reading the screen before its last bytes, `who` hiding a live agent from `standing`, and HOME spelled through `/var` retiring isocan's identity (isocan#304).
+- **2026-09-14 — The station faulted a first turn during a long setup** (`AgentHarness storage or invariant fault`); the collie narrated it, retried, and resumed the same sheep (sheep#14).
+- **2026-09-14 — Open: journey 3 step 1's "within a second".** On a hosted home a stopped rc's socket close does not reach it through Cloudflare's egress and Cloud Run's front end; off read 6397 ms. Waits on isocan#308.
+- **2026-09-14 — Open: journey 1 step 5's `isocan who`.** A replica daemon's roster does not see a hold placed at the home; the walk read the tray's route. Waits on isocan#306.
 
 ---
 

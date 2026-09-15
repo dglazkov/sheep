@@ -4112,8 +4112,14 @@ const CO0_FAUX_GONE_MS = 90_000;
 const COLLIE_QUESTION = "@Percy the empty state reads wrong";
 /** How long the reply may take from the mention: a birth, a container, isocan installed by the pasture's setup, the pass redeemed, one turn. */
 const COLLIE_REPLY_MS = 600_000;
-/** How long the tray may take to read nobody listening after `collie off` returns, at a hosted home ("within a few seconds"). */
-const COLLIE_OFF_MS = 5_000;
+/**
+ * How long the tray may take to read nobody listening after `collie off` returns, at a hosted home: the collie's hold asks
+ * with a 10 s wait, and a stopped rc's socket close does not reach the home promptly through Cloudflare's egress and Cloud
+ * Run's front end, so the hold ends when its wait does (isocan#308, an explicit release). The hold's window and a margin.
+ */
+const COLLIE_OFF_MS = 12_000;
+/** How long `collie on` may take to be read listening again: the hold re-issued, a lap of the room, and the home's read. Generous. */
+const COLLIE_ON_MS = 120_000;
 /** The narration's beats for one summons that births a sheep, in order (the rig's walk, `collie-home.test.ts`, holds the same). */
 const collieBeats = (person, station) => [`Percy · summons from ${person}, 1 entry — starting a session`, `Percy · birthing a sheep for Percy at ${station}`, "Percy · making pasture isocan-percy", "Percy · minting a pass for Percy", "Percy · sheep ", `Percy · session started at ${station}`, "Percy · turn ended — end_turn"];
 /** `collie setup`'s five steps, in the order its checklist draws them (`packages/cli/src/collie/setup.ts`). */
@@ -4413,11 +4419,12 @@ async function collieOnAccount(ring, api, station, { harness, token, needles, ho
     // The room's own word that the enrolment landed and this badge answers for Percy, before isocan's `who` is asked: a failure
     // names the first thing that did not happen, the narration's or the canvas's.
     await until("co5", "collie log --json (the enrolment narrated: \"enrolled Percy — answerable here\")", narration, (lines) => lines.some((line) => /enrolled Percy — answerable here/.test(line)), 120_000);
-    // Percy's actor id, from the canvas's roster (it lists the enrolment in any state); then the fact, as the tray reads it: the
+    // Percy's actor id, from the canvas's enrolment record; then the fact, as the tray reads it: the
     // home's own rc route on the person's badge, parked, Percy among the actors held, Hermetic the owner and Percy's policy's.
     // Not this machine's `isocan who`, whose replica daemon cannot see a hold the collie placed at the home (isocan#306).
-    const rostered = await until("co5", "isocan --json who (Percy on the roster)", () => isocanRead(["who"]), (value) => value?.standing?.some((row) => row.actor?.name === "Percy"), 120_000, 3_000);
-    const percy = { actor: rostered.standing.find((row) => row.actor.name === "Percy").actor };
+    // (Read from the home's canvas snapshot, not `who`'s `standing`, which leaves out an agent with a live session of its own.)
+    const enrolledAt = await until("co5", `GET ${COLLIE_ISOCAN_HOME}/api/projects/${made.canvasId}/canvas (Percy in canvas.agents)`, () => tray("GET", `/api/projects/${made.canvasId}/canvas`), (answer) => answer.status === 200 && Object.values(answer.body?.canvas?.agents ?? {}).some((agent) => agent?.actor?.name === "Percy"), 120_000, 3_000);
+    const percy = { actor: Object.values(enrolledAt.body.canvas.agents).find((agent) => agent?.actor?.name === "Percy").actor };
     const held = await until(
       "co5",
       `GET ${COLLIE_ISOCAN_HOME}/api/projects/${made.canvasId}/rc (Percy held, owned by Hermetic)`,
@@ -4504,14 +4511,14 @@ async function collieOnAccount(ring, api, station, { harness, token, needles, ho
     const off = await at(["collie", "off"]);
     const released = Date.now();
     if (off.code !== 0 || off.stdout !== `collie: off — holds released; "${title}" reads nobody listening; collie on resumes\n`) ring.fail("co8", "collie off", off);
-    const nobody = await until("co8", `GET /api/projects/${made.canvasId}/rc (nobody listening)`, () => tray("GET", `/api/projects/${made.canvasId}/rc`), (answer) => answer.status === 200 && answer.body.actorIds?.length === 0, 30_000, 100);
+    const nobody = await until("co8", `GET /api/projects/${made.canvasId}/rc (nobody listening)`, () => tray("GET", `/api/projects/${made.canvasId}/rc`), (answer) => answer.status === 200 && answer.body.actorIds?.length === 0, COLLIE_OFF_MS + 30_000, 100);
     const offMs = Date.now() - released;
     if (offMs > COLLIE_OFF_MS) ring.fail("co8", `GET /api/projects/${made.canvasId}/rc (nobody listening)`, { stdout: JSON.stringify(nobody.body), stderr: `${offMs} ms from collie off's exit to nobody listening; expected within ${COLLIE_OFF_MS} ms`, code: 1 });
     const on = await at(["collie", "on"]);
     const resumed = Date.now();
     if (on.code !== 0 || on.stdout !== `collie: standing by on "${title}"\n`) ring.fail("co8", "collie on", on);
-    await until("co8", `GET /api/projects/${made.canvasId}/rc (listening again)`, () => tray("GET", `/api/projects/${made.canvasId}/rc`), (answer) => answer.status === 200 && answer.body.actorIds?.length > 0, 60_000, 250);
-    ring.ok("co8", "collie off; GET /api/projects/:id/rc; collie on", `off, and the tray read nobody listening ${offMs} ms after it returned; on, and listening again in ${Date.now() - resumed} ms`);
+    await until("co8", `GET /api/projects/${made.canvasId}/rc (listening again)`, () => tray("GET", `/api/projects/${made.canvasId}/rc`), (answer) => answer.status === 200 && answer.body.actorIds?.length > 0, COLLIE_ON_MS, 250);
+    ring.ok("co8", "collie off; GET /api/projects/:id/rc; collie on", `off, and the tray read nobody listening ${offMs} ms after it returned, within the hold's ${COLLIE_OFF_MS} ms window; journey 3 step 1 asks within a second (isocan#308); on, and listening again in ${Date.now() - resumed} ms`);
 
     // co9: the end. The listing, the name (one line of stdin), the badge ended, the Worker deleted, the block cleared.
     const badgesBefore = (await isocanJson("co9", ["badges"])).badges;
@@ -4526,13 +4533,23 @@ async function collieOnAccount(ring, api, station, { harness, token, needles, ho
     const after = await api.listing(station.account.id);
     if (after.workers.includes(collieWorker)) ring.fail("co9", "the account's listing after collie rm", { stdout: after.workers.join("\n"), stderr: `expected no Worker ${collieWorker}`, code: 1 });
     if (JSON.parse(readFileSync(join(home, ".sheep", "config"), "utf8")).collie !== undefined) ring.fail("co9", `cat ${configPath}`, { stdout: "", stderr: "expected the collie block cleared", code: 1 });
-    const stays = await isocanJson("co9", ["who"]);
-    if (!stays.standing?.some((one) => one.actor.name === "Percy")) ring.fail("co9", "isocan --json who (after collie rm)", { stdout: JSON.stringify(stays), stderr: "expected Percy's enrolment to stay: the end takes the collie's badge and Worker and nothing that is an agent's", code: 1 });
-    ring.ok("co9", "collie rm (the name on stdin); isocan badges; the account's listing", `listed and ended: the badge ${colliesBadge.badgeId} at ${COLLIE_ISOCAN_HOME}, isocan badges lists ${gone.badges.length} left and not it; ${collieWorker} deleted, the account lists no Worker of that name; the block cleared; Percy's enrolment stays until the ring withdraws it`);
+    // The enrolment, read from the record itself: the home's canvas snapshot (isocan's `snapshot`, `GET /api/projects/:id/canvas`)
+    // on the person's badge. Not `isocan who`'s `standing`, which leaves out any agent with a live session of its own, and Percy's
+    // sheep keeps one (isocan's roster filter); an agent missing there is not an agent withdrawn.
+    const snapshot = await tray("GET", `/api/projects/${made.canvasId}/canvas`);
+    const record = snapshot.body?.canvas?.agents?.[percy.actor.id];
+    if (snapshot.status !== 200 || record === undefined) ring.fail("co9", `GET ${COLLIE_ISOCAN_HOME}/api/projects/${made.canvasId}/canvas (after collie rm)`, { stdout: JSON.stringify({ status: snapshot.status, agents: snapshot.body?.canvas?.agents ?? null }, null, 2), stderr: `expected canvas.agents[${percy.actor.id}], Percy's enrolment, to stay: the end takes the collie's badge and Worker and nothing that is an agent's`, code: 1 });
+    // And the sheep: `sheep ls` at the station still lists Percy's, in its pasture.
+    const herdAfter = JSON.parse((await run0("sheep", ["ls", "--json"], { env: shepherdEnv, cwd })).stdout || "[]");
+    const sheepAfter = herdAfter.find((one) => one.id === sheepId);
+    if (sheepAfter?.pasture !== "isocan-percy") ring.fail("co9", "sheep ls --json (after collie rm)", { stdout: JSON.stringify(herdAfter), stderr: `expected ${sheepId}, Percy's sheep, still listed in pasture isocan-percy`, code: 1 });
+    const recordSaid = JSON.stringify(record);
+    ring.ok("co9", "collie rm (the name on stdin); isocan badges; the account's listing; GET /api/projects/:id/canvas; sheep ls", `listed and ended: the badge ${colliesBadge.badgeId} at ${COLLIE_ISOCAN_HOME}, isocan badges lists ${gone.badges.length} left and not it; ${collieWorker} deleted, the account lists no Worker of that name; the block cleared; Percy's enrolment stays in the home's snapshot, canvas.agents[${percy.actor.id}] = ${recordSaid.length > 200 ? `${recordSaid.slice(0, 197)}…` : recordSaid}; sheep ${sheepId} still listed in isocan-percy (${sheepAfter.state})`);
     ring.unchecked.push(
       "collie journey 1 step 3: `collie setup` at a person's real terminal; co3 drove it through the harness's terminal (pipes, SHEEP_TEST_TERMINAL), and packages/cli/test/collie-setup.test.ts proves the hidden prompt under a real pseudo-terminal",
       "collie journey 1 step 5: the tray's Add an agent in a browser; co5 posted the ask its button sends, on the person's badge",
       "collie journey 3 step 3: the name typed at a terminal; co9 gave it as one line of stdin",
+      "collie journey 3 step 1's 'within a second': on a hosted home the tray reads nobody listening only when the hold's wait ends, since a stopped rc's socket close does not reach the home through Cloudflare's egress and Cloud Run's front end (isocan#308); co8 held the hold's window and measured it",
       "collie journey 1 step 5's `isocan who` listing Percy answerable: a replica daemon's roster does not see a hold placed at the home (isocan#306); co5 read the home's rc route the tray reads",
       "collie journey 3 steps 1 and 2: the held mention answered after on; co8 read the tray's holds, and packages/cli/test/collie-home.test.ts walks the held mention on the rig",
     );
