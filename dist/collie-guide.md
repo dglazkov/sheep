@@ -27,6 +27,11 @@ verbs that make, hand over, or end one are theirs, at their own terminal:
   already minted: its address is a credential, typed at a hidden prompt
   or given as one line of stdin, and never an argument. Never ask the
   shepherd for a pass in the chat, and never put one in a file.
+- `collie pass --agent <name>` moves an agent in: the pass carries that
+  agent's claim, which the shepherd's identity must hold (an agent their
+  laptop's `isocan rc` answers for). The collie answers for it from then
+  on, resuming its sheep in `isocan-<name>`, and the laptop's rc stands
+  down for it.
 
 The rest reads or switches what already runs, and is yours as much as
 theirs:
