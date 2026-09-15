@@ -191,7 +191,9 @@ prints the same bytes it printed before the move.
 Chrome DevTools is the reference for the shape: dense, panels, a list
 on the left that selects what the right shows, everything legible at a
 glance and nothing decorative. The stile is the reference for the look:
-the palette is amber for what is happening now, green for settled, red
+an id is inked and folded by its last eight characters, since ids are
+uuidv7 and the first eight are a timestamp sheep minted in the same
+minute share (hill phase 2); the palette is amber for what is happening now, green for settled, red
 for refused or failed, cyan for a link and for waiting, dim for what is
 not the point; the mark is the pixel sheep; ids and transcripts are in
 a monospace face and prose in the system's. Dark ground by default, the

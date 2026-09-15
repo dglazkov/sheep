@@ -35,13 +35,15 @@ resource, spend money, or need a login, and are asked out loud first.
 
 ---
 
-**Where we are: hill phase 0 CLOSED, hill phase 1 PART-DONE, 14
-September 2026; next is hill phase 2, the flock.** The door stands, and the station serves the page at
+**Where we are: hill phase 0 CLOSED, hill phases 1 and 2 PART-DONE, 14
+September 2026; next is hill phase 3, a sheep's page.** The flock is live,
+walked on a real model and a real container. The door stands, and the station serves the page at
 `/hill/` from an assets binding, before the door: the gate for a
 browser with no seat, the shell once seated, and a release that carries
 it, walked in Chrome and by the package ring. Hill phase 1 waits on one
-thing, the shepherd's yes on the storyboard and the built gate. `hill
-phase 2` is built ahead of that yes under the project's third rule. `hill phase 3`'s walk and its account-ring
+thing, the shepherd's yes on the storyboard and the built page, and
+hill phase 2 on the same yes and on its hour's count, begun. `hill phase
+3` is built ahead of the yes under the project's third rule. `hill phase 3`'s walk and its account-ring
 step are ⚑.
 
 The order is dependency order. Hill phase 0 is the door and the verb:
@@ -231,11 +233,27 @@ column with the id.
 typecheck` exits 0. Then the walk, journey 2 steps 1 to 5 in Chrome
 against the local home with Docker and a real model, a second terminal
 running the dog's commands, the times recorded, frames captured and
-judged against the mockup; step 6 by an hour's tab with the home's log
-counted. Falsified by one mutation: the poll not stopping when hidden
+judged against the mockup; step 6 by an hour's tab, its asks counted by
+a `PerformanceObserver` in the page (a local home's log records no
+request, so the page's own count is the witness to how often it asked). Falsified by one mutation: the poll not stopping when hidden
 (the schedule test fails). **⚑** none.
 
-**Status: NOT STARTED.**
+**Status: PART-DONE.** 2026-09-14. Journey 2 steps 1 to 5 walked in
+Chrome on a local home with Docker and a real model: the flock said what
+`ls` and `status` say, within two seconds of each dog's command, the
+split view and the phone's matched the storyboard, and journey 3 step
+7's back button returned. `pnpm test` exits 0 and the mutation fails.
+Step 6's hour was begun on the walk's tab; the phase closes on the
+shepherd's yes.
+
+**Findings:**
+
+- **2026-09-14 — The flock kept up with the dog on a real model and a real container:** a mint's row 1.9 s after the command, a prompt's `running` 0.06 s after, an `rm`'s row gone 0.87 s after. The setup ticked beside `sheep status`, 35.1 s then 41.9 s eight seconds later, and both said `ok (45.1 s)`.
+- **2026-09-14 — An id's first eight characters name no sheep.** Ids are uuidv7 and begin with a timestamp, so sheep minted in the same minute share them. The hill inks and folds by the last eight, and the storyboard now does too.
+- **2026-09-14 — `echo` rents no container:** it runs in the cell's own shell, so the walk's first prompt left `setup: none`. A walk that wants a setup must run a program the container owns, such as `node`.
+- **2026-09-14 — Chrome under automation reports an occluded window as hidden,** and a hidden page asks nothing, as designed. The builder's walk had to simulate visibility; the conductor's, in a window in front, did not.
+- **2026-09-14 — A walk's scratch `HOME` hides Docker's buildx plugin:** `sheep home local` failed on `--load` until `DOCKER_CONFIG` named the real `~/.docker`.
+- **2026-09-14 — Open: journey 2 step 6's hour,** begun 04:18:42Z on the walk's tab with the page counting its asks; recorded when it ends.
 
 ## Phase 3: A sheep's page
 

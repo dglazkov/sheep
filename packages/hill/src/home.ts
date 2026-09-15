@@ -1,6 +1,7 @@
 /**
- * The page's client for the home (hill phase 1): `fetch` at the page's own
- * origin, and nothing else. It has no token and sends none: no
+ * The page's client for the home (hill phases 1 and 2): `fetch` at the
+ * page's own origin, and nothing else. The flock reads `GET /home` and `GET
+ * /sessions`, the routes the dog already reads, and adds none. It has no token and sends none: no
  * `authorization` header, no `?token=`. The browser adds the seat's cookie
  * itself, since every route is same-origin; the cookie is `HttpOnly`, so no
  * script here can read it, and this one never tries.
@@ -15,7 +16,7 @@ export interface Answer {
 
 export type Fetcher = (input: string, init: RequestInit) => Promise<Response>;
 
-/** The routes the page reads this phase. Each is one request with no header of the page's own. */
+/** The routes the page asks. Each is one request with no header of the page's own. */
 export interface HomeClient {
   /** `GET /hill/seat?pass=`: a 204 and the cookie, or a 403 and the gate's sentence. */
   seat(pass: string): Promise<Answer>;
@@ -23,6 +24,8 @@ export interface HomeClient {
   home(): Promise<Answer>;
   /** `DELETE /hill/seat`: sign out. */
   leave(): Promise<Answer>;
+  /** `GET /sessions` (hill phase 2): every sheep at the home, newest first, as `sheep ls` reads them. */
+  sessions(): Promise<Answer>;
 }
 
 export function homeClient(fetcher: Fetcher = (input, init) => fetch(input, init)): HomeClient {
@@ -34,5 +37,6 @@ export function homeClient(fetcher: Fetcher = (input, init) => fetch(input, init
     seat: (pass) => ask("GET", `/hill/seat?pass=${encodeURIComponent(pass)}`),
     home: () => ask("GET", "/home"),
     leave: () => ask("DELETE", "/hill/seat"),
+    sessions: () => ask("GET", "/sessions"),
   };
 }

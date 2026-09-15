@@ -8,6 +8,11 @@
  * the built command, prints a link whose pass `fetch` takes for a 204 and a
  * cookie, and the cookie alone reads the home and writes nothing. The
  * browser's half is the conductor's walk.
+ *
+ * Hill phase 2 adds the flock's two reads: with the cookie alone, `GET
+ * /sessions` and `GET /home` answer what the bearer gets, and a sheep the
+ * built command mints with `sheep new --detach` is in the next answer, at
+ * the top, `idle`.
  */
 import { afterAll, describe, expect, it } from "vitest";
 import { runSheep, startHome, stopHome } from "./local-home.js";
@@ -90,5 +95,48 @@ describe.skipIf(typeof home === "string")("hill phase 1: the page from a real wr
     const again = await fetch(`${home.url}/hill/seat?pass=${link![2]}`);
     expect(again.status).toBe(403);
     expect(await again.text()).toBe("that pass was already used; run sheep hill for another");
+  });
+
+  it("the flock's two reads with the cookie alone answer what the bearer gets, and a sheep minted with sheep new --detach is in the next", { timeout: 60_000 }, async () => {
+    if (typeof home === "string") throw new Error(home);
+    const minted = await runSheep(home, ["hill"]);
+    expect(minted.code, minted.stderr).toBe(0);
+    const pass = /\?pass=([0-9a-f]{64})$/.exec(minted.stdout.trim())?.[1];
+    expect(pass, minted.stdout).toBeDefined();
+    const taken = await fetch(`${home.url}/hill/seat?pass=${pass}`);
+    expect(taken.status).toBe(204);
+    const seat = (taken.headers.get("set-cookie") ?? "").split(";")[0]!;
+    const bearer = { authorization: `Bearer ${home.token}` };
+
+    const both = async (path: string): Promise<{ cookie: unknown; bearer: unknown }> => {
+      const bySeat = await fetch(`${home.url}${path}`, { headers: { cookie: seat } });
+      const byBearer = await fetch(`${home.url}${path}`, { headers: bearer });
+      expect(bySeat.status, `${path} with the cookie`).toBe(200);
+      expect(byBearer.status, `${path} with the bearer`).toBe(200);
+      return { cookie: await bySeat.json(), bearer: await byBearer.json() };
+    };
+
+    // A sheep before, so the flock is not empty and the order is something to keep.
+    const first = await runSheep(home, ["new", "--detach", "--name", "first"]);
+    expect(first.code, first.stderr).toBe(0);
+    const firstId = first.stdout.trim();
+
+    const before = await both("/sessions");
+    expect(before.cookie).toEqual(before.bearer);
+    const report = await both("/home");
+    expect(report.cookie).toEqual(report.bearer);
+    expect(report.cookie).toMatchObject({ container: expect.any(Boolean), eyes: expect.any(Boolean), containerMinutes: expect.any(Number) });
+
+    const second = await runSheep(home, ["new", "--detach", "--name", "second"]);
+    expect(second.code, second.stderr).toBe(0);
+    const secondId = second.stdout.trim();
+    expect(secondId).toMatch(/^[0-9a-f-]{36}$/);
+
+    const after = await both("/sessions");
+    expect(after.cookie).toEqual(after.bearer);
+    const rows = after.cookie as { id: string; name: string | null; state: string }[];
+    expect(rows[0]).toMatchObject({ id: secondId, name: "second", state: "idle" });
+    expect(rows.findIndex((row) => row.id === firstId)).toBeGreaterThan(0);
+    expect(rows.slice(1)).toEqual(before.cookie);
   });
 });

@@ -93,6 +93,8 @@
   .row.sel { background: var(--hill-row); box-shadow: inset 2px 0 0 var(--hill-amber); }
   .row .id { color: var(--hill-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .row .id span { color: var(--hill-dim); }
+  .flock .row .id { display: flex; min-width: 0; }
+  .flock .row .id span { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .row .name { color: var(--hill-cyan); }
   .row .task, .row .setup { font-family: var(--sans); color: var(--hill-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .row .task { color: var(--hill-ink); }
@@ -120,6 +122,7 @@
   .sheep { display: flex; flex-direction: column; min-width: 0; }
   .sheep .head { padding: 12px 16px; border-bottom: 1px solid var(--hill-rule); display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; }
   .sheep .head .id { font-family: var(--mono); font-size: 13px; }
+  .sheep .head .id .lead { color: var(--hill-dim); }
   .sheep .head .name { color: var(--hill-cyan); font-family: var(--mono); }
   .sheep .head .now { color: var(--hill-dim); font-size: 12px; }
   .sheep .head .now b { color: var(--hill-amber); font-weight: 600; }
@@ -221,15 +224,15 @@
       </div>
       <div class="flock">
         <div class="thead"><span></span><span>sheep</span><span>name</span><span>state</span><span>pasture</span><span>born</span><span>task</span><span>setup</span></div>
-        <div class="row"><span class="dot running"></span><span class="id">8c1f2a4e<span>-3b9d-4f0a-9c2e-1d7b5e6a2f31</span></span><span class="name">feed</span><span class="state running">running</span><span class="pasture">blog</span><span class="age">2m ago</span><span class="task">Fix the RSS feed's date format in src/feed.ts and add a test</span><span class="setup ok">ok 45.1 s</span></div>
-        <div class="row"><span class="dot running"></span><span class="id">2e77d0c1<span>-58aa-4c13-a1e4-6f9b2c0d8e45</span></span><span class="name"></span><span class="state running">running</span><span class="pasture">blog</span><span class="age">4m ago</span><span class="task"></span><span class="setup run">running 1m 12s</span></div>
-        <div class="row"><span class="dot waiting"></span><span class="id">b41a9e37<span>-0c2d-4e8f-b7a1-3c5d9e2f6a08</span></span><span class="name">nav</span><span class="state waiting">waiting</span><span class="pasture">blog</span><span class="age">18m ago</span><span class="task">Make the site nav collapse under 600 px; look at it with --serve</span><span class="setup ok">ok 44.8 s</span></div>
-        <div class="row"><span class="dot"></span><span class="id">f09e6b52<span>-7d1c-4a3b-8e2f-9a4c1b7d3e60</span></span><span class="name"></span><span class="state idle">idle</span><span class="pasture"></span><span class="age">1h ago</span><span class="task">Say hello and list the tools you have</span><span class="setup">none</span></div>
-        <div class="row"><span class="dot failed"></span><span class="id">61d3c8a9<span>-2f4e-4b6d-a0c7-5e8f2a1b9c73</span></span><span class="name">deps</span><span class="state idle">idle</span><span class="pasture">town</span><span class="age">3h ago</span><span class="task">Bump every dependency a minor and run the suite</span><span class="setup bad">failed exit 1, 12.4 s</span></div>
+        <div class="row"><span class="dot running"></span><span class="id"><span>8c1f2a4e-3b9d-4f0a-9c2e-1d7b</span>5e6a2f31</span><span class="name">feed</span><span class="state running">running</span><span class="pasture">blog</span><span class="age">2m ago</span><span class="task">Fix the RSS feed's date format in src/feed.ts and add a test</span><span class="setup ok">ok 45.1 s</span></div>
+        <div class="row"><span class="dot running"></span><span class="id"><span>2e77d0c1-58aa-4c13-a1e4-6f9b</span>2c0d8e45</span><span class="name"></span><span class="state running">running</span><span class="pasture">blog</span><span class="age">4m ago</span><span class="task"></span><span class="setup run">running 1m 12s</span></div>
+        <div class="row"><span class="dot waiting"></span><span class="id"><span>b41a9e37-0c2d-4e8f-b7a1-3c5d</span>9e2f6a08</span><span class="name">nav</span><span class="state waiting">waiting</span><span class="pasture">blog</span><span class="age">18m ago</span><span class="task">Make the site nav collapse under 600 px; look at it with --serve</span><span class="setup ok">ok 44.8 s</span></div>
+        <div class="row"><span class="dot"></span><span class="id"><span>f09e6b52-7d1c-4a3b-8e2f-9a4c</span>1b7d3e60</span><span class="name"></span><span class="state idle">idle</span><span class="pasture"></span><span class="age">1h ago</span><span class="task">Say hello and list the tools you have</span><span class="setup">none</span></div>
+        <div class="row"><span class="dot failed"></span><span class="id"><span>61d3c8a9-2f4e-4b6d-a0c7-5e8f</span>2a1b9c73</span><span class="name">deps</span><span class="state idle">idle</span><span class="pasture">town</span><span class="age">3h ago</span><span class="task">Bump every dependency a minor and run the suite</span><span class="setup bad">failed exit 1, 12.4 s</span></div>
       </div>
     </div>
   </div>
-  <p class="cap"><b>Every sheep, newest first.</b> The columns of <code>sheep ls</code> and what the row also carries: the task, and bleat's setup. The dot is the state at a glance: amber and pulsing for running, cyan for waiting, dim for idle, red for a setup that failed. The home's line above is <code>sheep home</code>'s. A setup running ticks. It polls every two seconds while the tab is visible, and stops while it is not. A click on a row opens the sheep.</p>
+  <p class="cap"><b>Every sheep, newest first.</b> The columns of <code>sheep ls</code> and what the row also carries: the task, and bleat's setup. An id is inked by its last eight characters: ids are uuidv7, and the first eight are a timestamp that sheep minted in the same minute share. The dot is the state at a glance: amber and pulsing for running, cyan for waiting, dim for idle, red for a setup that failed. The home's line above is <code>sheep home</code>'s. A setup running ticks. It polls every two seconds while the tab is visible, and stops while it is not. A click on a row opens the sheep.</p>
 
   <h2>3 · A sheep's page</h2>
   <div class="win">
@@ -239,15 +242,15 @@
       <div class="split">
         <div class="col">
           <div class="thead"><span>5 sheep</span></div>
-          <div class="row sel"><span class="dot running"></span><span class="id">8c1f2a4e feed</span><span class="age">2m</span><span class="sub">Fix the RSS feed's date format in src/feed.ts…</span></div>
-          <div class="row"><span class="dot running"></span><span class="id">2e77d0c1</span><span class="age">4m</span><span class="sub setup run">setup running 1m 12s</span></div>
-          <div class="row"><span class="dot waiting"></span><span class="id">b41a9e37 nav</span><span class="age">18m</span><span class="sub">Make the site nav collapse under 600 px…</span></div>
-          <div class="row"><span class="dot"></span><span class="id">f09e6b52</span><span class="age">1h</span><span class="sub">Say hello and list the tools you have</span></div>
-          <div class="row"><span class="dot failed"></span><span class="id">61d3c8a9 deps</span><span class="age">3h</span><span class="sub setup bad">setup failed, exit 1</span></div>
+          <div class="row sel"><span class="dot running"></span><span class="id">…5e6a2f31 feed</span><span class="age">2m</span><span class="sub">Fix the RSS feed's date format in src/feed.ts…</span></div>
+          <div class="row"><span class="dot running"></span><span class="id">…2c0d8e45</span><span class="age">4m</span><span class="sub setup run">setup running 1m 12s</span></div>
+          <div class="row"><span class="dot waiting"></span><span class="id">…9e2f6a08 nav</span><span class="age">18m</span><span class="sub">Make the site nav collapse under 600 px…</span></div>
+          <div class="row"><span class="dot"></span><span class="id">…1b7d3e60</span><span class="age">1h</span><span class="sub">Say hello and list the tools you have</span></div>
+          <div class="row"><span class="dot failed"></span><span class="id">…2a1b9c73 deps</span><span class="age">3h</span><span class="sub setup bad">setup failed, exit 1</span></div>
         </div>
         <div class="sheep">
           <div class="head">
-            <span class="id">8c1f2a4e-3b9d-4f0a-9c2e-1d7b5e6a2f31</span>
+            <span class="id"><span class="lead">8c1f2a4e-3b9d-4f0a-9c2e-1d7b</span>5e6a2f31</span>
             <span class="name">feed</span>
             <span class="now"><b>running</b> · tool <code>bash</code> · 12.4k tokens · 9 messages · pasture <code>blog</code> · setup ok 45.1 s</span>
           </div>
@@ -280,11 +283,11 @@ Done in 41.3s</pre></div></div>
           <div class="homeline"><span>container <b class="ok">yes</b></span><span>eyes <b class="ok">yes</b></span><span>minutes <b>37</b> of 250</span></div>
           <div class="flock">
             <div class="thead"><span>5 sheep</span></div>
-            <div class="row"><span class="dot running"></span><span class="id">8c1f2a4e feed</span><span class="age">2m</span><span class="sub">Fix the RSS feed's date format in src/feed.ts…</span></div>
-            <div class="row"><span class="dot running"></span><span class="id">2e77d0c1</span><span class="age">4m</span><span class="sub setup run">setup running 1m 12s</span></div>
-            <div class="row"><span class="dot waiting"></span><span class="id">b41a9e37 nav</span><span class="age">18m</span><span class="sub">Make the site nav collapse under 600 px…</span></div>
-            <div class="row"><span class="dot"></span><span class="id">f09e6b52</span><span class="age">1h</span><span class="sub">Say hello and list the tools you have</span></div>
-            <div class="row"><span class="dot failed"></span><span class="id">61d3c8a9 deps</span><span class="age">3h</span><span class="sub setup bad">setup failed, exit 1</span></div>
+            <div class="row"><span class="dot running"></span><span class="id">…5e6a2f31 feed</span><span class="age">2m</span><span class="sub">Fix the RSS feed's date format in src/feed.ts…</span></div>
+            <div class="row"><span class="dot running"></span><span class="id">…2c0d8e45</span><span class="age">4m</span><span class="sub setup run">setup running 1m 12s</span></div>
+            <div class="row"><span class="dot waiting"></span><span class="id">…9e2f6a08 nav</span><span class="age">18m</span><span class="sub">Make the site nav collapse under 600 px…</span></div>
+            <div class="row"><span class="dot"></span><span class="id">…1b7d3e60</span><span class="age">1h</span><span class="sub">Say hello and list the tools you have</span></div>
+            <div class="row"><span class="dot failed"></span><span class="id">…2a1b9c73 deps</span><span class="age">3h</span><span class="sub setup bad">setup failed, exit 1</span></div>
           </div>
         </div>
       </div>
@@ -295,7 +298,7 @@ Done in 41.3s</pre></div></div>
         <div class="hill">
           <div class="top"><canvas class="mark" data-scale="2"></canvas><span class="back">‹ flock</span><span class="spacer"></span><span class="out">sign out</span></div>
           <div class="sheep">
-            <div class="head"><span class="id">8c1f2a4e</span><span class="name">feed</span><span class="now"><b>running</b> · tool <code>bash</code> · 12.4k tokens</span></div>
+            <div class="head"><span class="id">…5e6a2f31</span><span class="name">feed</span><span class="now"><b>running</b> · tool <code>bash</code> · 12.4k tokens</span></div>
             <div class="blocks">
               <div class="blk prompt"><span class="who">prompt</span><div class="body">Fix the RSS feed's date format in src/feed.ts: it prints ISO dates and RSS wants RFC 822. Add a test and run the suite.</div></div>
               <div class="blk reply"><span class="who">sheep</span><div class="body">I'll read the feed module and its tests first.</div></div>
@@ -312,7 +315,7 @@ Done in 41.3s</pre></div></div>
         <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">sheep-2.glazkov.workers.dev/hill/s/61d3c8a9…</span></div>
         <div class="hill">
           <div class="top"><canvas class="mark" data-scale="2"></canvas><span class="back">‹ flock</span><span class="spacer"></span><span class="out">sign out</span></div>
-          <div class="gone"><canvas class="mark" data-scale="4" style="margin:0 auto 14px"></canvas><b>61d3c8a9 is gone.</b><br>It was ended with <code>sheep rm</code>.<br><br><a>Back to the flock</a></div>
+          <div class="gone"><canvas class="mark" data-scale="4" style="margin:0 auto 14px"></canvas><b>…2a1b9c73 is gone.</b><br>It was ended with <code>sheep rm</code>.<br><br><a>Back to the flock</a></div>
         </div>
       </div>
     </div>

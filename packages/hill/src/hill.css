@@ -1,5 +1,5 @@
 /*
- * The hill's look (hill phase 1), from docs/projects/hill/screen/storyboard.html: the `.hill` tokens, dark ground by default,
+ * The hill's look (hill phases 1 and 2), from docs/projects/hill/screen/storyboard.html: the `.hill` tokens, dark ground by default,
  * the viewer's light theme respected; ids and commands in a monospace face and prose in the system's; no remote font.
  */
 :root {
@@ -105,11 +105,111 @@ code { font-family: var(--mono); font-size: 0.92em; }
 .gate .refused { color: var(--red); font-size: 14px; }
 .gate .keys { color: var(--dim); font-size: 12px; }
 
-/* Seated, before the flock. */
-.empty { flex: 1; display: flex; align-items: center; justify-content: center; padding: 40px 20px; color: var(--dim); text-align: center; }
-.empty p { margin: 0; }
+/* The top bar, seated: the name is the way to the flock, and `‹ flock` is the way back from a sheep at a phone's width. */
+.top a.name { color: inherit; text-decoration: none; }
+.top a.name:hover { color: var(--cyan); }
+.top .back { display: none; color: var(--cyan); font-size: 12px; text-decoration: none; white-space: nowrap; }
+
+/* The flock (hill phase 2). */
+hill-flock { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+
+.homeline { display: flex; flex-wrap: wrap; gap: 6px 22px; padding: 10px 14px; border-bottom: 1px solid var(--rule); color: var(--dim); font-size: 12px; }
+.homeline b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.homeline b.ok { color: var(--green); }
+.homeline b.no { color: var(--dim); }
+.homeline b.bad { color: var(--red); }
+.homeline .meter { display: inline-block; width: 90px; height: 6px; border-radius: 3px; background: var(--rule); vertical-align: middle; margin: 0 6px; overflow: hidden; }
+.homeline .meter i { display: block; height: 100%; width: 0; background: var(--amber); }
+.homeline .meter i.bad { background: var(--red); }
+
+.silent { margin: 0; padding: 6px 14px; color: var(--dim); font-size: 12px; border-bottom: 1px solid var(--rule); }
+.silent.alone { border-bottom: 0; padding: 40px 20px; text-align: center; }
+
+.flock { flex: 1; min-width: 0; }
+
+.flock .thead, .flock .row { display: grid; gap: 12px; align-items: center; padding: 7px 14px; }
+.flock .thead { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--rule); }
+.flock .row { border-bottom: 1px solid var(--rule); font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink); text-decoration: none; cursor: pointer; }
+.flock .row:hover { background: var(--row); }
+.flock .row.sel { background: var(--row); box-shadow: inset 2px 0 0 var(--amber); }
+.flock .row:focus-visible { outline-offset: -2px; }
+.flock .row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flock .row .id { color: var(--ink); }
+/* The id: everything but the last eight dim and cut first when narrow, the last eight in ink and never cut. */
+.flock .row .id { display: flex; }
+.flock .row .id .lead { color: var(--dim); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flock .row .id .mark { flex: none; color: var(--ink); }
+.flock .row .name { color: var(--cyan); }
+.flock .row .task, .flock .row .setup, .flock .row .sub { font-family: var(--sans); color: var(--dim); }
+.flock .row .task { color: var(--ink); }
+.flock .row .age, .flock .row .pasture, .flock .row .secrets { color: var(--dim); }
+.flock .row .secrets { font-size: 11px; }
+
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--dim); opacity: 0.5; flex: none; }
+.dot.running { background: var(--amber); opacity: 1; animation: pulse 1.4s ease-in-out infinite; }
+.dot.waiting { background: var(--cyan); opacity: 1; }
+.dot.failed { background: var(--red); opacity: 1; }
+@keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(240, 181, 58, 0.55); } 50% { box-shadow: 0 0 0 5px rgba(240, 181, 58, 0); } }
+
+.state.running { color: var(--amber); }
+.state.idle { color: var(--dim); }
+.state.waiting { color: var(--cyan); }
+.setup.run, .flock .row .setup.run { color: var(--amber); }
+.setup.ok, .flock .row .setup.ok { color: var(--green); }
+.setup.bad, .flock .row .setup.bad { color: var(--red); }
+
+/* The flock at a laptop's width: the storyboard's columns, and the secrets' names in a narrow dim one. */
+.flock.wide .thead, .flock.wide .row { grid-template-columns: 12px 3.2fr 1.4fr 1fr 1.1fr 1.1fr 1fr 3.4fr 2.2fr; }
+.flock.wide .fold-cell { display: none; }
+
+/* The flock folded: a column beside a sheep, and every flock at a phone's width. */
+.flock.col .thead, .flock.col .row { grid-template-columns: 12px minmax(0, 1fr) auto; padding: 8px 12px; }
+.flock.col .thead { grid-template-columns: 1fr; }
+.flock.col .wide-cell { display: none; }
+.flock .row .sub { grid-column: 2 / 4; font-size: 11px; }
+.flock .row .fid .name { color: var(--cyan); }
+.flock .row .sub { min-height: 1.45em; }
+
+.unmet { padding: 48px 20px; text-align: center; }
+.unmet p { margin: 0; color: var(--ink); font-size: 14px; }
+.unmet .hint { margin-top: 6px; color: var(--dim); font-size: 12px; }
+.unmet code { color: var(--amber); }
+
+/* A sheep beside the flock: the column on the left, the sheep on the right. */
+.split { flex: 1; display: grid; grid-template-columns: 300px minmax(0, 1fr); min-height: 0; }
+.split .col { border-right: 1px solid var(--rule); overflow-y: auto; }
+.sheep { display: flex; flex-direction: column; min-width: 0; }
+.sheep .head { padding: 12px 16px; border-bottom: 1px solid var(--rule); display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; }
+.sheep .head .id { font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
+.sheep .head .id .lead { color: var(--dim); }
+.sheep .head .id .fold { display: none; }
+.sheep .head .name { color: var(--cyan); font-family: var(--mono); }
+.sheep .head .now { color: var(--dim); font-size: 12px; }
+.sheep .head .now .dot { margin-right: 6px; vertical-align: 1px; }
+.sheep .head .now b { font-weight: 600; }
+.sheep .head .now code { color: var(--ink); }
+.sheep .blocks { flex: 1; }
+.gone { padding: 40px 20px; text-align: center; color: var(--dim); display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.gone p { margin: 0; }
+.gone b { color: var(--ink); font-weight: 600; }
+.gone a { color: var(--cyan); }
 
 .noscript { padding: 40px 20px; text-align: center; color: var(--dim); }
+
+/* A phone's width: one column; the flock folds, a sheep takes the whole width, and `‹ flock` is the way back. */
+@media (max-width: 899px) {
+  .flock.wide .thead, .flock.wide .row { grid-template-columns: 12px minmax(0, 1fr) auto; padding: 8px 12px; }
+  .flock.wide .thead { grid-template-columns: 1fr; }
+  .flock.wide .wide-cell { display: none; }
+  .flock.wide .fold-cell { display: block; }
+  .homeline .longer, .homeline .count { display: none; }
+  .split { grid-template-columns: minmax(0, 1fr); }
+  .split .col { display: none; }
+  .top.at-sheep .back { display: inline; }
+  .top.at-sheep .name, .top.at-sheep .build { display: none; }
+  .sheep .head .id .lead, .sheep .head .id .mark { display: none; }
+  .sheep .head .id .fold { display: inline; }
+}
 
 @media (max-width: 480px) {
   .top .build { display: none; }

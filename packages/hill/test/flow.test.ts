@@ -15,16 +15,16 @@ const STATION = "https://sheep-2.glazkov.workers.dev";
 const BUILD = "3b38f11 2026-09-14T18:02:11Z";
 
 /** A home that answers each route as given, and remembers what was asked in order. */
-function fakeHome(answers: Partial<Record<"seat" | "home" | "leave", Answer | Error>>): HomeClient & { asked: string[] } {
+function fakeHome(answers: Partial<Record<"seat" | "home" | "leave" | "sessions", Answer | Error>>): HomeClient & { asked: string[] } {
   const asked: string[] = [];
-  const answer = async (route: "seat" | "home" | "leave", said: string): Promise<Answer> => {
+  const answer = async (route: "seat" | "home" | "leave" | "sessions", said: string): Promise<Answer> => {
     asked.push(said);
     const given = answers[route];
     if (given === undefined) throw new Error(`the flow asked ${said}, which this case does not answer`);
     if (given instanceof Error) throw given;
     return given;
   };
-  return { asked, seat: (pass) => answer("seat", `seat ${pass}`), home: () => answer("home", "home"), leave: () => answer("leave", "leave") };
+  return { asked, seat: (pass) => answer("seat", `seat ${pass}`), home: () => answer("home", "home"), leave: () => answer("leave", "leave"), sessions: () => answer("sessions", "sessions") };
 }
 
 describe("the address rewrite", () => {
@@ -95,16 +95,18 @@ describe("the flow on load", () => {
 });
 
 describe("the client", () => {
-  it("asks the three routes at the page's own origin with no header of its own: no authorization, no token anywhere", async () => {
+  it("asks the four routes at the page's own origin with no header of its own: no authorization, no token anywhere", async () => {
     const asked: { input: string; init: RequestInit }[] = [];
     const client = homeClient(async (input, init) => {
       asked.push({ input, init });
-      return new Response(input === "/home" ? "{}" : null, { status: input === "/home" ? 200 : 204, headers: { "x-sheep-build": BUILD } });
+      const body = input === "/home" ? "{}" : input === "/sessions" ? "[]" : null;
+      return new Response(body, { status: body === null ? 204 : 200, headers: { "x-sheep-build": BUILD } });
     });
     expect(await client.seat(PASS)).toEqual({ status: 204, text: "", build: BUILD });
     expect(await client.home()).toEqual({ status: 200, text: "{}", build: BUILD });
     expect(await client.leave()).toEqual({ status: 204, text: "", build: BUILD });
-    expect(asked.map(({ input, init }) => `${init.method} ${input}`)).toEqual([`GET /hill/seat?pass=${PASS}`, "GET /home", "DELETE /hill/seat"]);
+    expect(await client.sessions()).toEqual({ status: 200, text: "[]", build: BUILD });
+    expect(asked.map(({ input, init }) => `${init.method} ${input}`)).toEqual([`GET /hill/seat?pass=${PASS}`, "GET /home", "DELETE /hill/seat", "GET /sessions"]);
     for (const { input, init } of asked) {
       expect(init.headers).toBeUndefined();
       expect(init.credentials).toBe("same-origin");
