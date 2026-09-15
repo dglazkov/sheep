@@ -147,9 +147,6 @@ export const SEAT_MS = 30 * 24 * 60 * 60 * 1000;
 /** How stale a seat's `last_seen` may be before a request that stands writes it again (hill phase 0): an hour. */
 export const SEEN_MS = 60 * 60 * 1000;
 
-/** The cookie a seat is carried in. */
-export const SEAT_COOKIE = "sheep-seat";
-
 // The gate's two sentences live where the page can import them (hill phase 1): a module with no imports, since this one
 // imports `cloudflare:workers` and could never be bundled for a browser.
 export { PASS_EXPIRED, PASS_USED } from "./hill-words.ts";
@@ -165,6 +162,15 @@ function randomHex(): string {
 /** The sha256 of a string, as hex: what the door keeps and looks up by, never the value. */
 export async function sha256Hex(value: string): Promise<string> {
   return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))));
+}
+
+/**
+ * The cookie a seat is carried in: `sheep-seat-` and the first 12 hex of the sha256 of the home's serverId. A browser
+ * scopes cookies by host and not port, so two local homes on `127.0.0.1` would share one `sheep-seat` and sign each other
+ * out; the serverId never changes, so one home has one name for its life, and the hash keeps the protocol id unpublished.
+ */
+export async function seatCookieName(serverId: string): Promise<string> {
+  return `sheep-seat-${(await sha256Hex(serverId)).slice(0, 12)}`;
 }
 
 function hex(bytes: Uint8Array): string {

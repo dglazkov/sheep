@@ -435,6 +435,17 @@
  * the reply; `sheep log` must carry pi's interruption as an `[error]` line.
  * The sheep is ended with n1's check, counted minted and ended.
  *
+ * Hill phase 3 gives the account ring `h1`, inside b2 before its sheep is
+ * ended, since it reads a sheep the ring has already prompted (hill's
+ * journey 5 step 3): a pass minted with `sheep hill` in blog, the seat taken
+ * with `fetch`; `GET /sessions` with the cookie alone, compared with the
+ * bearer's answer; `POST /sessions` with the cookie alone refused 401; b2's
+ * sheep's transcript read with the cookie alone, its last entry the reply
+ * b2's stream ended with; and the station's token searched for, byte for
+ * byte, in the page the station serves (`/hill/` and every file it names)
+ * and in the install's `home/hill/`, and found in none. The dry run checks
+ * that search on a planted needle.
+ *
  * Shear phase 1 gives the account ring four steps around the upgrade
  * (shear's journey 5 step 2), and refuses an `--older` from before the
  * tip's detached child (`releaseCarriesChild`), whose notice never lands, or
@@ -1912,7 +1923,7 @@ class Ring {
     const taken = await fetch(`${url}/hill/seat?pass=${pass}`, { signal: AbortSignal.timeout(10_000) });
     const cookie = taken.headers.get("set-cookie") ?? "";
     await taken.body?.cancel();
-    if (taken.status !== 204 || !/^sheep-seat=[0-9a-f]{64}; HttpOnly; Secure; SameSite=Strict; Path=\/; Max-Age=\d+$/.test(cookie)) {
+    if (taken.status !== 204 || !/^sheep-seat-[0-9a-f]{12}=[0-9a-f]{64}; HttpOnly; Secure; SameSite=Strict; Path=\/; Max-Age=\d+$/.test(cookie)) {
       this.fail("h0", `curl -i ${url}/hill/seat?pass=…`, { stdout: `${taken.status}\nset-cookie: ${cookie.replace(/=[0-9a-f]{64}/, "=…")}`, stderr: "expected a 204 and the sheep-seat cookie with HttpOnly, Secure, SameSite=Strict, Path=/", code: 1 });
     }
     this.ok("h0", `curl ${url}/hill/`, `200, the release's home/hill/index.html ("${title}"), no-store, no-referrer, nosniff, CSP ${expected["content-security-policy"]}`);
@@ -3132,7 +3143,11 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
           : []),
       ].join("\n"),
     );
-    if (dryRun) console.log("\ndry run: stopping before the world is made; nothing deployed");
+    if (dryRun) {
+      console.log("\ndry run: stopping before the world is made; nothing deployed");
+      // Hill phase 3, h1's dry path: the search h1 runs over the page's files, proved on a planted needle.
+      console.log(`dry run: ${hillSearchSelfCheck()}`);
+    }
     else {
       if (yes) console.log("  --yes: not asking");
       else {
@@ -6030,6 +6045,9 @@ async function journeyBell(ring, station, { step = "b2" } = {}) {
   ring.ok(step, `sheep log ${id} --json (against the stream)`, `the same ${ids.length} entries, the same ids in the same order, none twice, the same fields; the last line is the last assistant entry`);
   ring.unchecked.push(`bell journey 4 steps 1 and 2 (${step}): the local home with Docker and a real model, one prompt and then two; the account ring walks the station with the faux provider`);
 
+  // Hill phase 3, h1 (hill's journey 5 step 3): the page's reads with a seat alone, on this sheep the ring just prompted, before it is ended.
+  await journeyHill(ring, station, { id, reply: lastEntry });
+
   // The step runs after n1, so it ends its own sheep with n1's check, counted ended as well as minted.
   const removed = await ring.sheep(["rm", id]);
   if (removed.code !== 0 || removed.stdout !== `${id}\tended\n` || removed.stderr !== "") ring.fail(step, `sheep rm ${id}`, { ...removed, stderr: `${removed.stderr}\nexpected exit 0, exactly "${id}\\tended" on stdout, nothing on stderr` });
@@ -6037,6 +6055,124 @@ async function journeyBell(ring, station, { step = "b2" } = {}) {
   const afterRemoved = JSON.parse((await ring.sheep(["ls", "--json"])).stdout);
   if (afterRemoved.some((one) => one.id === id)) ring.fail(step, "sheep ls --json (after rm)", { stdout: JSON.stringify(afterRemoved), stderr: `expected ${id} not listed after the end`, code: 1 });
   ring.ok(step, `sheep rm ${id}; sheep ls --json`, "ended with its one line; not listed after");
+}
+
+/** The files under `dir` whose bytes hold any of `needles`, as paths relative to it; every file read, however deep. */
+function filesHolding(dir, needles) {
+  const found = [];
+  const walk = (at) => {
+    for (const name of readdirSync(at)) {
+      const path = join(at, name);
+      if (statSync(path).isDirectory()) walk(path);
+      else if (needles.some((needle) => readFileSync(path).includes(Buffer.from(needle)))) found.push(path.slice(dir.length + 1));
+    }
+  };
+  walk(dir);
+  return found;
+}
+
+/** h1's dry path: `filesHolding` over a scratch directory with one file that holds a planted needle and one that does not. */
+function hillSearchSelfCheck() {
+  const dir = mkdtempSync(join(tmpdir(), "sheep-h1-dry-"));
+  try {
+    const needle = randomBytes(24).toString("hex");
+    mkdirSync(join(dir, "deep"));
+    writeFileSync(join(dir, "hill.js"), `const page = "${"x".repeat(64)}";`);
+    writeFileSync(join(dir, "deep", "hill.css"), `/* ${needle} */`);
+    const found = filesHolding(dir, [needle]);
+    if (found.length !== 1 || found[0] !== join("deep", "hill.css")) throw new Error(`h1's search found ${JSON.stringify(found)} for a needle planted in deep/hill.css alone`);
+    return "h1's search found a planted needle in the one file of two that held it";
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Hill's journey 5 step 3 on the station (hill phase 3, h1), inside b2
+ * with b2's sheep, which the ring prompted and heard reply: a seat taken
+ * from `sheep hill`'s link with `fetch`, then what the hill does with it,
+ * read without a browser. The flock with the cookie alone is the bearer's
+ * flock; a write with it is the bare 401; the sheep's transcript with it
+ * ends with the reply b2's stream ended with (the same up to the order of an
+ * object's keys, as b2 compares them); and the station's token is in no
+ * byte of the page the station serves or the install carries.
+ */
+async function journeyHill(ring, station, { id, reply, step = "h1" }) {
+  const { home, token: stationToken } = station;
+  const started = Date.now();
+
+  const printed = await ring.sheep(["hill"]);
+  const prefix = `${home}/hill/?pass=`;
+  const pass = printed.stdout.startsWith(prefix) ? /^([0-9a-f]{64})\n$/.exec(printed.stdout.slice(prefix.length))?.[1] : undefined;
+  if (printed.code !== 0 || pass === undefined || printed.stderr !== "") ring.fail(step, "sheep hill (in blog)", { ...printed, stderr: `${printed.stderr}\nexpected exit 0, one line ${prefix}<64 hex> on stdout, and nothing on stderr` });
+  const taken = await fetch(`${home}/hill/seat?pass=${pass}`, { signal: AbortSignal.timeout(30_000) });
+  const setCookie = taken.headers.get("set-cookie") ?? "";
+  await taken.body?.cancel();
+  const seat = /^(sheep-seat-[0-9a-f]{12}=[0-9a-f]{64}); HttpOnly; Secure; SameSite=Strict; Path=\/; Max-Age=\d+$/.exec(setCookie)?.[1];
+  if (taken.status !== 204 || seat === undefined) ring.fail(step, `fetch ${home}/hill/seat?pass=…`, { stdout: `${taken.status}\nset-cookie: ${setCookie.replace(/=[0-9a-f]{64}/, "=…")}`, stderr: "expected a 204 and the sheep-seat cookie with HttpOnly, Secure, SameSite=Strict, Path=/", code: 1 });
+  const byCookie = (path, init = {}) => fetch(`${home}${path}`, { ...init, headers: { ...init.headers, cookie: seat }, signal: AbortSignal.timeout(60_000) });
+  const byBearer = (path) => fetch(`${home}${path}`, { headers: { authorization: `Bearer ${stationToken}` }, signal: AbortSignal.timeout(60_000) });
+
+  // The flock with the cookie alone is the bearer's. A row can move between two reads, so the cookie is read on both sides of the bearer.
+  const flock = async () => {
+    const response = await byCookie("/sessions");
+    return { status: response.status, text: await response.text() };
+  };
+  const seated = await flock();
+  const bearerResponse = await byBearer("/sessions");
+  const bearerText = await bearerResponse.text();
+  const seatedAgain = await flock();
+  const same = (left, right) => left.status === 200 && right.status === 200 && sortedJson(left.text) === sortedJson(right.text);
+  if (!same(seated, { status: bearerResponse.status, text: bearerText }) && !same(seatedAgain, { status: bearerResponse.status, text: bearerText })) {
+    ring.fail(step, "GET /sessions (the cookie alone, then the bearer)", { stdout: `cookie ${seated.status}: ${seated.text.slice(0, 600)}\ncookie again ${seatedAgain.status}: ${seatedAgain.text.slice(0, 600)}\nbearer ${bearerResponse.status}: ${bearerText.slice(0, 600)}`, stderr: "expected 200 and the same flock with the cookie alone as with the bearer", code: 1 });
+  }
+  const rows = JSON.parse(bearerText);
+  if (!rows.some((row) => row.id === id)) ring.fail(step, "GET /sessions (the bearer)", { stdout: bearerText.slice(0, 600), stderr: `expected ${id}, b2's sheep, in the flock`, code: 1 });
+
+  // A write with the cookie alone is the bare 401 a missing bearer gets, and mints nothing.
+  const write = await byCookie("/sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "h1-refused" }) });
+  const writeText = await write.text();
+  if (write.status !== 401 || writeText !== "bad or missing token") ring.fail(step, "POST /sessions (the cookie alone)", { stdout: `${write.status} ${writeText}`, stderr: "expected the bare 401: bad or missing token", code: 1 });
+  const afterWrite = JSON.parse(await (await byBearer("/sessions")).text());
+  if (afterWrite.some((row) => row.name === "h1-refused")) ring.fail(step, "GET /sessions (after the refused write)", { stdout: JSON.stringify(afterWrite), stderr: "a sheep named h1-refused was minted by a cookie", code: 1 });
+
+  // The prompted sheep's transcript, read the page's way with the cookie alone: its last entry is the reply the ring heard.
+  const read = await byCookie(`/s/${encodeURIComponent(id)}/transcript?wait=25000&tip=`);
+  const readText = await read.text();
+  let view;
+  try {
+    view = JSON.parse(readText);
+  } catch {
+    view = undefined;
+  }
+  const last = view?.entries?.at(-1);
+  if (read.status !== 200 || last === undefined || sortedJson(JSON.stringify(last)) !== sortedJson(JSON.stringify(reply))) {
+    ring.fail(step, `GET /s/${id}/transcript?wait=25000&tip= (the cookie alone)`, { stdout: `${read.status} ${readText.slice(-800)}`, stderr: `expected 200 and the last entry ${JSON.stringify(reply).slice(0, 400)}`, code: 1 });
+  }
+
+  // The token in no byte of the page: what the station serves at /hill/ and every file its index names, and the install's home/hill.
+  const pageDir = mkdtempSync(join(tmpdir(), "sheep-h1-page-"));
+  try {
+    const index = await fetch(`${home}/hill/`, { signal: AbortSignal.timeout(30_000) });
+    const indexBytes = Buffer.from(await index.arrayBuffer());
+    writeFileSync(join(pageDir, "index.html"), indexBytes);
+    const named = [...indexBytes.toString("utf8").matchAll(/(?:src|href)="(\/hill\/[^"]+)"/g)].map((match) => match[1]);
+    for (const path of named) {
+      const file = await fetch(`${home}${path}`, { signal: AbortSignal.timeout(30_000) });
+      if (file.status !== 200) ring.fail(step, `fetch ${home}${path}`, { stdout: `${file.status}`, stderr: "expected 200 for a file the page's index names", code: 1 });
+      writeFileSync(join(pageDir, path.slice("/hill/".length).replaceAll("/", "_")), Buffer.from(await file.arrayBuffer()));
+    }
+    const served = filesHolding(pageDir, [stationToken]);
+    const installed = existsSync(join(ring.pkg, "home", "hill")) ? filesHolding(join(ring.pkg, "home", "hill"), [stationToken]) : undefined;
+    if (named.length < 3 || served.length > 0 || installed === undefined || installed.length > 0) {
+      ring.fail(step, "the page's files, searched for the station's token", { stdout: `served: index.html ${named.join(" ")}\nholding it: ${[...served, ...(installed ?? [])].join(", ") || "(none)"}`, stderr: installed === undefined ? `the install carries no ${join(ring.pkg, "home", "hill")}` : "expected the page's script, stylesheet, and mark named, and the token in none of them", code: 1 });
+    }
+    const seconds = ((Date.now() - started) / 1000).toFixed(0);
+    ring.ok(step, `sheep hill; fetch /hill/seat?pass=…; GET /sessions (cookie, bearer); POST /sessions (cookie); GET /s/${id}/transcript (cookie)`, `${seconds}s; the seat taken; the flock the bearer's (${rows.length} rows); the write the bare 401 and nothing minted; the transcript's last entry the reply b2 heard`);
+    ring.ok(step, `the page at ${home}/hill/ (index.html ${named.join(" ")}) and the install's home/hill/, searched`, "the station's token in no byte of them");
+  } finally {
+    rmSync(pageDir, { recursive: true, force: true });
+  }
 }
 
 /** sh3's turn (shear phase 1): one text step after two minutes, longer than the two refused deploys and the `--now` deploy's guard ask. */

@@ -38,7 +38,7 @@ a hill.
 | --- | --- | --- |
 | the hill | the page at `/hill/`: the gate, the flock, a sheep's page | `packages/hill/` |
 | a pass | one way in: 32 random bytes as hex, minted by a bearer, two minutes, one use | `POST /hill/passes`; the Directory's `passes` |
-| a seat | a browser's standing: 32 random bytes as hex in a cookie, its sha256 a row, thirty days | `GET /hill/seat?pass=`; the Directory's `seats`; the cookie `sheep-seat` |
+| a seat | a browser's standing: 32 random bytes as hex in a cookie, its sha256 a row, thirty days | `GET /hill/seat?pass=`; the Directory's `seats`; the cookie `sheep-seat-<12 hex>`, named for its home |
 | the gate | the hill with no seat | `packages/hill/src/gate.ts` |
 | the flock | every row, newest first, and the home's line | `packages/hill/src/flock.ts` |
 | a sheep's page | one transcript, live | `packages/hill/src/sheep.ts` |
@@ -95,8 +95,11 @@ address, asks `GET /hill/seat?pass=<pass>`; the home deletes the pass's
 row (a pass whose row is gone, or too old, is refused with the sentence
 the gate shows), mints 32 random bytes, keeps their sha256 in
 `seats(hash, seated_at, last_seen)`, and answers with `Set-Cookie:
-sheep-seat=<seat>; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=`
-thirty days, and a 204. The page then replaces its address with `/hill/`
+sheep-seat-<12 hex>=<seat>; HttpOnly; Secure; SameSite=Strict; Path=/;
+Max-Age=` thirty days, and a 204. The name is the first twelve hex of the
+sha256 of the home's serverId: a browser keys cookies by host and not by
+port, so two local homes on `127.0.0.1` with one name would sign each
+other out (hill phase 3's orientation). The page then replaces its address with `/hill/`
 so the pass leaves the history bar, and loads the flock. `DELETE
 /hill/seat` with the cookie deletes the row and clears the cookie: sign
 out. A mint deletes the passes past their two minutes and the seats past
@@ -104,7 +107,7 @@ their thirty days; `last_seen` is written at most once an hour, so a page
 that polls is a read and not a write (hill phase 0).
 
 **The door** is one change to `admitted()`: a request with no bearer and
-no `?token=` but a `sheep-seat` cookie whose sha256 is a row is admitted
+no `?token=` but this home's seat cookie whose sha256 is a row is admitted
 if its method is `GET` or `HEAD` and it asks for no upgrade, and refused
 with the bare 401 the home gives any bad token otherwise. The upgrade is
 the one GET that is not a read: `GET /s/<id>/ws` opens pi's protocol,

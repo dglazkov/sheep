@@ -5,9 +5,10 @@
  */
 import type { Entry, LaneTranscriptSnapshot } from "@earendil-works/pi-agent-core";
 import type { TranscriptState } from "@earendil-works/pi-coding-agent/experimental/services/transcript";
+import { blocksOf, compact, merge, textOf } from "./blocks.js";
 import { attachSheep, BACKGROUND_CONTEXT, lastAssistant, messageText, type Sheep } from "./client.js";
-import { type Home, Sentence, type SessionSummary, type SetupRecord, type SetupState } from "./home.js";
-import { elapsed, SETUP_POLL_MS, setupSaying, SetupVoice } from "./setup-words.js";
+import { type Home, Sentence, type SessionSummary } from "./home.js";
+import { SETUP_POLL_MS, setupSaying, SetupVoice } from "./setup-words.js";
 
 export interface Output {
   json: boolean;
@@ -599,11 +600,6 @@ function lastToolCall(snapshot: LaneTranscriptSnapshot): { name: string; args: s
   return undefined;
 }
 
-function compact(value: unknown): string {
-  const text = JSON.stringify(value) ?? "";
-  return text.length > 200 ? `${text.slice(0, 200)}…` : text;
-}
-
 /** pi's `requestAbort` on the open operation; resolves once the lane has settled it. */
 export async function runAbort(home: Home, id: string, output: Output): Promise<number> {
   const tether = new Tether(home, id, await attachSheep(home, id), output);
@@ -684,84 +680,13 @@ export async function runLog(home: Home, id: string, options: { since: string | 
   // Bleat phase 0's open finding: an eviction mends the row and not the record, so a record with no ending is
   // rendered with the row's beside it when the row speaks of that same setup. Only then is the row asked at all.
   const row = setups.some((setup) => setup.ms === undefined) ? (await rowOf(home, id))?.setup ?? null : null;
-  const now = Date.now();
-  const merged = merge(entries, setups);
   if (output.json) {
-    for (const item of merged) output.out(`${JSON.stringify("entry" in item ? item.entry : { type: "setup", ...item.setup })}\n`);
+    for (const item of merge(entries, setups)) output.out(`${JSON.stringify("entry" in item ? item.entry : { type: "setup", ...item.setup })}\n`);
     return 0;
   }
-  output.out(merged.map((item) => ("entry" in item ? formatEntry(item.entry) : formatSetupBlock(item.setup, row, now))).join("\n"));
+  // Hill phase 3: the rendering is `blocks.ts`'s, which the hill draws too; the text face is these bytes as they always were.
+  output.out(textOf(blocksOf(entries, setups, row, Date.now())));
   return 0;
-}
-
-type Printed = { at: number; entry: Entry } | { at: number; setup: SetupRecord };
-
-/** The entries and the setups in one order, by time; a setup sharing a millisecond with an entry follows it. */
-function merge(entries: readonly Entry[], setups: readonly SetupRecord[]): Printed[] {
-  const printed: Printed[] = [...entries.map((entry) => ({ at: entry.timestamp, entry })), ...setups.map((setup) => ({ at: setup.at, setup }))];
-  return printed.sort((left, right) => left.at - right.at || (("setup" in left ? 1 : 0) - ("setup" in right ? 1 : 0)));
-}
-
-/**
- * The block: the record's id, when setup started, how it ended, and the
- * tail of what it printed — which on a successful setup is output no dog
- * could see before. A record with no ending of its own is `running (12.4
- * s)`, unless the row's `setup` for that same `at` has ended, in which case
- * the block says what the row says: an eviction is mended on the row alone.
- */
-export function formatSetupBlock(record: SetupRecord, row: SetupState | null, now: number): string {
-  const lines = [`[setup] ${record.id} ${new Date(record.at).toISOString()} ${setupEnding(record, row, now)}`];
-  if (record.output !== "") lines.push(...record.output.replace(/\n$/, "").split("\n"));
-  return `${lines.join("\n")}\n`;
-}
-
-function setupEnding(record: SetupRecord, row: SetupState | null, now: number): string {
-  if (record.ms !== undefined || record.exit !== undefined || record.error !== undefined) return endedAfter(record.exit, record.error, record.ms);
-  if (row !== null && row.at === record.at && row.state !== "running") return endedAfter(row.exit, row.error, row.ms);
-  return `running (${elapsed(now - record.at)})`;
-}
-
-function endedAfter(exit: number | undefined, error: string | undefined, ms: number | undefined): string {
-  const how = exit !== undefined ? `exit ${exit}` : error !== undefined ? `error ${error}` : "ended";
-  return ms === undefined ? how : `${how} after ${elapsed(ms)}`;
-}
-
-export function formatEntry(entry: Entry): string {
-  const at = new Date(entry.timestamp).toISOString();
-  const lines: string[] = [];
-  switch (entry.type) {
-    case "message": {
-      const message = entry.message;
-      lines.push(`[${message.role}] ${entry.id} ${at}`);
-      if (message.role === "toolResult") {
-        lines[0] = `[result ${message.toolName}] ${entry.id} ${at}${message.isError ? " error" : ""}`;
-        lines.push(...messageText(message).replace(/\n$/, "").split("\n"));
-      } else if (message.role === "user" || message.role === "assistant") {
-        if (typeof message.content === "string") lines.push(...message.content.replace(/\n$/, "").split("\n"));
-        else {
-          for (const part of message.content) {
-            if (part.type === "text") lines.push(...part.text.replace(/\n$/, "").split("\n"));
-            else if (part.type === "toolCall") lines.push(`[tool ${part.name}] ${compact(part.arguments)}`);
-            else if (part.type === "thinking") lines.push(`[thinking] ${part.thinking.split("\n")[0] ?? ""}`);
-            else lines.push(`[${part.type}]`);
-          }
-        }
-        // Tether phase 0: pi's interruption, and any other assistant entry that ended in an error, says why as its last line.
-        if (message.role === "assistant" && message.errorMessage !== undefined && message.errorMessage !== "") lines.push(`[error] ${message.errorMessage}`);
-      } else lines.push(compact(message));
-      break;
-    }
-    case "compaction":
-      lines.push(`[compaction] ${entry.id} ${at} tokensBefore=${entry.tokensBefore}`, ...entry.summary.split("\n"));
-      break;
-    case "branch_summary":
-      lines.push(`[branch_summary] ${entry.id} ${at}`, ...entry.summary.split("\n"));
-      break;
-    case "custom":
-      lines.push(`[custom ${entry.customType}] ${entry.id} ${at}`, ...(entry.data === undefined ? [] : [compact(entry.data)]));
-      break;
-  }
-  return `${lines.join("\n")}\n`;
 }
 
 function oneLine(text: string): string {

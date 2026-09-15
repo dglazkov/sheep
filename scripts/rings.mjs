@@ -112,6 +112,7 @@ export const RINGS = {
     "packages/cell/test/wire.test.ts",
     "packages/collie/test/collie.test.ts",
     "packages/collie/test/router.test.ts",
+    "packages/cli/test/blocks.test.ts",
     "packages/cli/test/bridge.test.ts",
     "packages/cli/test/credentials.test.ts",
     "packages/cli/test/name.test.ts",
@@ -123,6 +124,7 @@ export const RINGS = {
     "packages/hill/test/flock.test.ts",
     "packages/hill/test/flow.test.ts",
     "packages/hill/test/page.test.ts",
+    "packages/hill/test/sheep.test.ts",
     "packages/hill/test/words.test.ts",
   ],
   command: [

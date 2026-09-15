@@ -35,15 +35,16 @@ resource, spend money, or need a login, and are asked out loud first.
 
 ---
 
-**Where we are: hill phase 0 CLOSED, hill phases 1 and 2 PART-DONE, 14
-September 2026; next is hill phase 3, a sheep's page.** The flock is live,
-walked on a real model and a real container. The door stands, and the station serves the page at
+**Where we are: hill phase 0 CLOSED, hill phases 1 to 3 PART-DONE, 15
+September 2026; hill phase 3 waits on its station walk and the account ring.** The flock is live,
+walked on a real model and a real container, and a sheep's page follows its transcript. The door stands, and the station serves the page at
 `/hill/` from an assets binding, before the door: the gate for a
 browser with no seat, the shell once seated, and a release that carries
 it, walked in Chrome and by the package ring. Hill phase 1 waits on one
-thing, the shepherd's yes on the storyboard and the built page, and
-hill phase 2 on the same yes and on its hour's count, begun. `hill phase
-3` is built ahead of the yes under the project's third rule. `hill phase 3`'s walk and its account-ring
+thing, the shepherd's yes on the storyboard and the built page; hill
+phase 2 on the same yes and on step 6's hour; hill phase 3 on the same
+yes, on journey 5's walk on a station of its own, and on the account
+ring's `h1`, both ⚑ and both the conductor's to run. `hill phase 3`'s walk and its account-ring
 step are ⚑.
 
 The order is dependency order. Hill phase 0 is the door and the verb:
@@ -253,7 +254,8 @@ shepherd's yes.
 - **2026-09-14 — `echo` rents no container:** it runs in the cell's own shell, so the walk's first prompt left `setup: none`. A walk that wants a setup must run a program the container owns, such as `node`.
 - **2026-09-14 — Chrome under automation reports an occluded window as hidden,** and a hidden page asks nothing, as designed. The builder's walk had to simulate visibility; the conductor's, in a window in front, did not.
 - **2026-09-14 — A walk's scratch `HOME` hides Docker's buildx plugin:** `sheep home local` failed on `--load` until `DOCKER_CONFIG` named the real `~/.docker`.
-- **2026-09-14 — Open: journey 2 step 6's hour,** begun 04:18:42Z on the walk's tab with the page counting its asks; recorded when it ends.
+- **2026-09-15 — Two counts of step 6 broke before the hour, and each held while it ran:** 805 pairs in 28 minutes, then 437 in 18, no gap under 1995 ms. A second home's cookie signed out the first; then an edit reloaded the checkout's Worker.
+- **2026-09-15 — Open: journey 2 step 6's hour,** moved to hill phase 3's walk station, whose Worker no edit reloads, counted by a headless Chrome of its own.
 
 ## Phase 3: A sheep's page
 
@@ -306,4 +308,20 @@ deleted on the shepherd's account, a few container minutes and one
 deploy; and the walk's own station, the same again. The shepherd's
 station `sheep-2` is not touched: it is theirs to upgrade.
 
-**Status: NOT STARTED.**
+**Status: PART-DONE.** 2026-09-15. Every proof that runs in the
+checkout held: `sheep log` prints through the blocks byte for byte
+against the rendering frozen from before the move, a sheep's page
+follows its transcript over the long poll and never wakes a sheep
+nothing has asked, and the seat's cookie is named for its home. The
+builder walked journey 3 in Chrome on a faux model. Journey 5's walk on
+a station of its own and the account ring's `h1` are next, and the
+phase closes on them and the shepherd's yes.
+
+**Findings:**
+
+- **2026-09-14 — An abort in pi's entries is the cut-off call's own assistant entry:** empty content, `stopReason: "aborted"`, and the sentence "Request was aborted". `sheep log` prints it as that block's `[error]` line; the page draws the red abort.
+- **2026-09-14 — The cell answers a transcript long poll at once when no turn is open,** so a page looping on `?wait=25000` would ask back to back while a sheep idles. The loop rests two seconds after any answer with no turn open.
+- **2026-09-14 — The page's `sheep log` is the CLI's code:** `blocks.ts` imports only `setup-words`, and the bundle tree-shakes the text face. The byte test compares against the rendering frozen from cefefbd, whose lines match the old `formatEntry`'s.
+- **2026-09-15 — A browser keys cookies by host, not port.** A builder's second local home on `127.0.0.1` replaced the conductor's seat, and the tab fell to the gate. The cookie is now `sheep-seat-` plus twelve hex of its home's serverId; two seated homes each read 200.
+- **2026-09-15 — A local home runs the checkout's live Worker:** editing `index.ts` reloaded it under a seated tab. A rig cannot hold an overnight tab, so step 6's hour moved to a deployed station.
+- **2026-09-15 — Builders share the session's scratchpad:** one walk's kennel `scratchpad/walk` restarted another phase's stopped home. A walk's kennel wants a name of its own.

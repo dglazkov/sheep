@@ -48,7 +48,9 @@
  * `POST /hill/passes`, under the bearer, mints a pass and answers `{ url,
  * expires }`, the url `<this request's origin>/hill/?pass=<pass>`, good for
  * two minutes and one take. `GET /hill/seat?pass=`, before the door as
- * `/join` is, takes it: a 204 with the `sheep-seat` cookie (`HttpOnly;
+ * `/join` is, takes it: a 204 with the seat cookie, named `sheep-seat-` and
+ * 12 hex of the sha256 of the home's serverId so two homes on one host keep
+ * their own (`HttpOnly;
  * Secure; SameSite=Strict; Path=/`, thirty days), or a 403 and the gate's
  * one sentence for a pass used or expired. `DELETE /hill/seat`, before the
  * door too, deletes the cookie's seat and clears it: sign out. And the door
@@ -70,7 +72,7 @@
  * browser, an `Accept` naming `text/html`, is a 302 to `/hill/`; from
  * anything else it is `sheep\n` as it was.
  */
-import { type Budget, mintSecrets, PASS_EXPIRED, PASS_USED, SEAT_COOKIE, SEAT_MS, unknownPasture, unknownSession } from "./directory.ts";
+import { type Budget, mintSecrets, PASS_EXPIRED, PASS_USED, SEAT_MS, seatCookieName, unknownPasture, unknownSession } from "./directory.ts";
 import { hasEyes } from "./eyes/eyes.ts";
 import { NO_BUILD } from "./hill-words.ts";
 import { type FauxProgram, isFauxProgram } from "./models.ts";
@@ -87,7 +89,8 @@ function unauthorized(reason: string): Response {
 
 /**
  * The door. A bearer, or a `?token=`, decides alone when either is there: a wrong one is the 401 whatever cookie rides with
- * it. With neither (hill phase 0), a `sheep-seat` cookie whose seat stands admits a read, a `GET` or a `HEAD` with no
+ * it. With neither (hill phase 0), this home's seat cookie (`sheep-seat-<12 hex of its serverId's sha256>`; another home's on
+ * the same host is ignored) whose seat stands admits a read, a `GET` or a `HEAD` with no
  * `Upgrade` header, and nothing else; every other request with only a seat is the same bare 401 a missing bearer gets.
  */
 async function admitted(request: Request, env: Env): Promise<Response | undefined> {
@@ -102,7 +105,7 @@ async function admitted(request: Request, env: Env): Promise<Response | undefine
     if (token !== env.SHEEP_TOKEN) return unauthorized("bad or missing token");
     return undefined;
   }
-  const seat = seatOf(request);
+  const seat = seatOf(request, await seatName(env));
   if (seat === undefined) return unauthorized("bad or missing token");
   if (!isRead(request)) return unauthorized("bad or missing token");
   if (!(await env.DIRECTORY.getByName("home").seated(seat))) return unauthorized("bad or missing token");
@@ -117,13 +120,20 @@ function isRead(request: Request): boolean {
 /** A seat's shape: 32 bytes as lowercase hex. */
 const SEAT_SHAPE = /^[0-9a-f]{64}$/;
 
-/** The `sheep-seat` cookie's value when it is the shape of a seat; `undefined` otherwise, which no seat row can be. */
-function seatOf(request: Request): string | undefined {
+/** This home's seat cookie name, learned from the Directory's serverId once per isolate: one Worker is one home. */
+let homeSeatName: string | undefined;
+async function seatName(env: Env): Promise<string> {
+  homeSeatName ??= await seatCookieName(await env.DIRECTORY.getByName("home").serverId());
+  return homeSeatName;
+}
+
+/** This home's seat cookie's value when it is the shape of a seat; `undefined` otherwise, which no seat row can be. Another home's cookie is not read. */
+function seatOf(request: Request, name: string): string | undefined {
   const cookies = request.headers.get("cookie");
   if (cookies === null) return undefined;
   for (const part of cookies.split(";")) {
     const at = part.indexOf("=");
-    if (at === -1 || part.slice(0, at).trim() !== SEAT_COOKIE) continue;
+    if (at === -1 || part.slice(0, at).trim() !== name) continue;
     const value = part.slice(at + 1).trim();
     if (SEAT_SHAPE.test(value)) return value;
   }
@@ -131,8 +141,8 @@ function seatOf(request: Request): string | undefined {
 }
 
 /** The cookie's attributes (hill phase 0): the station's origin alone, no script, no other site, thirty days or none. */
-function seatCookie(value: string, maxAge: number): string {
-  return `${SEAT_COOKIE}=${value}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAge}`;
+function seatCookie(name: string, value: string, maxAge: number): string {
+  return `${name}=${value}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAge}`;
 }
 
 /**
@@ -145,14 +155,15 @@ async function seatAnswer(request: Request, env: Env): Promise<Response> {
   const noStore = { "cache-control": "no-store" };
   if (taken.taken === "used") return new Response(PASS_USED, { status: 403, headers: noStore });
   if (taken.taken === "expired") return new Response(PASS_EXPIRED, { status: 403, headers: noStore });
-  return new Response(null, { status: 204, headers: { ...noStore, "set-cookie": seatCookie(taken.seat, SEAT_MS / 1000) } });
+  return new Response(null, { status: 204, headers: { ...noStore, "set-cookie": seatCookie(await seatName(env), taken.seat, SEAT_MS / 1000) } });
 }
 
 /** `DELETE /hill/seat` (hill phase 0): sign out. The cookie's seat deleted, if it had one, and the cookie cleared; a 204 either way. */
 async function leaveAnswer(request: Request, env: Env): Promise<Response> {
-  const seat = seatOf(request);
+  const name = await seatName(env);
+  const seat = seatOf(request, name);
   if (seat !== undefined) await env.DIRECTORY.getByName("home").leave(seat);
-  return new Response(null, { status: 204, headers: { "cache-control": "no-store", "set-cookie": seatCookie("", 0) } });
+  return new Response(null, { status: 204, headers: { "cache-control": "no-store", "set-cookie": seatCookie(name, "", 0) } });
 }
 
 /**

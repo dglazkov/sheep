@@ -7,8 +7,7 @@
  * bridge.
  */
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import type { AgentMessage, Entry, LaneTranscriptSnapshot } from "@earendil-works/pi-agent-core";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { Entry, LaneTranscriptSnapshot } from "@earendil-works/pi-agent-core";
 import { type ByteTransport, type ByteTransportFactory, type ByteTransportHandlers, Client } from "@earendil-works/pi-client";
 import { AgentController } from "@earendil-works/pi-coding-agent/experimental/services/agent-controller";
 import { createServerServiceSource, createSessionServiceSource } from "@earendil-works/pi-coding-agent/experimental/services/connection";
@@ -223,12 +222,8 @@ export async function attachSheep(home: Home, id: string, signal?: AbortSignal):
   };
 }
 
-/** The text of a user, assistant, or tool-result message; other pi messages have none. */
-export function messageText(message: AgentMessage | AssistantMessage): string {
-  if (message.role !== "user" && message.role !== "assistant" && message.role !== "toolResult") return "";
-  if (typeof message.content === "string") return message.content;
-  return message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("");
-}
+/** The text of a user, assistant, or tool-result message; other pi messages have none. Hill phase 3: `blocks.ts`'s, which imports no runtime. */
+export { messageText } from "./blocks.js";
 
 /** The last assistant message entry, if any. */
 export function lastAssistant(entries: readonly Entry[]): Extract<Entry, { type: "message" }> | undefined {

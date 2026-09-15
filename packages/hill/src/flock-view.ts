@@ -13,9 +13,11 @@
  * address; this owns the flock.
  */
 import { html, LitElement, nothing, type PropertyValues, type TemplateResult } from "lit";
+import { keyed } from "lit/directives/keyed.js";
 import { repeat } from "lit/directives/repeat.js";
 import { FLOCK_PATH, type HomeFacts, homeLine, idParts, Poller, type Route, readFlock, type RowModel, rowModels, type SessionRow, sheepPath } from "./flock.ts";
-import type { HomeClient } from "./home.ts";
+import type { HomeClient, SheepClient } from "./home.ts";
+import "./sheep-view.ts";
 
 /** A click the browser should keep: a new tab, a new window, a download, or not the main button. */
 function browserKeeps(event: MouseEvent): boolean {
@@ -35,7 +37,10 @@ export class HillFlock extends LitElement {
   declare report: HomeFacts | undefined;
   declare silent: boolean;
   declare now: number;
-  client: HomeClient | undefined;
+  client: (HomeClient & SheepClient) | undefined;
+  /** The sheep this page has shown, and those it has heard are gone: a shown sheep the flock stops listing was ended. */
+  readonly #shown = new Set<string>();
+  readonly #gone = new Set<string>();
 
   #poller: Poller | undefined;
   #tick: ReturnType<typeof setInterval> | undefined;
@@ -56,13 +61,22 @@ export class HillFlock extends LitElement {
 
   override connectedCallback(): void {
     super.connectedCallback();
+    this.addEventListener("hill-gone", this.#onGone);
     this.#poller = new Poller(() => this.#read());
     document.addEventListener("visibilitychange", this.#onVisibility);
     this.#seen();
   }
 
+  readonly #onGone = (event: Event): void => {
+    const id = (event as CustomEvent<string | undefined>).detail;
+    if (id === undefined) return;
+    this.#gone.add(id);
+    this.requestUpdate();
+  };
+
   override disconnectedCallback(): void {
     super.disconnectedCallback();
+    this.removeEventListener("hill-gone", this.#onGone);
     document.removeEventListener("visibilitychange", this.#onVisibility);
     this.#poller?.stop();
     this.#poller = undefined;
@@ -136,13 +150,19 @@ export class HillFlock extends LitElement {
         <section class="flock wide" aria-label="the flock">${this.#rows(models, null)}</section>
       `;
     }
-    const chosen = models.find((model) => model.id === route.id);
+    const at = models.findIndex((model) => model.id === route.id);
+    if (at !== -1 && !this.#gone.has(route.id)) this.#shown.add(route.id);
+    const gone = this.#gone.has(route.id) || (at === -1 && this.#shown.has(route.id));
     return html`
       <div class="split">
         <section class="flock col" aria-label="the flock">${this.#rows(models, route.id)}</section>
         <section class="sheep" aria-label="a sheep">
           ${this.silent ? html`<p class="silent">The home did not answer. Showing what it last said; asking again.</p>` : nothing}
-          ${chosen === undefined ? this.#notHere(route.id) : this.#head(chosen)}
+          ${gone
+            ? this.#gonePage(route.id)
+            : at === -1
+              ? this.#notHere(route.id)
+              : keyed(route.id, html`<hill-sheep .client=${this.client} .row=${rows[at]} .model=${models[at]} .now=${this.now}></hill-sheep>`)}
         </section>
       </div>
     `;
@@ -203,19 +223,15 @@ export class HillFlock extends LitElement {
     `;
   }
 
-  #head(model: RowModel): TemplateResult {
+  /** The storyboard's third phone: a sheep ended while its page was open. */
+  #gonePage(id: string): TemplateResult {
     return html`
-      <div class="head">
-        <span class="id" title=${model.id}><span class="lead">${model.lead}</span><span class="fold">${model.short}</span><span class="mark">${model.mark}</span></span>
-        ${model.name === "" ? nothing : html`<span class="name">${model.name}</span>`}
-        <span class="now"
-          ><span class="dot ${model.dot}"></span><b class="state ${model.state}">${model.state}</b>${model.pasture === ""
-            ? nothing
-            : html` · pasture <code>${model.pasture}</code>`}${model.secrets === "" ? nothing : html` · secrets <code>${model.secrets}</code>`} · setup
-          <span class="setup ${model.setupTone}">${model.setup}</span></span
-        >
+      <div class="gone">
+        <hill-mark scale="4"></hill-mark>
+        <p><b><code title=${id}>${idParts(id).short}</code> is gone.</b></p>
+        <p>It was ended with <code>sheep rm</code>.</p>
+        <p><a href=${FLOCK_PATH} @click=${(event: MouseEvent) => this.#go(event, FLOCK_PATH)}>Back to the flock</a></p>
       </div>
-      <div class="blocks"></div>
     `;
   }
 

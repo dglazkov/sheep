@@ -3,8 +3,10 @@
  *
  * Journey 1 steps 1, 3, 4, 5, and 6 in the home's terms. A bearer mints a
  * pass, `POST /hill/passes`, and the url carries it at the request's
- * origin. `GET /hill/seat?pass=` takes it once: a 204 and the `sheep-seat`
- * cookie with its five attributes; the same pass again, and a pass minted
+ * origin. `GET /hill/seat?pass=` takes it once: a 204 and the seat cookie,
+ * named `sheep-seat-` and 12 hex of the sha256 of the home's serverId, with
+ * its five attributes; another home's seat cookie on the same host is
+ * ignored; the same pass again, and a pass minted
  * with the clock three minutes back, are each a 403 and the gate's one
  * sentence. The cookie alone reads (`GET /sessions` is the bearer's body;
  * a sheep's transcript is admitted) and does nothing else: `POST /sessions`
@@ -17,8 +19,8 @@
  * test route.
  */
 import { env, runInDurableObject, SELF } from "cloudflare:test";
-import { describe, expect, it } from "vitest";
-import { type Directory, PASS_EXPIRED, PASS_USED, SEAT_MS, type SessionSummary, sha256Hex } from "../src/directory.ts";
+import { beforeAll, describe, expect, it } from "vitest";
+import { type Directory, PASS_EXPIRED, PASS_USED, SEAT_MS, type SessionSummary, seatCookieName, sha256Hex } from "../src/directory.ts";
 
 const TOKEN = "test-token";
 const ORIGIN = "https://sheep.test";
@@ -27,6 +29,13 @@ const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
 const directory = () => env.DIRECTORY.getByName("home");
+
+/** This home's seat cookie name, by the rule: `sheep-seat-` and 12 hex of the sha256 of the Directory's serverId. */
+let SEAT = "";
+beforeAll(async () => {
+  SEAT = await seatCookieName(await directory().serverId());
+  expect(SEAT).toMatch(/^sheep-seat-[0-9a-f]{12}$/);
+});
 
 function at(path: string, init?: RequestInit): Promise<Response> {
   return SELF.fetch(`${ORIGIN}${path}`, init);
@@ -50,10 +59,11 @@ async function seat(pass: string): Promise<string> {
   const response = await at(`/hill/seat?pass=${pass}`);
   expect(response.status, await response.clone().text()).toBe(204);
   const cookie = response.headers.get("set-cookie") ?? "";
-  return /^sheep-seat=([0-9a-f]{64});/.exec(cookie)![1]!;
+  return new RegExp(`^${SEAT}=([0-9a-f]{64});`).exec(cookie)![1]!;
 }
 
-const withSeat = (value: string, init: RequestInit = {}): RequestInit => ({ ...init, headers: { ...(init.headers as Record<string, string> | undefined), cookie: `sheep-seat=${value}` } });
+const withCookie = (cookie: string, init: RequestInit = {}): RequestInit => ({ ...init, headers: { ...(init.headers as Record<string, string> | undefined), cookie } });
+const withSeat = (value: string, init: RequestInit = {}): RequestInit => withCookie(`${SEAT}=${value}`, init);
 
 async function mintSheep(name: string): Promise<string> {
   const response = await at("/sessions", { method: "POST", headers: { ...bearer, "content-type": "application/json" }, body: JSON.stringify({ name }) });
@@ -103,10 +113,11 @@ describe("hill phase 0: a pass", () => {
     const first = await at(`/hill/seat?pass=${pass}`);
     expect(first.status).toBe(204);
     const cookie = first.headers.get("set-cookie")!;
-    expect(cookie).toMatch(/^sheep-seat=[0-9a-f]{64}; HttpOnly; Secure; SameSite=Strict; Path=\/; Max-Age=2592000$/);
+    expect(cookie).toMatch(/^sheep-seat-[0-9a-f]{12}=[0-9a-f]{64}; HttpOnly; Secure; SameSite=Strict; Path=\/; Max-Age=2592000$/);
+    expect(cookie.startsWith(`${SEAT}=`)).toBe(true);
     expect(Number(/Max-Age=(\d+)/.exec(cookie)![1]) * 1000).toBe(SEAT_MS);
     // The seat is a row by its sha256, never the value.
-    const value = /^sheep-seat=([0-9a-f]{64});/.exec(cookie)![1]!;
+    const value = new RegExp(`^${SEAT}=([0-9a-f]{64});`).exec(cookie)![1]!;
     const seats = await runInDurableObject(directory(), (_directory: Directory, state) => state.storage.sql.exec<{ hash: string }>("SELECT hash FROM seats").toArray().map((row) => row.hash));
     expect(seats).toContain(await sha256Hex(value));
     expect(seats).not.toContain(value);
@@ -180,7 +191,7 @@ describe("hill phase 0: a seat reads, and does nothing else", () => {
     expect((await at("/sessions", withSeat(standing))).status).toBe(200);
     const out = await at("/hill/seat", withSeat(standing, { method: "DELETE" }));
     expect(out.status).toBe(204);
-    expect(out.headers.get("set-cookie")).toBe("sheep-seat=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0");
+    expect(out.headers.get("set-cookie")).toBe(`${SEAT}=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0`);
     const after = await at("/sessions", withSeat(standing));
     expect(after.status).toBe(401);
     expect(await after.text()).toBe("bad or missing token");
@@ -248,6 +259,23 @@ describe("hill phase 0: a seat reads, and does nothing else", () => {
       expect(await response.text(), what).toBe("bad or missing token");
     }
     expect((await at("/home")).status).toBe(401);
+  });
+
+  it("two homes on one host: another home's seat cookie beside this one's is ignored, alone it is the bare 401; the name is stable", async () => {
+    const other = `sheep-seat-000000000000=${"c".repeat(64)}`;
+    const firstTake = await at(`/hill/seat?pass=${(await mint()).pass}`);
+    const secondTake = await at(`/hill/seat?pass=${(await mint()).pass}`);
+    const nameOf = (response: Response) => /^([^=]+)=/.exec(response.headers.get("set-cookie") ?? "")?.[1];
+    expect(nameOf(firstTake)).toBe(SEAT);
+    expect(nameOf(secondTake)).toBe(SEAT);
+    const standing = new RegExp(`^${SEAT}=([0-9a-f]{64});`).exec(secondTake.headers.get("set-cookie")!)![1]!;
+    for (const cookie of [`${other}; ${SEAT}=${standing}`, `${SEAT}=${standing}; ${other}`]) {
+      const response = await at("/sessions", withCookie(cookie));
+      expect(response.status, cookie).toBe(200);
+    }
+    const alone = await at("/sessions", withCookie(other));
+    expect(alone.status).toBe(401);
+    expect(await alone.text()).toBe("bad or missing token");
   });
 
   it("a bearer or ?token= decides alone: a wrong one with a good cookie is still 401", async () => {
