@@ -103,8 +103,12 @@ out. A seat not seen for thirty days is deleted at the next mint.
 
 **The door** is one change to `admitted()`: a request with no bearer and
 no `?token=` but a `sheep-seat` cookie whose sha256 is a row is admitted
-if its method is `GET` or `HEAD`, and refused with the bare 401 the home
-gives any bad token otherwise. Reads only, and `SameSite=Strict`, so a
+if its method is `GET` or `HEAD` and it asks for no upgrade, and refused
+with the bare 401 the home gives any bad token otherwise. The upgrade is
+the one GET that is not a read: `GET /s/<id>/ws` opens pi's protocol,
+over which a client prompts, steers, and aborts, so a seat that reached
+it would be a seat that drives a sheep. A request carrying `Upgrade` is
+the bearer's alone. Reads only, and `SameSite=Strict`, so a
 page on another site can neither carry the cookie nor do anything with
 it if it could. When the hill learns to act (a later project), it will
 carry a token of its own on each write, the way every browser app that
@@ -205,9 +209,10 @@ with a screen closed.
   hill. The seat admits reads. A later project gives the hill hands and
   the token a write needs.
 - **The live stream over the WebSocket.** `GET /s/<id>/ws` speaks pi's
-  binary protocol; the long poll is proven and browser-shaped and costs
-  nothing new. A later project may attach pi's browser client for the
-  token-by-token view.
+  binary protocol, and the protocol writes, so a seat is refused there;
+  the long poll is proven and browser-shaped and costs nothing new. A
+  later project that wants the token-by-token view brings a listener
+  that only listens, or the write token, not a looser door.
 - **The DevTools depth.** The shell as a panel, the workspace tree and
   files, the pictures `look` took, the pasture's tree and its secrets'
   names, the container's lane, the collie's log: each is a panel and a

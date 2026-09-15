@@ -74,9 +74,10 @@ Acceptance criteria:
   sentence each; a seat outlives a browser restart and dies at sign out
   or after thirty days.
 - A seat admits reads and nothing else: a `POST`, `PUT`, or `DELETE` to
-  any route with only a seat is the same 401 as no bearer. `sheep hill`
-  against a home too old to have the route is refused with shear's
-  sentence for a verb the home lacks.
+  any route with only a seat is the same 401 as no bearer, and so is a
+  WebSocket upgrade to a cell, whose protocol writes. `sheep hill`
+  against a home too old to have the route is refused with the sentence
+  `sheep sh` gives a home that lacks the peek.
 - The cookie is `HttpOnly`, `Secure`, `SameSite=Strict`, on the
   station's origin alone.
 

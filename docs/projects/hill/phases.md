@@ -22,7 +22,8 @@ resource, spend money, or need a login, and are asked out loud first.
   or any request the page makes has found the bug, not a detail. Every
   phase with a page carries the search.
 - **The seat reads.** A request admitted by a seat alone is a `GET` or a
-  `HEAD`; anything else with only a seat is the 401 a bad bearer gets.
+  `HEAD` that asks for no upgrade; anything else with only a seat, the
+  WebSocket to a cell included, is the 401 a bad bearer gets.
   A phase that needs a write from the hill has found the next project,
   not a shortcut.
 - **The frames come first.** Nothing is built to the screen until the
@@ -72,12 +73,13 @@ deletes seats not seen in thirty days. `packages/cell/src/index.ts`:
 the url built from the request's origin; `GET /hill/seat?pass=` with
 no bearer, answering 204 and the `Set-Cookie` of the design or a 403
 and one sentence for a used or expired pass; `DELETE /hill/seat` with
-the cookie, clearing it; `admitted()` gaining the seat for `GET` and
-`HEAD` alone, checked before any cell is reached; the doc comment at
+the cookie, clearing it, before the door as `/join` is; `admitted()`
+gaining the seat for `GET` and `HEAD` with no `Upgrade` header alone,
+checked before any cell is reached; the doc comment at
 the top gaining the paragraph. `packages/cli/src/home.ts`: `pass()`
 over `POST /hill/passes`. `packages/cli/src/hill.ts`: the verb, the
-url on stdout and nothing else, exit 0; shear's refusal for a home
-whose 404 says it lacks the route. `packages/cli/src/cli.ts`,
+url on stdout and nothing else, exit 0; drove phase 1's `lackedSentence`
+for a home whose router answers its bare `not found`, exit 2. `packages/cli/src/cli.ts`,
 `usage.ts`: `hill` in the dispatch and the usage, one line;
 `surface.test.ts`'s fence updated for the one word.
 
@@ -87,22 +89,24 @@ carries it; `GET /hill/seat` with it answers 204 and a cookie with the
 five attributes; the same pass again is 403 `used`; a pass minted with
 the clock moved three minutes is 403 `expired`; `GET /sessions` with the
 cookie alone is 200 and the same body the bearer gets; `POST /sessions`
-with the cookie alone is the bare 401; `GET /s/<id>/transcript` with the
-cookie is admitted; `DELETE /hill/seat` clears it and the next `GET
+with the cookie alone is the bare 401; a WebSocket upgrade to
+`/s/<id>/ws` with the cookie alone is the bare 401 and reaches no cell;
+`GET /s/<id>/transcript` with the cookie is admitted; `DELETE /hill/seat` clears it and the next `GET
 /sessions` is 401; a seat not seen in thirty-one days is gone after a
 mint; a cookie of the right shape with no row is 401; no bearer and no
 cookie is what it was. `packages/cli/test/hill.test.ts` in the command
 ring, the built CLI against a fake home in `earmark.test.ts`'s shape:
-`sheep hill` prints the url and nothing else; a home answering 404 gets
-shear's sentence and exit 2.
+`sheep hill` prints the url and nothing else; a home answering its bare
+`not found` gets the lacked sentence and exit 2.
 
 **Not this phase:** No page, no assets, no build; `GET /hill/` is the
 404 it is today.
 
 **Proof:** `pnpm test` exits 0 across all three inner rings; `pnpm -r
-typecheck` exits 0. Falsified by at least two mutations: the seat
-admitting `POST` (journey 1's third criterion fails), and `takePass`
-not deleting the row (step 3's test fails). **⚑** none.
+typecheck` exits 0. Falsified by at least three mutations: the seat
+admitting `POST` (journey 1's third criterion fails), the seat admitting
+an upgrade (the WebSocket test fails), and `takePass` not deleting the
+row (step 3's test fails). **⚑** none.
 
 **Status: NOT STARTED.**
 
