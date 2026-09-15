@@ -36,15 +36,15 @@ resource, spend money, or need a login, and are asked out loud first.
 ---
 
 **Where we are: hill phase 0 CLOSED, hill phases 1 to 3 PART-DONE, 15
-September 2026; hill phase 3 waits on its station walk and the account ring.** The flock is live,
+September 2026; all three wait on the shepherd's yes, and hill phase 3 on an account ring that reaches `h1`.** The flock is live,
 walked on a real model and a real container, and a sheep's page follows its transcript. The door stands, and the station serves the page at
 `/hill/` from an assets binding, before the door: the gate for a
 browser with no seat, the shell once seated, and a release that carries
 it, walked in Chrome and by the package ring. Hill phase 1 waits on one
 thing, the shepherd's yes on the storyboard and the built page; hill
-phase 2 on the same yes and on step 6's hour; hill phase 3 on the same
-yes, on journey 5's walk on a station of its own, and on the account
-ring's `h1`, both ⚑ and both the conductor's to run. `hill phase 3`'s walk and its account-ring
+phase 2 on the same yes, its hour held; hill phase 3 on the same yes and
+on an account ring that reaches `h1`, which failed twice at `a5`'s
+redeploy. Nothing else waits on work. `hill phase 3`'s walk and its account-ring
 step are ⚑.
 
 The order is dependency order. Hill phase 0 is the door and the verb:
@@ -244,8 +244,8 @@ Chrome on a local home with Docker and a real model: the flock said what
 `ls` and `status` say, within two seconds of each dog's command, the
 split view and the phone's matched the storyboard, and journey 3 step
 7's back button returned. `pnpm test` exits 0 and the mutation fails.
-Step 6's hour was begun on the walk's tab; the phase closes on the
-shepherd's yes.
+Step 6's hour held on hill phase 3's walk station; the phase closes on
+the shepherd's yes.
 
 **Findings:**
 
@@ -255,7 +255,7 @@ shepherd's yes.
 - **2026-09-14 — Chrome under automation reports an occluded window as hidden,** and a hidden page asks nothing, as designed. The builder's walk had to simulate visibility; the conductor's, in a window in front, did not.
 - **2026-09-14 — A walk's scratch `HOME` hides Docker's buildx plugin:** `sheep home local` failed on `--load` until `DOCKER_CONFIG` named the real `~/.docker`.
 - **2026-09-15 — Two counts of step 6 broke before the hour, and each held while it ran:** 805 pairs in 28 minutes, then 437 in 18, no gap under 1995 ms. A second home's cookie signed out the first; then an edit reloaded the checkout's Worker.
-- **2026-09-15 — Open: journey 2 step 6's hour,** moved to hill phase 3's walk station, whose Worker no edit reloads, counted by a headless Chrome of its own.
+- **2026-09-15 — Step 6's hour held on a deployed station:** a headless Chrome counted 1,798 pairs in 3,601 s against a ceiling of 1,801, the smallest gap 1997 ms, all 3,596 answers 200, and the flock still right at the end.
 
 ## Phase 3: A sheep's page
 
@@ -312,16 +312,20 @@ station `sheep-2` is not touched: it is theirs to upgrade.
 checkout held: `sheep log` prints through the blocks byte for byte
 against the rendering frozen from before the move, a sheep's page
 follows its transcript over the long poll and never wakes a sheep
-nothing has asked, and the seat's cookie is named for its home. The
-builder walked journey 3 in Chrome on a faux model. Journey 5's walk on
-a station of its own and the account ring's `h1` are next, and the
-phase closes on them and the shepherd's yes.
+nothing has asked, and the seat's cookie is named for its home.
+Journey 5 step 1 was walked on the walk's own station with a real model
+and deleted after: journeys 1 to 3 in a headless Chrome, frames judged.
+The account ring failed twice, both times right after `a5`'s redeploy
+and before `h1`, whose checks held by hand on the walk's station. The
+phase closes on a ring that reaches `h1` and the shepherd's yes.
 
 **Findings:**
 
-- **2026-09-14 — An abort in pi's entries is the cut-off call's own assistant entry:** empty content, `stopReason: "aborted"`, and the sentence "Request was aborted". `sheep log` prints it as that block's `[error]` line; the page draws the red abort.
-- **2026-09-14 — The cell answers a transcript long poll at once when no turn is open,** so a page looping on `?wait=25000` would ask back to back while a sheep idles. The loop rests two seconds after any answer with no turn open.
-- **2026-09-14 — The page's `sheep log` is the CLI's code:** `blocks.ts` imports only `setup-words`, and the bundle tree-shakes the text face. The byte test compares against the rendering frozen from cefefbd, whose lines match the old `formatEntry`'s.
-- **2026-09-15 — A browser keys cookies by host, not port.** A builder's second local home on `127.0.0.1` replaced the conductor's seat, and the tab fell to the gate. The cookie is now `sheep-seat-` plus twelve hex of its home's serverId; two seated homes each read 200.
-- **2026-09-15 — A local home runs the checkout's live Worker:** editing `index.ts` reloaded it under a seated tab. A rig cannot hold an overnight tab, so step 6's hour moved to a deployed station.
-- **2026-09-15 — Builders share the session's scratchpad:** one walk's kennel `scratchpad/walk` restarted another phase's stopped home. A walk's kennel wants a name of its own.
+- **2026-09-14 — An abort in pi's entries is the cut-off model call's own assistant entry,** empty, `stopReason: "aborted"`. One during a tool call is the tool's error result instead, folded red on the page as `sheep log` prints it.
+- **2026-09-14 — The cell answers a long poll at once when no turn is open,** so the loop rests two seconds after such an answer rather than asking back to back.
+- **2026-09-14 — The page's `sheep log` is the CLI's code:** `blocks.ts` imports only `setup-words`. The byte test's oracle is the rendering frozen from cefefbd.
+- **2026-09-15 — Cookies ignore ports:** a second local home on `127.0.0.1` signed out the first. The cookie is now named for its home's serverId.
+- **2026-09-15 — A local home runs the checkout's live Worker,** so an edit reloaded it under a seated tab. Builders' walks shared this session's scratchpad and browser, and disturbed each other.
+- **2026-09-15 — The walk held on `sheep-hill-walk` with a real model:** a mint's row in 0.93 s, `running` in 1.03 s, a prompt on the page in 1.45 s, setup `ok (40.2 s)` beside `sheep status`, the seat through a browser restart, 398 requests with no token.
+- **2026-09-15 — HTTP/2 carries no `Upgrade`:** a seat's socket was 401 over HTTP/1.1 and the bearer's 101; over HTTP/2 the cell answered a plain GET 426.
+- **2026-09-15 — Open: the account ring on release 491fc54 failed twice right after `a5`'s redeploy, before `h1`:** `t2`'s turn cut off, then `GET /sessions` threw. Issues #13 and #14 describe such runs. A run reaching `h1` closes it.
