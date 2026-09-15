@@ -269,7 +269,9 @@ byte what it printed. `packages/hill/src/sheep.ts`: the row first from
 the blocks drawn, results folded and opened on a click, the page
 following the bottom unless scrolled up; a 404 answered with the gone
 sentence and the flock offered; the address `/hill/s/<id>` opened
-straight. `scripts/hermetic.mjs`: the account ring's step `h1` after a
+straight; a row with no task and no setup never asked of its cell, the
+page saying nothing has been asked of the sheep yet; the transcript loop
+paused while the page is hidden. `scripts/hermetic.mjs`: the account ring's step `h1` after a
 step that has prompted a sheep: a pass minted through `sheep hill`, the
 seat taken with `fetch`, `GET /sessions` read with the cookie alone and
 compared with the bearer's answer, `POST /sessions` with the cookie
@@ -283,7 +285,8 @@ fixtures `log` already has; the blocks from a transcript with a setup,
 a tool call, and an abort. `packages/hill/test/sheep.test.ts`: the
 follow-the-bottom rule as a pure function of scroll and a new block;
 the loop holding one request; a thousand entries to blocks in one
-copy. `hill-home.test.ts`: the transcript read with the cookie during
+copy; the rule that a row with no task and no setup asks nothing of its
+cell. `hill-home.test.ts`: the transcript read with the cookie during
 and after a faux turn, the entries in `attach --json`'s order; a
 removed sheep's 404.
 
@@ -291,7 +294,8 @@ removed sheep's 404.
 
 **Proof:** `pnpm test` exits 0 across all three inner rings; `pnpm -r
 typecheck` exits 0; `pnpm bundle` exits 0. Falsified by one mutation:
-the blocks' text face changed (the byte test fails). Then the walk,
+the blocks' text face changed (the byte test fails), and the page asking
+the cell of an unprompted sheep (the wake rule's test fails). Then the walk,
 journey 5 step 1: journeys 1, 2, and 3 on the shepherd's station with a
 real model, the conductor in Chrome, frames captured at each step and
 judged as a newcomer would, the times recorded; the browser's network

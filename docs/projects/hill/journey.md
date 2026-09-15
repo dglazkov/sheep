@@ -150,6 +150,9 @@ Acceptance criteria:
   rendering of pi's entries into blocks, or the proof compares them.
 - The page's own memory is bounded: a transcript of a thousand entries
   renders, and the page holds one copy of it.
+- Looking never wakes a sheep: opening the page of a sheep nothing has
+  prompted says so from its row and asks nothing of its cell, so no
+  birth, clone, setup, or container starts because a shepherd looked.
 
 ## Journey 4: The developer's rig
 

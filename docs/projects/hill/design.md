@@ -169,13 +169,25 @@ and build from `GET /home`, and sign out. Under it, one of:
   flock polls `GET /sessions` and `GET /home` every two seconds while
   the tab is visible and stops when it is hidden (`visibilitychange`),
   which is what makes journey 2 step 6 true.
-- **A sheep's page.** Its id and name; the state and the open operation
-  from `GET /s/<id>/`, the row from `GET /sessions/<id>` first, as
-  `sheep status` reads them, so a sheep being born shows setup running
-  at once; then the blocks, oldest first, the page following the bottom
-  unless scrolled up. It reads `GET /s/<id>/transcript?wait=25000&tip=`
-  in a loop, the collie's way, one request open at a time; a 404 means
+- **A sheep's page.** Its id and name, its state and setup from the row
+  the flock already polls, so a sheep being born shows setup running at
+  once; the open operation from `GET /s/<id>/`, and the tool it is on
+  from the last tool call in the transcript that has no result yet,
+  since `sheep status`'s token and message counts come from pi's socket,
+  which the hill does not open; then the blocks, oldest first, the page
+  following the bottom unless scrolled up. It reads `GET
+  /s/<id>/transcript?wait=25000&tip=` in a loop, the collie's way, one
+  request open at a time and none while the page is hidden; a 404 means
   the sheep is gone, and the page says so and offers the flock.
+
+  **Looking never wakes a sheep.** A cell boots on the first thing that
+  asks it, and a sheep minted into a pasture with a repository is born
+  inside that boot: the clone, `setup.sh`, a container rented (mint
+  phase 0). A shepherd clicking down the flock would start every unborn
+  sheep's birth. So a sheep whose row has no task and no setup, which
+  nothing has prompted, is never asked of its cell: its page says that
+  nothing has been asked of it yet, from the row alone, until the row
+  says otherwise (hill phase 3's orientation).
 
 **The blocks** are the one thing the hill and `sheep log` must agree
 on. `sheep log` renders pi's entries and bleat's setups into text in
