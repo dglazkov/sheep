@@ -5064,7 +5064,7 @@ var CHECKOUT_BUILD = { commit: "0.0.0-checkout", builtAt: null };
 function collieBuild() {
   if (false) return CHECKOUT_BUILD;
   try {
-    const parsed = JSON.parse('{"commit":"72e38ea","builtAt":"2026-09-15T02:54:31Z"}');
+    const parsed = JSON.parse('{"commit":"20ecac0","builtAt":"2026-09-15T03:07:16Z"}');
     if (typeof parsed.commit === "string" && parsed.commit !== "") return { commit: parsed.commit, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
   } catch {
   }

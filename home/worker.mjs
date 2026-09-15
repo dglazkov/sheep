@@ -25498,8 +25498,8 @@ function uuidv7(timestampMs) {
   bytes[9] = Number(sequence >> 15n & 0xffn);
   bytes[10] = Number(sequence >> 7n & 0xffn);
   bytes[11] = Number((sequence & 0x7fn) << 1n) | bytes[11] & 1;
-  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0"));
-  return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10).join("")}`;
+  const hex2 = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0"));
+  return `${hex2.slice(0, 4).join("")}-${hex2.slice(4, 6).join("")}-${hex2.slice(6, 8).join("")}-${hex2.slice(8, 10).join("")}-${hex2.slice(10).join("")}`;
 }
 __name(uuidv7, "uuidv7");
 
@@ -74011,6 +74011,24 @@ function taskOf(prompt) {
 }
 __name(taskOf, "taskOf");
 var LANE_STATES = ["idle", "running", "waiting"];
+var PASS_MS = 2 * 60 * 1e3;
+var SEAT_MS = 30 * 24 * 60 * 60 * 1e3;
+var SEEN_MS = 60 * 60 * 1e3;
+var SEAT_COOKIE = "sheep-seat";
+var PASS_USED = "that pass was already used; run sheep hill for another";
+var PASS_EXPIRED = "that pass expired; run sheep hill for another";
+function randomHex() {
+  return hex(crypto.getRandomValues(new Uint8Array(32)));
+}
+__name(randomHex, "randomHex");
+async function sha256Hex(value3) {
+  return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value3))));
+}
+__name(sha256Hex, "sha256Hex");
+function hex(bytes) {
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+__name(hex, "hex");
 var Directory = class extends DurableObject2 {
   static {
     __name(this, "Directory");
@@ -74029,6 +74047,59 @@ var Directory = class extends DurableObject2 {
     ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
     ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS containers (session_id TEXT PRIMARY KEY, started_at INTEGER NOT NULL)");
     ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS session_secrets (session_id TEXT NOT NULL, name TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (session_id, name))");
+    ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS passes (hash TEXT PRIMARY KEY, minted_at INTEGER NOT NULL)");
+    ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS seats (hash TEXT PRIMARY KEY, seated_at INTEGER NOT NULL, last_seen INTEGER NOT NULL)");
+  }
+  /**
+   * A pass (hill phase 0): 32 random bytes as hex, answered once and kept as its sha256 with the time it was minted, so the
+   * link that carries it is worthless two minutes later. A mint also deletes every seat seated thirty days ago or more, and
+   * every pass older than two minutes, so neither table grows with what can no longer be used.
+   */
+  async mintPass(now = Date.now()) {
+    const pass = randomHex();
+    const hash = await sha256Hex(pass);
+    const sql2 = this.ctx.storage.sql;
+    this.ctx.storage.transactionSync(() => {
+      sql2.exec("DELETE FROM seats WHERE seated_at < ?", now - SEAT_MS);
+      sql2.exec("DELETE FROM passes WHERE minted_at < ?", now - PASS_MS);
+      sql2.exec("INSERT INTO passes (hash, minted_at) VALUES (?, ?)", hash, now);
+    });
+    return { pass, expires: now + PASS_MS };
+  }
+  /**
+   * The take (hill phase 0): the pass's row is deleted whatever it says, so a pass is good for one take. A row that is not
+   * there, whether it was taken or never minted, is `used`; a row older than two minutes is `expired`; otherwise a seat, 32
+   * fresh random bytes as hex, whose sha256 is kept with the time it was seated.
+   */
+  async takePass(pass, now = Date.now()) {
+    const hash = await sha256Hex(pass);
+    const seat = randomHex();
+    const seatHash = await sha256Hex(seat);
+    const sql2 = this.ctx.storage.sql;
+    return this.ctx.storage.transactionSync(() => {
+      const row = sql2.exec("SELECT minted_at FROM passes WHERE hash = ?", hash).toArray()[0];
+      if (row === void 0) return { taken: "used" };
+      sql2.exec("DELETE FROM passes WHERE hash = ?", hash);
+      if (now - row.minted_at > PASS_MS) return { taken: "expired" };
+      sql2.exec("INSERT INTO seats (hash, seated_at, last_seen) VALUES (?, ?, ?)", seatHash, now, now);
+      return { taken: "ok", seat };
+    });
+  }
+  /**
+   * Whether a seat stands (hill phase 0): its sha256 is a row seated less than thirty days ago. A seat that stands is seen
+   * now, but `last_seen` is written only when it is more than an hour old: a page polling every two seconds is a read, and
+   * should not be a Directory write each time.
+   */
+  async seated(seat, now = Date.now()) {
+    const hash = await sha256Hex(seat);
+    const row = this.ctx.storage.sql.exec("SELECT seated_at, last_seen FROM seats WHERE hash = ?", hash).toArray()[0];
+    if (row === void 0 || now - row.seated_at >= SEAT_MS) return false;
+    if (now - row.last_seen > SEEN_MS) this.ctx.storage.sql.exec("UPDATE seats SET last_seen = ? WHERE hash = ?", now, hash);
+    return true;
+  }
+  /** Sign out (hill phase 0): the seat's row goes. Nothing to delete is nothing. */
+  async leave(seat) {
+    this.ctx.storage.sql.exec("DELETE FROM seats WHERE hash = ?", await sha256Hex(seat));
   }
   /** A container started for a session. A start the Directory never saw stop is closed now, so a lost stop cannot count forever. */
   containerOpened(id2, at) {
@@ -94870,8 +94941,8 @@ function uuidv72(timestampMs) {
   bytes[9] = Number(sequence2 >> 15n & 0xffn);
   bytes[10] = Number(sequence2 >> 7n & 0xffn);
   bytes[11] = Number((sequence2 & 0x7fn) << 1n) | bytes[11] & 1;
-  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0"));
-  return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10).join("")}`;
+  const hex2 = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0"));
+  return `${hex2.slice(0, 4).join("")}-${hex2.slice(4, 6).join("")}-${hex2.slice(6, 8).join("")}-${hex2.slice(8, 10).join("")}-${hex2.slice(10).join("")}`;
 }
 __name(uuidv72, "uuidv7");
 
@@ -125885,17 +125956,61 @@ function unauthorized(reason) {
   return new Response(reason, { status: 401 });
 }
 __name(unauthorized, "unauthorized");
-function admitted(request, env) {
+async function admitted(request, env) {
   if (env.SHEEP_TOKEN === void 0 || env.SHEEP_TOKEN === "") {
     if (env.SHEEP_ALLOW_ANONYMOUS === "1") return void 0;
     return new Response("this home has no SHEEP_TOKEN; set one, or SHEEP_ALLOW_ANONYMOUS=1 for local use", { status: 503 });
   }
-  const header = request.headers.get("authorization") ?? "";
-  const token = header.startsWith("Bearer ") ? header.slice("Bearer ".length) : new URL(request.url).searchParams.get("token");
-  if (token !== env.SHEEP_TOKEN) return unauthorized("bad or missing token");
+  const header = request.headers.get("authorization");
+  const query = new URL(request.url).searchParams.get("token");
+  if (header !== null || query !== null) {
+    const token = header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : query;
+    if (token !== env.SHEEP_TOKEN) return unauthorized("bad or missing token");
+    return void 0;
+  }
+  const seat = seatOf(request);
+  if (seat === void 0) return unauthorized("bad or missing token");
+  if (!isRead(request)) return unauthorized("bad or missing token");
+  if (!await env.DIRECTORY.getByName("home").seated(seat)) return unauthorized("bad or missing token");
   return void 0;
 }
 __name(admitted, "admitted");
+function isRead(request) {
+  return (request.method === "GET" || request.method === "HEAD") && request.headers.get("upgrade") === null;
+}
+__name(isRead, "isRead");
+var SEAT_SHAPE = /^[0-9a-f]{64}$/;
+function seatOf(request) {
+  const cookies = request.headers.get("cookie");
+  if (cookies === null) return void 0;
+  for (const part of cookies.split(";")) {
+    const at = part.indexOf("=");
+    if (at === -1 || part.slice(0, at).trim() !== SEAT_COOKIE) continue;
+    const value3 = part.slice(at + 1).trim();
+    if (SEAT_SHAPE.test(value3)) return value3;
+  }
+  return void 0;
+}
+__name(seatOf, "seatOf");
+function seatCookie(value3, maxAge) {
+  return `${SEAT_COOKIE}=${value3}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAge}`;
+}
+__name(seatCookie, "seatCookie");
+async function seatAnswer(request, env) {
+  const pass = new URL(request.url).searchParams.get("pass");
+  const taken = pass === null || pass === "" ? { taken: "used" } : await env.DIRECTORY.getByName("home").takePass(pass);
+  const noStore = { "cache-control": "no-store" };
+  if (taken.taken === "used") return new Response(PASS_USED, { status: 403, headers: noStore });
+  if (taken.taken === "expired") return new Response(PASS_EXPIRED, { status: 403, headers: noStore });
+  return new Response(null, { status: 204, headers: { ...noStore, "set-cookie": seatCookie(taken.seat, SEAT_MS / 1e3) } });
+}
+__name(seatAnswer, "seatAnswer");
+async function leaveAnswer(request, env) {
+  const seat = seatOf(request);
+  if (seat !== void 0) await env.DIRECTORY.getByName("home").leave(seat);
+  return new Response(null, { status: 204, headers: { "cache-control": "no-store", "set-cookie": seatCookie("", 0) } });
+}
+__name(leaveAnswer, "leaveAnswer");
 async function joinKey(token) {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token)));
   return `join:${[...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
@@ -125918,13 +126033,13 @@ __name(joinAnswer, "joinAnswer");
 var CHECKOUT_BUILD = { commit: "0.0.0-checkout", builtAt: null };
 function homeImage() {
   if (false) return null;
-  return true ? "docker.io/dglazkov2/sheep-pen@sha256:24fc0f3d5406bc4dcff99d53385c54797e0da36d18130e6445c81b27fed43fd2" : null;
+  return true ? "docker.io/dglazkov2/sheep-pen@sha256:d5dbd1f88234b13c752b7cf433124084efff10af8f3d92b05acd9d5c4582e24b" : null;
 }
 __name(homeImage, "homeImage");
 function homeBuild() {
   if (false) return CHECKOUT_BUILD;
   try {
-    const parsed = JSON.parse('{"commit":"72e38ea","builtAt":"2026-09-15T02:54:31Z"}');
+    const parsed = JSON.parse('{"commit":"20ecac0","builtAt":"2026-09-15T03:07:16Z"}');
     if (typeof parsed.commit === "string" && parsed.commit !== "") return { commit: parsed.commit, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
   } catch {
   }
@@ -126018,8 +126133,14 @@ var router = {
       return env.SESSION_CELL.getByName(id2).fetch(new Request(inner, request));
     }
     if (url.pathname === "/join" && request.method === "POST") return await joinAnswer(request, env) ?? new Response("not found", { status: 404 });
-    const refused2 = admitted(request, env);
+    if (url.pathname === "/hill/seat" && request.method === "GET") return seatAnswer(request, env);
+    if (url.pathname === "/hill/seat" && request.method === "DELETE") return leaveAnswer(request, env);
+    const refused2 = await admitted(request, env);
     if (refused2) return refused2;
+    if (url.pathname === "/hill/passes" && request.method === "POST") {
+      const { pass, expires } = await directory.mintPass();
+      return Response.json({ url: `${url.origin}/hill/?pass=${pass}`, expires }, { status: 201, headers: { "cache-control": "no-store" } });
+    }
     if (url.pathname === "/sessions" && request.method === "POST") {
       const body = await request.json().catch(() => ({})) ?? {};
       const name = typeof body.name === "string" && body.name.length > 0 ? body.name : null;
