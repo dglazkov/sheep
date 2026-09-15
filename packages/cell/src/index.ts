@@ -44,8 +44,21 @@
  * Shear phase 0: every response the Worker returns carries
  * `x-sheep-build: <commit> <builtAt>`, set once where `fetch` returns, so
  * any command hears which build answered it; a WebSocket's 101 too.
+ * Hill phase 0: the door for a browser, which never holds the home's token.
+ * `POST /hill/passes`, under the bearer, mints a pass and answers `{ url,
+ * expires }`, the url `<this request's origin>/hill/?pass=<pass>`, good for
+ * two minutes and one take. `GET /hill/seat?pass=`, before the door as
+ * `/join` is, takes it: a 204 with the `sheep-seat` cookie (`HttpOnly;
+ * Secure; SameSite=Strict; Path=/`, thirty days), or a 403 and the gate's
+ * one sentence for a pass used or expired. `DELETE /hill/seat`, before the
+ * door too, deletes the cookie's seat and clears it: sign out. And the door
+ * admits a seat: a request with no bearer and no `?token=` whose cookie's
+ * sha256 is a seat's row is admitted if it is a `GET` or `HEAD` that carries
+ * no `Upgrade` header, and is the bare 401 otherwise. The upgrade is the one
+ * GET that is not a read: `/s/<id>/ws` is pi's protocol, which writes. The
+ * seat is asked of the Directory before any cell is reached.
  */
-import { type Budget, mintSecrets, unknownPasture, unknownSession } from "./directory.ts";
+import { type Budget, mintSecrets, PASS_EXPIRED, PASS_USED, SEAT_COOKIE, SEAT_MS, unknownPasture, unknownSession } from "./directory.ts";
 import { hasEyes } from "./eyes/eyes.ts";
 import { type FauxProgram, isFauxProgram } from "./models.ts";
 import { badPastureName, isPastureName, isSecretName } from "./pasture.ts";
@@ -59,15 +72,74 @@ function unauthorized(reason: string): Response {
   return new Response(reason, { status: 401 });
 }
 
-function admitted(request: Request, env: Env): Response | undefined {
+/**
+ * The door. A bearer, or a `?token=`, decides alone when either is there: a wrong one is the 401 whatever cookie rides with
+ * it. With neither (hill phase 0), a `sheep-seat` cookie whose seat stands admits a read, a `GET` or a `HEAD` with no
+ * `Upgrade` header, and nothing else; every other request with only a seat is the same bare 401 a missing bearer gets.
+ */
+async function admitted(request: Request, env: Env): Promise<Response | undefined> {
   if (env.SHEEP_TOKEN === undefined || env.SHEEP_TOKEN === "") {
     if (env.SHEEP_ALLOW_ANONYMOUS === "1") return undefined;
     return new Response("this home has no SHEEP_TOKEN; set one, or SHEEP_ALLOW_ANONYMOUS=1 for local use", { status: 503 });
   }
-  const header = request.headers.get("authorization") ?? "";
-  const token = header.startsWith("Bearer ") ? header.slice("Bearer ".length) : new URL(request.url).searchParams.get("token");
-  if (token !== env.SHEEP_TOKEN) return unauthorized("bad or missing token");
+  const header = request.headers.get("authorization");
+  const query = new URL(request.url).searchParams.get("token");
+  if (header !== null || query !== null) {
+    const token = header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : query;
+    if (token !== env.SHEEP_TOKEN) return unauthorized("bad or missing token");
+    return undefined;
+  }
+  const seat = seatOf(request);
+  if (seat === undefined) return unauthorized("bad or missing token");
+  if (!isRead(request)) return unauthorized("bad or missing token");
+  if (!(await env.DIRECTORY.getByName("home").seated(seat))) return unauthorized("bad or missing token");
   return undefined;
+}
+
+/** What a seat alone may ask (hill phase 0): a `GET` or `HEAD` that asks for no upgrade of any kind. */
+function isRead(request: Request): boolean {
+  return (request.method === "GET" || request.method === "HEAD") && request.headers.get("upgrade") === null;
+}
+
+/** A seat's shape: 32 bytes as lowercase hex. */
+const SEAT_SHAPE = /^[0-9a-f]{64}$/;
+
+/** The `sheep-seat` cookie's value when it is the shape of a seat; `undefined` otherwise, which no seat row can be. */
+function seatOf(request: Request): string | undefined {
+  const cookies = request.headers.get("cookie");
+  if (cookies === null) return undefined;
+  for (const part of cookies.split(";")) {
+    const at = part.indexOf("=");
+    if (at === -1 || part.slice(0, at).trim() !== SEAT_COOKIE) continue;
+    const value = part.slice(at + 1).trim();
+    if (SEAT_SHAPE.test(value)) return value;
+  }
+  return undefined;
+}
+
+/** The cookie's attributes (hill phase 0): the station's origin alone, no script, no other site, thirty days or none. */
+function seatCookie(value: string, maxAge: number): string {
+  return `${SEAT_COOKIE}=${value}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAge}`;
+}
+
+/**
+ * `GET /hill/seat?pass=` (hill phase 0): the pass taken, a 204 that sets the seat's cookie; or a 403 and the gate's sentence
+ * for a pass used or expired. A missing pass is a used one.
+ */
+async function seatAnswer(request: Request, env: Env): Promise<Response> {
+  const pass = new URL(request.url).searchParams.get("pass");
+  const taken = pass === null || pass === "" ? ({ taken: "used" } as const) : await env.DIRECTORY.getByName("home").takePass(pass);
+  const noStore = { "cache-control": "no-store" };
+  if (taken.taken === "used") return new Response(PASS_USED, { status: 403, headers: noStore });
+  if (taken.taken === "expired") return new Response(PASS_EXPIRED, { status: 403, headers: noStore });
+  return new Response(null, { status: 204, headers: { ...noStore, "set-cookie": seatCookie(taken.seat, SEAT_MS / 1000) } });
+}
+
+/** `DELETE /hill/seat` (hill phase 0): sign out. The cookie's seat deleted, if it had one, and the cookie cleared; a 204 either way. */
+async function leaveAnswer(request: Request, env: Env): Promise<Response> {
+  const seat = seatOf(request);
+  if (seat !== undefined) await env.DIRECTORY.getByName("home").leave(seat);
+  return new Response(null, { status: 204, headers: { "cache-control": "no-store", "set-cookie": seatCookie("", 0) } });
 }
 
 /** The key a join token is looked up by: `join:` and the hex of its SHA-256. The raw token is never stored, and never compared. */
@@ -254,8 +326,18 @@ const router = {
     // router's own bare 404, so a prober learns nothing of whether a join is open.
     if (url.pathname === "/join" && request.method === "POST") return (await joinAnswer(request, env)) ?? new Response("not found", { status: 404 });
 
-    const refused = admitted(request, env);
+    // The hill's seat (hill phase 0), before the home's door as the join is: taken with a pass, given up with the cookie.
+    if (url.pathname === "/hill/seat" && request.method === "GET") return seatAnswer(request, env);
+    if (url.pathname === "/hill/seat" && request.method === "DELETE") return leaveAnswer(request, env);
+
+    const refused = await admitted(request, env);
     if (refused) return refused;
+
+    // A pass (hill phase 0), under the bearer: the link a browser climbs the hill with, at the origin this request reached.
+    if (url.pathname === "/hill/passes" && request.method === "POST") {
+      const { pass, expires } = await directory.mintPass();
+      return Response.json({ url: `${url.origin}/hill/?pass=${pass}`, expires }, { status: 201, headers: { "cache-control": "no-store" } });
+    }
 
     if (url.pathname === "/sessions" && request.method === "POST") {
       const body = ((await request.json().catch(() => ({}))) ?? {}) as { name?: unknown; pasture?: unknown; secrets?: unknown };

@@ -33,11 +33,12 @@ resource, spend money, or need a login, and are asked out loud first.
 
 ---
 
-**Where we are: planned, 14 September 2026. Nothing built.** The next
-thing to do is `hill phase 0`, the door, which needs no person. The
-mockups in [screen/](screen/) wait on the shepherd's yes before `hill
-phase 1` builds to them; `hill phase 3`'s walk and its account-ring
-step are ⚑.
+**Where we are: hill phase 0 CLOSED, 14 September 2026.** The door
+stands: `sheep hill` prints a link with a pass, the pass buys a seat, and
+a seat reads and does nothing else, the WebSocket to a cell included. No
+page yet. The next thing to do is `hill phase 1`, the shell and the gate.
+The mockups in [screen/](screen/) wait on the shepherd's yes; `hill
+phase 3`'s walk and its account-ring step are ⚑.
 
 The order is dependency order. Hill phase 0 is the door and the verb:
 a pass, a seat, the cookie admitted for a read, proved in workerd with
@@ -108,7 +109,21 @@ admitting `POST` (journey 1's third criterion fails), the seat admitting
 an upgrade (the WebSocket test fails), and `takePass` not deleting the
 row (step 3's test fails). **⚑** none.
 
-**Status: NOT STARTED.**
+**Status: CLOSED.** 2026-09-14. Journey 1 steps 1, 3, 4, 5, and 6 hold in
+the home's terms with `fetch`: a bearer mints a pass, the pass buys one
+seat and then is `used`, three minutes old it is `expired`, the seat's
+cookie reads `/sessions` and a transcript and is the bare 401 for a
+write and for the WebSocket, sign out ends it, and `sheep hill` prints
+the link or refuses an older home. `pnpm test` exits 0 across all three
+inner rings and `pnpm -r typecheck` exits 0; three mutations falsified.
+
+**Findings:**
+
+- **2026-09-14 — A seat would have driven a sheep.** Orienting found `GET /s/<id>/ws` is a GET whose protocol prompts and aborts, before any brief; with the `Upgrade` check removed, a cookie-only upgrade got a 101. The docs were fixed first (`72e38ea`).
+- **2026-09-14 — A take is one `transactionSync`:** the read, the delete, and the seat with no await between, so two takes of one pass cannot both win. With the delete removed, the second take was a 204 and not `used`.
+- **2026-09-14 — A read wrote.** The first `seated()` wrote `last_seen` on every admitted request, a Directory write per poll per tab; it writes at most hourly now. The mint sweeps passes past two minutes and seats past thirty days from seating.
+- **2026-09-14 — A seat's `HEAD` passes the door and meets the router's 404:** routes match methods exactly, so the page reads with `GET`.
+- **2026-09-14 — The page must be served before the door,** beside `/hill/seat`, or a browser with no seat meets the 401 instead of the gate. Hill phase 1's work.
 
 ## Phase 1: The shell and the gate
 

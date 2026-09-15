@@ -4,6 +4,7 @@ import { deleteStation, deploy, JOIN_WITHDRAWN, MidTurn, midTurnJson, midTurnTex
 import { earmarks } from "./earmark.js";
 import { writeSessionFile } from "./export.js";
 import { runAbort, runEnd, runLog, runPrompt, runStatus, runWait, watchSetup } from "./herd.js";
+import { runHill } from "./hill.js";
 import { Home, type PromptResponse } from "./home.js";
 import { type BuildSide, cliBuild, describeBuild, describeImage, eyesSentence, isRefused, localStatus, readStamp, skewLine, startLocalHome, stopLocalHome, whoAnswers } from "./local.js";
 import { PASTURE_NAME, runPasture } from "./pasture.js";
@@ -268,6 +269,8 @@ async function dispatch(command: string, parsed: Parsed, config: SheepConfig, ou
       if (id === undefined) return fail("sh needs a session id");
       return await runPeek(home, id, parsed.prompt ?? "", parsed.stdin, { out: output.out, err: output.err });
     }
+    case "hill":
+      return await runHill(home, { out: output.out });
     case "export": {
       const id = parsed.rest[1];
       if (id === undefined) return fail("export needs a session id");

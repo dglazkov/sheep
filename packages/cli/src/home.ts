@@ -203,6 +203,12 @@ export interface PeekAnswer {
   exit: number;
 }
 
+/** `POST /hill/passes`'s answer (hill phase 0): the link with the pass in it, and when the pass expires (ms since the epoch). */
+export interface HillPass {
+  url: string;
+  expires: number;
+}
+
 /** A refusal's text with the floor's sentence after it, when the response is below the floor: still one line. */
 function withFloor(text: string, response: Response): string {
   const floor = floorSentence(response);
@@ -415,6 +421,23 @@ export class Home {
       throw new Error(withFloor(`POST ${path}: ${response.status} ${body}`, response));
     }
     return (await response.json()) as PeekAnswer;
+  }
+
+  /**
+   * A pass (hill phase 0): `POST /hill/passes` under the bearer, answered `{ url, expires }`, the url the link a browser
+   * climbs the hill with. Refused as `ask` refuses; a home that answers its router's bare `not found` has no hill, and says
+   * so in the floor's words, as the peek does.
+   */
+  async pass(): Promise<HillPass> {
+    const path = "/hill/passes";
+    const headers = new Headers();
+    if (this.token !== undefined) headers.set("authorization", `Bearer ${this.token}`);
+    const response = this.hear(await fetch(new URL(path, this.url), { method: "POST", headers }));
+    if (response.ok) return (await response.json()) as HillPass;
+    const body = await response.text();
+    if (response.status === 404 && body.trim() === "not found") throw new Sentence(lackedSentence(response), 404);
+    if (response.status >= 400 && response.status < 500 && body.length > 0 && response.status !== 401) throw new Sentence(withFloor(body, response), response.status);
+    throw new Error(withFloor(`POST ${path}: ${response.status} ${body}`, response));
   }
 
   async transcript(id: string): Promise<TranscriptView> {

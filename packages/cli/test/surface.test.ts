@@ -2,7 +2,8 @@
  * The fence (stile phase 1): what a shepherd's surface may name.
  *
  * A **shepherd** sees `sheep setup`, the herd's verbs, `sheep home`,
- * `sheep home deploy` as the upgrade, and `sheep home delete`. A
+ * `sheep home deploy` as the upgrade, `sheep home delete`, and (hill phase
+ * 0) `sheep hill`, the link to the home's page. A
  * **developer** of sheep also has the rig — the local home and its stop,
  * the scripted model, the container switch, `.dev.vars`, workerd, Docker,
  * and a fetched Chrome — and its words live in the README's developer half.
@@ -96,6 +97,10 @@ describe("the fence: the shepherd's surface names nothing of the rig", () => {
   it("lists no `sheep home join`: stile phase 2 withdrew it, and setup joins a second machine", () => {
     for (const [name, text] of Object.entries(surface())) expect(text.includes("home join"), `${name} names sheep home join`).toBe(false);
     expect(USAGE).not.toMatch(/\bjoin <address>/);
+  });
+
+  it("lists sheep hill in the usage, one line (hill phase 0): a verb of the shepherd's surface, not the rig's", () => {
+    expect(USAGE.split("\n").filter((line) => /^ {2}sheep hill\b/.test(line))).toHaveLength(1);
   });
 
   it("names sheep setup in every one of the four", () => {

@@ -99,7 +99,9 @@ sheep-seat=<seat>; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=`
 thirty days, and a 204. The page then replaces its address with `/hill/`
 so the pass leaves the history bar, and loads the flock. `DELETE
 /hill/seat` with the cookie deletes the row and clears the cookie: sign
-out. A seat not seen for thirty days is deleted at the next mint.
+out. A mint deletes the passes past their two minutes and the seats past
+their thirty days; `last_seen` is written at most once an hour, so a page
+that polls is a read and not a write (hill phase 0).
 
 **The door** is one change to `admitted()`: a request with no bearer and
 no `?token=` but a `sheep-seat` cookie whose sha256 is a row is admitted

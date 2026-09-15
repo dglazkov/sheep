@@ -2,7 +2,7 @@
  * `sheep --help`: the verb-by-verb reference, and one of the four
  * documents the fence reads (stile phase 1). A shepherd's surface: the
  * herd's verbs, `sheep setup`, `sheep home`, `sheep home deploy` as the
- * upgrade, and `sheep home delete`. The developer's rig — the local home,
+ * upgrade, `sheep home delete`, and `sheep hill`. The developer's rig — the local home,
  * its stop, the scripted model, the container switch — is the checkout's,
  * and its words are in the README's developer half and nowhere here;
  * `packages/cli/test/surface.test.ts` holds this file to that.
@@ -37,6 +37,7 @@ usage:
   sheep sh <id> [-- <line>]                 run one line in the sheep's shell as its bash tool would, outside any turn and
                                             its log, stdin sent when it is a pipe or a file; the line's stdout and stderr
                                             as given and its exit code. Exit 2 with a sentence while a turn is open
+  sheep hill                                a link to the home's page, for the shepherd's browser: one line, good once and for two minutes
   sheep config                              print the resolved home and this directory's kennel (never the token)
   sheep setup [--explain] [--no-install]    at a terminal: the sitting that readies this machine, seven steps that fill
                                             in — the command, where the settings go, the Cloudflare account token, the

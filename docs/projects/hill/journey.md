@@ -1,8 +1,8 @@
 ---
-status: planned
+status: partial
 since: 2026-09-14
 see: hill
-note: "planned 14 Sep 2026, the day drove closed, from the shepherd's ask for an observation point: a Web UI they can sign into easily and watch sheep in action, starting very small (sign in, see status) and going deep, Chrome DevTools style, over later projects. The shepherd's calls: the hill is a face of the station itself, at `/hill/`, never a second Worker; the way in is a one-time link `sheep hill` prints, exchanged for a cookie, so the home's token never reaches a browser; the hill only observes in this project. Four phases: the door, the shell of the page and its shipping, the flock, and one sheep live. Nothing built."
+note: "planned 14 Sep 2026, the day drove closed, from the shepherd's ask for an observation point: a Web UI they can sign into easily and watch sheep in action, starting very small (sign in, see status) and going deep, Chrome DevTools style, over later projects. The calls: the hill is a face of the station itself, at `/hill/`, never a second Worker; the way in is a one-time link `sheep hill` prints, exchanged for a cookie, so the home's token never reaches a browser; the hill only observes in this project. Four phases: the door, the shell of the page and its shipping, the flock, and one sheep live. Orienting for phase 0 found a seat would have reached the WebSocket, whose protocol writes, and the docs refused it first. Hill phase 0 closed the same day: a pass minted under the bearer buys one seat, used or expired after, the seat's HttpOnly cookie reads and is the bare 401 for any write and for an upgrade, sign out ends it, `sheep hill` prints the link or refuses an older home; proved in workerd and the command ring, three mutations falsified."
 ---
 
 # Hill — the journeys

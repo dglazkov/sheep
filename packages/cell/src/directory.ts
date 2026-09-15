@@ -30,6 +30,13 @@
  * and deleted by `remove` at the end. Their names are on every summary;
  * their values leave this object over RPC only, to the cell (`secrets`),
  * and no route returns one.
+ *
+ * Hill phase 0 adds the door's two tables: `passes`, the sha256 of each
+ * one-time way in a bearer minted and when, and `seats`, the sha256 of each
+ * browser's standing and when it was seated and last seen. A raw pass or
+ * seat is never stored and never compared: each is looked up by its hash.
+ * A pass is good for two minutes and one take; a seat for thirty days from
+ * its seating. The next mint deletes both once they can no longer be used.
  */
 import { uuidv7 } from "@earendil-works/pi-ai";
 import { DurableObject } from "cloudflare:workers";
@@ -131,6 +138,41 @@ export interface Budget {
 
 const LANE_STATES: readonly LaneState[] = ["idle", "running", "waiting"];
 
+/** How long a pass is good for (hill phase 0): two minutes from its mint. */
+export const PASS_MS = 2 * 60 * 1000;
+
+/** How long a seat stands (hill phase 0): thirty days from its seating, the cookie's `Max-Age`; and how long unseen before a mint deletes it. */
+export const SEAT_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** How stale a seat's `last_seen` may be before a request that stands writes it again (hill phase 0): an hour. */
+export const SEEN_MS = 60 * 60 * 1000;
+
+/** The cookie a seat is carried in. */
+export const SEAT_COOKIE = "sheep-seat";
+
+/** The gate's sentence for a pass whose row is gone: taken already, or never minted (hill phase 0). */
+export const PASS_USED = "that pass was already used; run sheep hill for another";
+
+/** The gate's sentence for a pass older than two minutes (hill phase 0). */
+export const PASS_EXPIRED = "that pass expired; run sheep hill for another";
+
+/** What a take answers: a seat, or why not. */
+export type TakenPass = { taken: "ok"; seat: string } | { taken: "used" } | { taken: "expired" };
+
+/** A pass or a seat: 32 random bytes as hex. */
+function randomHex(): string {
+  return hex(crypto.getRandomValues(new Uint8Array(32)));
+}
+
+/** The sha256 of a string, as hex: what the door keeps and looks up by, never the value. */
+export async function sha256Hex(value: string): Promise<string> {
+  return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))));
+}
+
+function hex(bytes: Uint8Array): string {
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 export class Directory extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -151,6 +193,68 @@ export class Directory extends DurableObject<Env> {
     ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS containers (session_id TEXT PRIMARY KEY, started_at INTEGER NOT NULL)");
     // A sheep's own secrets (earmark phase 0). A home deployed before it gains the table here, on its next boot.
     ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS session_secrets (session_id TEXT NOT NULL, name TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (session_id, name))");
+    // The hill's door (hill phase 0): the passes a bearer minted and the seats they bought, each by its sha256 alone. A home
+    // deployed before it gains both tables here, on its next boot.
+    ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS passes (hash TEXT PRIMARY KEY, minted_at INTEGER NOT NULL)");
+    ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS seats (hash TEXT PRIMARY KEY, seated_at INTEGER NOT NULL, last_seen INTEGER NOT NULL)");
+  }
+
+  /**
+   * A pass (hill phase 0): 32 random bytes as hex, answered once and kept as its sha256 with the time it was minted, so the
+   * link that carries it is worthless two minutes later. A mint also deletes every seat seated thirty days ago or more, and
+   * every pass older than two minutes, so neither table grows with what can no longer be used.
+   */
+  async mintPass(now: number = Date.now()): Promise<{ pass: string; expires: number }> {
+    const pass = randomHex();
+    const hash = await sha256Hex(pass);
+    const sql = this.ctx.storage.sql;
+    this.ctx.storage.transactionSync(() => {
+      // A seat stands thirty days from its seating, and `last_seen` is never before `seated_at`, so this sweeps the seats not
+      // seen in thirty days and the lapsed ones still being presented. And a pass past its two minutes is as good as none.
+      sql.exec("DELETE FROM seats WHERE seated_at < ?", now - SEAT_MS);
+      sql.exec("DELETE FROM passes WHERE minted_at < ?", now - PASS_MS);
+      sql.exec("INSERT INTO passes (hash, minted_at) VALUES (?, ?)", hash, now);
+    });
+    return { pass, expires: now + PASS_MS };
+  }
+
+  /**
+   * The take (hill phase 0): the pass's row is deleted whatever it says, so a pass is good for one take. A row that is not
+   * there, whether it was taken or never minted, is `used`; a row older than two minutes is `expired`; otherwise a seat, 32
+   * fresh random bytes as hex, whose sha256 is kept with the time it was seated.
+   */
+  async takePass(pass: string, now: number = Date.now()): Promise<TakenPass> {
+    const hash = await sha256Hex(pass);
+    const seat = randomHex();
+    const seatHash = await sha256Hex(seat);
+    const sql = this.ctx.storage.sql;
+    // No await from the read to the writes: two takes of one pass cannot both find its row.
+    return this.ctx.storage.transactionSync((): TakenPass => {
+      const row = sql.exec<{ minted_at: number }>("SELECT minted_at FROM passes WHERE hash = ?", hash).toArray()[0];
+      if (row === undefined) return { taken: "used" };
+      sql.exec("DELETE FROM passes WHERE hash = ?", hash);
+      if (now - row.minted_at > PASS_MS) return { taken: "expired" };
+      sql.exec("INSERT INTO seats (hash, seated_at, last_seen) VALUES (?, ?, ?)", seatHash, now, now);
+      return { taken: "ok", seat };
+    });
+  }
+
+  /**
+   * Whether a seat stands (hill phase 0): its sha256 is a row seated less than thirty days ago. A seat that stands is seen
+   * now, but `last_seen` is written only when it is more than an hour old: a page polling every two seconds is a read, and
+   * should not be a Directory write each time.
+   */
+  async seated(seat: string, now: number = Date.now()): Promise<boolean> {
+    const hash = await sha256Hex(seat);
+    const row = this.ctx.storage.sql.exec<{ seated_at: number; last_seen: number }>("SELECT seated_at, last_seen FROM seats WHERE hash = ?", hash).toArray()[0];
+    if (row === undefined || now - row.seated_at >= SEAT_MS) return false;
+    if (now - row.last_seen > SEEN_MS) this.ctx.storage.sql.exec("UPDATE seats SET last_seen = ? WHERE hash = ?", now, hash);
+    return true;
+  }
+
+  /** Sign out (hill phase 0): the seat's row goes. Nothing to delete is nothing. */
+  async leave(seat: string): Promise<void> {
+    this.ctx.storage.sql.exec("DELETE FROM seats WHERE hash = ?", await sha256Hex(seat));
   }
 
   /** A container started for a session. A start the Directory never saw stop is closed now, so a lost stop cannot count forever. */
