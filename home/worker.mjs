@@ -74019,7 +74019,6 @@ var LANE_STATES = ["idle", "running", "waiting"];
 var PASS_MS = 2 * 60 * 1e3;
 var SEAT_MS = 30 * 24 * 60 * 60 * 1e3;
 var SEEN_MS = 60 * 60 * 1e3;
-var SEAT_COOKIE = "sheep-seat";
 function randomHex() {
   return hex(crypto.getRandomValues(new Uint8Array(32)));
 }
@@ -74028,6 +74027,10 @@ async function sha256Hex(value3) {
   return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value3))));
 }
 __name(sha256Hex, "sha256Hex");
+async function seatCookieName(serverId) {
+  return `sheep-seat-${(await sha256Hex(serverId)).slice(0, 12)}`;
+}
+__name(seatCookieName, "seatCookieName");
 function hex(bytes) {
   return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
@@ -125971,7 +125974,7 @@ async function admitted(request, env) {
     if (token !== env.SHEEP_TOKEN) return unauthorized("bad or missing token");
     return void 0;
   }
-  const seat = seatOf(request);
+  const seat = seatOf(request, await seatName(env));
   if (seat === void 0) return unauthorized("bad or missing token");
   if (!isRead(request)) return unauthorized("bad or missing token");
   if (!await env.DIRECTORY.getByName("home").seated(seat)) return unauthorized("bad or missing token");
@@ -125983,20 +125986,26 @@ function isRead(request) {
 }
 __name(isRead, "isRead");
 var SEAT_SHAPE = /^[0-9a-f]{64}$/;
-function seatOf(request) {
+var homeSeatName;
+async function seatName(env) {
+  homeSeatName ??= await seatCookieName(await env.DIRECTORY.getByName("home").serverId());
+  return homeSeatName;
+}
+__name(seatName, "seatName");
+function seatOf(request, name) {
   const cookies = request.headers.get("cookie");
   if (cookies === null) return void 0;
   for (const part of cookies.split(";")) {
     const at = part.indexOf("=");
-    if (at === -1 || part.slice(0, at).trim() !== SEAT_COOKIE) continue;
+    if (at === -1 || part.slice(0, at).trim() !== name) continue;
     const value3 = part.slice(at + 1).trim();
     if (SEAT_SHAPE.test(value3)) return value3;
   }
   return void 0;
 }
 __name(seatOf, "seatOf");
-function seatCookie(value3, maxAge) {
-  return `${SEAT_COOKIE}=${value3}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAge}`;
+function seatCookie(name, value3, maxAge) {
+  return `${name}=${value3}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAge}`;
 }
 __name(seatCookie, "seatCookie");
 async function seatAnswer(request, env) {
@@ -126005,13 +126014,14 @@ async function seatAnswer(request, env) {
   const noStore = { "cache-control": "no-store" };
   if (taken.taken === "used") return new Response(PASS_USED, { status: 403, headers: noStore });
   if (taken.taken === "expired") return new Response(PASS_EXPIRED, { status: 403, headers: noStore });
-  return new Response(null, { status: 204, headers: { ...noStore, "set-cookie": seatCookie(taken.seat, SEAT_MS / 1e3) } });
+  return new Response(null, { status: 204, headers: { ...noStore, "set-cookie": seatCookie(await seatName(env), taken.seat, SEAT_MS / 1e3) } });
 }
 __name(seatAnswer, "seatAnswer");
 async function leaveAnswer(request, env) {
-  const seat = seatOf(request);
+  const name = await seatName(env);
+  const seat = seatOf(request, name);
   if (seat !== void 0) await env.DIRECTORY.getByName("home").leave(seat);
-  return new Response(null, { status: 204, headers: { "cache-control": "no-store", "set-cookie": seatCookie("", 0) } });
+  return new Response(null, { status: 204, headers: { "cache-control": "no-store", "set-cookie": seatCookie(name, "", 0) } });
 }
 __name(leaveAnswer, "leaveAnswer");
 var HILL_POLICY = "default-src 'self'; frame-ancestors 'none'";
@@ -126086,13 +126096,13 @@ __name(joinAnswer, "joinAnswer");
 var CHECKOUT_BUILD = { commit: "0.0.0-checkout", builtAt: null };
 function homeImage() {
   if (false) return null;
-  return true ? "docker.io/dglazkov2/sheep-pen@sha256:3159fb7a923f51d0ee9739f3bee556a03e8b720e803cc71dd00b29f9c99ec1ae" : null;
+  return true ? "docker.io/dglazkov2/sheep-pen@sha256:1a2ec23572799682fcea0ed40700cafd2bbb9add7106b4408da647287182ffbb" : null;
 }
 __name(homeImage, "homeImage");
 function homeBuild() {
   if (false) return CHECKOUT_BUILD;
   try {
-    const parsed = JSON.parse('{"commit":"cefefbd","builtAt":"2026-09-15T04:36:59Z"}');
+    const parsed = JSON.parse('{"commit":"44510a1","builtAt":"2026-09-15T05:22:42Z"}');
     if (typeof parsed.commit === "string" && parsed.commit !== "") return { commit: parsed.commit, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
   } catch {
   }
