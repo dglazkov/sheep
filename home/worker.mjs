@@ -73974,6 +73974,11 @@ var Pasture = class extends DurableObject {
 };
 var SETUP_EXCLUDED_SECRET = "GIT_TOKEN";
 
+// src/hill-words.ts
+var PASS_USED = "that pass was already used; run sheep hill for another";
+var PASS_EXPIRED = "that pass expired; run sheep hill for another";
+var NO_BUILD = "The hill has not been built here. Run pnpm build in this checkout, then reload.";
+
 // src/directory.ts
 function unknownSession(id2) {
   return `no session ${id2} at this home; \`sheep ls\` lists the ones there are`;
@@ -74015,8 +74020,6 @@ var PASS_MS = 2 * 60 * 1e3;
 var SEAT_MS = 30 * 24 * 60 * 60 * 1e3;
 var SEEN_MS = 60 * 60 * 1e3;
 var SEAT_COOKIE = "sheep-seat";
-var PASS_USED = "that pass was already used; run sheep hill for another";
-var PASS_EXPIRED = "that pass expired; run sheep hill for another";
 function randomHex() {
   return hex(crypto.getRandomValues(new Uint8Array(32)));
 }
@@ -126011,6 +126014,56 @@ async function leaveAnswer(request, env) {
   return new Response(null, { status: 204, headers: { "cache-control": "no-store", "set-cookie": seatCookie("", 0) } });
 }
 __name(leaveAnswer, "leaveAnswer");
+var HILL_POLICY = "default-src 'self'; frame-ancestors 'none'";
+var HILL_FILE_HEADERS = { "x-content-type-options": "nosniff" };
+var HILL_PAGE_HEADERS = { ...HILL_FILE_HEADERS, "cache-control": "no-store", "referrer-policy": "no-referrer", "content-security-policy": HILL_POLICY };
+function isHillPage(pathname) {
+  if (pathname === "/hill/seat" || pathname === "/hill/passes") return false;
+  return pathname === "/hill" || pathname.startsWith("/hill/");
+}
+__name(isHillPage, "isHillPage");
+function hillResponse(asset, method, headers) {
+  const merged = new Headers(asset.headers);
+  for (const [name, value3] of Object.entries(headers)) merged.set(name, value3);
+  return new Response(method === "HEAD" ? null : asset.body, { status: asset.status, statusText: asset.statusText, headers: merged });
+}
+__name(hillResponse, "hillResponse");
+function noBuild(method) {
+  const body = `<!doctype html>
+<meta charset="utf-8">
+<title>the hill</title>
+<p>${NO_BUILD.replace("pnpm build", "<code>pnpm build</code>")}</p>
+`;
+  return new Response(method === "HEAD" ? null : body, { status: 503, headers: { ...HILL_PAGE_HEADERS, "content-type": "text/html; charset=utf-8", "content-security-policy": "default-src 'none'; frame-ancestors 'none'" } });
+}
+__name(noBuild, "noBuild");
+async function hillAnswer(request, env) {
+  const url = new URL(request.url);
+  const method = request.method;
+  if (url.pathname === "/hill") return new Response(null, { status: 302, headers: { ...HILL_FILE_HEADERS, location: `/hill/${url.search}` } });
+  const assets = env.HILL;
+  if (assets === void 0) return noBuild(method);
+  const rest = url.pathname.slice("/hill".length);
+  if (rest !== "/") {
+    const conditional = request.headers.get("if-none-match");
+    const at = new URL(url.origin);
+    at.pathname = rest;
+    const file = await assets.fetch(new Request(at, { headers: conditional === null ? {} : { "if-none-match": conditional } }));
+    if (file.status === 200 || file.status === 304) return hillResponse(file, method, { ...HILL_FILE_HEADERS, "cache-control": "no-cache" });
+    await file.body?.cancel();
+  }
+  const page = await assets.fetch(new Request(new URL("/index.html", url.origin)));
+  if (page.status !== 200) {
+    await page.body?.cancel();
+    return noBuild(method);
+  }
+  return hillResponse(page, method, HILL_PAGE_HEADERS);
+}
+__name(hillAnswer, "hillAnswer");
+function wantsPage(request) {
+  return /\btext\/html\b/i.test(request.headers.get("accept") ?? "");
+}
+__name(wantsPage, "wantsPage");
 async function joinKey(token) {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token)));
   return `join:${[...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
@@ -126033,13 +126086,13 @@ __name(joinAnswer, "joinAnswer");
 var CHECKOUT_BUILD = { commit: "0.0.0-checkout", builtAt: null };
 function homeImage() {
   if (false) return null;
-  return true ? "docker.io/dglazkov2/sheep-pen@sha256:97887168bdeed45c1b358565dba4ed6d1254cbece95f9f5d1b1f6ab953cb24b2" : null;
+  return true ? "docker.io/dglazkov2/sheep-pen@sha256:c4b0150b88b33efa930bb8873af9827337661c12869d2d619403267a3b2fc77e" : null;
 }
 __name(homeImage, "homeImage");
 function homeBuild() {
   if (false) return CHECKOUT_BUILD;
   try {
-    const parsed = JSON.parse('{"commit":"857c9eb","builtAt":"2026-09-15T03:17:09Z"}');
+    const parsed = JSON.parse('{"commit":"6fb88c3","builtAt":"2026-09-15T03:50:26Z"}');
     if (typeof parsed.commit === "string" && parsed.commit !== "") return { commit: parsed.commit, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
   } catch {
   }
@@ -126122,7 +126175,7 @@ __name(pastureRoute, "pastureRoute");
 var router = {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (url.pathname === "/" && request.method === "GET") return new Response("sheep\n");
+    if (url.pathname === "/" && request.method === "GET") return wantsPage(request) ? new Response(null, { status: 302, headers: { location: "/hill/" } }) : new Response("sheep\n");
     const directory = env.DIRECTORY.getByName("home");
     const door = PEN_DOOR.exec(url.pathname);
     if (door && request.method === "GET") {
@@ -126135,6 +126188,7 @@ var router = {
     if (url.pathname === "/join" && request.method === "POST") return await joinAnswer(request, env) ?? new Response("not found", { status: 404 });
     if (url.pathname === "/hill/seat" && request.method === "GET") return seatAnswer(request, env);
     if (url.pathname === "/hill/seat" && request.method === "DELETE") return leaveAnswer(request, env);
+    if (isHillPage(url.pathname) && (request.method === "GET" || request.method === "HEAD")) return hillAnswer(request, env);
     const refused2 = await admitted(request, env);
     if (refused2) return refused2;
     if (url.pathname === "/hill/passes" && request.method === "POST") {
@@ -126218,6 +126272,7 @@ export {
   SessionCell,
   buildHeader,
   index_default as default,
+  hillAnswer,
   homeBuild,
   homeImage,
   homeReport,

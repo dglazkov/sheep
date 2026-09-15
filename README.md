@@ -87,6 +87,10 @@ recipe for a frontend app is a skill this repository ships,
 `sheep pasture put <name> skills/frontend/SKILL.md <that file>` puts it in
 a pasture and every sheep born there reads it.
 
+**The hill** is your station's page in a browser, for watching the flock.
+Ask your agent for `sheep hill`, or type it, and open the link it prints:
+it works once, for two minutes, and your browser keeps its seat thirty days.
+
 The **kennel** is `.sheep/` at or above the working directory, found the
 way git finds `.git`, and `~/.sheep` when there is none. Setting up for
 everywhere puts the config there, so every directory finds the one home;
