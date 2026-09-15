@@ -26,10 +26,12 @@ resource, spend money, or need a login, and are asked out loud first.
   WebSocket to a cell included, is the 401 a bad bearer gets.
   A phase that needs a write from the hill has found the next project,
   not a shortcut.
-- **The frames come first.** Nothing is built to the screen until the
-  shepherd has said yes to the mockups in [screen/](screen/), and a
-  phase with a screen is not closed until the conductor has looked at
-  the built page as a newcomer would and judged it against them.
+- **The frames come first, and the yes closes.** The page is built to
+  the mockups in [screen/](screen/). A phase with a screen may be built
+  and walked before the shepherd has said yes to them, and is not CLOSED
+  until they have, and until the conductor has looked at the built page
+  as a newcomer would and judged it against them. A no re-cuts the look,
+  never the door or the plumbing under it.
 
 ---
 
@@ -37,7 +39,8 @@ resource, spend money, or need a login, and are asked out loud first.
 stands: `sheep hill` prints a link with a pass, the pass buys a seat, and
 a seat reads and does nothing else, the WebSocket to a cell included. No
 page yet. The next thing to do is `hill phase 1`, the shell and the gate.
-The mockups in [screen/](screen/) wait on the shepherd's yes; `hill
+The mockups in [screen/](screen/) wait on the shepherd's yes, which
+closes each phase with a screen and does not hold its build; `hill
 phase 3`'s walk and its account-ring step are ⚑.
 
 The order is dependency order. Hill phase 0 is the door and the verb:
@@ -170,13 +173,18 @@ the shell and an empty column that says the flock is the next phase.
 
 **Proof:** `pnpm test` exits 0 across all three inner rings; `pnpm -r
 typecheck` exits 0; `pnpm bundle` exits 0 and `home/hill/index.html`
-exists. `pnpm hermetic --ring package` green. Then the walk, journey 1
+exists. On the phase's commit, before it is pushed, `pnpm release
+--no-push --force` exits 0: the release built from that commit, with
+`home/hill/` in its tree, and the package ring walked against the
+candidate, `/hill/` read from the local home the ring makes. (The ring
+installs a built release, never the checkout, so the commit comes
+first; `--force` skips only the pushed-HEAD guard.) Then the walk, journey 1
 steps 1 to 3 and 5 in Chrome against the local home from a scratch
 kennel, never the checkout, frames captured and read by the conductor
 against the mockups. Falsified by one mutation: the address not
 replaced after the seat (the pass stays in the bar; the rewrite test
-fails). **⚑** none. **A hand:** the shepherd's yes on the mockups
-before the build.
+fails). **⚑** none. **A hand:** the shepherd's yes on the mockups,
+which closes the phase and does not hold the build.
 
 **Status: NOT STARTED.**
 
