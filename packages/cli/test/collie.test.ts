@@ -1,7 +1,8 @@
 /**
  * Collie phase 1, the command half: the built `collie` spawned against a
- * fake collie Worker (journey 1 step 4, journey 3 steps 1 and 2, journey 5
- * steps 3 to 5, journey 6 step 1's command ring).
+ * fake collie Worker (journey 1 step 4, journey 3 steps 1 and 2, journey 4
+ * step 1 from collie phase 3, journey 5 steps 3 to 5, journey 6 step 1's
+ * command ring).
  *
  * The fake is an `http` server speaking the phase's wire contract and no
  * more: `x-collie-build` on every answer, the bearer on every route but
@@ -238,11 +239,8 @@ describe("collie without a collie (journey 5 step 4)", () => {
     expect(w.state.requests).toEqual([]);
   });
 
-  it("refuses what this build does not do yet, before the config is read, and names the verb that does", { timeout: 60_000 }, async () => {
+  it("refuses a verb that is none and the rig beside no local home, asking nothing of the collie", { timeout: 60_000 }, async () => {
     const w = await world();
-    const agent = await w.collie(["pass", "--agent", "Percy"], { stdin: `${PASS}\n` });
-    expect(agent).toMatchObject({ code: 1, stdout: "" });
-    expect(agent.stderr).toMatch(/^collie: collie pass --agent is not in this build yet;/);
     // `setup`, `deploy`, and `rm` are collie phase 2's, walked in `collie-setup.test.ts`; a verb that is none is still a mistake.
     const unknown = await w.collie(["herd"]);
     expect(unknown.code).toBe(2);
@@ -303,7 +301,7 @@ describe("the pass (journey 1 step 4, journey 5 step 3)", () => {
  * A fake isocan package, installed the way both real shapes are: a manifest named `isocan` at the root whose `.` export is
  * the module, and a bin below it (`packages/cli/bin/isocan.js`, under a manifest of another name, as a linked checkout has
  * it) reached through a symlink on PATH. The module is isocan's API as the mint uses it — `connect()` with `ctx.actor`,
- * `ctx.client.base`, `ctx.client.mintPass`, and `ctx.homeOf`; `resolveCanvas` and `resolveCanvasRef` — scripted by
+ * `ctx.client.base`, `ctx.client.mintPass`, `ctx.client.snapshot`, and `ctx.homeOf`; `resolveCanvas` and `resolveCanvasRef` — scripted by
  * `FAKE_ISOCAN` in the environment, and every call but the token written to `calls.jsonl` beside it.
  */
 interface FakeIsocanScript {
@@ -315,6 +313,10 @@ interface FakeIsocanScript {
   bound: { id: string; title: string } | null;
   canvases: { id: string; title: string }[];
   token: string;
+  /** Every canvas's roster, as `client.snapshot` answers it. */
+  agents: { id: string; name: string }[];
+  /** The actors this identity's badge holds: a mint for any other is refused `not-your-actor`, as the desk refuses it. */
+  held: string[];
 }
 
 async function fakeIsocan(w: World, options: { old?: boolean } = {}): Promise<{ bin: string; calls: () => Json[]; env: (script: Partial<FakeIsocanScript>) => Record<string, string> }> {
@@ -332,7 +334,16 @@ const call = (entry) => appendFileSync(${JSON.stringify(calls)}, JSON.stringify(
 export async function connect() {
   call({ call: "connect" });
   if (s.identity === null) throw new Error('no identity configured — run \`isocan identity --name "Your Name" --session\` first');
-  return { ctx: { actor: s.identity, client: { base: s.base, async mintPass(canvasId, actorId) { call({ call: "mintPass", canvasId, actorId }); return { pass: { id: "pass_1" }, token: s.token }; } }, async homeOf(canvasId) { call({ call: "homeOf", canvasId }); return s.homeOf; } } };
+  return { ctx: { actor: s.identity, client: { base: s.base,
+    async mintPass(canvasId, actorId) {
+      call({ call: "mintPass", canvasId, actorId });
+      if (!s.held.includes(actorId)) throw new Error(${JSON.stringify(NOT_YOUR_ACTOR)}.replace("<actor>", actorId));
+      return { pass: { id: "pass_1" }, token: s.token };
+    },
+    async snapshot(canvasId) {
+      call({ call: "snapshot", canvasId });
+      return { canvas: { agents: Object.fromEntries(s.agents.map((actor) => [actor.id, { actor, writtenBy: s.identity }])) } };
+    } }, async homeOf(canvasId) { call({ call: "homeOf", canvasId }); return s.homeOf; } } };
 }
 export async function resolveCanvas() {
   call({ call: "resolveCanvas" });
@@ -358,7 +369,7 @@ export function isLoopbackBase(base) {
   const bin = join(w.dir, "bin");
   await mkdir(bin);
   await symlink(join(root, "packages", "cli", "bin", "isocan.js"), join(bin, "isocan"));
-  const base: FakeIsocanScript = { identity: DIMITRI, base: "http://127.0.0.1:4441", homeOf: "https://isocan.io", bound: { id: ROOM.canvasId, title: ROOM.title }, canvases: [{ id: ROOM.canvasId, title: ROOM.title }, { id: ROOM2.canvasId, title: ROOM2.title }], token: PASS_TOKEN };
+  const base: FakeIsocanScript = { identity: DIMITRI, base: "http://127.0.0.1:4441", homeOf: "https://isocan.io", bound: { id: ROOM.canvasId, title: ROOM.title }, canvases: [{ id: ROOM.canvasId, title: ROOM.title }, { id: ROOM2.canvasId, title: ROOM2.title }], token: PASS_TOKEN, agents: [PERCY_ACTOR, SHAUN_ACTOR], held: [DIMITRI.id, PERCY_ACTOR.id] };
   return {
     bin,
     calls: () => (existsSync(calls) ? readFileSync(calls, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as Json) : []),
@@ -367,6 +378,12 @@ export function isLoopbackBase(base) {
 }
 
 const DIMITRI = { id: "usr_dimitri", name: "Dimitri" };
+/** Percy, whom this identity's badge holds (the laptop's rc answers for it), and Shaun, whom another badge holds. */
+const PERCY_ACTOR = { id: "act_percy", name: "Percy" };
+const SHAUN_ACTOR = { id: "act_shaun", name: "Shaun" };
+/** The desk's `not-your-actor` sentence (isocan core's `notYourActor`), `<actor>` standing for the id. */
+const NOT_YOUR_ACTOR =
+  "this badge does not speak for <actor> — claim that actor first (`isocan identity --session`, or the web app's identity dialog); `--as <actor id>` is how a holder that lost its badge comes back, and since phase 9 it needs a vouch when another surface still speaks as them — a pass from that surface, or the address they signed in with";
 const MINTED = `${ROOM.address}#${PASS_TOKEN}`;
 const MINTED2 = `${ROOM2.address}#${PASS_TOKEN}`;
 
@@ -453,6 +470,62 @@ describe("the mint through the isocan on PATH (journey 1 step 4, journey 5 step 
     expect(onLog.code).toBe(2);
     expect(onLog.stderr).toMatch(/^collie: --canvas goes with collie new and collie pass, not collie log\n/);
     expect(isocan.calls()).toEqual([]);
+    expect(w.state.requests).toEqual([]);
+  });
+});
+
+describe("an agent moves in (journey 4 step 1)", () => {
+  it("collie pass --agent Percy mints a pass for Percy's actor on the directory's canvas, hands it over, and says the collie answers for Percy; the pass in no argument and no file", { timeout: 60_000 }, async () => {
+    const w = await world({ passes: { [MINTED]: { status: 200, body: { kind: "agent", agent: "Percy", room: ROOM } } }, passHoldMs: 1_500 });
+    const isocan = await fakeIsocan(w);
+    const running = w.collie(["pass", "--agent", "percy"], { env: isocan.env({}) });
+    expect(await until(() => w.state.requests.length === 1, 20_000)).toBe(true);
+    const processes = spawnSync("ps", ["-axww", "-o", "pid=,args="], { encoding: "utf8" }).stdout.split("\n");
+    const ours = processes.filter((line) => line.includes(w.bin));
+    expect(ours.length, processes.join("\n")).toBeGreaterThan(0);
+    for (const line of ours) expect(line).toMatch(/ pass --agent percy$/);
+    for (const line of processes) expect(line.includes(PASS_TOKEN), `a process carries the pass in its arguments: ${line}`).toBe(false);
+    expect(await running).toEqual({ code: 0, stdout: 'collie: now answers for Percy on "Landing page"\n', stderr: "" });
+    expect(isocan.calls()).toEqual([
+      { call: "connect" },
+      { call: "resolveCanvas" },
+      { call: "homeOf", canvasId: ROOM.canvasId },
+      { call: "snapshot", canvasId: ROOM.canvasId },
+      { call: "mintPass", canvasId: ROOM.canvasId, actorId: PERCY_ACTOR.id },
+      { call: "canvasUrlWithPass", canvasId: ROOM.canvasId },
+    ]);
+    expect(w.state.requests).toEqual([{ method: "POST", path: "/passes", auth: `Bearer ${TOKEN}`, body: JSON.stringify({ address: MINTED }) }]);
+    for (const { path, text } of filesUnder(w.dir)) expect(text.includes(PASS_TOKEN), `${path} holds the pass`).toBe(false);
+
+    // --canvas names another canvas's roster, as for any pass.
+    w.state.passes[MINTED2] = { status: 200, body: { kind: "agent", agent: "Percy", room: ROOM2 } };
+    expect(await w.collie(["pass", "--agent", "Percy", "--canvas", "Pri"], { env: isocan.env({}) })).toEqual({ code: 0, stdout: 'collie: now answers for Percy on "Pricing"\n', stderr: "" });
+    expect(isocan.calls().slice(6).map((call) => (call.call === "mintPass" ? call : call.call))).toEqual(["connect", "resolveCanvasRef", "homeOf", "snapshot", { call: "mintPass", canvasId: ROOM2.canvasId, actorId: PERCY_ACTOR.id }, "canvasUrlWithPass"]);
+  });
+
+  it("refuses before any pass reaches the collie: an agent not on the canvas, one this identity does not hold in the desk's own sentence, and --agent anywhere but a minted pass", { timeout: 60_000 }, async () => {
+    const w = await world({ passes: { [MINTED]: { status: 200, body: { kind: "agent", agent: "Percy", room: ROOM } } } });
+    const isocan = await fakeIsocan(w);
+    expect(await w.collie(["pass", "--agent", "Blitzen"], { env: isocan.env({}) })).toEqual({ code: 1, stdout: "", stderr: 'collie: no standing agent "Blitzen" on "Landing page" — standing here: Percy, Shaun\n' });
+    expect(await w.collie(["pass", "--agent", "Blitzen"], { env: isocan.env({ agents: [] }) })).toEqual({ code: 1, stdout: "", stderr: 'collie: no standing agent "Blitzen" on "Landing page" — nobody is enrolled here\n' });
+    expect(isocan.calls().filter((call) => call.call === "mintPass")).toEqual([]);
+    const shaun = await w.collie(["pass", "--agent", "Shaun"], { env: isocan.env({}) });
+    expect(shaun).toEqual({ code: 1, stdout: "", stderr: `collie: ${NOT_YOUR_ACTOR.replace("<actor>", SHAUN_ACTOR.id)}\n` });
+    expect(isocan.calls().filter((call) => call.call === "mintPass")).toEqual([{ call: "mintPass", canvasId: ROOM.canvasId, actorId: SHAUN_ACTOR.id }]);
+    expect(w.state.requests).toEqual([]);
+
+    for (const [args, line] of [
+      [["new", "--agent", "Percy"], "collie: --agent goes with collie pass, not collie new"],
+      [["--agent", "Percy"], "collie: --agent goes with collie pass, not collie"],
+      [["pass", "--pass", "--agent", "Percy"], "collie: --agent names the agent collie mints a pass for; a pass taken with --pass already carries its claim"],
+      [["pass", "--agent="], "collie: --agent needs an agent's name on the canvas"],
+    ] as const) {
+      const run = await w.collie([...args], { stdin: `${PASS}\n`, env: isocan.env({}) });
+      expect(run.code, args.join(" ")).toBe(2);
+      expect(run.stdout).toBe("");
+      expect(run.stderr.split("\n")[0]).toBe(line);
+    }
+    expect(isocan.calls().filter((call) => call.call === "mintPass")).toHaveLength(1);
     expect(w.state.requests).toEqual([]);
   });
 });

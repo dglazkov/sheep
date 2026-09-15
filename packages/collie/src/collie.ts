@@ -513,9 +513,10 @@ export class Collie extends DurableObject<Env> {
       return { ok: false, status: 502, error: `the pass was spent, and ${parsed.origin} did not answer for the canvas (${error instanceof Error ? error.message : String(error)}); a new pass hands it over again` };
     }
     const existing = this.roomRecords().find((room) => room.canvasId === canvasId);
-    if (snapshot.canvas.agents?.[owner.id] !== undefined) {
+    const enrolled = snapshot.canvas.agents?.[owner.id];
+    if (enrolled !== undefined) {
       if (existing === undefined) return { ok: false, status: 409, error: `that pass hands over ${owner.name}, an agent on "${snapshot.project.title}", which the collie does not stand by on; a pass minted as yourself for the canvas comes first` };
-      return { ok: true, value: { kind: "agent", agent: owner.name, room: this.roomView(existing) } };
+      return { ok: true, value: await this.movedIn(existing, enrolled.actor) };
     }
     if (existing !== undefined) return { ok: true, value: { kind: "room", room: this.roomView(existing), owner: existing.owner.name, already: true } };
     const record: RoomRecord = { canvasId, title: snapshot.project.title, origin: parsed.origin, owner: { id: owner.id, name: owner.name } };
@@ -526,6 +527,40 @@ export class Collie extends DurableObject<Env> {
       await this.armAlarm();
     }
     return { ok: true, value: { kind: "room", room: this.roomView(record), owner: record.owner.name, already: false } };
+  }
+
+  /**
+   * An agent handed over (collie phase 3, journey 4): the pass endowed this badge with the agent's claim on a canvas the
+   * collie stands by on. Its row is written as handed over, unless the collie already keeps one (an agent born here, or
+   * handed over before, whose row names its sheep), and `now answers for <name>` is said through the room's narration.
+   *
+   * The running room cannot take the agent up by itself: the module remembers an agent whose cursor was refused
+   * `not-your-actor` for the room's life ("a pass that hands it over is picked up at the next start"). So the room is
+   * started again, which is the host's to do: its hold released and its loop stopped, then a new one, whose start parks
+   * the agent under the badge that now holds it and claims it under the collie's own key. At its first summons the
+   * module's herd rule finds the sheep already in the agent's pasture, since the row names none.
+   */
+  private async movedIn(record: RoomRecord, agent: Actor): Promise<PassAnswer> {
+    const kept = this.sql.exec(`SELECT 1 FROM agents WHERE canvas_id = ? AND actor_id = ?`, record.canvasId, agent.id).toArray().length > 0;
+    if (!kept) this.writeRow({ canvasId: record.canvasId, actorId: agent.id, name: agent.name, harness: SHEEP_HARNESS, cwd: COLLIE_CWD, sessionId: null }, "handed over");
+    this.narrate(record.canvasId, `now answers for ${agent.name}`);
+    if (this.isOn) {
+      await this.restartLoop(record);
+      await this.armAlarm();
+    }
+    return { kind: "agent", agent: agent.name, room: this.roomView(record) };
+  }
+
+  /** One room's loop stopped (its hold released, its long polls ended) and started again. */
+  private async restartLoop(record: RoomRecord): Promise<void> {
+    const running = this.loops.get(record.canvasId);
+    if (running !== undefined) {
+      this.loops.delete(record.canvasId);
+      await running.room.stop();
+      // The old room's start is let finish before the new one parks, so its last park cannot land after the new room's.
+      await Promise.race([running.room.done.catch(() => {}), new Promise((resolve) => setTimeout(resolve, 5_000))]);
+    }
+    this.startLoop(record);
   }
 
   async report(): Promise<{ on: boolean; since: string | null; limits: { turnsPerHour: number; chain: number }; rooms: (RoomView & { owner: string; agents: AgentView[] })[] }> {

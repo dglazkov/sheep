@@ -7,8 +7,8 @@
  * `new`, and `pass`, each against the collie the kennel's config
  * names in its `collie` block; `--version`, `--help`, and `--agent-help`,
  * which need no collie. `new` and `pass` mint through the isocan on PATH
- * (`./isocan.ts`, collie phase 2), or take one with `--pass`; `pass --agent`
- * is refused as not in this build. `setup`, `deploy [--now]`, and `rm` are
+ * (`./isocan.ts`, collie phase 2), or take one with `--pass`; `pass --agent
+ * <name>` mints one carrying that agent's claim (collie phase 3). `setup`, `deploy [--now]`, and `rm` are
  * the shepherd's (collie phase 2), through `./setup.ts`, `./deploy.ts`, and
  * `./rm.ts`. `local` is the rig's, through `./local.ts`.
  *
@@ -166,8 +166,10 @@ async function run(command: string | undefined, parsed: Parsed, hear: (collie: C
   if (parsed.canvas !== undefined && command !== "new" && command !== "pass") return misuse(`--canvas goes with collie new and collie pass, not ${command === undefined ? "collie" : `collie ${command}`}`);
   if (parsed.canvas !== undefined && parsed.pass) return misuse("--canvas names the canvas collie mints a pass for; a pass taken with --pass already names its canvas");
   if (parsed.canvas === "") return misuse("--canvas needs a canvas's id or the start of its title");
-  // Not in this build, and nothing asked of anyone: a pass for an agent (collie phase 3).
-  if (command === "pass" && parsed.agent !== undefined) return refuse("collie pass --agent is not in this build yet; a pass minted for the agent, handed over with `collie pass`, makes it the collie's");
+  // `--agent` names whose claim a minted pass carries (collie phase 3): `pass` alone, and not a pass already minted.
+  if (parsed.agent !== undefined && command !== "pass") return misuse(`--agent goes with collie pass, not ${command === undefined ? "collie" : `collie ${command}`}`);
+  if (parsed.agent !== undefined && parsed.pass) return misuse("--agent names the agent collie mints a pass for; a pass taken with --pass already carries its claim");
+  if (parsed.agent === "") return misuse("--agent needs an agent's name on the canvas");
 
   const config = await loadConfig();
   if (config.collie === undefined) return refuse(`no collie is set up in this kennel (${sheepDir()}); \`collie setup\` deploys one beside the station`);
@@ -205,7 +207,7 @@ async function run(command: string | undefined, parsed: Parsed, hear: (collie: C
         } else {
           const rig = (readConfigFile()?.collie as { local?: unknown } | undefined)?.local === true;
           try {
-            address = (await mintCollie({ canvas: parsed.canvas, reachesLoopback: rig })).address;
+            address = (await mintCollie({ canvas: parsed.canvas, agent: parsed.agent, reachesLoopback: rig })).address;
           } catch (error) {
             if (error instanceof LoopbackCanvas) return refuse(loopbackWords(error.title, error.origin, collie.url.origin));
             throw error;

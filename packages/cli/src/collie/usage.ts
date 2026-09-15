@@ -38,6 +38,10 @@ usage:
                                             terminal; never an argument, never kept in a file
   collie pass [--canvas <ref>] [--pass]     hand it another pass the same way: a second canvas becomes a room, a pass
                                             minted for an agent makes that agent the collie's
+  collie pass --agent <name> [--canvas <ref>]
+                                            move an agent in: a pass minted for that agent on the canvas, allowed when
+                                            your identity holds its claim, so the collie answers for it from then on and
+                                            its sheep in isocan-<name> is resumed, not born again
   collie --agent-help                       the guide for an agent: what a collie is, and what is whose
   collie --version
 

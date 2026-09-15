@@ -1,6 +1,6 @@
 /**
  * The collie's object in workerd (collie phase 1): journeys 1 (steps 5 to
- * 7), 2 (steps 2 to 4, in miniature; step 3 from collie phase 2), 3, and 5 (steps 3 and 5) against the
+ * 7), 2 (steps 2 to 4, in miniature; step 3 from collie phase 2), 3, 4 (collie phase 3), and 5 (steps 3 and 5) against the
  * fakes in `fakes.ts`, which stand in for an isocan home and the station and
  * are put in place of the global `fetch` the object calls.
  *
@@ -348,6 +348,91 @@ describe("the night (journey 2, in miniature)", () => {
     await until(() => station.prompts.length === 1, "the summons after the home came back");
     expect(entry).toMatch(/^thr_/);
     expect(station.prompts[0]!.text).toBe(summonsPrompt(CANVAS.title, "Percy", { reason: "summons", entries: [isocan.served(mention)] as never }));
+  });
+});
+
+describe("an agent moves in (journey 4)", () => {
+  /** Percy enrolled and answered from the laptop, its sheep in isocan-percy at the station, and the collie standing by beside it. */
+  async function percyOnTheLaptop(stub: DurableObjectStub<Collie>): Promise<{ percy: Actor; sheep: string }> {
+    const percy = isocan.enrolElsewhere("Percy");
+    const sheep = station.seedSheep("Percy", "isocan-percy");
+    await standingBy(stub);
+    return { percy, sheep };
+  }
+
+  it("a pass for Percy writes the row as handed over, says so, and the room takes Percy up without a restart of the object: the next summons resumes the sheep already in isocan-percy", async () => {
+    const stub = collie();
+    const { percy, sheep } = await percyOnTheLaptop(stub);
+    // Before the pass: another badge holds Percy, so the room says so once and holds only what is its own.
+    await said(stub, "Percy is not held by this machine — a pass from whoever holds Percy hands it over");
+    expect((await stub.report()).rooms[0]!.agents).toEqual([]);
+    const badge = [...isocan.badges.values()].find((one) => one.holds.has(DIMITRI.id))!;
+    expect(badge.holds.has(percy.id)).toBe(false);
+
+    const handed = isocan.issuePass({ actorId: percy.id });
+    const answer = await stub.passes(handed.address);
+    expect(answer).toEqual({ ok: true, value: { kind: "agent", agent: "Percy", room: { canvasId: CANVAS.id, title: CANVAS.title, origin: isocan.origin, address: `${isocan.origin}/p/${CANVAS.id}` } } });
+    await said(stub, "now answers for Percy");
+    // The room started again parks Percy's cursor under the collie's badge, and its hold names Percy.
+    await until(() => isocan.parks.get(percy.id)!.parkId.startsWith("park_") && !isocan.parks.get(percy.id)!.parkId.startsWith("park_laptop_"), "Percy's cursor adopted by the collie");
+    await until(() => [...isocan.badges.values()].some((one) => one.holds.has(percy.id) && !one.killed), "Percy held by the collie's badge");
+    const report = await stub.report();
+    expect(report.rooms).toHaveLength(1);
+    expect(report.rooms[0]!.agents).toEqual([{ name: "Percy", actorId: percy.id, sheep: null, lane: null, pasture: null, came: "handed over", turnsLastHour: 0 }]);
+    const stored = await runInDurableObject(stub, (_instance, state) => state.storage.sql.exec<{ row: string; came: string }>(`SELECT row, came FROM agents`).toArray());
+    expect(stored.map((row) => ({ row: JSON.parse(row.row), came: row.came }))).toEqual([{ row: { canvasId: CANVAS.id, actorId: percy.id, name: "Percy", harness: "sheep", cwd: "collie:object", sessionId: null }, came: "handed over" }]);
+
+    const mintsBefore = isocan.calls.filter((call) => call === `POST /api/projects/${CANVAS.id}/passes`).length;
+    isocan.mention(DIMITRI, percy, "@Percy the footer, too");
+    const mention = isocan.log.at(-1)!;
+    await said(stub, "Percy · turn ended — end_turn");
+    const narration = await lines(stub);
+    expect(narration).toContain(`Percy · sheep ${sheep} is already in pasture isocan-percy — resuming it rather than birthing a second`);
+    expect(narration.some((line) => line.startsWith(`Percy · session resumed at ${station.origin}`)), narration.join("\n")).toBe(true);
+    for (const birth of ["birthing a sheep", "minting a pass for Percy", "making pasture"]) expect(narration.some((line) => line.includes(birth)), birth).toBe(false);
+    // No second sheep and no second pass: the station saw no mint, the isocan home no pass minted for the sheep.
+    expect(station.requests.filter((request) => request === "POST /sessions")).toEqual([]);
+    expect(station.rows.size).toBe(1);
+    expect(station.prompts).toEqual([{ id: sheep, text: summonsPrompt(CANVAS.title, "Percy", { reason: "summons", entries: [isocan.served(mention)] as never }) }]);
+    expect(isocan.calls.filter((call) => call === `POST /api/projects/${CANVAS.id}/passes`).length).toBe(mintsBefore);
+    await until(() => isocan.parks.get(percy.id)!.cursor >= mention.seq, "Percy's cursor past the mention");
+    expect((await stub.report()).rooms[0]!.agents).toEqual([{ name: "Percy", actorId: percy.id, sheep, lane: "idle", pasture: "isocan-percy", came: "handed over", turnsLastHour: 1 }]);
+  });
+
+  it("a pass for an agent on a canvas the collie does not stand by on is still refused, and nothing is written", async () => {
+    const stub = collie();
+    const percy = isocan.enrolElsewhere("Percy");
+    const answer = await stub.passes(isocan.issuePass({ actorId: percy.id }).address);
+    expect(answer).toEqual({ ok: false, status: 409, error: `that pass hands over Percy, an agent on "${CANVAS.title}", which the collie does not stand by on; a pass minted as yourself for the canvas comes first` });
+    const storage = JSON.parse(await wholeStorage(stub)) as Record<string, unknown[]>;
+    expect({ rooms: storage.rooms, agents: storage.agents }).toEqual({ rooms: [], agents: [] });
+    expect(await lines(stub)).toEqual([]);
+  });
+
+  it("step 4: a second canvas's pass makes a second room with the same badge, the report lists both, and an agent's guard is one key across rooms", async () => {
+    const stub = collie();
+    const { percy } = await percyOnTheLaptop(stub);
+    await stub.passes(isocan.issuePass({ actorId: percy.id }).address);
+    await said(stub, "now answers for Percy");
+    const PRICING = { id: "cnv_pricing", title: "Pricing" };
+    isocan.addCanvas(PRICING);
+    const second = await stub.passes(isocan.issuePass({ canvasId: PRICING.id }).address);
+    expect(second).toEqual({ ok: true, value: { kind: "room", room: { canvasId: PRICING.id, title: PRICING.title, origin: isocan.origin, address: `${isocan.origin}/p/${PRICING.id}` }, owner: "Dimitri", already: false } });
+    await said(stub, `answering on "Pricing" — ${isocan.origin}/p/${PRICING.id}`);
+    const report = await stub.report();
+    expect(report.rooms.map((room) => room.title)).toEqual([CANVAS.title, PRICING.title]);
+    const storage = JSON.parse(await wholeStorage(stub)) as Record<string, { origin?: string; key?: string; value?: string }[]>;
+    expect(storage.badges!.map((badge) => badge.origin)).toEqual([isocan.origin]);
+    // Both redeems and every room's calls came from the one badge the door handed over.
+    expect(isocan.calls.filter((call) => call === "POST /api/door")).toHaveLength(1);
+
+    // A turn on the first room writes the guard under the agent alone, the key every room of this collie hands to `gateTurn`.
+    isocan.mention(DIMITRI, percy, "@Percy count me");
+    await said(stub, "Percy · turn ended — end_turn");
+    const after = JSON.parse(await wholeStorage(stub)) as Record<string, { key: string; value: string }[]>;
+    const guards = after.state!.filter((row) => row.key.startsWith("rc:guard:"));
+    expect(guards.map((row) => row.key)).toEqual([`rc:guard:${percy.id}`]);
+    expect((JSON.parse(guards[0]!.value) as { turnTimes: number[] }).turnTimes).toHaveLength(1);
   });
 });
 

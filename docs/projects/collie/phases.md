@@ -26,18 +26,18 @@ lives in `packages/cli`'s modules and is changed for both.
 
 ---
 
-**Where we are: collie phases 0 and 1 CLOSED, collie phase 2 PART-DONE,
-14 September 2026, its walks held; collie phase 3 is next.** The brain is isocan's `isocan/rc` (project `room`,
-#294), carrying `DaemonRoutes` and the address helpers since isocan
-14f39ba5 and 8729b9e3; the pin is release 18ca496a. `collie setup`,
-`new`, `pass`, `deploy`, `rm`, and `local` are built, and the home ring
-walks journey 1 on the rig against a real isocan daemon; the package ring
-held, and the account's collie-only walk held on release be3d642 with a
-real model answering on dev.isocan.io. Collie phase 2 stays PART-DONE on
-two isocan issues (#308, off within a second on a hosted home; #306, `who`
-on a replica), the shepherd's call. Next is collie phase 3, moving in.
-Phase 1's Opens on the resume rule and the withdrawn sheep's badge are
-isocan's work still.
+**Where we are: collie phases 0, 1, and 3 CLOSED, collie phase 2
+PART-DONE, 14 September 2026; the collie is built.** The brain is
+isocan's `isocan/rc` (project `room`, #294), carrying `DaemonRoutes` and
+the address helpers since isocan 14f39ba5 and 8729b9e3; the pin is
+release 18ca496a. `collie setup`, `new`, `pass [--agent]`, `deploy`,
+`rm`, and `local` are built; the home ring walks journeys 1 to 5 on the
+rig, journey 4 beside a real laptop `isocan rc`; the account's
+collie-only walk held on release be3d642 with a real model answering on
+dev.isocan.io. What is left is isocan's, and the shepherd's call: collie
+phase 2 stays PART-DONE on isocan#308 (off within a second on a hosted
+home) and isocan#306 (`who` on a replica), and phase 1's Opens on the
+resume rule and the withdrawn sheep's badge are isocan's work.
 
 Four phases: the brain in isocan, the Worker and the rig, the sitting
 and the walk, and moving in. The last is small and last because it needs
@@ -366,6 +366,13 @@ dropped at the collie (the moving-in case births a second sheep). No
 account walk: the home ring's two-rc walk is the journey, and the
 account's part of it is collie phase 2's.
 
-**Status: NOT STARTED.**
+**Status: CLOSED, 2026-09-14.** `pnpm test` exits 0 across the three rings with journey 4 walked in the home ring beside a real laptop `isocan rc`; the herd rule dropped at the collie fails the moving-in case; isocan's `pass --agent` is e4bc100f, its suite green but for two load flakes that pass alone.
 
 **Findings:**
+
+- **2026-09-14 — A running room cannot take a handed-over agent:** the module keeps an agent refused `not-your-actor` out for the room's life, so the collie writes the row and restarts that room; the next summons resumes the sheep in `isocan-<name>`.
+- **2026-09-14 — The laptop stands down at a summons, not at the pass:** its own claim stays vouched, so it says `another park adopted Percy's cursor — standing down for it` when its delivery meets the collie's newer park.
+- **2026-09-14 — Journey 4's line for an agent held elsewhere is isocan's:** `<name> is not held by this machine — a pass from whoever holds <name> hands it over`, the shepherd's wording in isocan's project `room`; the journey now says so.
+- **2026-09-14 — `isocan pass --agent` prints the address, not `setup`:** `setup` redeems adopting the identity, which would make a machine's person the agent; the address is what `collie new --pass` takes.
+- **2026-09-14 — Turns across rooms are one guard key per agent** in the object's shared state, proved by storage, not by a turn on a second canvas.
+- **2026-09-14 — Home ring files race for ports:** `collie local` lost one to another file's wrangler; the walk asks again only on "Address already in use".

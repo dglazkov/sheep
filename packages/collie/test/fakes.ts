@@ -115,6 +115,8 @@ export class FakeIsocan implements Handler {
   calls: string[] = [];
   /** How long a hold or a log watch is held at most before it answers empty. */
   holdCapMs = 400;
+  /** Other canvases at this home (collie phase 3's second room): no agents, no threads, and a log nothing lands in. */
+  quiet = new Map<string, { id: string; title: string }>();
   private next = 1;
 
   constructor(options: { origin: string; canvas: { id: string; title: string }; owner: Actor }) {
@@ -127,22 +129,23 @@ export class FakeIsocan implements Handler {
     return this.log.length;
   }
 
-  /** A pass minted by the owner's own machine: for `actorId` (the owner by default), `expired` already. Returns its address. */
-  issuePass(options: { actorId?: string; expired?: boolean } = {}): { address: string; token: string } {
+  /** A pass minted by the owner's own machine: for `actorId` (the owner by default), on `canvasId` (the canvas by default), `expired` already. Returns its address. */
+  issuePass(options: { actorId?: string; expired?: boolean; canvasId?: string } = {}): { address: string; token: string } {
+    const canvasId = options.canvasId ?? this.canvas.id;
     const id = `pass_${this.next++}`;
     const secret = `S${crypto.randomUUID().replace(/-/g, "")}`;
     const now = Date.now();
     this.passes.set(id, {
       id,
       secret,
-      canvasId: this.canvas.id,
+      canvasId,
       mintedBy: "badge_laptop",
       actorId: options.actorId ?? this.owner.id,
       createdAt: new Date(now).toISOString(),
       expiresAt: new Date(options.expired ? now - 60_000 : now + 15 * 60_000).toISOString(),
     });
     const token = `${id}.${secret}`;
-    return { address: `${this.origin}/p/${this.canvas.id}#${token}`, token };
+    return { address: `${this.origin}/p/${canvasId}#${token}`, token };
   }
 
   /** Spends a pass as another machine would have. */
@@ -152,6 +155,24 @@ export class FakeIsocan implements Handler {
       row.redeemedAt = new Date().toISOString();
       row.redeemedBy = "badge_elsewhere";
     }
+  }
+
+  /** Another canvas at this home, which a pass can open as a second room. */
+  addCanvas(canvas: { id: string; title: string }): void {
+    this.quiet.set(canvas.id, canvas);
+  }
+
+  /**
+   * An agent enrolled and answered from another machine (journey 4's laptop): the enroll op by the owner, the actor claimed
+   * under that machine's key on its badge (not this home's collie's), and a cursor that machine parked. The collie's badge
+   * holds nothing of it until a pass minted for it is redeemed.
+   */
+  enrolElsewhere(name: string): Actor {
+    const actor: Actor = { id: `act_${name.toLowerCase()}_${this.next++}`, name };
+    this.keys.set(`agent:laptop-${name}`, actor);
+    const entry = this.append(this.owner, { type: "agent.enroll", agent: actor });
+    this.parks.set(actor.id, { parkId: `park_laptop_${this.next++}`, cursor: entry.seq, delivered: entry.seq });
+    return actor;
   }
 
   /** The tray's "add an agent": an ask the next hold carries. */
@@ -255,6 +276,14 @@ export class FakeIsocan implements Handler {
       if (op?.type === "actor.claim") {
         const known = this.keys.get(op.sessionKey);
         if (op.as !== undefined) {
+          // A badge a pass handed the actor to may key it under a session key of its own (the desk's handoff row vouches).
+          if (known?.id !== op.as && badge.holds.has(op.as)) {
+            const actor = Object.values(this.agents).find((agent) => agent.actor.id === op.as)?.actor ?? (op.as === this.owner.id ? this.owner : undefined);
+            if (actor !== undefined) {
+              this.keys.set(op.sessionKey, actor);
+              return json({ seq: 0, envelope: { actor, op, ts: new Date().toISOString() } });
+            }
+          }
           if (known?.id !== op.as) return json({ error: "that name is somebody else's", code: "name-taken" }, 400);
           badge.holds.add(op.as);
           return json({ seq: 0, envelope: { actor: known, op, ts: new Date().toISOString() } });
@@ -278,6 +307,14 @@ export class FakeIsocan implements Handler {
       return json({ killed: { badgeId: id }, swept: { badges: [] } });
     }
     if (method === "POST" && path === "/api/oplog/watch") {
+      const watched = (body.only as string[] | undefined)?.[0] ?? Object.keys(body.cursors ?? {})[0];
+      if (watched !== undefined && this.quiet.has(watched)) {
+        if (body.cursors) {
+          const how = await waitFor(Math.min(Number(body.waitMs ?? 30_000), this.holdCapMs), () => false, signal);
+          if (how === "aborted") throw new DOMException("aborted", "AbortError");
+        }
+        return json({ entries: [], cursors: { [watched]: 0 } });
+      }
       if (!body.cursors) return json({ entries: [], cursors: { [this.canvas.id]: this.tip } });
       const from = Number(body.cursors[this.canvas.id] ?? 0);
       if (this.tip <= from) {
@@ -324,7 +361,10 @@ export class FakeIsocan implements Handler {
     if (canvasRoute) {
       const canvasId = decodeURIComponent(canvasRoute[1]!);
       const rest = canvasRoute[2] ?? "";
-      if (canvasId !== this.canvas.id) return json({ error: `no canvas ${canvasId}`, code: "unknown-canvas" }, 404);
+      const other = this.quiet.get(canvasId);
+      if (canvasId !== this.canvas.id && other === undefined) return json({ error: `no canvas ${canvasId}`, code: "unknown-canvas" }, 404);
+      if (method === "GET" && rest === "/canvas" && other !== undefined) return json({ project: other, canvas: { agents: {}, threads: {}, items: {}, trash: [] }, lastSeq: 0, colors: {}, names: {} });
+      if (method === "GET" && rest === "/oplog" && other !== undefined) return json([]);
       if (method === "GET" && rest === "/canvas") return json(this.snapshot());
       if (method === "GET" && rest === "/oplog") return json(this.log.filter((entry) => entry.seq > Number(url.searchParams.get("since") ?? 0)));
       if (method === "POST" && rest === "/passes") {
@@ -428,6 +468,22 @@ export class FakeStation implements Handler {
 
   private push(id: string, entry: Entry): void {
     this.cells.get(id)!.entries.push(entry);
+  }
+
+  /**
+   * A sheep another machine's rc already birthed (journey 4): idle in `pasture`, with the pasture made and a turn of its own
+   * in its transcript, minted with the pass as its own secret. Returns its id.
+   */
+  seedSheep(name: string, pasture: string): string {
+    const id = `sheep-${String(this.next++).padStart(4, "0")}`;
+    this.pastures.set(pasture, { createdAt: Date.now(), files: new Map(), secrets: new Map() });
+    this.rows.set(id, { id, name, createdAt: Date.now(), state: "idle", pasture, task: "an earlier summons", secrets: ["ISOCAN_PASS"], setup: { state: "ok", at: Date.now(), ms: 1 } });
+    this.secretValues.set(id, { ISOCAN_PASS: "https://isocan.test/p/elsewhere#pass_laptop.Slaptop" });
+    const cell: Cell = { entries: [], operation: null, queued: [] };
+    this.cells.set(id, cell);
+    cell.entries.push(this.entry("user", [{ type: "text", text: "an earlier summons" }], cell));
+    cell.entries.push(this.entry("assistant", [{ type: "text", text: "Replied earlier." }], cell, { stopReason: "stop" }));
+    return id;
   }
 
   /** The running turn's tool call and reply, and its end; a queued prompt is taken up after. */

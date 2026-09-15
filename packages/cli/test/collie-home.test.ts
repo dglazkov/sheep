@@ -1,7 +1,8 @@
 /**
  * Collie phase 2's walk on the rig (journey 6 step 2): journey 1's sittings
  * in their order and in their programs' own shapes, then journeys 3, 2
- * (steps 3 and 4), and 5 (step 6), with nothing faked.
+ * (steps 3 and 4), and 5 (step 6), with nothing faked; and collie phase 3's
+ * journey 4, in a world of its own, at the end of the file.
  *
  * The world is one scratch directory that is `HOME`: a kennel with this
  * checkout's own local home in it (`sheep home local --faux
@@ -87,7 +88,12 @@ interface World {
   actor?: { id: string; name: string };
 }
 
-const world: World | string = await (async (): Promise<World | string> => {
+/**
+ * A world: a scratch `HOME` with a kennel whose local home is up, an `isocan` and this checkout's `sheep` first on its
+ * PATH (a laptop's `isocan rc` finds the sheep harness by `sheep` on PATH, and a global one must not answer for it), and a
+ * free port for the daemon; or the sentence saying why the kennel's home cannot start here.
+ */
+async function makeWorld(): Promise<World | string> {
   if (!existsSync(isocanShim)) return `no isocan at ${isocanShim}; \`pnpm install\` installs the root devDependency`;
   const dir = realpathSync(await mkdtemp(join(tmpdir(), "collie-home-")));
   const work = join(dir, "work");
@@ -95,6 +101,7 @@ const world: World | string = await (async (): Promise<World | string> => {
   await mkdir(work);
   await mkdir(bin);
   await symlink(realpathSync(join(isocanPackage, "packages", "cli", "bin", "isocan.js")), join(bin, "isocan"));
+  await symlink(sheepBin, join(bin, "sheep"));
   const port = await freePort();
   const env: Record<string, string | undefined> = { ...process.env };
   for (const name of Object.keys(env)) if (name.startsWith("SHEEP_") || STRIPPED.includes(name)) delete env[name];
@@ -116,7 +123,11 @@ const world: World | string = await (async (): Promise<World | string> => {
   }
   w.home = home;
   return w;
-})();
+}
+
+/** The world the cases in hand walk: journey 1's walk first, then journey 4's in a world of its own. */
+let world: World | string = await makeWorld();
+const walkable = typeof world !== "string";
 if (typeof world === "string") process.stderr.write(`collie-home skipped: ${world}\n`);
 
 function the(): World {
@@ -245,7 +256,21 @@ async function comment(text: string, at: string, env?: Record<string, string>): 
 
 const count = (lines: string[], text: string) => lines.filter((line) => line.includes(text)).length;
 
-describe.skipIf(typeof world === "string")("the collie on the rig, walked whole (journey 6 step 2)", { timeout: 300_000 }, () => {
+/**
+ * `collie local --json`, asked again (at most twice more) only when wrangler lost a port to another home ring file's
+ * wrangler starting at the same moment ("Address already in use"): the home ring runs its files at once, and a port the
+ * rig found free can be taken before wrangler binds it. Any other failure is the walk's.
+ */
+async function rigUp(): Promise<Result> {
+  let local = await collie(["local", "--json"]);
+  for (let again = 0; again < 2 && local.code !== 0 && `${local.stdout}${local.stderr}`.includes("Address already in use"); again++) {
+    process.stderr.write("collie-home: the rig lost a port to another file's wrangler; asking collie local again\n");
+    local = await collie(["local", "--json"]);
+  }
+  return local;
+}
+
+describe.skipIf(!walkable)("the collie on the rig, walked whole (journey 6 step 2)", { timeout: 300_000 }, () => {
   let sheepId = "";
 
   beforeAll(async () => {
@@ -291,7 +316,7 @@ describe.skipIf(typeof world === "string")("the collie on the rig, walked whole 
 
   it("journey 1 step 4: collie local, then collie new in the bound directory stands by, the pass minted through isocan and shown nowhere", async () => {
     const w = the();
-    const local = await collie(["local", "--json"]);
+    const local = await rigUp();
     expect(local.code, local.stderr).toBe(0);
     const rig = JSON.parse(local.stdout) as { url: string; station: string };
     expect(rig.station).toBe(w.home!.url);
@@ -455,5 +480,138 @@ describe.skipIf(typeof world === "string")("the collie on the rig, walked whole 
     const who = await isocanJson<Who>(["who"]);
     expect(who.standing.map((row) => row.actor.name)).toContain("Percy");
     expect((await sheep(["ls"])).stdout).toContain(sheepId);
+  });
+});
+
+/**
+ * Journey 4 on the rig, in a world of its own (collie phase 3): Percy enrolled from the laptop, `isocan rc add Percy
+ * --harness sheep` by the world's own isocan, and answered by that isocan's `isocan rc` running here (the laptop), which
+ * births Percy's sheep at the kennel's local home by one summons over the same module the collie hosts. Then the collie
+ * stands by on the same canvas, `collie pass --agent Percy` moves Percy in, the laptop's rc says another park adopted
+ * Percy's cursor, and the next mention is answered from the same sheep. A second canvas's `collie pass` makes a second room
+ * under the one badge.
+ */
+describe.skipIf(!walkable)("an agent moves in, walked on the rig (journey 4)", { timeout: 300_000 }, () => {
+  const TITLE4 = "Collie Moving In";
+  const SECOND = "Collie Second Room";
+  let laptop: ChildProcess | undefined;
+  let laptopSaid = "";
+  let sheepId = "";
+
+  beforeAll(async () => {
+    const made = await makeWorld();
+    if (typeof made === "string") throw new Error(`journey 4's world did not start: ${made}`);
+    world = made;
+    await startDaemon();
+    const named = await isocan(["identity", "--home", "--name", "Dimitri"]);
+    expect(named.code, named.stderr).toBe(0);
+    const identity = JSON.parse(readFileSync(join(made.isocanHome, "identity.json"), "utf8")) as { id: string; name: string };
+    made.actor = { id: identity.id, name: identity.name };
+    made.canvasId = (await isocanJson<{ canvasId: string }>(["canvas", "create", TITLE4])).canvasId;
+    const bound = await isocan(["use", made.canvasId]);
+    expect(bound.code, bound.stderr).toBe(0);
+  }, 180_000);
+
+  afterAll(async () => {
+    if (typeof world === "string") return;
+    if (laptop !== undefined && laptop.exitCode === null && laptop.signalCode === null) {
+      const exited = new Promise((resolve) => laptop!.once("exit", resolve));
+      laptop.kill("SIGINT");
+      await Promise.race([exited, sleep(10_000)]);
+      if (laptop.exitCode === null && laptop.signalCode === null) laptop.kill("SIGKILL");
+    }
+    await collie(["local", "stop"]).catch(() => undefined);
+    await stopKennelHome(world.work, world.env).catch(() => undefined);
+    await stopDaemon().catch(() => undefined);
+    await isocan(["stop"]).catch(() => undefined);
+    await rm(world.dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  });
+
+  it("the ground: Percy enrolled from the laptop with isocan rc add --harness sheep, and its sheep born by one summons through the laptop's own isocan rc", async () => {
+    const w = the();
+    const added = await isocan(["rc", "add", "Percy", "--harness", "sheep"]);
+    expect(added.code, added.stderr).toBe(0);
+    expect(added.stdout).toContain(`enrolled Percy — answerable on "${TITLE4}"`);
+    const child = spawn(join(w.bin, "isocan"), ["rc"], { cwd: w.work, env: w.env, stdio: ["ignore", "pipe", "pipe"] });
+    laptop = child;
+    child.stdout!.on("data", (chunk: Buffer) => (laptopSaid += chunk.toString("utf8")));
+    child.stderr!.on("data", (chunk: Buffer) => (laptopSaid += chunk.toString("utf8")));
+    await until(() => laptopSaid, (said) => said.includes(`answering on "${TITLE4}"`) || child.exitCode !== null, "the laptop's rc to answer");
+    expect(child.exitCode, laptopSaid).toBeNull();
+
+    const first = await comment("@Percy the empty state reads wrong", "0,0");
+    await until(() => laptopSaid, (said) => said.includes("Percy · turn ended — end_turn"), "the laptop's rc to end Percy's first turn", 180_000);
+    sheepId = /Percy · sheep (\S+) minted/.exec(laptopSaid)?.[1] ?? "";
+    expect(sheepId, laptopSaid).not.toBe("");
+    const herd = (await sheep(["ls"])).stdout.split("\n").filter((line) => line.includes("\tisocan-percy\t"));
+    expect(herd.map((line) => line.split("\t")[0])).toEqual([sheepId]);
+    const sent = await summonses(sheepId);
+    expect(sent).toHaveLength(1);
+    expect(carried(sent[0]!)).toEqual([{ comment: first, redelivered: false }]);
+  });
+
+  it("steps 1 to 3: collie pass --agent Percy hands Percy over; the laptop's rc stands down for Percy, and the next mention is answered by the collie from the same sheep", async () => {
+    expect(sheepId, "the ground's sheep").not.toBe("");
+    const w = the();
+    const local = await rigUp();
+    expect(local.code, local.stderr).toBe(0);
+    const address = `http://127.0.0.1:${w.port}/p/${w.canvasId}`;
+    const minted = await collie(["new"]);
+    expect(minted, minted.stderr).toMatchObject({ code: 0, stderr: "" });
+    expect(minted.stdout.split("\n")[0]).toBe(`collie: standing by on "${TITLE4}" at ${address}, as Dimitri`);
+    // Another badge (the laptop's) holds Percy: the collie's room says so once and leaves Percy alone.
+    await until(narration, (lines) => lines.includes("Percy is not held by this machine — a pass from whoever holds Percy hands it over"), "the collie to name Percy as held elsewhere");
+
+    const handed = await collie(["pass", "--agent", "Percy"]);
+    expect(handed).toEqual({ code: 0, stdout: `collie: now answers for Percy on "${TITLE4}"\n`, stderr: "" });
+    // The room started again (its opening line said twice) parks Percy's cursor under the collie's badge.
+    await until(narration, (lines) => lines.includes("now answers for Percy") && count(lines, `answering on "${TITLE4}"`) === 2, "the room started again after the pass");
+    const report = JSON.parse((await collie(["--json"])).stdout) as { rooms: { agents: { name: string; came: string; sheep: string | null }[] }[] };
+    expect(report.rooms[0]!.agents).toEqual([expect.objectContaining({ name: "Percy", came: "handed over", sheep: null })]);
+
+    const next = await comment("@Percy and the heading above it", "0,40");
+    const lines = await until(narration, (value) => value.includes("Percy · turn ended — end_turn"), "the collie to end Percy's turn", 180_000);
+    expect(lines, lines.join("\n")).toContain(`Percy · sheep ${sheepId} is already in pasture isocan-percy — resuming it rather than birthing a second`);
+    for (const birth of ["birthing a sheep", "minting a pass for Percy", "making pasture"]) expect(lines.some((line) => line.includes(birth)), `${birth}:\n${lines.join("\n")}`).toBe(false);
+    await until(() => laptopSaid, (said) => said.includes("another park adopted Percy's cursor — standing down for it"), "the laptop's rc to stand down for Percy");
+    const stoodDown = laptopSaid.split("\n").find((line) => line.includes("another park adopted Percy's cursor"))!;
+    const resumed = lines.find((line) => line.includes("resuming it rather than birthing a second"))!;
+    process.stderr.write(`collie-home: journey 4, the laptop's rc said "${stoodDown.trim()}"; the collie said "${resumed}"\n`);
+
+    // The same sheep, which holds both turns; no second sheep in the pasture.
+    const sent = await until(() => summonses(sheepId), (value) => value.length === 2, "the second summons in the same sheep");
+    expect(carried(sent[1]!)).toEqual([{ comment: next, redelivered: false }]);
+    const herd = (await sheep(["ls"])).stdout.split("\n").filter((line) => line.includes("\tisocan-percy\t"));
+    expect(herd.map((line) => line.split("\t")[0])).toEqual([sheepId]);
+    const after = JSON.parse((await collie(["--json"])).stdout) as { rooms: { agents: { name: string; came: string; sheep: string | null }[] }[] };
+    expect(after.rooms[0]!.agents).toEqual([expect.objectContaining({ name: "Percy", came: "handed over", sheep: sheepId })]);
+    // The laptop's rc keeps running for everyone else.
+    expect(laptop?.exitCode, laptopSaid).toBeNull();
+  });
+
+  it("step 4: a second canvas's collie pass makes a second room under the one badge, and collie lists both", async () => {
+    const w = the();
+    const work2 = join(w.dir, "second");
+    await mkdir(work2);
+    const made = await run(join(w.bin, "isocan"), ["--json", "canvas", "create", SECOND], { cwd: work2 });
+    expect(made.code, made.stderr).toBe(0);
+    const secondId = (JSON.parse(made.stdout) as { canvasId: string }).canvasId;
+    const bound = await run(join(w.bin, "isocan"), ["use", secondId], { cwd: work2 });
+    expect(bound.code, bound.stderr).toBe(0);
+
+    const address = `http://127.0.0.1:${w.port}/p/${secondId}`;
+    const passed = await collie(["pass"], { cwd: work2 });
+    expect(passed, passed.stderr).toMatchObject({ code: 0, stderr: "" });
+    expect(passed.stdout.split("\n")[0]).toBe(`collie: standing by on "${SECOND}" at ${address}, as Dimitri`);
+    await until(narration, (lines) => lines.includes(`answering on "${SECOND}" — ${address}`), "the second room to answer");
+
+    const report = JSON.parse((await collie(["--json"])).stdout) as { rooms: { title: string; owner: string }[] };
+    expect(report.rooms.map((room) => [room.title, room.owner])).toEqual([[TITLE4, "Dimitri"], [SECOND, "Dimitri"]]);
+    const text = await collie([]);
+    expect(text.stdout).toMatch(/^collie: standing by since .* on 2 canvases\n/);
+    const badges = (await isocanJson<{ badges: { badgeId: string; self: boolean; actors: { name: string }[] }[] }>(["badges"])).badges;
+    const collies = badges.filter((badge) => !badge.self);
+    expect(collies, JSON.stringify(badges)).toHaveLength(1);
+    expect(collies[0]!.actors.map((actor) => actor.name)).toEqual(expect.arrayContaining(["Dimitri", "Percy"]));
   });
 });

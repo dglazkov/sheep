@@ -181,9 +181,18 @@ export class LoopbackCanvas extends Sentence {
 export interface MintOptions {
   /** `--canvas`: an id or a unique title prefix; absent, the directory's canvas as isocan resolves it. */
   canvas?: string;
+  /** `pass --agent` (collie phase 3): the agent, by name or actor id, whose claim the pass carries; absent, the person's own. */
+  agent?: string;
   /** Whether the collie reaches this machine's loopback (the rig, `local: true`); otherwise a loopback home is refused. */
   reachesLoopback: boolean;
   env?: NodeJS.ProcessEnv;
+}
+
+/** `pass --agent` naming nobody standing on the canvas: refused before any pass is minted, in the words isocan's own withdraw verb uses for it. */
+export class NoSuchAgent extends Sentence {
+  constructor(name: string, title: string, standing: readonly string[]) {
+    super(`no standing agent "${name}" on "${title}"${standing.length > 0 ? ` — standing here: ${standing.join(", ")}` : " — nobody is enrolled here"}`, 0);
+  }
 }
 
 /**
@@ -191,6 +200,10 @@ export interface MintOptions {
  * identity, the canvas from the directory or `--canvas`, its home (`homeOf`, else the daemon's own base), then
  * `mintPass(canvasId, actorId)` with the person's actor. A loopback home is refused before the mint unless the collie
  * reaches it.
+ *
+ * With `agent` (collie phase 3, journey 4) the actor is that agent's, read from the canvas's roster by name or id, so
+ * the collie arrives holding its claim. Whether this identity's badge holds that claim is the home's to say: the mint is
+ * refused `not-your-actor` otherwise, and that sentence is thrown as isocan threw it.
  */
 export async function mintCollie(options: MintOptions): Promise<MintedPass> {
   const api = await loadIsocan(options.env);
@@ -201,7 +214,14 @@ export async function mintCollie(options: MintOptions): Promise<MintedPass> {
   const canvas = options.canvas === undefined ? await api.resolveCanvas(ctx) : await api.resolveCanvasRef(ctx.client, options.canvas);
   const origin = (await ctx.homeOf(canvas.id)) ?? ctx.client.base;
   if (!options.reachesLoopback && api.isLoopbackBase(origin)) throw new LoopbackCanvas(canvas.title, origin);
-  const actor = ctx.actor;
+  let actor: { id: string; name: string } = ctx.actor;
+  if (options.agent !== undefined) {
+    const wanted = options.agent.toLowerCase();
+    const roster = Object.values((await ctx.client.snapshot(canvas.id)).canvas.agents ?? {});
+    const record = roster.find((agent) => agent.actor.id === options.agent || agent.actor.name.toLowerCase() === wanted);
+    if (record === undefined) throw new NoSuchAgent(options.agent, canvas.title, roster.map((agent) => agent.actor.name));
+    actor = record.actor;
+  }
   const { token } = await ctx.client.mintPass(canvas.id, actor.id);
   return { canvas: { id: canvas.id, title: canvas.title }, origin, actor: { id: actor.id, name: actor.name }, address: api.canvasUrlWithPass(origin, canvas.id, token) };
 }
