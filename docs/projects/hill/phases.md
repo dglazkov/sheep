@@ -296,13 +296,14 @@ removed sheep's 404.
 typecheck` exits 0; `pnpm bundle` exits 0. Falsified by one mutation:
 the blocks' text face changed (the byte test fails), and the page asking
 the cell of an unprompted sheep (the wake rule's test fails). Then the walk,
-journey 5 step 1: journeys 1, 2, and 3 on the shepherd's station with a
-real model, the conductor in Chrome, frames captured at each step and
+journey 5 step 1: journeys 1, 2, and 3 on a station of the walk's own,
+deployed with `sheep home deploy` from a scratch kennel and deleted
+after, with a real model, the conductor in Chrome, frames captured at each step and
 judged as a newcomer would, the times recorded; the browser's network
 log and storage searched for the token. **⚑** journey 5 step 3: `pnpm
 hermetic --ring account --yes <sha>` with `h1`, a station deployed and
 deleted on the shepherd's account, a few container minutes and one
-deploy; and the walk on the shepherd's own station, which is already
-theirs and costs a model's turns.
+deploy; and the walk's own station, the same again. The shepherd's
+station `sheep-2` is not touched: it is theirs to upgrade.
 
 **Status: NOT STARTED.**

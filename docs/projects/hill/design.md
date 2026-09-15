@@ -182,8 +182,8 @@ and build from `GET /home`, and sign out. Under it, one of:
 
   **Looking never wakes a sheep.** A cell boots on the first thing that
   asks it, and a sheep minted into a pasture with a repository is born
-  inside that boot: the clone, `setup.sh`, a container rented (mint
-  phase 0). A shepherd clicking down the flock would start every unborn
+  inside that boot: the clone, `setup.sh`, a container rented
+  (mint phase 0). A shepherd clicking down the flock would start every unborn
   sheep's birth. So a sheep whose row has no task and no setup, which
   nothing has prompted, is never asked of its cell: its page says that
   nothing has been asked of it yet, from the row alone, until the row

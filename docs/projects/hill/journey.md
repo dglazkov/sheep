@@ -181,8 +181,9 @@ Acceptance criteria:
 The conductor wants it proved where the station is real, the model is
 real, and the browser is a person's.
 
-1. On the shepherd's station with a real model, journeys 1, 2, and 3
-   walked in a real browser: the conductor in Chrome, frames captured
+1. On a station deployed for the walk from a scratch kennel, with a real
+   model, journeys 1, 2, and 3 walked in a real browser, and the station
+   deleted after: the conductor in Chrome, frames captured
    at each step and read as a newcomer would read them, the times
    recorded.
 2. The release ring installs a release that carries the hill and walks
