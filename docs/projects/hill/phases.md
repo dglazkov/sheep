@@ -323,11 +323,11 @@ on a ring that reaches `h1` alone.
 
 **Findings:**
 
-- **2026-09-14 — An abort in pi's entries is the cut-off model call's own assistant entry,** empty, `stopReason: "aborted"`. One during a tool call is the tool's error result instead, folded red on the page as `sheep log` prints it.
+- **2026-09-14 — An abort is the cut-off call's own assistant entry,** empty, `stopReason: "aborted"`; one during a tool call is that tool's error result, folded red as `sheep log` prints it.
 - **2026-09-14 — The cell answers a long poll at once when no turn is open,** so the loop rests two seconds after such an answer rather than asking back to back.
 - **2026-09-14 — The page's `sheep log` is the CLI's code:** `blocks.ts` imports only `setup-words`. The byte test's oracle is the rendering frozen from cefefbd.
 - **2026-09-15 — Cookies ignore ports:** a second local home on `127.0.0.1` signed out the first. The cookie is now named for its home's serverId.
-- **2026-09-15 — A local home runs the checkout's live Worker,** so an edit reloaded it under a seated tab. Builders' walks shared this session's scratchpad and browser, and disturbed each other.
+- **2026-09-15 — A local home runs the checkout's live Worker,** so an edit reloaded it under a seated tab; builders sharing one scratchpad and browser disturbed each other's walks.
 - **2026-09-15 — The walk held on `sheep-hill-walk` with a real model:** a mint's row in 0.93 s, `running` in 1.03 s, a prompt on the page in 1.45 s, setup `ok (40.2 s)` beside `sheep status`, the seat through a browser restart, 398 requests with no token.
 - **2026-09-15 — HTTP/2 carries no `Upgrade`:** a seat's socket was 401 over HTTP/1.1 and the bearer's 101; over HTTP/2 the cell answered a plain GET 426.
-- **2026-09-16 — Open: three account ring runs failed at three different steps, none of them the hill's, and none reached `h1`.** On 491fc54, `t2`'s turn was cut off, then `GET /sessions` threw after `a5`'s redeploy; on 93b1809, `a2` never got a healthy container (2 starting, 1 scheduling, 151 s). Each deleted its station. Issue #13 is the cause: one long walk, one transient platform error, a whole run lost. `h1`'s own checks held by hand on a deployed station, and the package ring's `h0` holds on every release. A run reaching `h1`, or issue #13's split, closes it.
+- **2026-09-16 — Open: three ring runs failed before `h1`, at `t2`, `a5`, and `a2`, none a hill step.** Issue #13's long walk loses a run to any platform fault. `h0` holds on every release and `h1`'s checks held by hand; a run reaching `h1` closes it.
