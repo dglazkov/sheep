@@ -191,10 +191,11 @@ registry's image, another looks at a page its own server serves and finds
 nothing listening afterwards, and the container is gone after the idle
 period. `--ring machine` repeats it inside `node:22-slim` and
 `node:24-slim`; `--ring dog` gives Claude Code the sentence in a container
-whose rig home and kennel the ring set up first; `--ring account` deploys
-a station on the shepherd's account, plays the shepherd through the stile
-with the real token and key, and walks the dog with nothing in the
-environment; `--collie` sets up isocan and the collie there too.
+whose rig home and kennel the ring set up first; `--ring account` is a
+set of walks on the shepherd's account, one per journey, each deploying a
+station of its own and deleting it, run several at a time with one report
+(`--list` names them; `--walk <name>` runs one alone; `--collie` adds the
+collie's, which sets up isocan and the collie there with a real model).
 
 ### sheep
 

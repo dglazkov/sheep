@@ -18,7 +18,8 @@
  * that leaves it out says so at the end, so that "green" is never read as
  * more than it was. The four outer rings — package, machine, dog, account
  * — are `pnpm hermetic --ring <name>`, and prove a release rather than a
- * checkout.
+ * checkout; the account ring is a set of walks, `--list` names them, and
+ * `--walk <name>` runs one alone.
  */
 import { spawnSync } from "node:child_process";
 import { CI_RINGS, RING_NAMES, RING_NEEDS, RINGS } from "./rings.mjs";

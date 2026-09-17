@@ -69,6 +69,12 @@ token never reaches a browser; the flock as `sheep ls` lists it, live,
 and one sheep's transcript as it lands, drawn by the rendering `sheep
 log` prints through. A seat only looks: every write and the socket to a
 cell are refused.
+[Project draft](docs/projects/draft/design.md) drafts the account ring
+into walks that stand alone, one per journey, each on a station of its
+own: `pnpm hermetic --ring account --walk <name>` runs one in minutes,
+and the ring with no walk named runs them as a set, several at a time,
+with one report and the rerun line for any that failed; what every
+step asserts is unchanged.
 Setup and usage are in [README.md](README.md).
 Read a project's `phases.md` for where its work stands and what the next
 phase is; [docs/projects/README.md](docs/projects/README.md) lists them.
@@ -86,7 +92,11 @@ committed whole; the two are separate sessions on purpose.
   Outward from it, `hermetic.mjs`'s four: `package`, `machine`, `dog`,
   `account`. `pnpm test` runs the inner three, which is what a phase's
   proof means; `pnpm test --ring <name>` runs one, and `--list` shows
-  them. Membership is written down in `scripts/rings.mjs` and a guard
+  them. The account ring is a set of walks, one per journey, each on a
+  station of its own: `pnpm hermetic --ring account --list` names them,
+  `--walk <name>` runs one alone, and a phase's proof on the account
+  names the walks it needs, by name, not the ring. Membership is
+  written down in `scripts/rings.mjs` and a guard
   (`packages/cli/test/rings.test.ts`) fails when a file's ring and what
   the file actually does disagree. A new test file goes in a ring.
 - **CI does not run the home ring; you do.** The workflow runs `pnpm test

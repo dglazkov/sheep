@@ -14,7 +14,8 @@
  *   package    installed from a ref into a fresh prefix          (hermetic)
  *   machine    the package ring inside a container               (hermetic)
  *   dog        the machine ring with a real coding agent in it   (hermetic)
- *   account    a station on the shepherd's Cloudflare account    (hermetic)
+ *   account    a set of walks, each a station on the shepherd's   (hermetic)
+ *              Cloudflare account; `--walk <name>` runs one alone
  *
  * The first three are `pnpm test`; the last four are `pnpm hermetic`. The
  * split exists because the middle of that ladder was invisible: every test

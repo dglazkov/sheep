@@ -20,7 +20,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { RINGS } from "../../../scripts/rings.mjs";
-import { DOG_RING_STEPS, EVERY_WALK, importedBeside, leftovers, listText, needsOf, ownNames, PACKAGE_RING_STEPS, prefixOf, rerunLine, SHARED_STEPS, siblingsAside, stationName, stepsInScript, stepsOf, WALK_NAMES, WALKS, walksOf } from "../../../scripts/walks.mjs";
+import { DOG_RING_STEPS, EVERY_WALK, importedBeside, JOBS_DEFAULT, lackingOf, leftovers, notCheckedIn, readOutcome, reportLines, setOf, listText, needsOf, ownNames, PACKAGE_RING_STEPS, prefixOf, rerunLine, SHARED_STEPS, siblingsAside, stationName, stepsInScript, stepsOf, WALK_NAMES, WALKS, walksOf } from "../../../scripts/walks.mjs";
 
 const root = new URL("../../../", import.meta.url).pathname;
 const script = readFileSync(join(root, "scripts", "hermetic.mjs"), "utf8");
@@ -137,6 +137,87 @@ describe("the account ring's walks", () => {
     expect(rerunLine("bell", "refs/remotes/origin/release")).toBe("pnpm hermetic --ring account --walk bell --yes refs/remotes/origin/release");
     expect(rerunLine("upgrade", "refs/heads/release", ["--older", "abc1234"])).toBe("pnpm hermetic --ring account --walk upgrade --yes --older abc1234 refs/heads/release");
     for (const name of WALK_NAMES) expect(rerunLine(name, "x").startsWith("pnpm hermetic --ring account ")).toBe(true);
+  });
+
+  it("holds, in the set, every walk the machine can run, from each combination of what it has", () => {
+    // The five needs, with and without --collie: sixty-four machines. A walk is a member exactly when it lacks nothing;
+    // the collie only when asked for; every walk is either a member or left out with why, in the table's order.
+    for (let bits = 0; bits < 32; bits++) {
+      const has = { docker: Boolean(bits & 1), env: bits & 2 ? ["LAMB_PLAYGROUND_TOKEN"] : [], key: Boolean(bits & 4), harness: Boolean(bits & 8), isocan: Boolean(bits & 16) };
+      for (const collie of [false, true]) {
+        const { members, leftOut } = setOf({ ...has, collie });
+        const named = [...members, ...leftOut.map(({ walk }) => walk)];
+        expect(named.sort()).toEqual([...WALK_NAMES].sort());
+        expect(WALK_NAMES.filter((walk) => members.includes(walk))).toEqual(members);
+        for (const walk of members) expect(lackingOf(walk, has), `${walk} is a member but lacks`).toEqual([]);
+        for (const { walk, why } of leftOut) {
+          if (walk === "collie" && !collie) expect(why).toContain("not named");
+          else {
+            expect(lackingOf(walk, has).length, `${walk} left out with nothing lacking`).toBeGreaterThan(0);
+            for (const lack of lackingOf(walk, has)) expect(why).toContain(lack);
+          }
+        }
+        expect(members.includes("second")).toBe(has.docker && has.harness);
+        expect(members.includes("pasture")).toBe(has.env.length === 1);
+        expect(members.includes("stile")).toBe(has.key && has.harness);
+        expect(members.includes("collie")).toBe(collie && has.key && has.harness && has.isocan);
+        for (const walk of ["upgrade", "station", "fold", "spool", "bleat", "bell", "tether"]) expect(members).toContain(walk);
+      }
+    }
+    expect(JOBS_DEFAULT).toBe(4);
+  });
+
+  it("narrows the set to the walks named, the collie among them only when named or asked for", () => {
+    const everything = { docker: true, env: ["LAMB_PLAYGROUND_TOKEN"], key: true, harness: true, isocan: true };
+    expect(setOf({ ...everything, named: ["bell", "stile"] }).members).toEqual(["bell", "stile"]);
+    expect(setOf({ ...everything, named: ["stile", "bell"] }).members).toEqual(["bell", "stile"]);
+    expect(setOf({ ...everything, named: ["bell", "collie"] }).members).toEqual(["bell", "collie"]);
+    expect(setOf({ ...everything, named: ["bell"], collie: true }).members).toEqual(["bell", "collie"]);
+    expect(setOf({ ...everything, collie: true }).members).toEqual(WALK_NAMES);
+    // A named walk the machine cannot run is left out, with why, and the rest run.
+    const { members, leftOut } = setOf({ ...everything, docker: false, named: ["second", "fold"] });
+    expect(members).toEqual(["fold"]);
+    expect(leftOut).toEqual([{ walk: "second", why: "this machine lacks Docker" }]);
+    expect(setOf({ ...everything, named: ["bell"] }).leftOut).toEqual([]);
+  });
+
+  it("reads a child's outcome from its last line, and a refusal from its first", () => {
+    expect(readOutcome("ok    d1  …\n\naccount ring: ok (the bell walk, 12 lines held, 133s)\n", 0)).toEqual({ walk: "bell", status: "held", lines: 12, seconds: 133 });
+    expect(readOutcome("FAIL  a8: git push (exit 1)\naccount ring: FAILED at a8 (the pasture walk, 91s)\npasture walk: failed at a8; …\n", 1)).toEqual({ walk: "pasture", status: "failed", step: "a8", seconds: 91 });
+    expect(readOutcome("hermetic: the pasture walk needs LAMB_PLAYGROUND_TOKEN in the environment, and this machine lacks:\n  - …\n", 2)).toEqual({ status: "failed", step: "preflight", why: "the pasture walk needs LAMB_PLAYGROUND_TOKEN in the environment, and this machine lacks:" });
+    expect(readOutcome("", 1)).toEqual({ status: "failed", step: "preflight", why: "exit 1 with no last line" });
+    // A held line with a nonzero exit is not held: the exit code is the child's word.
+    expect(readOutcome("account ring: ok (the bell walk, 12 lines held, 133s)\n", 1).status).toBe("failed");
+  });
+
+  it("reads the not-checked items out of a child's log", () => {
+    const log = "ok    a6  …\n\nnot checked by the account ring:\n  - journey 1 step 2: a real key\n  - the other walks, each run alone: …\n\naccount ring: ok (the fold walk, 8 lines held, 214s)\n";
+    expect(notCheckedIn(log)).toEqual(["journey 1 step 2: a real key", "the other walks, each run alone: …"]);
+    expect(notCheckedIn("nothing here")).toEqual([]);
+  });
+
+  it("reports a mix of held, failed, and left-out walks, with the rerun line for each failure", () => {
+    const outcomes = {
+      upgrade: { walk: "upgrade", status: "held", lines: 14, seconds: 341 },
+      station: { walk: "station", status: "failed", step: "s2", seconds: 120 },
+      second: { walk: "second", status: "left out", why: "this machine lacks Docker" },
+      pasture: { walk: "pasture", status: "failed", step: "a8", seconds: 91 },
+      bell: { walk: "bell", status: "held", lines: 12, seconds: 133 },
+      collie: { walk: "collie", status: "left out", why: "not named" },
+    };
+    const lines = reportLines(outcomes, (walk) => rerunLine(walk, "refs/remotes/origin/release"));
+    expect(lines).toEqual([
+      "  upgrade  held  14 lines  341s",
+      "  station  FAILED at s2  120s",
+      "  second   left out: this machine lacks Docker",
+      "  pasture  FAILED at a8  91s",
+      "  bell     held  12 lines  133s",
+      "  collie   left out: not named",
+      "run again, alone, each:",
+      "  pnpm hermetic --ring account --walk station --yes refs/remotes/origin/release",
+      "  pnpm hermetic --ring account --walk pasture --yes refs/remotes/origin/release",
+    ]);
+    expect(reportLines({ bell: outcomes.bell }, () => "")).toEqual(["  bell     held  12 lines  133s"]);
   });
 
   it("lists every walk with its steps and what it needs", () => {

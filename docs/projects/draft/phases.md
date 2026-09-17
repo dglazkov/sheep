@@ -20,16 +20,20 @@ step, which is a finding and a stop, not an edit to the assertion.
 
 ---
 
-**Where we are: draft phase 0 CLOSED, 16 September 2026; next is draft
-phase 1.** The account ring is eleven walks that stand alone, `pnpm
-hermetic --ring account --walk <name>`, each on a station of its own
-under the sibling rule, the table in `scripts/walks.mjs` and a guard in
-the checkout ring keeping it true against the script. Every walk held
-alone on release 22d2fec, five at a time on the account, between 125
-and 493 seconds each, and the bell walk reached hill's `h1`. Draft phase
-1 runs them as a set, several at a time, with one report. Nothing waits
-on a person: the account walks are the conductor's to run under the
-shepherd's standing authorization.
+**Where we are: draft is done, 16 September 2026. Both phases CLOSED.**
+The account ring is eleven walks that stand alone, `pnpm hermetic --ring
+account --walk <name>`, each on a station of its own under the sibling
+rule, and the set, `pnpm hermetic --ring account` with no walk named:
+the walks as children, four at a time, one report with the rerun line
+for any that failed, the whole listing checked around it. The table is
+`scripts/walks.mjs` and a guard in the checkout ring keeps it true
+against the script. On release 22d2fec every walk held alone, five at a
+time, in 125 to 493 seconds, the bell walk reaching hill's `h1`; the
+set held whole in 1038 seconds against the old ring's thirty to
+forty-five minutes, and a wrong token failed one walk while its
+siblings held. Nothing waits on work or on a person; issues #15 (the
+CI loop) and #16 (a verb in a redeploy's reset window) carry what the
+walks found beyond this project.
 
 Two phases, because a walk that stands alone is useful the day it
 exists, and the set is a parent over children that already work.
@@ -134,8 +138,17 @@ refs/remotes/origin/release`, with Docker, the playground token, and
 the key on the machine, held: every walk's line, the wall clock
 recorded against the longest walk's; then the same with
 `LAMB_PLAYGROUND_TOKEN` set to a wrong value, the `pasture` walk failing
-at `a8` while its siblings hold, the report naming it with its rerun
-line, the whole listing equal, exit 1. Both leave the account as it
-was.
+at `s1`, its first step that pushes with the token, while its siblings
+hold, the report naming it with its rerun line, the whole listing
+equal, exit 1. Both leave the account as it was.
 
-**Status: NOT STARTED.**
+**Status: CLOSED.** 2026-09-16. Every inner ring holds with the set's cases in the guard, the set held whole on the shepherd's account against release 22d2fec (eleven walks, 1038 s), and the wrong-token set failed the pasture walk at `s1` while its siblings held, exit 1, the account as it was.
+
+**Findings:**
+
+- **2026-09-16 — The set held whole on release 22d2fec:** eleven walks, four at a time, wall clock 1038 s, the longest walk the collie's 479 s; the old ring took thirty to forty-five minutes for fewer journeys, and lost the run to any fault.
+- **2026-09-16 — Two sets before it lost one walk each to the platform, and the set went on:** fold's `f1` met workers.dev's own "Page not found" page seconds after `d1` had seen the station answer; station's `n1` met "Durable Object reset because its code was updated" after `a5`'s redeploy (issue #16).
+- **2026-09-16 — The wrong-token set did what the proof asked:** pasture failed at `s1`, its first push with the token; nine siblings held; the report named it with its rerun line; the whole listing was the one before; exit 1.
+- **2026-09-16 — The guard reads any `step: "…"` as a step name,** so the parent's word for a child that printed none had to be a constant; a reader by regex reads what it was not written for.
+- **2026-09-16 — A walk does not catch SIGINT:** Node ends it with its station-deleting `finally` unrun, so the set's forwarded SIGINT ends children without their deletes; the header says so, and the next run refuses the leftovers by name.
+- **2026-09-16 — The set refuses to start beside a sibling of the same release,** since it compares whole listings with nothing set aside; a lone walk beside a set is the set's to refuse, not to tolerate.

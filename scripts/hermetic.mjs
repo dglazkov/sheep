@@ -9,7 +9,8 @@
  *   pnpm hermetic --ring package [ref]     ref defaults to refs/heads/release of this repository
  *   pnpm hermetic --ring machine [ref]     the package ring inside a container from node:22-slim, then node:24-slim (collar phase 3)
  *   pnpm hermetic --ring dog [ref|spec]    the machine ring's container with Claude Code in it, given the skill and journey 1's sentence (collar phase 4)
- *   pnpm hermetic --ring account --walk <name> [ref|spec]  one of the account ring's walks: the package ring's install, a station of the walk's own on the shepherd's Cloudflare account, its journey's steps, the delete (station phase 1; draft phase 0)
+ *   pnpm hermetic --ring account [ref|spec] the set: every walk of the account ring as a child process, several at a time, each on a station of its own on the shepherd's Cloudflare account, one report (draft phase 1)
+ *   pnpm hermetic --ring account --walk <name> [ref|spec]  one walk alone: the package ring's install, a station of the walk's own, its journey's steps, the delete (station phase 1; draft phase 0)
  *   pnpm hermetic --ring account --list    the walks, each with its steps, what it needs beyond the token, and a sentence; nothing run (draft phase 0)
  *   --docker                               package ring: the blog home with a container (station phase 4); exit 2 on a machine without Docker
  *   --no-eyes                              package ring: e1 (the look) skipped with one line and named at the end; what the machine ring passes to its container's walk (eyes phase 2)
@@ -21,7 +22,10 @@
  *   --yes                                  dog and account rings: the shepherd has read the estimate; do not ask
  *   --dry-run                              dog ring: build, probe, add the skill, print the `claude -p` command, and stop before it; no key is needed
  *                                          account ring: the walk's preflight alone: what it needs, the price, the account, its listing, the image on the registry; nothing deployed
- *   --walk <name>                          account ring: which walk (required; `--list` names them). Several at once are the set, draft phase 1
+ *   --walk <name>[,<name>]                 account ring: one walk, alone, in this process; several (or the flag repeated) are the set of those. `--list` names them
+ *   --jobs <n>                             account ring, the set: how many walks run at once (default 4: draft phase 0 ran five at a time and every one held; 1 is the set in order)
+ *   --collie                               account ring, the set: the collie walk joins it (a real model's turn on the key, an identity at dev.isocan.io); alone it is `--walk collie`
+ *   --child                                account ring: one walk of the set, run by the parent with --yes; it prints none of its preflight's listing and never asks. Nobody types it
  *   --name <worker>                        account ring: the station's name (default sheep-hermetic-<sha>-<walk>, the collie's -c for the stile's screen; the sitting's walks deploy that name with -t)
  *   --older <ref>                          account ring, the upgrade walk: the release deployed first and upgraded from (default: the ref's first parent when it is a release commit; refused otherwise)
  *   --budget <usd>                         dog ring: Claude Code's --max-budget-usd (default 5)
@@ -133,13 +137,31 @@
  * The account ring (station phase 1) is the package ring's fresh world and
  * install, then a station on the shepherd's account: deployed, walked,
  * deleted. Since draft phase 0 it is a set of walks, one per journey, each
- * on a station of its own, and one run names one: `--walk <name>`. The
- * table of walks is `scripts/walks.mjs` (`--list` prints it), each with
- * its steps, what it needs beyond the token, and a sentence; the guard
- * `packages/cli/test/walks.test.ts` fails when the steps this script
- * prints and the table disagree. The steps are the ring's own, by name,
- * unchanged in what they run and assert, each in its walk's function
- * (`walkBell`, …), and the set that runs several at once is draft phase 1.
+ * on a station of its own: `--walk <name>` runs one in this process, and
+ * no `--walk` (or several) is the set (draft phase 1), a parent that does
+ * the preflight, the price, and the yes once and runs each walk as a child,
+ * `--walk <name> --yes --child`, at most `--jobs` at a time (default 4;
+ * five at a time held on the account in draft phase 0), each child's whole
+ * output in `<set dir>/<walk>.log` and its step lines printed as they land,
+ * prefixed `[<walk>]`; a walk that fails does not stop its siblings. SIGINT
+ * is forwarded to each child and waited for, then exit 130; a walk does
+ * not catch SIGINT (Node ends it at once, its `finally` unrun, as the ring
+ * always was), so an interrupted set can leave stations, which the next
+ * run refuses as leftovers and names for deleting by hand. The set's members are every walk but the collie,
+ * which `--collie` or `--walk collie` adds, less what the machine cannot
+ * run, each left out with one line naming why and named in the report's
+ * not-checked list. After the last child the whole listing is read again,
+ * nothing set aside, and must equal the one before the first; then the
+ * report (`reportLines`): one line per walk, held with its lines and
+ * seconds or FAILED at its step, the rerun line for each failure, the
+ * not-checked list as the union of the children's, and exit 1 when any
+ * child failed. The table of walks is `scripts/walks.mjs` (`--list` prints
+ * it), each with its steps, what it needs beyond the token, and a sentence;
+ * the guard `packages/cli/test/walks.test.ts` fails when the steps this
+ * script prints and the table disagree, and holds the set's membership
+ * (`setOf`) and report (`reportLines`, `readOutcome`) as pure functions.
+ * The steps are the ring's own, by name, unchanged in what they run and
+ * assert, each in its walk's function (`walkBell`, …).
  *
  * What every walk does. With `CLOUDFLARE_API_TOKEN` in this process's
  * environment (else exit 2, nothing done) and what the walk needs beyond
@@ -183,8 +205,9 @@
  * mid-delete; `siblingsAside` in walks.mjs). What the walk asserts of its
  * own names stays exact: a leftover of any of them is refused before
  * anything is deployed (`leftovers`), and none of them is on the account
- * after. The set's parent, which reads the whole listing before the first
- * walk and after the last with nothing set aside, is draft phase 1.
+ * after. The set's parent reads the whole listing before the first child
+ * and after the last with nothing set aside, and refuses to start beside a
+ * sibling of the release already on the account.
  *
  * The steps, by the project that gave each; its docs say what it proves,
  * and each step's own comment what it runs and asserts. Station phase 1:
@@ -217,7 +240,7 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { importedBeside, leftovers, listText, needsOf, ownNames, prefixOf, rerunLine, siblingsAside, stationName, stepsOf, WALK_NAMES, WALKS } from "./walks.mjs";
+import { importedBeside, JOBS_DEFAULT, leftovers, listText, needsOf, notCheckedIn, ownNames, prefixOf, readOutcome, reportLines, rerunLine, setOf, siblingsAside, stationName, stepsOf, WALK_NAMES, WALKS } from "./walks.mjs";
 
 /** Where this script lives, one level up: the checkout, or `/ring` inside the machine ring's container. Stripped from PATH. */
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -421,7 +444,7 @@ const GITHUB_URLS = ["https://github.com/dglazkov/sheep.git", "git+https://githu
 
 function usage(message) {
   console.error(
-    `hermetic: ${message}\nusage: pnpm hermetic --ring package|machine [ref] [--repo <path>] [--spec <spec> [--commit <sha>]] [--image <name>] [--docker] [--no-eyes] [--keep]\n       pnpm hermetic --ring dog [ref|${INSTALL_SPEC}] [--repo <path>] [--commit <sha>] [--image <name>] [--yes] [--dry-run] [--budget <usd>] [--timeout <minutes>] [--agent claude-code] [--keep]\n       pnpm hermetic --ring account --walk <name> [ref|${INSTALL_SPEC}] [--repo <path>] [--commit <sha>] [--older <ref>] [--yes] [--dry-run] [--name <worker>] [--keep]\n       pnpm hermetic --ring account --list`,
+    `hermetic: ${message}\nusage: pnpm hermetic --ring package|machine [ref] [--repo <path>] [--spec <spec> [--commit <sha>]] [--image <name>] [--docker] [--no-eyes] [--keep]\n       pnpm hermetic --ring dog [ref|${INSTALL_SPEC}] [--repo <path>] [--commit <sha>] [--image <name>] [--yes] [--dry-run] [--budget <usd>] [--timeout <minutes>] [--agent claude-code] [--keep]\n       pnpm hermetic --ring account [--walk <name>[,<name>]] [--collie] [--jobs <n>] [ref|${INSTALL_SPEC}] [--repo <path>] [--commit <sha>] [--older <ref>] [--yes] [--dry-run] [--name <worker>] [--keep]\n       pnpm hermetic --ring account --list`,
   );
   process.exit(2);
 }
@@ -448,8 +471,14 @@ function parseArgs(argv) {
     name: undefined,
     // The account ring's older release (station phase 3): a ref in --repo, deployed first and upgraded from.
     older: undefined,
-    // The account ring's walk (draft phase 0): one of `scripts/walks.mjs`'s, on a station of its own. Several, as a set, are draft phase 1.
+    // The account ring's walks (draft phase 0): one of `scripts/walks.mjs`'s, on a station of its own, in this process; none, or several, is the set (draft phase 1).
     walks: [],
+    // The set's width (draft phase 1): how many walks run at once, each a child process on its own station.
+    jobs: JOBS_DEFAULT,
+    // The set with the collie (draft phase 1): it spends the key on a real model and stands up an identity at dev.isocan.io, so it joins only when named or asked for.
+    collie: false,
+    // A child of the set (draft phase 1): the walk as it is, printing none of its preflight's listing and never asking; the parent passes it, and nobody types it.
+    child: false,
     // The account ring's --list: the walks, each with its steps and what it needs; nothing run.
     list: false,
     // The container's half of the dog ring, and what the outer half tells it: never typed by hand.
@@ -491,6 +520,9 @@ function parseArgs(argv) {
     else if (flag === "--older") parsed.older = value(flag);
     else if (flag === "--walk") parsed.walks.push(...value(flag).split(",").map((name) => name.trim()).filter(Boolean));
     else if (flag === "--list") parsed.list = true;
+    else if (flag === "--jobs") parsed.jobs = Number(value(flag));
+    else if (flag === "--collie") parsed.collie = true;
+    else if (flag === "--child") parsed.child = true;
     else if (flag === "--inside") parsed.inside = true;
     else if (flag === "--redirect") parsed.redirect = true;
     else if (flag === "--expect") parsed.expect = value(flag);
@@ -536,7 +568,12 @@ function parseArgs(argv) {
   if (parsed.list && parsed.ring !== "account") usage("--list is the account ring's: the walks; `pnpm test --list` lists the inner rings");
   const unknownWalks = parsed.walks.filter((name) => !WALK_NAMES.includes(name));
   if (unknownWalks.length > 0) usage(`no such walk: ${unknownWalks.join(", ")}; the walks are ${WALK_NAMES.join(", ")} (--list names each with its steps)`);
-  if (parsed.walks.length > 1) usage(`one walk at a time: ${parsed.walks.join(", ")} as a set, several at once, is draft phase 1`);
+  for (const [flag, on] of [["--jobs", parsed.jobs !== JOBS_DEFAULT], ["--collie", parsed.collie], ["--child", parsed.child]]) {
+    if (on && parsed.ring !== "account") usage(`${flag} is the account ring's set's`);
+  }
+  if (!Number.isInteger(parsed.jobs) || parsed.jobs < 1) usage(`--jobs ${parsed.jobs} is not a number of walks to run at once (default ${JOBS_DEFAULT})`);
+  if (parsed.child && parsed.walks.length !== 1) usage("--child is one walk of the set, run by the parent: it goes with exactly one --walk, and nobody types it");
+  if (parsed.child && !parsed.yes) usage("--child never asks: the parent passes --yes with it");
   if (parsed.older !== undefined && parsed.walks.length === 1 && !WALKS[parsed.walks[0]].needs.older) usage(`--older is the upgrade walk's; the ${parsed.walks[0]} walk deploys no older release`);
   if (parsed.images.length > 0 && parsed.ring === "account") usage("--image is the machine and dog rings'");
   if (parsed.ring === "dog") {
@@ -2743,15 +2780,17 @@ async function registryDigest(image) {
  * ring's, and `env()` drops every `CLOUDFLARE_*` and `SHEEP_TEST_*`
  * variable, so the token reaches one command's environment by name.
  */
-async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: wantedName, older: olderRef, walks, list }) {
+async function accountRing(parsed) {
+  const { ref, repo, spec, commit, keep, yes, dryRun, name: wantedName, older: olderRef, walks, list, child } = parsed;
   if (list) {
     console.log(listText());
     return;
   }
-  if (walks.length === 0) {
-    console.error("hermetic: the account ring is a set of walks, and draft phase 0 runs one at a time: name it with --walk <name> (the set, several at once, is draft phase 1)\n");
-    console.error(listText());
-    process.exit(2);
+  // One walk is this process's; none, or several, is the set (draft phase 1), a parent running each as a child.
+  if (walks.length !== 1) {
+    if (wantedName !== undefined) usage("--name is one walk's; the set names each station sheep-hermetic-<sha>-<walk>");
+    await accountSet(parsed);
+    return;
   }
   const walkName = walks[0];
   const walk = WALKS[walkName];
@@ -2838,10 +2877,13 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
     if (station.subdomain === undefined) throw new Error(`the account ${station.account.name} has no workers.dev subdomain; deploy takes --subdomain, and the ring does not choose one for the shepherd`);
     const before = await api.listing(station.account.id);
     console.log(`account: ${station.account.name} (${station.account.id}); plan ${plan.id} ${plan.state}, ${plan.price} ${plan.currency} ${plan.frequency}; subdomain ${station.subdomain}.workers.dev`);
-    console.log(`  Workers: ${before.workers.join(", ") || "(none)"}`);
-    console.log(`  container applications: ${before.applications.map((application) => `${application.name} (${application.id})`).join(", ") || "(none)"}`);
-    // The join stores (stile phase 2): the listing read the account's KV namespaces, which is also the check that the token has Workers KV Storage.
-    console.log(`  KV namespaces: ${before.namespaces.join(", ") || "(none)"}`);
+    // A child of the set prints none of the listing: the parent printed it once, and reads the whole of it before and after.
+    if (!child) {
+      console.log(`  Workers: ${before.workers.join(", ") || "(none)"}`);
+      console.log(`  container applications: ${before.applications.map((application) => `${application.name} (${application.id})`).join(", ") || "(none)"}`);
+      // The join stores (stile phase 2): the listing read the account's KV namespaces, which is also the check that the token has Workers KV Storage.
+      console.log(`  KV namespaces: ${before.namespaces.join(", ") || "(none)"}`);
+    }
     // The older's image, from its tree; then the ref's, from its tree or, for a spec, from the install.
     if (older !== undefined) {
       older.image = imageOf(parseJsonc(older.git("show", `${older.sha}:home/wrangler.jsonc`)));
@@ -2907,7 +2949,8 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
       // Hill phase 3, h1's dry path: the search h1 runs over the page's files, proved on a planted needle.
       if (stepsOf(walkName).includes("h1")) console.log(`dry run: ${hillSearchSelfCheck()}`);
     } else {
-      if (yes) console.log("  --yes: not asking");
+      if (child) console.log("  --child: the set's parent asked once");
+      else if (yes) console.log("  --yes: not asking");
       else {
         if (!process.stdin.isTTY) {
           console.error("hermetic: the account ring asks before it spends, and stdin is not a terminal; pass --yes to answer ahead. Nothing was deployed");
@@ -2963,6 +3006,289 @@ async function accountRing({ ref, repo, spec, commit, keep, yes, dryRun, name: w
     process.exit(1);
   }
   console.log(`\naccount ring: ok (the ${walkName} walk, ${ring.lines.filter((line) => line.startsWith("ok")).length} lines held, ${seconds}s)`);
+}
+
+/* The set (draft phase 1): every walk, run together by a parent that runs each as a child process. */
+
+/** The parent's word for a child that printed no step at all: not a step the script prints, so not the guard's. */
+const NEVER_RAN = "preflight";
+
+/**
+ * What this machine has of what the walks need beyond the token, asked
+ * once by the parent (the child asks again, cheaply, and refuses on the
+ * same): Docker, the variables, the key, the stile's harness, and
+ * dev.isocan.io, the last two only when a walk that needs them is wanted.
+ */
+async function machineHas(wanted) {
+  const needs = wanted.map((walk) => WALKS[walk].needs);
+  const docker = needs.some((need) => need.docker) ? spawnSync("docker", ["version", "--format", "{{.Server.Version}} {{.Server.Os}}/{{.Server.Arch}}"], { encoding: "utf8" }) : undefined;
+  const engine = docker && !docker.error && docker.status === 0 ? docker.stdout.trim() : undefined;
+  const variables = [...new Set(needs.flatMap((need) => need.env ?? []))].filter((variable) => process.env[variable]);
+  const key = Boolean(process.env.ANTHROPIC_API_KEY);
+  const harness = needs.some((need) => need.harness) ? (await stileHarness()).why === undefined : false;
+  const isocan = needs.some((need) => need.isocan) ? (await fetch(`${COLLIE_ISOCAN_HOME}/api/healthz`, { signal: AbortSignal.timeout(15_000) }).then((response) => response.status === 200, () => false)) : false;
+  return { docker: engine !== undefined, engine, env: variables, key, harness, isocan };
+}
+
+/**
+ * The set: the account ring with no `--walk`, or with several. The parent
+ * does the preflight once (the token, what the machine has, the account,
+ * the plan, the subdomain, the whole listing, the image on the registry,
+ * every member's names refused as leftovers), states the price once, asks
+ * once, then runs each member as a child, `node scripts/hermetic.mjs
+ * --ring account --walk <name> --yes --child <ref>`, at most `--jobs` at a
+ * time, each child's whole output in `<set dir>/<walk>.log` and its `ok`,
+ * `skip`, and `FAIL` lines (a FAIL's stdout and stderr block with it)
+ * printed here as they land, prefixed `[<walk>] `. A walk that fails does
+ * not stop its siblings; on SIGINT the parent forwards it to each running
+ * child and waits for them, then exits 130. A walk does not catch SIGINT
+ * (Node ends it at once, its `finally` unrun, as the ring always was), so
+ * an interrupted set can leave stations on the account; the next run
+ * refuses them as leftovers and names them for deleting by hand. After the last child the whole listing is read again,
+ * nothing set aside, and must equal the first; then the report, one line
+ * per walk, the rerun line for each failure, the not-checked list as the
+ * union of the children's plus each walk left out, and exit 1 when any
+ * child failed. The logs are kept when a walk failed, and with `--keep`.
+ */
+async function accountSet({ ref, repo, spec, commit, keep, yes, dryRun, older: olderRef, walks, collie, jobs }) {
+  const token = process.env.CLOUDFLARE_API_TOKEN;
+  if (!token) {
+    console.error("hermetic: the account ring needs CLOUDFLARE_API_TOKEN in its environment: the shepherd's token for the account the stations go on, which sheep home deploy takes the same way; nothing was done");
+    process.exit(2);
+  }
+  // The members: what was named, or every walk but the collie unless --collie; less what this machine cannot run, each named with why.
+  const wanted = walks.length > 0 ? [...new Set([...walks, ...(collie ? ["collie"] : [])])] : WALK_NAMES.filter((walk) => walk !== "collie" || collie);
+  const has = await machineHas(wanted);
+  const { members, leftOut } = setOf({ ...has, collie, named: walks });
+  if (members.length === 0) {
+    console.error(`hermetic: no walk of the set can run here:\n${leftOut.map(({ walk, why }) => `  - ${walk}: ${why}`).join("\n")}\nnothing was deployed`);
+    process.exit(2);
+  }
+  // The release: a ref's sha and stamp from the repository; a spec's from --commit, which the children's names and the sibling prefix need.
+  let sha;
+  let stamp;
+  if (spec === undefined) {
+    const git = gitIn(repo);
+    try {
+      sha = git("rev-parse", "--verify", `${ref}^{commit}`);
+      stamp = JSON.parse(git("show", `${sha}:package.json`)).sheep;
+    } catch (error) {
+      usage(`${ref}: ${error.message}`);
+    }
+  } else if (commit === undefined) usage("the set with a spec names its stations and their siblings from --commit (sheep-hermetic-<sha>-<walk>); pass --commit <sha>");
+  const sha7 = (sha ?? commit).slice(0, 7);
+  // The upgrade walk's older release, read here so a wrong --older stops the set before anything is made; the child reads it again.
+  let older;
+  if (members.includes("upgrade")) {
+    try {
+      older = olderRelease({ ring: { sha, stamp }, repo, ref, spec, olderRef });
+      if (!releaseCarriesChild(older)) usage(`--older ${older.ref} is ${older.stamp.commit}, which does not carry the tip's detached child; name a release built from a commit that carries it`);
+    } catch (error) {
+      usage(error.message);
+    }
+  }
+  const api = accountApi(token);
+  const flags = [...(olderRef !== undefined ? ["--older", olderRef] : []), ...(repo !== root ? ["--repo", repo] : []), ...(commit !== undefined ? ["--commit", commit] : [])];
+  const rerun = (walk) => rerunLine(walk, spec ?? ref, flags);
+  const dir = mkdtempSync(join(tmpdir(), "sheep-set-"));
+  const width = Math.max(...WALK_NAMES.map((name) => name.length));
+  let failure;
+  let before;
+  let after;
+  const outcomes = {};
+  const children = new Map();
+  let interrupted = false;
+  const startedAt = Date.now();
+  let firstSpawn;
+  let lastExit;
+  try {
+    // The preflight, once.
+    if (spec === undefined) console.log(`account ring: ${ref} = ${sha}${repo === root ? "" : ` in ${repo}`}; sheep ${stamp.commit} (${stamp.builtAt}); the set: ${members.join(", ")}`);
+    else console.log(`account ring: ${spec}${commit ? `, expected to be a build of ${commit}` : ""}; the set: ${members.join(", ")}`);
+    if (older !== undefined) console.log(`older: ${older.ref} = ${older.sha}; sheep ${older.stamp.commit} (${older.stamp.builtAt}), the upgrade walk's`);
+    for (const { walk, why } of leftOut) console.log(`  left out: ${walk}: ${why}`);
+    const account = await api.account();
+    const plan = await api.plan(account.id);
+    if (plan === undefined) throw new Error(`the account ${account.name} (${account.id}) is not on the Workers Paid plan, which containers need; deploy would refuse it, and the ring stops here`);
+    const subdomain = await api.subdomain(account.id);
+    if (subdomain === undefined) throw new Error(`the account ${account.name} has no workers.dev subdomain; deploy takes --subdomain, and the ring does not choose one for the shepherd`);
+    before = await api.listing(account.id);
+    console.log(`account: ${account.name} (${account.id}); plan ${plan.id} ${plan.state}, ${plan.price} ${plan.currency} ${plan.frequency}; subdomain ${subdomain}.workers.dev`);
+    console.log(`  Workers: ${before.workers.join(", ") || "(none)"}`);
+    console.log(`  container applications: ${before.applications.map((application) => `${application.name} (${application.id})`).join(", ") || "(none)"}`);
+    console.log(`  KV namespaces: ${before.namespaces.join(", ") || "(none)"}`);
+    if (sha !== undefined) {
+      const target = { image: imageOf(parseJsonc(gitIn(repo)("show", `${sha}:home/wrangler.jsonc`))) };
+      if (typeof target.image !== "string") throw new Error(`${ref}'s home/wrangler.jsonc names no image in its pen container; a release does`);
+      await checkImage(target, stamp, "image");
+    } else console.log("image: each child reads it from its install's home/wrangler.jsonc (a spec has no tree to read before)");
+    if (has.engine !== undefined) console.log(`docker: ${has.engine}; the second walk's machine is a container from node:24-slim`);
+    // Every member's names, refused as leftovers before anything is deployed; the whole listing is compared at the end, nothing set aside.
+    const names = Object.fromEntries(members.map((walk) => [walk, ownNames(stationName(sha7, walk), walk)]));
+    const left = members.flatMap((walk) => leftovers(before, names[walk]));
+    if (left.length > 0) throw new Error(`the account already holds ${left.join(", ")}; a walk that left it behind failed: delete it first (sheep home delete --name <name>, or wrangler delete <name>; wrangler containers delete <id>; wrangler kv namespace delete --namespace-id <id>)`);
+    const siblings = [...before.workers, ...before.namespaces].filter((named) => named.startsWith(prefixOf(sha7)));
+    if (siblings.length > 0) throw new Error(`the account holds ${siblings.join(", ")}, walks of this release running now or left behind; the set reads the whole listing with nothing set aside, so it waits for them or refuses their leftovers`);
+    console.log(`stations: ${members.map((walk) => names[walk].workers[0]).join(", ")}; each deployed by its walk and deleted at the end whatever happens; at most ${jobs} walk${jobs === 1 ? "" : "s"} at a time`);
+    console.log(`logs: ${dir}/<walk>.log`);
+
+    // The price and the yes, once.
+    const minutes = Math.max(...members.map((walk) => WALKS[walk].minutes));
+    console.log(
+      [
+        "",
+        `the account ring spends on the shepherd's account (the set: ${members.length} walk${members.length === 1 ? "" : "s"}, about ${minutes} min at ${jobs} at a time when every walk holds).`,
+        `  the Workers Paid plan is already paid, ${PLAN_PRICE}; each walk installs the release into a fresh world of its own, deploys one station of its own`,
+        "  (the upgrade walk's from the older release, redeployed from the newer; the stile's and the collie's through the sitting), runs containers for a",
+        "  few commands (minutes at Cloudflare's per-minute container rate: cents each), and deletes it at the end, or on failure.",
+        ...(members.includes("collie")
+          ? ["  the collie walk spends the key on Percy's one turn of a real model (cents), and makes a scratch canvas at dev.isocan.io, archived at the end."]
+          : []),
+        `  the token${process.env.ANTHROPIC_API_KEY ? " and the key" : ""} reach each child's environment, and from it sheep home deploy's and the sitting's, and nothing else of this ring${process.env.ANTHROPIC_API_KEY ? "" : "; ANTHROPIC_API_KEY is not set, and each faux station gets a placeholder secret"}.`,
+      ].join("\n"),
+    );
+    if (dryRun) {
+      console.log(`\ndry run: stopping before any child is run; nothing deployed. members: ${members.join(", ")}${leftOut.length > 0 ? `; left out: ${leftOut.map(({ walk }) => walk).join(", ")}` : ""}`);
+    } else {
+      if (yes) console.log("  --yes: not asking");
+      else {
+        if (!process.stdin.isTTY) {
+          console.error("hermetic: the account ring asks before it spends, and stdin is not a terminal; pass --yes to answer ahead. Nothing was deployed");
+          process.exit(2);
+        }
+        const answer = await ask("run it? [y/N] ");
+        if (!/^y(es)?$/i.test(answer)) {
+          console.error("hermetic: not run; nothing was deployed");
+          process.exit(2);
+        }
+      }
+      console.log("");
+
+      // The children, at most `jobs` at a time, each on its own station; a walk that fails does not stop its siblings.
+      const queue = [...members];
+      const onInterrupt = () => {
+        if (interrupted) return;
+        interrupted = true;
+        queue.length = 0;
+        console.log(`\nhermetic: interrupted; SIGINT sent to ${children.size} running walk${children.size === 1 ? "" : "s"} (${[...children.keys()].join(", ")}), waiting for them; a station a walk was mid-way through stays on the account, and the next run names it`);
+        for (const child of children.values()) child.kill("SIGINT");
+      };
+      process.on("SIGINT", onInterrupt);
+      const runChild = (walk) =>
+        new Promise((done) => {
+          const args = [fileURLToPath(import.meta.url), "--ring", "account", "--walk", walk, "--yes", "--child", ...flags, spec ?? ref];
+          const log = join(dir, `${walk}.log`);
+          const chunks = [];
+          const tag = `[${walk}]`.padEnd(width + 2);
+          const childStarted = Date.now();
+          firstSpawn ??= childStarted;
+          console.log(`${tag} started: node scripts/hermetic.mjs ${args.slice(1).join(" ")}`);
+          const child = spawn(process.execPath, args, { stdio: ["ignore", "pipe", "pipe"], env: process.env, cwd: root });
+          children.set(walk, child);
+          // The lines that land here: each step's, a FAIL's block through to the not-checked list, and the child's last line.
+          let pending = "";
+          let inFailBlock = false;
+          const onLine = (line) => {
+            if (/^(ok {4}|skip {2}|FAIL {2})/.test(line)) {
+              inFailBlock = line.startsWith("FAIL  ");
+              console.log(`${tag} ${line}`);
+              return;
+            }
+            if (line.startsWith("not checked by the account ring:")) inFailBlock = false;
+            if (inFailBlock || /^(account ring: |hermetic: )/.test(line)) console.log(`${tag} ${line}`);
+          };
+          for (const stream of [child.stdout, child.stderr]) {
+            stream.on("data", (chunk) => {
+              chunks.push(chunk);
+              pending += chunk.toString("utf8");
+              const split = pending.split("\n");
+              pending = split.pop();
+              for (const line of split) onLine(line);
+            });
+          }
+          child.once("close", (code, signal) => {
+            if (pending) onLine(pending);
+            const text = Buffer.concat(chunks).toString("utf8");
+            writeFileSync(log, text);
+            children.delete(walk);
+            lastExit = Date.now();
+            const outcome = readOutcome(text, code ?? (signal ? 1 : 0));
+            outcome.seconds ??= Math.round((lastExit - childStarted) / 1000);
+            outcome.notChecked = notCheckedIn(text);
+            outcomes[walk] = { ...outcome, walk };
+            console.log(`${tag} ${outcome.status === "held" ? "held" : `FAILED at ${outcome.step}`} (${outcome.seconds}s, exit ${code ?? signal}); log: ${log}`);
+            done();
+          });
+        });
+      const running = new Set();
+      await new Promise((allDone) => {
+        const next = () => {
+          while (queue.length > 0 && running.size < jobs) {
+            const walk = queue.shift();
+            const one = runChild(walk).then(() => {
+              running.delete(one);
+              next();
+            });
+            running.add(one);
+          }
+          if (queue.length === 0 && running.size === 0) allDone();
+        };
+        next();
+      });
+      process.off("SIGINT", onInterrupt);
+
+      // The whole listing, after the last child, equal to the one before the first, nothing set aside.
+      after = await api.listing(account.id);
+      console.log(`\n  Workers: ${after.workers.join(", ") || "(none)"}`);
+      console.log(`  container applications: ${after.applications.map((application) => `${application.name} (${application.id})`).join(", ") || "(none)"}`);
+      console.log(`  KV namespaces: ${after.namespaces.join(", ") || "(none)"}`);
+      if (JSON.stringify(after) !== JSON.stringify(before)) {
+        const gained = [...after.workers.filter((worker) => !before.workers.includes(worker)), ...after.namespaces.filter((title) => !before.namespaces.includes(title)), ...after.applications.filter((application) => !before.applications.some((one) => one.id === application.id)).map((application) => `${application.name} (${application.id})`)];
+        const lost = [...before.workers.filter((worker) => !after.workers.includes(worker)), ...before.namespaces.filter((title) => !after.namespaces.includes(title)), ...before.applications.filter((application) => !after.applications.some((one) => one.id === application.id)).map((application) => `${application.name} (${application.id})`)];
+        console.log(`FAIL  set: the account's listing after the set (exit 1)\n--- stderr ---\nexpected the listing from before the set, nothing set aside; gained: ${gained.join(", ") || "(none)"}; lost: ${lost.join(", ") || "(none)"}`);
+        failure = new Error(`the account's listing after the set is not the one before it: gained ${gained.join(", ") || "nothing"}, lost ${lost.join(", ") || "nothing"}`);
+      } else console.log("  the account's listing is the one from before the set, nothing set aside");
+    }
+  } catch (error) {
+    failure = error;
+  }
+  if (dryRun) {
+    rmSync(dir, { recursive: true, force: true });
+    if (failure) {
+      console.log(`\naccount ring: dry run FAILED at preflight (the set): ${failure.message}`);
+      process.exit(1);
+    }
+    console.log("\naccount ring: dry run ok (the set's preflight held; nothing deployed)");
+    return;
+  }
+  if (interrupted) {
+    console.log(`\naccount ring: interrupted (the set); logs kept: ${dir}`);
+    process.exit(130);
+  }
+  // The report: one line per walk, the rerun lines, the not-checked union, the last line.
+  const failedWalks = members.filter((walk) => outcomes[walk]?.status !== "held");
+  for (const { walk, why } of leftOut) outcomes[walk] = { walk, status: "left out", why };
+  for (const walk of members) outcomes[walk] ??= { walk, status: "failed", step: NEVER_RAN, why: "the child never ran" };
+  console.log("");
+  for (const line of reportLines(outcomes, rerun)) console.log(line);
+  console.log("not checked by the account ring:");
+  const union = [...new Set(members.flatMap((walk) => outcomes[walk].notChecked ?? []))].filter((item) => !item.startsWith("the other walks, each run alone"));
+  for (const item of [...union, ...leftOut.map(({ walk, why }) => `the ${walk} walk, left out: ${why}`)]) console.log(`  - ${item}`);
+  const seconds = firstSpawn !== undefined && lastExit !== undefined ? Math.round((lastExit - firstSpawn) / 1000) : Math.round((Date.now() - startedAt) / 1000);
+  const longest = Math.max(0, ...members.map((walk) => outcomes[walk].seconds ?? 0));
+  if (failure || failedWalks.length > 0 || !keep) {
+    if (failure || failedWalks.length > 0) console.log(`logs kept: ${dir}`);
+    else rmSync(dir, { recursive: true, force: true });
+  } else console.log(`logs kept: ${dir}`);
+  if (failure && failedWalks.length === 0) {
+    console.log(`\naccount ring: FAILED (the set: ${members.length} held, the listing after is not the one before: ${failure.message}; ${seconds}s)`);
+    process.exit(1);
+  }
+  if (failedWalks.length > 0) {
+    console.log(`\naccount ring: FAILED (the set: ${members.length - failedWalks.length} held, ${failedWalks.length} failed: ${failedWalks.join(", ")}; wall clock ${seconds}s, the longest walk ${longest}s)`);
+    process.exit(1);
+  }
+  console.log(`\naccount ring: ok (the set: ${members.length} walks held, wall clock ${seconds}s, the longest walk ${longest}s)`);
 }
 
 /** Whether a walk's key goes to a real model: the collie's alone; the stile's sitting types it and keeps it, and its dog runs the faux provider. */

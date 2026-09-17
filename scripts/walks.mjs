@@ -273,3 +273,113 @@ export function listText() {
   lines.push("arguments. A walk that fails deletes its station and prints the line that runs it again, alone. The set is draft phase 1.");
   return lines.join("\n");
 }
+
+/* The set (draft phase 1): every walk, run together by a parent that runs each as a child process. */
+
+/**
+ * How many walks the set runs at once by default. Four, because the
+ * account had rented every container a walk asked for one station at a
+ * time and had not been asked for four stations' worth at once; draft
+ * phase 0's finding then ran five at a time on the account and every one
+ * held, so four is under evidence. `--jobs 1` is the set in order.
+ */
+export const JOBS_DEFAULT = 4;
+
+/**
+ * What a walk needs beyond the token that a machine lacks, as short
+ * reasons, from what the machine has: `docker` (an engine answers), `env`
+ * (the variables present), `key` (`ANTHROPIC_API_KEY`), `harness` (the
+ * stile's terminal harness from this checkout), `isocan` (dev.isocan.io
+ * answering). Empty when the walk can run. The child refuses on the same
+ * needs, with fuller sentences; the parent leaves the walk out on these.
+ */
+export function lackingOf(walk, has) {
+  const needs = WALKS[walk].needs;
+  const lacking = [];
+  if (needs.docker && !has.docker) lacking.push("Docker");
+  for (const variable of needs.env ?? []) if (!(has.env ?? []).includes(variable)) lacking.push(`${variable} in the environment`);
+  if (needs.key && !has.key) lacking.push("ANTHROPIC_API_KEY in the environment");
+  if (needs.harness && !has.harness) lacking.push("the stile's terminal harness");
+  if (needs.isocan && !has.isocan) lacking.push("dev.isocan.io answering");
+  return lacking;
+}
+
+/**
+ * Which walks a machine's set holds, from what it has: every walk but the
+ * collie, which joins when named in `--walk` or when `--collie` is given
+ * (it spends the key on a real model, and stands up an identity at
+ * dev.isocan.io); `named` narrows the set to those walks. A walk the
+ * machine cannot run is left out with why, in the table's order, and the
+ * report's not-checked list names it too.
+ */
+export function setOf({ docker = false, env = [], key = false, harness = false, isocan = false, collie = false, named = [] } = {}) {
+  const has = { docker, env, key, harness, isocan };
+  const wanted = named.length > 0 ? [...new Set([...named, ...(collie ? ["collie"] : [])])] : WALK_NAMES.filter((walk) => walk !== "collie" || collie);
+  const members = [];
+  const leftOut = [];
+  for (const walk of WALK_NAMES) {
+    if (!wanted.includes(walk)) {
+      // The whole set names the collie it left out; a set narrowed by --walk left out everything else on purpose.
+      if (walk === "collie" && named.length === 0) leftOut.push({ walk, why: "not named: `--collie`, or `--walk collie`, runs it (a real model's turn, and an identity at dev.isocan.io)" });
+      continue;
+    }
+    const lacking = lackingOf(walk, has);
+    if (lacking.length > 0) leftOut.push({ walk, why: `this machine lacks ${lacking.join(" and ")}` });
+    else members.push(walk);
+  }
+  return { members, leftOut };
+}
+
+/**
+ * A child's outcome, read from its exit code and the last lines phase 0
+ * prints: `account ring: ok (the <walk> walk, N lines held, Ss)` or
+ * `account ring: FAILED at <step> (the <walk> walk, Ss)`. A child that
+ * printed neither (refused at its preflight with exit 2, or killed) is
+ * failed at `preflight`, with no seconds of its own.
+ */
+export function readOutcome(text, code) {
+  const held = /^account ring: ok \(the (\S+) walk, (\d+) lines held, (\d+)s\)$/m.exec(text);
+  if (held && code === 0) return { walk: held[1], status: "held", lines: Number(held[2]), seconds: Number(held[3]) };
+  const failed = /^account ring: FAILED at (\S+) \(the (\S+) walk, (\d+)s\)$/m.exec(text);
+  if (failed) return { walk: failed[2], status: "failed", step: failed[1], seconds: Number(failed[3]) };
+  const refused = /^hermetic: (.+)$/m.exec(text);
+  return { status: "failed", step: "preflight", why: refused?.[1] ?? `exit ${code} with no last line` };
+}
+
+/** The items under a child's `not checked by the account ring:` line, each without its `  - `, for the parent's union. */
+export function notCheckedIn(text) {
+  const lines = text.split("\n");
+  const start = lines.findIndex((line) => line === "not checked by the account ring:");
+  if (start < 0) return [];
+  const items = [];
+  for (const line of lines.slice(start + 1)) {
+    if (!line.startsWith("  - ")) break;
+    items.push(line.slice(4));
+  }
+  return items;
+}
+
+/**
+ * The set's report: one line per walk, in the table's order, from each
+ * outcome (`held` with its lines and seconds, `failed` at a step with its
+ * seconds, `left out` with why); then the rerun line for each failure.
+ * `outcomes` is `{ [walk]: outcome }`; `rerun(walk)` gives the line.
+ */
+export function reportLines(outcomes, rerun) {
+  const width = Math.max(...WALK_NAMES.map((name) => name.length));
+  const lines = [];
+  for (const walk of WALK_NAMES) {
+    const outcome = outcomes[walk];
+    if (outcome === undefined) continue;
+    const name = walk.padEnd(width);
+    if (outcome.status === "held") lines.push(`  ${name}  held  ${outcome.lines} lines  ${outcome.seconds}s`);
+    else if (outcome.status === "failed") lines.push(`  ${name}  FAILED at ${outcome.step}${outcome.seconds !== undefined ? `  ${outcome.seconds}s` : ""}${outcome.why ? `  (${outcome.why})` : ""}`);
+    else lines.push(`  ${name}  left out: ${outcome.why}`);
+  }
+  const failed = WALK_NAMES.filter((walk) => outcomes[walk]?.status === "failed");
+  if (failed.length > 0) {
+    lines.push(`run again, alone${failed.length > 1 ? ", each" : ""}:`);
+    for (const walk of failed) lines.push(`  ${rerun(walk)}`);
+  }
+  return lines;
+}
