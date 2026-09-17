@@ -1,8 +1,8 @@
 ---
-status: planned
+status: partial
 since: 2026-09-16
 see: draft
-note: "planned 16 Sep 2026 from the shepherd's issue #13, after the account ring failed three times before hill's `h1` and twice before collie's steps, each time at a step the phase being closed did not need. The ring is one sequential walk that re-proves every project since collar on one station, 30 to 45 minutes when it holds, and a transient platform fault anywhere sinks the run. Draft cuts it into walks that stand alone, each on a station of its own, runnable alone and run together. Two phases: the walks, then the set."
+note: "planned 16 Sep 2026 from the shepherd's issue #13, after the account ring failed three times before hill's `h1` and twice before collie's steps, each time at a step the phase being closed did not need. The ring is one sequential walk that re-proves every project since collar on one station, 30 to 45 minutes when it holds, and a transient platform fault anywhere sinks the run. Draft cuts it into walks that stand alone, each on a station of its own, runnable alone and run together. Two phases: the walks, then the set. Draft phase 0 closed the same day: eleven walks, each on a station of its own under the sibling rule, every one held alone on release 22d2fec, five at a time, in 125 to 493 seconds; the bell walk reached hill's `h1`; the split's two own defects (the table not copied into containers, the collie's address too long for the stile's screen) were found by the walks and fixed."
 ---
 
 # Draft — the journeys

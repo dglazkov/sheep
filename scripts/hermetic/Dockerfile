@@ -2,7 +2,9 @@
 # container comes. `scripts/hermetic.mjs --ring machine` builds it twice,
 # with NODE_IMAGE=node:22-slim and NODE_IMAGE=node:24-slim, from a build
 # context it makes: the ref as a bare repository (`src.git`), this script
-# (`hermetic.mjs`), and this file. The dog ring (collar phase 4) builds it
+# (`hermetic.mjs`) with the table it imports (`walks.mjs`, draft phase 0;
+# `copyScriptInto` copies every file the script imports from beside itself,
+# and the guard checks that each is named below), and this file. The dog ring (collar phase 4) builds it
 # once more from node:24-slim with AGENT set, and Claude Code is in it.
 # Nothing is mounted into the container and no socket reaches it; the ring
 # inside installs `git+file:///src.git#<sha>` through npm's git installer
@@ -30,7 +32,8 @@ RUN apt-get update \
 ARG AGENT=
 RUN if [ -n "$AGENT" ]; then npm install -g "$AGENT" && claude --version && rm -rf "$HOME/.npm"; fi
 
-# The script first, the repository last: the apt layer, the agent, and the script are cached across runs; the repository changes with the ref.
+# The script and its table first, the repository last: the apt layer, the agent, and the scripts are cached across runs; the repository changes with the ref.
 COPY hermetic.mjs /ring/hermetic.mjs
+COPY walks.mjs /ring/walks.mjs
 COPY src.git /src.git
 WORKDIR /ring

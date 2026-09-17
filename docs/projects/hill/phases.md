@@ -46,10 +46,10 @@ a sheep nothing has asked. A release carries the page, and the package
 ring proves it on every one. Journeys 1 to 4 are walked; journey 5 step
 1 was walked on a station deployed for it and deleted after, with a
 real model, and journey 2 step 6's hour held there. The shepherd said
-yes to the look and closed the last phase on what had been proved. One
-debt is carried elsewhere: `h1` has never run inside the account ring,
-which failed three times before reaching it, and issue #13's split is
-where that belongs. Nothing here waits on work.
+yes to the look and closed the last phase on what had been proved. The
+one debt carried elsewhere, `h1`'s first run inside the account ring,
+was paid on 16 September 2026 by draft phase 0's bell walk, on release
+22d2fec. Nothing here waits on work.
 
 The order was dependency order. Hill phase 0 is the door and the verb:
 a pass, a seat, the cookie admitted for a read, proved in workerd with
@@ -323,8 +323,8 @@ The account ring failed three times, at three different steps and never
 at a hill one, so `h1` has not run there; its checks held by hand on a
 deployed station, and the package ring's `h0` holds on every release.
 The shepherd said yes to the look, and then closed the phase on what
-had been proved: `h1`'s first run in the ring is carried by issue #13's
-split, not by this project.
+had been proved; `h1`'s first run in the ring came the same day, on
+draft phase 0's bell walk (release 22d2fec, 16 lines held in 133 s).
 
 **Findings:**
 
@@ -335,4 +335,4 @@ split, not by this project.
 - **2026-09-15 — A local home runs the checkout's live Worker,** so an edit reloaded it under a seated tab; builders sharing one scratchpad and browser disturbed each other's walks.
 - **2026-09-15 — The walk held on `sheep-hill-walk` with a real model:** a mint's row in 0.93 s, `running` in 1.03 s, a prompt on the page in 1.45 s, setup `ok (40.2 s)` beside `sheep status`, the seat through a browser restart, 398 requests with no token.
 - **2026-09-15 — HTTP/2 carries no `Upgrade`:** a seat's socket was 401 over HTTP/1.1 and the bearer's 101; over HTTP/2 the cell answered a plain GET 426.
-- **2026-09-16 — Open: three ring runs failed before `h1`, at `t2`, `a5`, and `a2`, none a hill step.** Issue #13's long walk loses a run to any platform fault. `h0` holds on every release and `h1`'s checks held by hand; a run reaching `h1` closes it.
+- **2026-09-16 — Three ring runs failed before `h1`, at `t2`, `a5`, and `a2`, none a hill step;** then draft phase 0's bell walk, a station of its own, reached it on release 22d2fec: the seat's reads matched the bearer's, the write was 401, the token in no file.

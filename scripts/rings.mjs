@@ -121,6 +121,7 @@ export const RINGS = {
     "packages/cli/test/settle.test.ts",
     "packages/cli/test/surface.test.ts",
     "packages/cli/test/tip.test.ts",
+    "packages/cli/test/walks.test.ts",
     "packages/hill/test/flock.test.ts",
     "packages/hill/test/flow.test.ts",
     "packages/hill/test/page.test.ts",

@@ -65,15 +65,15 @@ ring fails when the script's steps and the table disagree.
 | --- | --- | --- | --- |
 | `upgrade` | `a1`, `a2`, `a2b`, `sh1`, `up`, `sh2`, `sh3`, `sh4`, `n1`, `a6` | the older release (`--older`, or the ref's first parent) | 8 min |
 | `station` | `d1`, `st`, `a3`, `m1`, `e2`, `s2`, `a4`, `a5`, `n1`, `a6` | nothing | 6 min |
-| `second` | `d1`, `a7`, `t2`, `n1`, `a6` | Docker | 7 min |
-| `pasture` | `d1`, `a8`, `s1`, `n1`, `a6` | `LAMB_PLAYGROUND_TOKEN` | 4 min |
+| `second` | `d1`, `a7`, `t2`, `n1`, `a6` | Docker, the stile's harness | 7 min |
+| `pasture` | `d1`, `s1`, `a8`, `n1`, `a6` | `LAMB_PLAYGROUND_TOKEN` | 4 min |
 | `fold` | `d1`, `f1`, `n1`, `a6` | nothing | 4 min |
 | `spool` | `d1`, `f2`, `n1`, `a6` | nothing | 8 min |
 | `bleat` | `d1`, `b1`, `n1`, `a6` | nothing | 3 min |
 | `bell` | `d1`, `b2`, `h1`, `n1`, `a6` | nothing | 3 min |
 | `tether` | `d1`, `r1`, `n1`, `a6` | nothing | 4 min |
-| `stile` | `t1` | the key | 4 min |
-| `collie` | `t1`, `co0` to `co9`, `c-end` | the key, dev.isocan.io, the stile's terminal harness | 10 to 15 min |
+| `stile` | `t1` | the key, the stile's harness | 4 min |
+| `collie` | `t1`, `co0` to `co9`, `co`, `c-end` | the key, dev.isocan.io, the stile's harness | 10 to 15 min |
 
 Every walk also prints the `walk` line: the `ps` watch's samples with
 no secret in any process's arguments.
@@ -83,7 +83,13 @@ prologue is `a1` and `a2` as they are, and `up` is the newer over it.
 It runs when the upgrade path changes, and in the set. `stile` and
 `collie` deploy through the sitting, `t1`, on `<name>-t`, as they do
 today, so they have no `d1`; `collie` is `--collie-only` under its new
-name, and `--collie-only` goes.
+name, and `--collie-only` goes. Two rows read differently from the plan
+of 16 Sep 2026, and draft phase 0's findings say why: `pasture` runs
+`s1` before `a8`, since `a8` leaves two idle containers for `n1` and
+`s1` births two more under one station's cap of three; and the collie's
+station is `sheep-hermetic-<sha>-c`, not `-collie`, since the stile's
+80-column screen is where `co3` reads the collie's whole address, and
+`…-collie-t-collie.dglazkov.workers.dev` does not fit on it.
 
 ## The prologue
 

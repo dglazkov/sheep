@@ -20,15 +20,16 @@ step, which is a finding and a stop, not an edit to the assertion.
 
 ---
 
-**Where we are: draft is planned, 16 September 2026; next is draft
-phase 0.** Nothing built. The account ring is one sequential walk of 30 to 45
-minutes that re-proves every project since collar on one station, and
-five of its last runs failed before the step they were run for. Draft
-phase 0 cuts it into eleven walks that stand alone, each on a station of
-its own, and runs every one on the shepherd's account, the bell walk
-reaching hill's `h1`. Draft phase 1 runs them as a set, several at a
-time, with one report. Nothing waits on a person: the account walks are
-the conductor's to run under the shepherd's standing authorization.
+**Where we are: draft phase 0 CLOSED, 16 September 2026; next is draft
+phase 1.** The account ring is eleven walks that stand alone, `pnpm
+hermetic --ring account --walk <name>`, each on a station of its own
+under the sibling rule, the table in `scripts/walks.mjs` and a guard in
+the checkout ring keeping it true against the script. Every walk held
+alone on release 22d2fec, five at a time on the account, between 125
+and 493 seconds each, and the bell walk reached hill's `h1`. Draft phase
+1 runs them as a set, several at a time, with one report. Nothing waits
+on a person: the account walks are the conductor's to run under the
+shepherd's standing authorization.
 
 Two phases, because a walk that stands alone is useful the day it
 exists, and the set is a parent over children that already work.
@@ -89,7 +90,16 @@ the account's listing equal before and after each; the seconds of each
 recorded. Several may run at once, which is the sibling rule's own
 proof.
 
-**Status: NOT STARTED.**
+**Status: CLOSED.** 2026-09-16. Every inner ring holds with the guard, both mutations fail it, and all eleven walks held alone on the shepherd's account against release 22d2fec, the bell walk reaching `h1`.
+
+**Findings:**
+
+- **2026-09-16 — Every walk held alone on release 22d2fec, five at a time on the account:** stile 125 s, pasture 126, bell 133, station 153, bleat 158, fold 214, tether 219, upgrade 341, spool 378, second 385, collie 493; every listing equal with siblings aside, the account as it was.
+- **2026-09-16 — The split's first defect was found by a walk, not the guard:** `hermetic.mjs` began importing `walks.mjs` and every build context copied the script alone, so the second machine's container failed at its first line. The copy now derives from the imports, and the guard holds the Dockerfile to the same list.
+- **2026-09-16 — A name on the account is also a name on a screen:** the collie's station renamed `-collie` made its Worker's address 67 characters, cut and wrapped on the stile's 80 columns where `co3` reads it whole. The collie's station is `-c`.
+- **2026-09-16 — The station walk failed once at `s2` with the platform's `503 No browser available`,** beside four siblings, and held on its rerun beside four; the rerun line cost 153 s where the old ring's retry cost the top. The browser cap is the account's, not a station's.
+- **2026-09-16 — The pasture walk runs `s1` before `a8`:** `a8` leaves two idle containers for `n1` and `s1` births two more under one station's cap of three, earmark's own finding again; `s1` ends its own two.
+- **2026-09-16 — Two step names are shared across rings by accident of history,** `s1` (serve, earmark) and `d1` (the docker walk, the deploy); the guard reads names, so for those two it cannot tell the ring, written down in `PACKAGE_RING_STEPS`.
 
 ## Phase 1: The set
 
