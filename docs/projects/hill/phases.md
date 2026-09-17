@@ -35,19 +35,23 @@ resource, spend money, or need a login, and are asked out loud first.
 
 ---
 
-**Where we are: hill phases 0 to 2 CLOSED, hill phase 3 PART-DONE, 16
-September 2026; the shepherd said yes to the look, and hill phase 3 waits only on an account ring that reaches `h1`, which three runs failed to reach for reasons of their own.** The flock is live,
-walked on a real model and a real container, and a sheep's page follows its transcript. The door stands, and the station serves the page at
-`/hill/` from an assets binding, before the door: the gate for a
-browser with no seat, the shell once seated, and a release that carries
-it, walked in Chrome and by the package ring. Hill phase 1 waits on one
-thing, which it has: the shepherd's yes, given 16 September 2026. Hill
-phase 3 waits on an account ring that reaches `h1`: three runs failed
-first, at `t2`, at `a5`, and at `a2`, each a platform fault of issue
-#13's kind. Nothing else waits on work. `hill phase 3`'s walk and its account-ring
-step are ⚑.
+**Where we are: hill is done, 16 September 2026. All four phases
+CLOSED.** The station serves the shepherd's page at `/hill/`, before
+its own door, so a browser with no seat meets the gate: `sheep hill`
+prints a one-time link, the link buys a seat in a cookie named for its
+home, and a seat only looks, refused every write and the socket to a
+cell. The flock is live, and a sheep's page follows its transcript,
+drawn by the rendering `sheep log` prints through; looking never wakes
+a sheep nothing has asked. A release carries the page, and the package
+ring proves it on every one. Journeys 1 to 4 are walked; journey 5 step
+1 was walked on a station deployed for it and deleted after, with a
+real model, and journey 2 step 6's hour held there. The shepherd said
+yes to the look and closed the last phase on what had been proved. One
+debt is carried elsewhere: `h1` has never run inside the account ring,
+which failed three times before reaching it, and issue #13's split is
+where that belongs. Nothing here waits on work.
 
-The order is dependency order. Hill phase 0 is the door and the verb:
+The order was dependency order. Hill phase 0 is the door and the verb:
 a pass, a seat, the cookie admitted for a read, proved in workerd with
 `fetch` and in the command ring with a fake home; no page. Hill phase 1
 is the shell: the package, its build, the Worker serving it, the
@@ -308,7 +312,7 @@ deleted on the shepherd's account, a few container minutes and one
 deploy; and the walk's own station, the same again. The shepherd's
 station `sheep-2` is not touched: it is theirs to upgrade.
 
-**Status: PART-DONE.** 2026-09-15. Every proof that runs in the
+**Status: CLOSED.** 2026-09-16, at the shepherd's word. Every proof that runs in the
 checkout held: `sheep log` prints through the blocks byte for byte
 against the rendering frozen from before the move, a sheep's page
 follows its transcript over the long poll and never wakes a sheep
@@ -317,9 +321,10 @@ Journey 5 step 1 was walked on the walk's own station with a real model
 and deleted after: journeys 1 to 3 in a headless Chrome, frames judged.
 The account ring failed three times, at three different steps and never
 at a hill one, so `h1` has not run there; its checks held by hand on a
-deployed station, and the package ring's `h0` holds on every release. The
-shepherd said yes to the look on 16 September 2026, so the phase closes
-on a ring that reaches `h1` alone.
+deployed station, and the package ring's `h0` holds on every release.
+The shepherd said yes to the look, and then closed the phase on what
+had been proved: `h1`'s first run in the ring is carried by issue #13's
+split, not by this project.
 
 **Findings:**
 

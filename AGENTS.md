@@ -62,6 +62,13 @@ second command in this package, `collie`, built from `sheep`'s parts,
 deploys a Worker of its own beside the station that runs isocan's rc
 room as a module, `isocan/rc`, and prompts sheep over the station's
 routes; the station and `sheep` are untouched.
+[Project hill](docs/projects/hill/design.md) is the shepherd's
+observation point: the station serves a page at `/hill/`, entered by a
+one-time link `sheep hill` prints and kept by a cookie, so the home's
+token never reaches a browser; the flock as `sheep ls` lists it, live,
+and one sheep's transcript as it lands, drawn by the rendering `sheep
+log` prints through. A seat only looks: every write and the socket to a
+cell are refused.
 Setup and usage are in [README.md](README.md).
 Read a project's `phases.md` for where its work stands and what the next
 phase is; [docs/projects/README.md](docs/projects/README.md) lists them.
