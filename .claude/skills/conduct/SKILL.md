@@ -8,7 +8,9 @@ argument-hint: "<project> [status | <phase number> | one]"
 
 A project under `docs/projects/<name>/` is three documents: `journey.md`
 (the acceptance suite), `design.md` (the argument), `phases.md` (the
-walk). This skill is how the walk is walked. The session that runs it is
+walk). `/plan-project` writes them; this skill is how the walk is
+walked, usually in a session of its own after the plan's commit, on a
+cheaper model than the one that planned. The session that runs it is
 the **conductor**. It does not build; it briefs a subagent that builds,
 then it verifies the proof the phase named up front, never taking the
 subagent's word for it, and only then writes the record and commits.

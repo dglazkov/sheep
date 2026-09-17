@@ -72,8 +72,10 @@ cell are refused.
 Setup and usage are in [README.md](README.md).
 Read a project's `phases.md` for where its work stands and what the next
 phase is; [docs/projects/README.md](docs/projects/README.md) lists them.
-`/conduct <project>` is how a phase is run: briefed to a subagent, proved
-by the conductor, recorded, committed whole.
+`/plan-project <name>` is how a project is planned: the three docs, the
+index row, one commit, and nothing built. `/conduct <project>` is how a
+phase is run: briefed to a subagent, proved by the conductor, recorded,
+committed whole; the two are separate sessions on purpose.
 
 - **Proofs run in workerd, never in Node.** `packages/cell` tests go
   through `@cloudflare/vitest-pool-workers`. A test that passes in Node
