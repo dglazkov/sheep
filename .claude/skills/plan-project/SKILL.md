@@ -1,20 +1,23 @@
 ---
 name: plan-project
-description: Plan a new project under docs/projects/ — from an issue, a question, or a sighting, write the three docs (journey.md, design.md, phases.md), the index row, and the plan commit, and stop; conducting is /conduct in a session of its own. Use for "/plan-project <name> from issue #N", "plan a project for X", "turn this into a project", or "what would the project for this look like".
-argument-hint: "<name> [from issue #N | from <a sentence>]"
+description: Write the plan for a project whose idea the shepherd and the planner have just talked through in this conversation — the three docs under docs/projects/<name>/ (journey.md, design.md, phases.md), the index row, and the plan commit — and stop; conducting is /conduct in a session of its own. Invoked bare, "/plan-project", when the shepherd says the idea is settled. Never with arguments, and never from an issue or a sentence alone: the conversation is the source.
 ---
 
-# plan-project: one project, planned, committed, handed to /conduct
+# plan-project: the idea we settled, written as a project, handed to /conduct
 
 A project under `docs/projects/<name>/` is three documents: `journey.md`
 (the acceptance suite), `design.md` (the argument), `phases.md` (the
-walk). This skill writes them. The session that runs it is the
-**planner**. It measures, reads, decides, and writes; it builds nothing
-and briefs nobody. When the plan is committed, the planner's work is
-over, and `/conduct <name>` picks the plan up, usually in another session
-and on a cheaper model: the plan is where the judgment is spent, and the
-conduct is mechanical against it. A plan that needs the planner in the
-room during the conduct is not finished.
+walk). This skill writes them from a conversation that has already
+happened. The session that runs it is the **planner**, and the planner
+is not trusted to come up with a project on its own: the shape of a
+project is the shepherd's, arrived at by talking it through, and the
+skill is the shepherd's word that the talking is done. What the skill
+adds is the writing: the forms the repository's projects share, the
+measurements the argument needs, the index row, the lint, one commit.
+It builds nothing and briefs nobody. When the plan is committed the
+planner's work is over, and `/conduct <name>` picks it up, usually in
+another session and on a cheaper model: the plan is where the judgment
+is spent, and the conduct is mechanical against it.
 
 The shepherd's rules for projects live in
 [docs/projects/README.md](../../../docs/projects/README.md): **a project
@@ -24,52 +27,77 @@ A plan that would be long-lived is cut at the wrong grain and should be
 several. The house rules in `AGENTS.md` apply to the plan as much as to
 the code.
 
-## Arguments
+## How it is invoked
 
-- `/plan-project <name> from issue #N`: plan from a GitHub issue. Read
-  it whole, comments included, with `gh issue view N --comments`.
-- `/plan-project <name> from <a sentence>`: plan from the shepherd's
-  question or a sighting in a walk.
-- `/plan-project <name>` alone: ask what it is from, in one line, and
-  stop; a project with no source is a guess.
+The session starts as a conversation. The shepherd brings an idea, an
+issue, a question, or a sighting from a walk; the planner reads what it
+names, measures what can be measured, asks what it does not understand,
+proposes cuts, and says plainly where an idea would make a long-lived
+project or would repeat something the repository already has. That
+conversation is the brainstorm, and it is where the project's shape is
+decided: its one thing, its end, its name, what it leaves out, and what
+its proofs will touch on the account. It ends when the shepherd is
+satisfied, and they say so by typing:
 
-The name is one short word in the sheep's vocabulary (a thing on a farm,
-a sheep's part, a shepherd's act: pen, collar, kennel, stile, shear,
-draft), not a description, and not already under `docs/projects/`.
+```
+/plan-project
+```
 
-## 0. Ground the plan before writing a word
+Bare. No name, no source, no sentence after it. The skill then writes
+the plan from the conversation above it. If the shepherd types
+`/plan-project <something>`, the something is read as one more line of
+the conversation, not as a source to plan from alone: the skill still
+plans only what the conversation settled, and if that is nothing, it
+says so and asks.
 
-The plan's claims are measured, not recalled. Before writing:
+## 0. What the conversation must have settled
 
-- **Read the source whole.** The issue and its comments; the finding or
-  commit that raised it (`git log --grep`, `git show`); the phases of
-  the project that carried the debt.
-- **Read the code the phases will touch**, enough to name the functions,
-  the files, and the seams by their real names. A plan that says "the
-  walk" where the code says `accountWalk` sends the builder guessing.
+Before writing, read the conversation back and check that it answered
+these, in the shepherd's words or in the planner's words the shepherd
+accepted:
+
+1. **The one thing** the project adds, and what its end looks like: the
+   phase after which nothing in it waits on work.
+2. **The name**, one short word in the sheep's vocabulary (a thing on a
+   farm, a sheep's part, a shepherd's act: pen, collar, kennel, stile,
+   shear, draft), not already under `docs/projects/`.
+3. **What it deliberately does not do**, and where each of those goes:
+   an issue, a later project, nowhere.
+4. **What a phase's proof looks like** against a real thing, and which
+   of its steps are **⚑** (a cloud resource, money, a login, a hand).
+5. **The cut into phases**, at least roughly: what comes first and why.
+
+If any of the five is missing, do not guess it. Say which, in one short
+message, propose an answer if there is an obvious one, and stop. The
+shepherd answers and types `/plan-project` again. A plan written over a
+gap is a plan the conductor will build wrong.
+
+## 1. Ground what the plan will claim
+
+The conversation may have measured some things already; what it
+asserted without a run is measured now, before it is written down.
+
+- **Read the source whole**, if the conversation did not: the issue and
+  its comments (`gh issue view N --comments`); the finding or commit
+  that raised it; the phases of the project that carried the debt.
+- **Read the code the phases will touch**, enough to name the
+  functions, the files, and the seams by their real names. A plan that
+  says "the walk" where the code says `accountWalk` sends the builder
+  guessing.
 - **Measure what the plan says is slow, broken, or big**: run it, time
   it, count it, and keep the numbers. `wc -l`, `time pnpm test`, `gh run
   view --json jobs` for CI's steps, a `--dry-run` for a ring. Numbers
-  the plan states without a run behind them are the ones a builder
-  later finds wrong; correct any you did state wrong, as their own
-  commit, the moment a measurement contradicts them.
+  stated without a run behind them are the ones a builder later finds
+  wrong; correct any you did state wrong, as their own commit, the
+  moment a measurement contradicts them.
 - **Check the neighbours.** `grep -rn` the term across `docs/projects/`
   and the living docs (`AGENTS.md`, `README.md`, `SKILL.md`, the
   skills) for what already describes it; list the open issues for one
   that overlaps.
-- **Note the wall clock** when you start; the plan commit says what
-  planning cost.
+- **Note the wall clock**; the plan commit says what planning cost, the
+  conversation included.
 
-Three questions the plan must answer before it is written, each in a
-sentence the design will carry:
-
-1. What is the one thing this project adds, and what is its end?
-2. What does it deliberately not do, and where does each of those go
-   (an issue, a later project, nowhere)?
-3. What does a phase's proof look like against a real thing, and which
-   steps of it are **⚑** (a cloud resource, money, a login, a hand)?
-
-## 1. journey.md: the acceptance suite
+## 2. journey.md: the acceptance suite
 
 The front matter first:
 
@@ -99,7 +127,7 @@ it, and which of its steps are ⚑.
 What is not a journey: the mechanism (that is the design), the order of
 building (that is the phases), a wish with no step a walk can take.
 
-## 2. design.md: the argument
+## 3. design.md: the argument
 
 Opens with the date, `Design. Nothing built.`, the pointer to
 journey.md's front matter for status, and **the thesis in one line**, in
@@ -110,7 +138,7 @@ Then, in the order that argues best:
 
 - **What was seen, and what it was.** For a project from an issue or a
   sighting: the evidence, then the diagnosis, with the numbers measured
-  in step 0. The reader should be able to disagree with the diagnosis
+  in step 1. The reader should be able to disagree with the diagnosis
   from the evidence alone.
 - **The names.** A table: word, what it is, where it lives (a file, a
   function, a table). Every name the phases will use is minted here,
@@ -128,7 +156,7 @@ Then, in the order that argues best:
 The design is the argument the commit message will retell. If a
 sentence in it is a guess, say so in the sentence.
 
-## 3. phases.md: the walk
+## 4. phases.md: the walk
 
 The opening paragraph names the rules that bind (lamb's, pen's, collar's,
 and any project's whose rule applies), `/conduct <name>` as the
@@ -170,7 +198,7 @@ one beats two that cannot stand apart. A phase with a walk on the
 account is a phase; a walk is never an afterthought to a phase that
 "also" runs it.
 
-## 4. The index, the lint, the commit
+## 5. The index, the lint, the commit
 
 - **The projects index**, `docs/projects/README.md`: one row after the
   newest project, "what it is" in a few sentences with the three docs
@@ -192,12 +220,13 @@ account is a phase; a walk is never an afterthought to a phase that
   what is left out and where it went. End with the session trailer the
   harness gives you.
 
-## 5. Stop
+## 6. Stop
 
 The plan is the deliverable. Do not brief a builder, do not start a
 phase, do not spawn an agent. The final report is short: the commit,
 the phases with one line each, the ⚑ steps with their prices, the
-issues filed, and the one line that hands it on:
+issues filed, anything the plan says differently from how the
+conversation put it (with why), and the one line that hands it on:
 
 ```
 /conduct <name>
@@ -208,6 +237,12 @@ what goes on, under its own skill, and the planner becomes the
 conductor; nothing about the plan changes for that.
 
 ## Things that have gone wrong before
+
+- The first cut of this skill took a source as its argument
+  (`/plan-project <name> from issue #N`) and planned from it alone, as
+  if the planner were trusted to shape a project by itself. It is not.
+  The shape is settled in conversation, and the bare `/plan-project` is
+  the shepherd's word that it is settled.
 
 - A plan named a CI cost from memory (pi's fork built every run); the
   run's own step times said the tests and the candidate's walk were the

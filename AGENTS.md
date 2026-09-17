@@ -78,8 +78,10 @@ step asserts is unchanged.
 Setup and usage are in [README.md](README.md).
 Read a project's `phases.md` for where its work stands and what the next
 phase is; [docs/projects/README.md](docs/projects/README.md) lists them.
-`/plan-project <name>` is how a project is planned: the three docs, the
-index row, one commit, and nothing built. `/conduct <project>` is how a
+`/plan-project`, typed bare once the shepherd and the planner have
+talked an idea through and the shepherd is satisfied, is how a project
+is planned: the three docs, the index row, one commit, and nothing
+built; the planner never shapes a project on its own. `/conduct <project>` is how a
 phase is run: briefed to a subagent, proved by the conductor, recorded,
 committed whole; the two are separate sessions on purpose.
 
