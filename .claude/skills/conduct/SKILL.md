@@ -176,6 +176,51 @@ The checklist, every phase:
   verbs of almost-git), a shim that satisfies the fixture's calls only,
   a refusal sentence that changed without its test.
 
+**The account ring, run well.** It is walks, not one run (project
+draft): `pnpm hermetic --ring account --list` names the eleven with
+their steps and what each needs. Use it at three grains:
+
+- While a phase is being built or fixed, run the one walk its journey
+  is in: `pnpm hermetic --ring account --walk bell --yes <sha>`, two to
+  eight minutes. Several walks alone may run at once from separate
+  commands; five at a time held.
+- To close a phase, run the walks its Proof names, by name.
+- To close a project, or to prove a release whole, run the set: `pnpm
+  hermetic --ring account --yes <sha>` (`--collie` adds the collie's
+  walk, a real model's turn), about seventeen minutes for all eleven at
+  four at a time. A set refuses to start beside a lone walk of the same
+  release, so run one or the other.
+
+How to run one: `git fetch origin release` and pass the release's full
+sha as the ref, the same sha for every walk of the session, so they
+share one sibling prefix (`sheep-hermetic-<sha>-*`) and set each other
+aside; a walk needs a release CI built, since it pulls the pen image
+CI pushed, never a local candidate. The tokens go in the one command's
+environment and nowhere else: `CLOUDFLARE_API_TOKEN` and
+`LAMB_PLAYGROUND_TOKEN` from `packages/cell/.env`, `ANTHROPIC_API_KEY`
+from the `anthropic` field of `~/.sheep/credentials` (the stile and
+collie walks need it). Run the command as itself, starting with `pnpm
+hermetic --ring account`, which the shepherd's allow rule matches; a
+wrapper script does not.
+
+How to read one: each step is a line, `ok`, `skip`, or `FAIL` with the
+command and its output; the last lines say held or the failing step and
+print the rerun line. The set prefixes each child's lines with its walk
+and ends with one line per walk, the rerun lines, and the whole
+listing's verdict; the children's logs are under
+`<tmpdir>/sheep-set-*/<walk>.log`, kept on failure. A failed walk is
+rerun alone by its rerun line, once; a second failure at the same step
+is a finding, not a retry. Platform faults seen so far, each costing
+one walk: `503 No browser available` at a look, workers.dev's own
+"Page not found" page seconds after a deploy, "Durable Object reset
+because its code was updated" on a verb right after a redeploy (issue
+#16), a container that could not be rented. The walk's own defects
+look different: a step's assertion naming what it expected. Record the
+seconds each walk took in the phase's finding; the ring prints them.
+Do not interrupt a set: a walk's `finally` does not run on SIGINT, and
+the stations it leaves are refused by name on the next run, to be
+deleted by hand with `sheep home delete --name <name>`.
+
 **Work that fails goes back down.** Send the failure to the same
 subagent with `SendMessage`, so it keeps its context: the exact command,
 the exact output, the line of the Proof or journey it violates. Do not

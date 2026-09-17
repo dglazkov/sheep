@@ -155,7 +155,11 @@ paragraphs:
 - **Proof:** exact commands from the repo root and their expected exit
   codes; at least one **mutation** that must make the proof fail, so
   the proof is shown able to fail; the walk, against a real home, a
-  real model, a real account, with every ⚑ step marked and priced. The
+  real model, a real account, with every ⚑ step marked and priced. A
+  proof on the account names the walks it needs by name, from `pnpm
+  hermetic --ring account --list` (`--walk bell` for a journey the bell
+  walk carries), never the whole ring; a journey no walk carries gets a
+  walk of its own in `scripts/walks.mjs`, and the phase says so. The
   proof is the conductor's territory: a phase's status moves on it and
   on nothing else.
 - **Status: NOT STARTED.**
