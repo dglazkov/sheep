@@ -35,16 +35,15 @@ resource, spend money, or need a login, and are asked out loud first.
 
 ---
 
-**Where we are: hill phase 0 CLOSED, hill phases 1 to 3 PART-DONE, 15
-September 2026; all three wait on the shepherd's yes, and hill phase 3 on an account ring that reaches `h1`.** The flock is live,
+**Where we are: hill phases 0 to 2 CLOSED, hill phase 3 PART-DONE, 16
+September 2026; the shepherd said yes to the look, and hill phase 3 waits on an account ring that reaches `h1`.** The flock is live,
 walked on a real model and a real container, and a sheep's page follows its transcript. The door stands, and the station serves the page at
 `/hill/` from an assets binding, before the door: the gate for a
 browser with no seat, the shell once seated, and a release that carries
 it, walked in Chrome and by the package ring. Hill phase 1 waits on one
-thing, the shepherd's yes on the storyboard and the built page; hill
-phase 2 on the same yes, its hour held; hill phase 3 on the same yes and
-on an account ring that reaches `h1`, which failed twice at `a5`'s
-redeploy. Nothing else waits on work. `hill phase 3`'s walk and its account-ring
+thing, which it has: the shepherd's yes, given 16 September 2026. Hill
+phase 3 waits on an account ring that reaches `h1`, which failed twice
+at `a5`'s redeploy. Nothing else waits on work. `hill phase 3`'s walk and its account-ring
 step are ⚑.
 
 The order is dependency order. Hill phase 0 is the door and the verb:
@@ -190,12 +189,12 @@ replaced after the seat (the pass stays in the bar; the rewrite test
 fails). **⚑** none. **A hand:** the shepherd's yes on the mockups,
 which closes the phase and does not hold the build.
 
-**Status: PART-DONE.** 2026-09-14. Every proof that can run here held:
-the station serves the gate and the shell at `/hill/` before the door,
-the pass leaves the address on a take and on a refusal, and a release
-built from the phase's commit carries `home/hill/` and held the package
-ring with `h0`. The conductor walked journey 1 steps 1 to 3 and 5 in
-Chrome. It closes on the shepherd's yes.
+**Status: CLOSED.** 2026-09-16. Every proof held: the station serves the
+gate and the shell at `/hill/` before the door, the pass leaves the
+address on a take and on a refusal, and a release built from the phase's
+commit carries `home/hill/` and held the package ring with `h0`. The
+conductor walked journey 1 steps 1 to 3 and 5 in Chrome and judged the
+frames; the shepherd said yes to the look on 16 September 2026.
 
 **Findings:**
 
@@ -204,7 +203,7 @@ Chrome. It closes on the shepherd's yes.
 - **2026-09-14 — `sheep.ts` could not be bundled for a browser:** `paint.ts` reads `process.env`. The raster moved to `pixels.ts`, which imports nothing, and the gate and the stile draw one sheep.
 - **2026-09-14 — Deep paths are the Worker's, not the binding's:** with `html_handling` and `not_found_handling` at `none`, the Worker maps `/hill/<file>` and falls back to `index.html`. A fresh clone keeps `dist/` through one placeholder, and no build answers a gate saying `pnpm build`.
 - **2026-09-14 — Two timing assertions failed once each under the full run, never hill's:** lease's budget and stile's one-second first frame. Each passed alone, and the third full run was green. The home ring is eight `wrangler dev`s now.
-- **2026-09-14 — Open: the shepherd's yes on the storyboard and the built gate.** The light theme was drawn without a mockup, and its cream wool nearly melts into the cream ground; the walk's frames are for that taste.
+- **2026-09-16 — The shepherd said yes to the look,** storyboard and built page together, after the station walk's frames. The light theme's pale wool and hill phase 3's two taste notes stand as later polish, not as debts of this project.
 
 ## Phase 2: The flock
 
@@ -239,13 +238,13 @@ a `PerformanceObserver` in the page (a local home's log records no
 request, so the page's own count is the witness to how often it asked). Falsified by one mutation: the poll not stopping when hidden
 (the schedule test fails). **⚑** none.
 
-**Status: PART-DONE.** 2026-09-14. Journey 2 steps 1 to 5 walked in
-Chrome on a local home with Docker and a real model: the flock said what
-`ls` and `status` say, within two seconds of each dog's command, the
-split view and the phone's matched the storyboard, and journey 3 step
-7's back button returned. `pnpm test` exits 0 and the mutation fails.
-Step 6's hour held on hill phase 3's walk station; the phase closes on
-the shepherd's yes.
+**Status: CLOSED.** 2026-09-16. Journey 2 in full: steps 1 to 5 walked in
+Chrome on a local home with Docker and a real model, the flock saying
+what `ls` and `status` say within two seconds of each dog's command, the
+split view and the phone's matching the storyboard, and journey 3 step
+7's back button returning; step 6's hour held on hill phase 3's walk
+station. `pnpm test` exits 0 and the mutation fails. The shepherd said
+yes to the look on 16 September 2026.
 
 **Findings:**
 
@@ -317,7 +316,8 @@ Journey 5 step 1 was walked on the walk's own station with a real model
 and deleted after: journeys 1 to 3 in a headless Chrome, frames judged.
 The account ring failed twice, both times right after `a5`'s redeploy
 and before `h1`, whose checks held by hand on the walk's station. The
-phase closes on a ring that reaches `h1` and the shepherd's yes.
+shepherd said yes to the look on 16 September 2026, so the phase closes
+on a ring that reaches `h1` alone.
 
 **Findings:**
 
