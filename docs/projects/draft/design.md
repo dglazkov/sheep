@@ -19,7 +19,7 @@ development loop get faster while staying grounded. Measured on 16 Sep
 | Ring | What it proves | Cost | State |
 | --- | --- | --- | --- |
 | checkout, command, home (`pnpm test`) | this checkout | 2 min 50 s for 78 files, the home ring's eight `wrangler dev` starts included | healthy; the phase's inner loop |
-| package, on CI (`release.yml`) | a release installs and walks | 8 to 10 min per commit on `main`; pi's fork built from scratch and the pen image built and pushed every run | tolerable; the account ring waits on it for the image |
+| package, on CI (`release.yml`) | a release installs and walks | 8 to 10 min per commit on `main`: `pnpm test --ci` 254 s on the runner, the candidate built and walked in the package ring 153 s, the pen image 44 s, pi's fork 15 s, then the install job 37 s | tolerable; the account ring waits on it for the image |
 | account (`pnpm hermetic --ring account`) | a station on the shepherd's account | 30 to 45 min when it holds; five of the last runs failed before the step they were run for (hill three times at `t2`, `a5`, `a2`; collie twice at `a3`, `f2`) | the bottleneck |
 
 The account ring is where a phase with a walk on the account spends
@@ -178,14 +178,17 @@ deployed, as the ring refuses today without a token.
   platform, and issue #14 was found by reading one. A failed walk
   prints its rerun line; running it is the dog's, and a run that held
   on the second try says so in the phase's finding.
-- **Shorten CI.** The nine minutes per commit are pi's fork built from
-  scratch and the pen image built and pushed every run, even when
-  `packages/pen` did not change. Naming the image by the pen tree's
-  hash and caching the fork's build would cut a commit to about four
-  minutes, and would let the account ring run on a local candidate
-  release, minutes after the commit, since the image it names would
-  already be on the registry. That is a project of its own, and it is
-  filed as an issue so it is not lost.
+- **Shorten CI.** The nine minutes per commit are two serial halves,
+  the inner rings on the runner (about four minutes) and the candidate
+  built and walked in the package ring (about two and a half), that
+  share nothing until the push; run as two jobs with the push gated on
+  both, a commit would be green in about five. And the pen image is
+  built and pushed under the commit's name every run, even when
+  `packages/pen` did not change; named by the pen tree's hash, the
+  account ring could run on a local candidate release minutes after the
+  commit, since the image it names would already be on the registry.
+  Both are a project of their own, filed as an issue so they are not
+  lost.
 - **Run walks on CI.** The account is the shepherd's, and a walk spends
   on it; it stays a thing conducted here, with someone watching.
 - **Change what any journey proves.** Issue #13's "not this".
