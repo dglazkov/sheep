@@ -36,14 +36,15 @@ resource, spend money, or need a login, and are asked out loud first.
 ---
 
 **Where we are: hill phases 0 to 2 CLOSED, hill phase 3 PART-DONE, 16
-September 2026; the shepherd said yes to the look, and hill phase 3 waits on an account ring that reaches `h1`.** The flock is live,
+September 2026; the shepherd said yes to the look, and hill phase 3 waits only on an account ring that reaches `h1`, which three runs failed to reach for reasons of their own.** The flock is live,
 walked on a real model and a real container, and a sheep's page follows its transcript. The door stands, and the station serves the page at
 `/hill/` from an assets binding, before the door: the gate for a
 browser with no seat, the shell once seated, and a release that carries
 it, walked in Chrome and by the package ring. Hill phase 1 waits on one
 thing, which it has: the shepherd's yes, given 16 September 2026. Hill
-phase 3 waits on an account ring that reaches `h1`, which failed twice
-at `a5`'s redeploy. Nothing else waits on work. `hill phase 3`'s walk and its account-ring
+phase 3 waits on an account ring that reaches `h1`: three runs failed
+first, at `t2`, at `a5`, and at `a2`, each a platform fault of issue
+#13's kind. Nothing else waits on work. `hill phase 3`'s walk and its account-ring
 step are ⚑.
 
 The order is dependency order. Hill phase 0 is the door and the verb:
@@ -314,8 +315,9 @@ follows its transcript over the long poll and never wakes a sheep
 nothing has asked, and the seat's cookie is named for its home.
 Journey 5 step 1 was walked on the walk's own station with a real model
 and deleted after: journeys 1 to 3 in a headless Chrome, frames judged.
-The account ring failed twice, both times right after `a5`'s redeploy
-and before `h1`, whose checks held by hand on the walk's station. The
+The account ring failed three times, at three different steps and never
+at a hill one, so `h1` has not run there; its checks held by hand on a
+deployed station, and the package ring's `h0` holds on every release. The
 shepherd said yes to the look on 16 September 2026, so the phase closes
 on a ring that reaches `h1` alone.
 
@@ -328,4 +330,4 @@ on a ring that reaches `h1` alone.
 - **2026-09-15 — A local home runs the checkout's live Worker,** so an edit reloaded it under a seated tab. Builders' walks shared this session's scratchpad and browser, and disturbed each other.
 - **2026-09-15 — The walk held on `sheep-hill-walk` with a real model:** a mint's row in 0.93 s, `running` in 1.03 s, a prompt on the page in 1.45 s, setup `ok (40.2 s)` beside `sheep status`, the seat through a browser restart, 398 requests with no token.
 - **2026-09-15 — HTTP/2 carries no `Upgrade`:** a seat's socket was 401 over HTTP/1.1 and the bearer's 101; over HTTP/2 the cell answered a plain GET 426.
-- **2026-09-15 — Open: the account ring on release 491fc54 failed twice right after `a5`'s redeploy, before `h1`:** `t2`'s turn cut off, then `GET /sessions` threw. Issues #13 and #14 describe such runs. A run reaching `h1` closes it.
+- **2026-09-16 — Open: three account ring runs failed at three different steps, none of them the hill's, and none reached `h1`.** On 491fc54, `t2`'s turn was cut off, then `GET /sessions` threw after `a5`'s redeploy; on 93b1809, `a2` never got a healthy container (2 starting, 1 scheduling, 151 s). Each deleted its station. Issue #13 is the cause: one long walk, one transient platform error, a whole run lost. `h1`'s own checks held by hand on a deployed station, and the package ring's `h0` holds on every release. A run reaching `h1`, or issue #13's split, closes it.
