@@ -1,6 +1,7 @@
 import { env, runInDurableObject, SELF } from "cloudflare:test";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { beforeEach, describe, expect, it } from "vitest";
+import { BACKGROUND_CONTEXT } from "@earendil-works/pi-agent-core";
 import type { SessionCell } from "../src/cell.ts";
 import { setFauxScript } from "../src/models.ts";
 
@@ -59,5 +60,32 @@ describe("a cell drives a turn on its own event loop", () => {
     const dump = (await (await api(`${base}/export`)).json()) as Record<string, unknown[]>;
     expect(dump.sessions).toHaveLength(1);
     expect(dump.entries!.length).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe("a harness fault", () => {
+  beforeEach(scriptedTurn);
+
+  it("is logged once, this incarnation forgotten, and the next touch boots again (#14, #20)", async () => {
+    const summary = (await (await api("/sessions", { method: "POST", body: "{}" })).json()) as { id: string };
+    const base = `/s/${summary.id}`;
+    expect((await api(`${base}/`)).status).toBe(200);
+    const stub = env.SESSION_CELL.getByName(summary.id);
+    await runInDurableObject(stub, async (cell: SessionCell) => {
+      const runtime = await cell.runtime();
+      // What 18 Sep 2026 recorded: a call into a Durable Object replaced under it, which pi treats as an invariant fault.
+      (runtime.harness as unknown as { fault(cause: unknown, context: unknown): Error }).fault(
+        new Error("Connection closed: this Durable Object instance is no longer active."),
+        BACKGROUND_CONTEXT,
+      );
+    });
+    // The first read after the fault answers it once; the incarnation is forgotten on that read.
+    const first = await api(`${base}/`);
+    expect(first.status).toBe(500);
+    expect(await first.text()).toBe("AgentHarness storage or invariant fault");
+    // The next boots from storage and answers.
+    const second = await api(`${base}/`);
+    expect(second.status).toBe(200);
+    expect(((await second.json()) as { id: string }).id).toBe(summary.id);
   });
 });

@@ -410,7 +410,7 @@ export interface FakeContainer {
   /** The container dies: its end closes with `reason`, and nothing more is answered. */
   stop(reason?: string): void;
   /** Resolves once the agent has seen its socket close. */
-  closed: Promise<void>;
+  closed: Promise<unknown>;
 }
 
 export interface FakeContainerOptions {

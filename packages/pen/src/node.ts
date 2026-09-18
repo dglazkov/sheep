@@ -513,7 +513,10 @@ export async function main(env: NodeJS.ProcessEnv = process.env): Promise<number
     await rm(scratchRoot, { recursive: true, force: true });
     return 1;
   }
-  await Promise.race([served.closed, stopped]);
+  // Why the agent leaves is the one fact the cell cannot see from its side (#24). A clean close (1000) is the cell's own
+  // and says nothing; any other close names its code on stderr, the container's log; a signal already said so above.
+  const close = await Promise.race([served.closed, stopped.then(() => undefined)]);
+  if (close !== undefined && close.code !== 1000) process.stderr.write(`pen-agent: exiting, the cell's socket closed (${close.code}${close.reason ? `: ${close.reason}` : ""})\n`);
   await closeHelper?.();
   await rm(scratchRoot, { recursive: true, force: true });
   return 0;

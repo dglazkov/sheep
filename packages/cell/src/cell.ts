@@ -30,7 +30,7 @@ import { Server } from "@earendil-works/pi-server";
 import type { SqliteSessionRepo } from "@earendil-works/pi-session-backend-sqlite-node/sqlite";
 import { DurableObject } from "cloudflare:workers";
 import { BIRTH_ENTRY, BIRTH_TAIL_BYTES, BIRTH_TAIL_LINES, BIRTH_TIMEOUT_S, type BirthData, type BirthRecord, birthCommand, birthProjector } from "./birth.ts";
-import { describeError } from "./cause.ts";
+import { describeError, innermostStack } from "./cause.ts";
 import { SETUP_KEPT, SETUP_KEY_PREFIX, type SetupRecord, setupRecordKey, setupTail } from "./bleat.ts";
 import { type LaneState, taskOf } from "./directory.ts";
 import { CellExecutionEnv, type ContainerLineResult, type PeekResult, type SetupEnd, type SetupEvent, type SetupSecrets } from "./env/execution-env.ts";
@@ -234,6 +234,8 @@ export class SessionCell extends DurableObject<Env> {
    * holds (pasture phase 3).
    */
   #lease: PenLease | undefined;
+  /** The harness faults already logged and forgotten, so a fault read a hundred times is one line and one eviction. */
+  #faults = new WeakSet<object>();
   /**
    * Bleat phase 0: the record each setup running now is being kept under,
    * by the millisecond it started, so the sink's end writes the record its
@@ -686,7 +688,9 @@ export class SessionCell extends DurableObject<Env> {
     // `waitUntil` covers is the platform's to keep or drop, and this must be kept.
     this.ctx.waitUntil(
       run(context)
-        .catch(() => undefined)
+        .catch((error: unknown) => {
+          this.faulted(error);
+        })
         .finally(async () => {
           runtime.drives.delete(cancel);
           if (this.#runtime !== undefined && (await this.#runtime) === runtime) await this.settleAlarm(runtime);
@@ -709,8 +713,38 @@ export class SessionCell extends DurableObject<Env> {
   }
 
   override async alarm(): Promise<void> {
-    const runtime = await this.runtime();
-    await this.settleAlarm(runtime);
+    try {
+      const runtime = await this.runtime();
+      await this.settleAlarm(runtime);
+    } catch (error) {
+      if (!this.faulted(error)) throw error;
+      // A throw here would only replay the fault every few seconds (18 Sep 2026); the next alarm boots again instead.
+      await this.ctx.storage.setAlarm(Date.now() + 5_000);
+    }
+  }
+
+  /**
+   * A harness fault (#14, #20): pi seals every lane on a storage or invariant error, and every read answers the fault
+   * from then on, for as long as the incarnation lives. Logged once, with the innermost cause's stack, which is the call
+   * site's; then this incarnation is forgotten as an eviction forgets it, its terminals closed so they reattach, and its
+   * container's socket closed so the next boot rents a fresh one. The next touch boots from storage and takes up what was
+   * open, as after an eviction. Returns whether the error was one.
+   */
+  private faulted(error: unknown): boolean {
+    if (!(error instanceof Error) || error.name !== "HarnessFault") return false;
+    if (this.#faults.has(error)) return true;
+    this.#faults.add(error);
+    console.error(`[cell ${this.sessionId}] harness fault, forgetting this incarnation: ${describeError(error)}\n${innermostStack(error)}`);
+    const runtime = this.#runtime;
+    void this.evict().then(async () => {
+      const live = runtime === undefined ? undefined : await runtime.catch(() => undefined);
+      if (live === undefined) return;
+      // 1012, service restart: a terminal treats it as a dropped socket and reattaches, unlike the end's code.
+      await live.listener.close(1012, "the cell's harness faulted; booting again").catch(() => undefined);
+      await live.server.close().catch(() => undefined);
+      live.lease?.close("the cell's harness faulted");
+    });
+    return true;
   }
 
   async state(): Promise<CellState> {
@@ -1009,7 +1043,7 @@ export class SessionCell extends DurableObject<Env> {
       return new Response("not found", { status: 404 });
     } catch (error) {
       // The message alone hides a harness fault's cause (#20): the log line carries the chain, the answer the message.
-      console.error(`[cell ${this.sessionId}] ${route} failed: ${describeError(error)}`);
+      if (!this.faulted(error)) console.error(`[cell ${this.sessionId}] ${route} failed: ${describeError(error)}`);
       const message = error instanceof Error ? error.message : String(error);
       return new Response(message, { status: 500 });
     }

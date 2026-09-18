@@ -20,3 +20,14 @@ export function describeError(error: unknown): string {
   }
   return parts.join(" <- ");
 }
+
+/** The stack of the innermost cause, the call site's; the message alone says what, this says where. */
+export function innermostStack(error: unknown): string {
+  let current: unknown = error;
+  const seen = new Set<unknown>();
+  while (current instanceof Error && current.cause instanceof Error && !seen.has(current.cause)) {
+    seen.add(current);
+    current = current.cause;
+  }
+  return current instanceof Error && current.stack ? current.stack : "";
+}

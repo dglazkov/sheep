@@ -367,7 +367,8 @@ class ProtocolError extends Error {
 
 export interface ServedAgent {
   /** Resolves when the socket closes; the agent sends nothing after. */
-  closed: Promise<void>;
+  /** Settles when the cell's socket closes, with the close code and reason, so the exit can say why. */
+  closed: Promise<{ code: number; reason: string }>;
   /**
    * Describes what changed since the last sync under `id` and sends the
    * bytes the cell asks for. Resolves with what the cell refused once it
@@ -420,7 +421,7 @@ class Agent {
   private readonly scratch: Disk | undefined;
   private readonly runner: Runner;
   private readonly fetcher: Fetcher;
-  readonly closed: Promise<void>;
+  readonly closed: Promise<{ code: number; reason: string }>;
   private isClosed = false;
   private tail = Promise.resolve();
   /** The run in progress, at most one. */
@@ -501,8 +502,9 @@ class Agent {
     socket.addEventListener("message", (event) => {
       this.tail = this.tail.then(() => this.receive(event.data));
     });
-    this.closed = new Promise<void>((resolve) => {
-      socket.addEventListener("close", () => {
+    this.closed = new Promise<{ code: number; reason: string }>((resolve) => {
+      socket.addEventListener("close", (event) => {
+        const close = event as { code?: number; reason?: string };
         this.isClosed = true;
         this.out?.reject(new Error("the socket closed during a sync-out"));
         this.out = null;
@@ -510,7 +512,7 @@ class Agent {
         this.running?.handle.kill("the socket closed");
         for (const pending of this.credentials.values()) pending.settle(undefined);
         this.credentials.clear();
-        resolve();
+        resolve({ code: close.code ?? 1006, reason: String(close.reason ?? "") });
       });
     });
   }
