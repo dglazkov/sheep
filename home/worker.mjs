@@ -120960,6 +120960,16 @@ function describeError(error) {
   return parts.join(" <- ");
 }
 __name(describeError, "describeError");
+function innermostStack(error) {
+  let current = error;
+  const seen = /* @__PURE__ */ new Set();
+  while (current instanceof Error && current.cause instanceof Error && !seen.has(current.cause)) {
+    seen.add(current);
+    current = current.cause;
+  }
+  return current instanceof Error && current.stack ? current.stack : "";
+}
+__name(innermostStack, "innermostStack");
 
 // src/pen/broker.ts
 var DEFAULT_GIT_HOST = "github.com";
@@ -125332,6 +125342,8 @@ var SessionCell = class extends DurableObject4 {
    * holds (pasture phase 3).
    */
   #lease;
+  /** The harness faults already logged and forgotten, so a fault read a hundred times is one line and one eviction. */
+  #faults = /* @__PURE__ */ new WeakSet();
   /**
    * Bleat phase 0: the record each setup running now is being kept under,
    * by the millisecond it started, so the sink's end writes the record its
@@ -125718,7 +125730,9 @@ var SessionCell = class extends DurableObject4 {
     const { context: context2, cancel } = withCancel(BACKGROUND_CONTEXT);
     runtime.drives.add(cancel);
     this.ctx.waitUntil(
-      run(context2).catch(() => void 0).finally(async () => {
+      run(context2).catch((error) => {
+        this.faulted(error);
+      }).finally(async () => {
         runtime.drives.delete(cancel);
         if (this.#runtime !== void 0 && await this.#runtime === runtime) await this.settleAlarm(runtime);
       })
@@ -125738,8 +125752,36 @@ var SessionCell = class extends DurableObject4 {
     }
   }
   async alarm() {
-    const runtime = await this.runtime();
-    await this.settleAlarm(runtime);
+    try {
+      const runtime = await this.runtime();
+      await this.settleAlarm(runtime);
+    } catch (error) {
+      if (!this.faulted(error)) throw error;
+      await this.ctx.storage.setAlarm(Date.now() + 5e3);
+    }
+  }
+  /**
+   * A harness fault (#14, #20): pi seals every lane on a storage or invariant error, and every read answers the fault
+   * from then on, for as long as the incarnation lives. Logged once, with the innermost cause's stack, which is the call
+   * site's; then this incarnation is forgotten as an eviction forgets it, its terminals closed so they reattach, and its
+   * container's socket closed so the next boot rents a fresh one. The next touch boots from storage and takes up what was
+   * open, as after an eviction. Returns whether the error was one.
+   */
+  faulted(error) {
+    if (!(error instanceof Error) || error.name !== "HarnessFault") return false;
+    if (this.#faults.has(error)) return true;
+    this.#faults.add(error);
+    console.error(`[cell ${this.sessionId}] harness fault, forgetting this incarnation: ${describeError(error)}
+${innermostStack(error)}`);
+    const runtime = this.#runtime;
+    void this.evict().then(async () => {
+      const live = runtime === void 0 ? void 0 : await runtime.catch(() => void 0);
+      if (live === void 0) return;
+      await live.listener.close(1012, "the cell's harness faulted; booting again").catch(() => void 0);
+      await live.server.close().catch(() => void 0);
+      live.lease?.close("the cell's harness faulted");
+    });
+    return true;
   }
   async state() {
     const runtime = await this.runtime();
@@ -126000,7 +126042,7 @@ var SessionCell = class extends DurableObject4 {
       }
       return new Response("not found", { status: 404 });
     } catch (error) {
-      console.error(`[cell ${this.sessionId}] ${route} failed: ${describeError(error)}`);
+      if (!this.faulted(error)) console.error(`[cell ${this.sessionId}] ${route} failed: ${describeError(error)}`);
       const message = error instanceof Error ? error.message : String(error);
       return new Response(message, { status: 500 });
     }
@@ -126146,13 +126188,13 @@ __name(joinAnswer, "joinAnswer");
 var CHECKOUT_BUILD = { commit: "0.0.0-checkout", builtAt: null };
 function homeImage() {
   if (false) return null;
-  return true ? "docker.io/dglazkov2/sheep-pen@sha256:9a25e8828c565eff88d1217ba5499a10443cf97730e9e9ee842d82757ee65760" : null;
+  return true ? "docker.io/dglazkov2/sheep-pen@sha256:28f8593ebc24d116a67bd7fbae392737648ceaaf5c6df858ef6d0335949e4464" : null;
 }
 __name(homeImage, "homeImage");
 function homeBuild() {
   if (false) return CHECKOUT_BUILD;
   try {
-    const parsed = JSON.parse('{"commit":"704dfa7","builtAt":"2026-09-18T15:56:10Z"}');
+    const parsed = JSON.parse('{"commit":"82f34b6","builtAt":"2026-09-18T17:32:18Z"}');
     if (typeof parsed.commit === "string" && parsed.commit !== "") return { commit: parsed.commit, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
   } catch {
   }
