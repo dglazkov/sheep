@@ -36,6 +36,7 @@ import { join } from "node:path";
 import { configPath, isMachineKennel, readConfigFile, realPath, samePath, sheepDir, writeConfigFile } from "../config.js";
 import { CREDENTIAL_ENV, machineCredentialsPath, modelKey, readCredentials, writeCredentials } from "../credentials.js";
 import { type Account, AccountApi, deploy, type DeployReport, findStations, joinStation, KEY_SECRET, PLAN, plansPage, putModelKey, Refusal, validateName } from "../deploy.js";
+import { Home } from "../home.js";
 import { whoAnswers } from "../local.js";
 import { kennelName, mintName } from "../name.js";
 import { checkoutRoot, installSkill, type KennelReport, makeKennel, setupCli, type SkillReport } from "../setup.js";
@@ -124,6 +125,12 @@ export interface FlowReport {
   /** The paths, for the last step's line: never a value. */
   credentials: string;
   config: string;
+  /**
+   * The hill's link, minted once the station holds its token: one use, two minutes, so the shepherd at this finish can
+   * open it and be on the hill before their agent has said a word. `null` on a station with no hill (older than hill
+   * phase 0) or one that would not mint: the sitting is done either way, and `sheep hill` mints another any time.
+   */
+  hill: { url: string } | null;
   count: Count;
   /** The one sentence to say to their agent. */
   next: string;
@@ -349,11 +356,29 @@ export async function runFlow(options: FlowOptions): Promise<FlowReport> {
 
   const credentials = machineCredentialsPath();
   const config = configPath();
-  // The last step is four lines, each said in turn, and the screen keeps all four under it: the address, where the two
-  // values are kept, where the config is, and the one sentence to say to their agent.
+  // 7. next. The hill's link first: a pass minted under the station's token as `sheep hill` mints one, so the finish
+  // carries a way onto the hill and the shepherd need not ask their agent for it. The token is the config's, which the
+  // deploy or the join just wrote; the station is asked through deploy's seam, since a ring's station is the fake. A
+  // station that will not mint (no hill, no token, no answer) costs nothing but the row: the sitting is done.
+  const hill = await mintHillLink(station.home);
+  // The last step is its lines, each said in turn, and the screen keeps them under it: the address, the hill's link,
+  // where the two values are kept, where the config is, and the one sentence to say to their agent.
   driver.say("next", `home: ${station.home}`);
+  if (hill !== null) driver.say("next", `hill: ${hill.url}`);
   driver.say("next", `credentials: ${tilde(credentials)}`);
   driver.say("next", `config: ${tilde(config)}`);
   driver.say("next", `say to your agent: ${AGENT_SENTENCE}`);
-  return { where, kennel, skill, kennelMade, account, station, key: keyState, credentials, config, count, next: AGENT_SENTENCE };
+  return { where, kennel, skill, kennelMade, account, station, key: keyState, credentials, config, hill, count, next: AGENT_SENTENCE };
+}
+
+/** The hill's link for the finish: `POST /hill/passes` under the config's token, or `null` where nothing can be minted. */
+async function mintHillLink(home: string): Promise<{ url: string } | null> {
+  const token = readConfigFile()?.token;
+  if (typeof token !== "string" || token === "") return null;
+  try {
+    const { url } = await new Home({ home: process.env.SHEEP_TEST_STATION_URL ?? home, token }).pass();
+    return { url };
+  } catch {
+    return null;
+  }
 }

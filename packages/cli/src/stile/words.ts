@@ -67,7 +67,7 @@ export const QUESTIONS: Record<StepName, string> = {
   plan: "the plan your home's containers need",
   station: "which station should this machine's sheep live on?",
   key: "the Anthropic key your sheep call the model with",
-  next: "what is done, and the one sentence to say",
+  next: "what is done, the hill's link, and the one sentence to say",
 };
 
 /** Under a secret's box: the address the value is made at, and for the key where it goes, said once. */
@@ -114,8 +114,8 @@ export const WORDS: Record<StepName, Words> = {
     does: `put on the home over Cloudflare's API, a copy kept in ${CREDENTIALS_FILE}, mode 600; never printed.`,
   },
   next: {
-    what: "what is done, where it is kept, and the one sentence to say to your coding agent.",
-    where: `the addresses and paths on this line; the two values are in ${CREDENTIALS_FILE} and nowhere else.`,
+    what: "what is done, a link onto the hill (your station's page), and the one sentence to say to your coding agent.",
+    where: "the addresses and paths on this line; the link works once, for two minutes, and sheep hill prints another.",
     cost: "nothing from here on: your agent runs sheep, and nothing asks you for a value again.",
     does: "asks you for nothing after this sitting; a rotated value is this same command, run again.",
   },

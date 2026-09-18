@@ -46,7 +46,7 @@ import { AGENT_SENTENCE } from "../src/stile/flow.js";
 import { colourLevel } from "../src/stile/paint.js";
 import { hiddenShown, TAGLINE, wordsAt } from "../src/stile/screen.js";
 import { STEPS, THINGS, WORDS } from "../src/stile/words.js";
-import { ACCOUNT, type FakeState, fakeAccount, fakeStation, fresh, KEY, type StationState, TOKEN } from "./fakes.js";
+import { ACCOUNT, type FakeState, fakeAccount, fakeStation, fresh, KEY, PASS, type StationState, TOKEN } from "./fakes.js";
 import { bin, type Result } from "./local-home.js";
 import { DOWN, DOWN_KITTY, DOWN_SS3, driveStile, ENTER, runsOf, type StileRun, type StyledRow, UP_KITTY } from "./screen.js";
 
@@ -90,6 +90,11 @@ const expectWhole = (run: StileRun, top: string): void => {
   expect(rows[2]!.slice(37)).toBe("sheep");
 };
 const finishBox = [`  ╭${WIDE_RULE}╮`, `  │ ${"say to your agent".padEnd(74)} │`, `  │ ${AGENT_SENTENCE.padEnd(74)} │`, `  ╰${WIDE_RULE}╯`];
+/**
+ * The hill's row at the finish: the link the station minted, at the fake's own origin, broken after `?pass=` so the pass
+ * is whole on its own line; the note does not fit beside 64 hex at eighty columns.
+ */
+const hillRows = (station: string): string[] => [`  hill         ${station}/hill/?pass=`, `${" ".repeat(15)}${PASS}`];
 /** Every prompt the command drew, read from its output with the paint stripped: the box's rule, the prompt, its two spaces. */
 const promptsShown = (run: StileRun): Set<string> => new Set(run.output().replace(/\x1b\[[0-9;]*m/g, "").match(/│ (Cloudflare API token|Anthropic API key) {2}/g) ?? []);
 /** The finish's `next` row counts the sitting's seconds, which no snapshot can name. */
@@ -133,7 +138,8 @@ async function world(state: FakeState = fresh(), options: { linkedHome?: boolean
   const blog = join(root, "blog");
   await mkdir(blog, { recursive: true });
   const account = await fakeAccount(state);
-  const stationState: StationState = { token: "t".repeat(48), sessions: [], pastures: [], account: state, ...options.station };
+  // The station answers to the token the sitting's deploy puts on it, so the finish's hill link is minted as at a real one.
+  const stationState: StationState = { token: "t".repeat(48), sessions: [], pastures: [], account: state, tokenFromDeploy: true, ...options.station };
   const station = await fakeStation([], stationState);
   const log = join(logs, "wrangler.log");
   // No `sheep` of this machine's on PATH: the command step reads a checkout, whatever the machine running this has installed.
@@ -291,7 +297,7 @@ describe("the stile: journey 1, the first sitting", () => {
     // The fake wrangler's deploy is held open for longer than a key's settle can take (`KEY_WAIT_MS`, three seconds), so the
     // stage behind the spinner is still up when Enter returns: a fake that answers in tens of milliseconds made the frame
     // below a race the screen's reads could lose, and did once a checkout's deploy asked git first (smit phase 0).
-    const w = await world({ ...fresh(), plan: "free" }, { env: { SHEEP_TEST_WRANGLER_DEPLOY_MS: "4000" } });
+    const w = await world({ ...fresh(), plan: "free" }, { env: { SHEEP_TEST_WRANGLER_DEPLOY_MS: "4000" }, station: { log: [] } });
     const run = w.stile();
 
     // Step 1: the sheep and the checklist of seven; command filled in at once; the cursor on where, everywhere the default,
@@ -422,10 +428,9 @@ describe("the stile: journey 1, the first sitting", () => {
 
     const exit = await run.exited;
     expect(exit).toEqual({ code: 0, stderr: "" });
-    // The finish: seven green rows, the three places things are, and the sentence to say in a box; nothing printed twice,
-    // and nothing after the screen stopped.
+    // The finish: seven green rows, the hill's link, the three places things are, and the sentence to say in a box;
+    // nothing printed twice, and nothing after the screen stopped. At 80 by 24 every blank row gives way to the link's two.
     expect(body(timeless(run.buffer()))).toEqual([
-      "",
       command,
       done("where", "everywhere on this machine"),
       done("account", "Fake's Account"),
@@ -433,13 +438,17 @@ describe("the stile: journey 1, the first sitting", () => {
       done("station", "https://sheep-2.fake.workers.dev"),
       done("key", "put on the home as its secret"),
       done("next", "done, in <time>"),
+      ...hillRows(w.station),
       "  credentials  ~/.sheep/credentials (mode 600, the two values and nothing else)",
       "  config       ~/.sheep/config",
       "  skill        ~/.agents/skills/sheep",
-      "",
       ...finishBox,
     ]);
     expectWhole(run, SHEEP_TOP);
+    // The pass was minted once, after the deploy, under the token the deploy put on the station and wrote to the config:
+    // the finish's link is a fresh one.
+    const configured = JSON.parse(readFileSync(`${w.root}/.sheep/config`, "utf8")) as { token: string };
+    expect(w.stationState.log!.filter((entry) => entry.path === "/hill/passes").map((entry) => [entry.method, entry.auth === `Bearer ${configured.token}`, entry.status])).toEqual([["POST", true, 201]]);
     expect(run.output().split(AGENT_SENTENCE).length - 1, "the sentence to say is on the screen once").toBe(1);
     expect(run.leaks()).toEqual([]);
 
@@ -515,6 +524,10 @@ describe("the stile: journey 1, the first sitting", () => {
     const station = rowStarting(run, "  ✓ station");
     expect(cellAt(station, 2, "✓")).toMatchObject({ fg: GREEN, fgMode: "p256" });
     expect(cellAt(station, 14, "h")).toMatchObject({ fg: CYAN, fgMode: "p256", underline: true });
+    // The hill's link, a link on both the lines it takes; its label dim like the paths'.
+    expect(cellAt(rowStarting(run, "  hill"), 2, "h")).toMatchObject({ dim: true });
+    expect(cellAt(rowStarting(run, "  hill"), 15, "h")).toMatchObject({ fg: CYAN, fgMode: "p256", underline: true });
+    expect(cellAt(rowStarting(run, `${" ".repeat(15)}${PASS}`), 15, "0")).toMatchObject({ fg: CYAN, fgMode: "p256", underline: true });
     expect(cellAt(rowStarting(run, "  credentials"), 2, "c")).toMatchObject({ dim: true });
     expect(cellAt(rowStarting(run, "  credentials"), 15, "~")).toMatchObject({ dim: false, fg: null });
     expect(cellAt(rowStarting(run, "  │ say to your agent"), 4, "s")).toMatchObject({ bold: true, fg: AMBER, fgMode: "p256" });
@@ -825,7 +838,6 @@ describe("the stile: journey 3, the second laptop", () => {
     // The finish: joined, the key the station's own, and the credentials holding the account token alone.
     await run.waitFor("say to your agent", { whole: true, timeoutMs: 5_000 });
     expect(body(timeless(run.buffer()))).toEqual([
-      "",
       command,
       done("where", "everywhere on this machine"),
       done("account", "Fake's Account"),
@@ -833,10 +845,10 @@ describe("the stile: journey 3, the second laptop", () => {
       done("station", "https://sheep.fake.workers.dev, joined"),
       done("key", "the station holds its own; nothing asked"),
       done("next", "done, in <time>"),
+      ...hillRows(w.station),
       "  credentials  ~/.sheep/credentials (mode 600, the account token)",
       "  config       ~/.sheep/config",
       "  skill        ~/.agents/skills/sheep",
-      "",
       ...finishBox,
     ]);
     expectWhole(run, SHEEP_TOP);
@@ -851,9 +863,11 @@ describe("the stile: journey 3, the second laptop", () => {
       ["POST", true, 200],
     ]);
     // The account token never reaches the home: the fake station's log holds the join token alone as a bearer, never the
-    // account token and never the home's own. And the store never held the token, only its hash.
-    const bearers = new Set(log.map((entry) => entry.auth).filter((auth) => auth !== undefined));
+    // account token; the home's own appears once, on the hill's pass at the finish, after the join gave it to the config.
+    // And the store never held the token, only its hash.
+    const bearers = new Set(log.filter((entry) => entry.path !== "/hill/passes").map((entry) => entry.auth).filter((auth) => auth !== undefined));
     expect([...bearers]).toEqual([`Bearer ${joinToken}`]);
+    expect(log.filter((entry) => entry.path === "/hill/passes").map((entry) => [entry.method, entry.auth, entry.status])).toEqual([["POST", `Bearer ${STATION_TOKEN}`, 201]]);
     expect(w.state.events.join("\n")).not.toContain(joinToken);
 
     // The config: the address and the home's token, no name, no local marker, mode 600, in ~/.sheep where `where` said.

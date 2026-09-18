@@ -1154,7 +1154,8 @@ class Ring {
     const log = join(logs, "wrangler.log");
     const state = { ...fresh(), plan: "free" };
     const account = await fakeAccount(state);
-    const station = await fakeStation([], { token: "t".repeat(48), sessions: [], pastures: [] });
+    // The station knows the account, so it answers to the token the sitting's deploy puts: the finish's hill link is minted under it.
+    const station = await fakeStation([], { token: "t".repeat(48), sessions: [], pastures: [], account: state, tokenFromDeploy: true });
     try {
       // The ring's environment, which strips every seam, and the three seams for this one command: the fakes, never an account.
       const env = { ...this.env(), SHEEP_TEST_ACCOUNT_API: account.url, SHEEP_TEST_WRANGLER: harness.fakeWrangler, SHEEP_TEST_WRANGLER_LOG: log, SHEEP_TEST_STATION_URL: station.url };
@@ -1169,7 +1170,7 @@ class Ring {
       const settled = STILE_STEPS.map((name) => new RegExp(`^ {2}✓ ${name}\\b`, "m").test(frames.final));
       if (settled.includes(false)) fail(`expected every step settled; not: ${STILE_STEPS.filter((_, index) => !settled[index]).join(", ")}`);
       if (!stationChosen(frames.station, "new sheep-2")) fail(`expected the station step to offer new sheep-2 first, as the chosen row; got ${JSON.stringify(chosenRow(frames.station))}`);
-      for (const line of ["  ✓ station   https://sheep-2.fake.workers.dev", "  ✓ next      done, in ", "  credentials  ~/.sheep/credentials (mode 600, the two values and nothing else)", "  config       ~/.sheep/config", "  skill        ~/.agents/skills/sheep", "  │ say to your agent"]) if (!frames.final.includes(`\n${line}`)) fail(`expected the line ${JSON.stringify(line)}`);
+      for (const line of ["  ✓ station   https://sheep-2.fake.workers.dev", "  ✓ next      done, in ", `  hill         ${station.url}/hill/?pass=`, "  credentials  ~/.sheep/credentials (mode 600, the two values and nothing else)", "  config       ~/.sheep/config", "  skill        ~/.agents/skills/sheep", "  │ say to your agent"]) if (!frames.final.includes(`\n${line}`)) fail(`expected the line ${JSON.stringify(line)}`);
       const credentials = join(home, ".sheep", "credentials");
       const kept = existsSync(credentials) ? JSON.parse(readFileSync(credentials, "utf8")) : undefined;
       if (kept?.cloudflare !== TOKEN || kept?.anthropic !== KEY || (statSync(credentials).mode & 0o777) !== 0o600) fail(`expected ${credentials} mode 600 holding the two values typed`);

@@ -111,7 +111,8 @@ if (args[0] === "dev") {
   // The define as the bundler takes it: a JSON expression after the key, here a string, whose value the Worker parses as JSON.
   const defined = args.filter((arg, i) => args[i - 1] === "--define" && arg.startsWith("SHEEP_BUILD:")).map((arg) => JSON.parse(JSON.parse(arg.slice("SHEEP_BUILD:".length))));
   const build = defined.length === 0 ? null : { commit: defined.at(-1).commit, builtAt: defined.at(-1).builtAt };
-  await fetch(`${api}/_fake/deploy`, { method: "POST", body: JSON.stringify({ name: pen.name, container: pen.containers?.[0]?.name ?? null, image: pen.containers?.[0]?.image ?? null, vars: args.filter((arg, i) => args[i - 1] === "--var"), kv: pen.kv_namespaces ?? [], build, ...(secretsFile === undefined ? {} : { secrets: Object.keys(secretsFile.values) }) }) });
+  // The station's own token rides along when the file holds one, so the fake station can answer to what this deploy put.
+  await fetch(`${api}/_fake/deploy`, { method: "POST", body: JSON.stringify({ name: pen.name, container: pen.containers?.[0]?.name ?? null, image: pen.containers?.[0]?.image ?? null, vars: args.filter((arg, i) => args[i - 1] === "--var"), kv: pen.kv_namespaces ?? [], build, ...(secretsFile === undefined ? {} : { secrets: Object.keys(secretsFile.values), token: secretsFile.values.SHEEP_TOKEN }) }) });
   console.log(`Total Upload: 1234.56 KiB / gzip: 234.56 KiB\nUploaded ${pen.name} (2.34 sec)\nDeployed ${pen.name} triggers (1.23 sec)\n  https://${pen.name}.fake.workers.dev\nCurrent Version ID: 00000000-0000-0000-0000-000000000000`);
 } else if (args[0] === "secret" && args[1] === "put") {
   if (process.env.SHEEP_TEST_WRANGLER_FAIL === `secret:${args[2]}`) {
@@ -120,8 +121,10 @@ if (args[0] === "dev") {
   }
   // The account's side of a secret put (stile phase 0): the Worker's secret names are what `deploy` reads when no model key
   // is kept here, so the listing has to be what the puts actually made rather than a fixture.
+  // SHEEP_TOKEN's value goes too: it is the station's own token, which the fake station answers to (the hill's pass at the
+  // stile's finish is minted under it). No other value leaves this process.
   const worker = (config.env?.pen ?? config).name;
-  await fetch(`${api}/_fake/secret`, { method: "POST", body: JSON.stringify({ name: worker, secret: args[2] }) });
+  await fetch(`${api}/_fake/secret`, { method: "POST", body: JSON.stringify({ name: worker, secret: args[2], ...(args[2] === "SHEEP_TOKEN" ? { value: stdin.trim() } : {}) }) });
   console.log(`🌀 Creating the secret for the Worker "${worker}" \n✨ Success! Uploaded secret ${args[2]}`);
 } else if (args[0] === "delete") {
   const worker = (config.env?.pen ?? config).name;

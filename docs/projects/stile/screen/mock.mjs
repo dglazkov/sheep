@@ -225,15 +225,16 @@ frame("key", "The key", "Same box as the token, so the second secret feels like 
     ],
     foot: keys("  Enter send   ? explain   Ctrl-C leave") }));
 
-frame("finish", "The finish", "Seven green rows, then the three places things are, then the one sentence to say, in a box so it is the last thing the eye lands on. No path breaks mid-token; nothing prints twice.",
+frame("finish", "The finish", "Seven green rows, then the hill's link (one use, two minutes: the shepherd is on the hill before their agent says a word), the three places things are, then the one sentence to say, in a box so it is the last thing the eye lands on. No path breaks mid-token, and the link breaks only after ?pass=; nothing prints twice.",
   (() => {
     const out = sheet({ finished: true, done: { ...done1, where: "everywhere on this machine", account: "Dimitri's Account", plan: "Workers Paid, 5 USD a month", station: link("https://sheep-2.glazkov.workers.dev"), key: "put on the home as its secret", next: "done, in 3m 40s" } });
+    // At 80 by 24 the hill's two rows take every blank: the one under the grass, the one after the rows, the one before the box.
     const tail = [
-      "",
+      `  ${dim("hill       ")}  ${link("https://sheep-2.glazkov.workers.dev/hill/?pass=")}`,
+      `${" ".repeat(15)}${link("0123456789abcdef".repeat(4))}`,
       `  ${dim("credentials")}  ~/.sheep/credentials ${dim("(mode 600, the two values and nothing else)")}`,
       `  ${dim("config     ")}  ~/.sheep/config`,
       `  ${dim("skill      ")}  ~/.agents/skills/sheep`,
-      "",
       ...[
         `  ${dim("╭" + "─".repeat(76) + "╮")}`,
         `  ${dim("│")} ${pad(accentB("say to your agent"), 74)} ${dim("│")}`,
@@ -241,7 +242,7 @@ frame("finish", "The finish", "Seven green rows, then the three places things ar
         `  ${dim("╰" + "─".repeat(76) + "╯")}`,
       ],
     ];
-    const head = out.slice(0, 8 + STEPS.length);
+    const head = out.slice(0, 8 + STEPS.length).filter((_l, i) => i !== 7);
     return [...head, ...tail].concat(Array(H).fill("")).slice(0, H).map((l) => pad(l));
   })());
 

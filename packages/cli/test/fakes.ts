@@ -57,6 +57,12 @@ export interface FakeState {
   /** Each Worker's secret names, as the fake wrangler's `secret put` registers them: never a value, as the real API answers. */
   secrets: Record<string, string[]>;
   /**
+   * Each Worker's own token, `SHEEP_TOKEN` as the fake wrangler put it: what the fake station answers to when it is that
+   * Worker, so a station deployed in a sitting takes the bearer its config holds (the hill's pass at the finish). The
+   * real API never answers a value; nothing but the fake station reads this.
+   */
+  tokens: Record<string, string>;
+  /**
    * The account's KV namespaces (stile phase 2, the join store), as the API lists, makes, and deletes them, each with
    * its keys: the value and the `expiration_ttl` it was written with. The fake station reads the namespace titled
    * `<worker>-join` as its `JOIN` binding, as the cell reads its own.
@@ -79,7 +85,7 @@ export interface FakeState {
 }
 
 export function fresh(): FakeState {
-  return { plan: "workers_paid", subdomain: "fake", subdomainPut: "ok", workers: ["learner", "sheep", "sheep-pen"], applications: [{ id: "a03d94e0-75b4-454d-b8c8-4882bfcad73d", name: "sheep-pen" }], deploys: [], secrets: {}, kv: [], events: [], requests: [], health: "healthy", polls: 0, rollout: "none", rolloutPolls: 0 };
+  return { plan: "workers_paid", subdomain: "fake", subdomainPut: "ok", workers: ["learner", "sheep", "sheep-pen"], applications: [{ id: "a03d94e0-75b4-454d-b8c8-4882bfcad73d", name: "sheep-pen" }], deploys: [], secrets: {}, tokens: {}, kv: [], events: [], requests: [], health: "healthy", polls: 0, rollout: "none", rolloutPolls: 0 };
 }
 
 const json = async (request: IncomingMessage): Promise<Record<string, unknown>> => {
@@ -102,9 +108,10 @@ export function fakeAccount(state: FakeState): Promise<{ server: Server; url: st
     const auth = request.headers.authorization;
     // The fake wrangler's side door: what a deploy or a delete does to the account.
     if (path === "/_fake/deploy") {
-      const body = (await json(request)) as FakeState["deploys"][number];
+      const { token, ...body } = (await json(request)) as FakeState["deploys"][number] & { token?: string };
       state.deploys.push(body);
       if (!state.workers.includes(body.name)) state.workers.push(body.name);
+      if (token !== undefined) state.tokens[body.name] = token;
       // Secrets that rode with the upload are the Worker's from this version on, as the account lists them.
       for (const secret of body.secrets ?? []) {
         const held = state.secrets[body.name] ?? [];
@@ -125,16 +132,18 @@ export function fakeAccount(state: FakeState): Promise<{ server: Server; url: st
       return response.end("{}");
     }
     if (path === "/_fake/secret") {
-      const body = (await json(request)) as { name: string; secret: string };
+      const body = (await json(request)) as { name: string; secret: string; value?: string };
       const held = state.secrets[body.name] ?? [];
       if (!held.includes(body.secret)) held.push(body.secret);
       state.secrets[body.name] = held;
+      if (body.secret === "SHEEP_TOKEN" && body.value !== undefined) state.tokens[body.name] = body.value;
       return response.end("{}");
     }
     if (path === "/_fake/delete") {
       const body = (await json(request)) as { name: string };
       state.workers = state.workers.filter((name) => name !== body.name);
       delete state.secrets[body.name];
+      delete state.tokens[body.name];
       return response.end("{}");
     }
     state.requests.push({ method: request.method ?? "", path, auth });
@@ -292,9 +301,17 @@ export function fakeAccount(state: FakeState): Promise<{ server: Server; url: st
   return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve({ server, url: `http://127.0.0.1:${(server.address() as { port: number }).port}` })));
 }
 
+/** The one pass the fake station mints: 64 hex, as the Worker's is, and the same on every ask so a frame can name it. */
+export const PASS = "0123456789abcdef".repeat(4);
+
 /** What the fake station holds: its sessions and its pastures, as `GET /sessions` and `GET /pastures` list them, with the token. */
 export interface StationState {
   token: string;
+  /**
+   * The token is what `account`'s deploy put on this Worker as `SHEEP_TOKEN`, once one has (the stile's sitting deploys
+   * the station it then asks for the hill's pass); `token` until then, and for a station no deploy here made.
+   */
+  tokenFromDeploy?: boolean;
   sessions: { id: string; name: string | null; createdAt: number; state: string; pasture: string | null; task: string | null }[];
   pastures: { name: string; createdAt: number }[];
   /**
@@ -345,7 +362,8 @@ export interface StationState {
  * as the Worker sends it (or `header`, or none), and `GET /_tip/package.json`
  * is the manifest `SHEEP_TIP` names, answered from `tip`. Shear phase 1:
  * `doorDown` and `routes`, a door that does not answer and a route's own
- * status; a lane `running` is a session row with that state.
+ * status; a lane `running` is a session row with that state. Hill phase
+ * 0: `POST /hill/passes` under the bearer mints `PASS`.
  */
 export function fakeStation(auths: (string | undefined)[], state: StationState): Promise<{ server: Server; url: string }> {
   let joinAsks = 0;
@@ -399,9 +417,15 @@ export function fakeStation(auths: (string | undefined)[], state: StationState):
       return answer(200, JSON.stringify({ token: state.token }));
     }
     if (url.pathname === "/home") return answer(200, JSON.stringify({ serverId: "fake-station", container: true, build }));
-    if (request.headers.authorization !== `Bearer ${state.token}`) return answer(401, "unauthorized");
+    // The station's token: its own, or with `tokenFromDeploy` the one the fake wrangler put on the Worker this station is
+    // (the named one, else the account's last deploy), so a station deployed in a sitting answers to the token its config
+    // holds; its own again where no deploy put one (a joined station, deployed elsewhere).
+    const deployed = state.tokenFromDeploy === true ? state.account?.tokens[state.worker ?? state.account.deploys.at(-1)?.name ?? ""] : undefined;
+    if (request.headers.authorization !== `Bearer ${deployed ?? state.token}`) return answer(401, "unauthorized");
     if (url.pathname === "/sessions") return answer(200, JSON.stringify(state.sessions));
     if (url.pathname === "/pastures") return answer(200, JSON.stringify(state.pastures));
+    // A pass (hill phase 0), as the Worker mints one: the link at the origin this request reached, its pass fixed here.
+    if (url.pathname === "/hill/passes" && request.method === "POST") return answer(201, JSON.stringify({ url: `http://${request.headers.host}/hill/?pass=${PASS}`, expires: Date.now() + 120_000 }));
     answer(404, "no");
   });
   return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve({ server, url: `http://127.0.0.1:${(server.address() as { port: number }).port}` })));

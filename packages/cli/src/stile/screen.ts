@@ -69,7 +69,7 @@ export interface Checklist<S extends string, R> {
   recheck?: S;
   /** The step whose stages are a deploy, with its own key line; `unless` a choice made there says it is not a deploy. */
   deploying?: { step: S; keys: string; unless?: (chosen: string) => boolean };
-  /** The finish: labelled lines (a label, a path or an address, a dim note), then a box with a bold amber title and bold lines. */
+  /** The finish: labelled lines (a label, a path or an address drawn as a link, a dim note), then a box with a bold amber title and bold lines. */
   finish: (report: R) => { labelled: [string, string, string?][]; box: { title: string; lines: string[] } };
   /** What stderr says when Ctrl-C lands while a step works with nothing asked. */
   interruptedWorking: string;
@@ -244,10 +244,14 @@ function fit(text: string, room: number): string {
   return `${chars.slice(0, Math.max(0, room - 1)).join("")}…`;
 }
 
-/** A path as lines that never break inside a segment: whole on one line, else its segments packed at `/` to `room`. */
+/**
+ * A path as lines that never break inside a segment: whole on one line, else its segments packed at `/` to `room`. An
+ * address breaks after `=` too, so the hill's link (hill phase 0: 64 hex after `?pass=`) is the address on one line and
+ * the pass on the next, and not a pass cut in two.
+ */
 function pathLines(path: string, room: number): string[] {
   if (path.length <= room) return [path];
-  const pieces = path.split(/(?<=\/)/);
+  const pieces = path.split(/(?<=[/=])/);
   const lines: string[] = [];
   let line = "";
   for (const piece of pieces) {
@@ -364,12 +368,14 @@ class Sheet<S extends string, R> implements Component {
     if (this.finished) {
       // The finish is the last thing on screen, and the newline that puts the prompt under it takes one row: a finish
       // that fills the screen would scroll the top of the sheep into the scrollback. So it is drawn one row short, giving
-      // up the blank line after the seven rows first and the one before the box next; at 80 by 24 the first is enough.
+      // up the blank line after the seven rows first, the one before the box next, and the one under the grass last; at
+      // 80 by 24 with the hill's two rows all three go, and the sheep, the rows, the places, and the box fill the screen.
       const finish = this.finish(width);
       while (out.length + finish.length > this.terminal.rows - 1) {
         const blank = finish.indexOf("");
-        if (blank === -1) break;
-        finish.splice(blank, 1);
+        if (blank !== -1) finish.splice(blank, 1);
+        else if (out[7] === "") out.splice(7, 1);
+        else break;
       }
       return out.concat(finish).map((line) => this.guard(line, width));
     }
@@ -564,10 +570,13 @@ class Sheet<S extends string, R> implements Component {
     const out: string[] = [""];
     const labelled = (label: string, path: string, note?: string): void => {
       const lines = pathLines(path, Math.max(10, width - 15));
+      // An address is a link on every line it takes, each to the whole of it, so a terminal that follows links opens it
+      // from either; a path is plain.
+      const address = /^https?:\/\/\S+$/.test(path);
       lines.forEach((line, index) => {
         const head = index === 0 ? `  ${this.paint.dim(label.padEnd(11))}  ` : " ".repeat(15);
         const tail = index === lines.length - 1 && note !== undefined && 15 + line.length + 1 + note.length <= width ? ` ${this.paint.dim(note)}` : "";
-        out.push(`${head}${line}${tail}`);
+        out.push(`${head}${address ? this.paint.link(line, path) : line}${tail}`);
       });
     };
     for (const [label, path, note] of lines) labelled(label, path, note);
@@ -618,6 +627,8 @@ export function sheepChecklist(options: Omit<FlowOptions, "driver">): Checklist<
     deploying: { step: "station", keys: "the first container takes a minute or two   Ctrl-C leaves it deploying", unless: (chosen) => chosen.startsWith("join:") },
     finish: (report) => ({
       labelled: [
+        // The hill first: the one row the shepherd acts on at the finish, a link that works once and for two minutes.
+        ...(report.hill === null ? [] : [["hill", report.hill.url, "(one use, two minutes)"] as [string, string, string]]),
         ["credentials", tilde(report.credentials), report.key === "left" ? "(mode 600, the account token)" : "(mode 600, the two values and nothing else)"],
         ["config", tilde(report.config)],
         ["skill", "checkout" in report.skill ? "from this checkout" : tilde(report.skill.path)],

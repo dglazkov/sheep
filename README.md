@@ -41,8 +41,9 @@ are yours, at your own terminal; everything after them is your agent's.
    Worker and its container application on your account, the step
    becoming its address. **key** asks for your Anthropic key at a hidden
    prompt and puts it on the home as its secret. **next** prints the
-   address, where the two values are kept, and the one sentence to say to
-   your agent.
+   address, a link onto the hill (your station's page, below; the link
+   works once, for two minutes, so open it now), where the two values
+   are kept, and the one sentence to say to your agent.
 
    Pressing `?` on a step opens a few lines under it: what the step is
    for, where to get what it asks for, what it costs, and what sheep does

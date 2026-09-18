@@ -198,9 +198,14 @@ elapsed time dim beside it, a stage that repeats (a rollout's count)
 replacing its line rather than stacking. `?` opens the step's words as
 a panel under the row: a dim `│` down the left, the four labels bold,
 each thing wrapped to the panel. The finish is seven green rows, then
-`credentials`, `config`, and `skill` with their paths, then
-`say to your agent` and the sentence in a box across the screen; no
-path breaks mid-token and nothing prints twice. Row 24 is a dim key
+`hill` with a one-time link onto the station's page (minted under the
+station's token as `sheep hill` mints one, so the shepherd is on the
+hill before their agent says a word; omitted where the station cannot
+mint one), then `credentials`, `config`, and `skill` with their paths,
+then `say to your agent` and the sentence in a box across the screen;
+no path breaks mid-token, the link breaks only after `?pass=`, and
+nothing prints twice. At 80 by 24 the link's two rows take every
+blank row, the one under the grass included, and the sheep stays whole. Row 24 is a dim key
 line: `↑↓ choose   Enter take   ? explain   Ctrl-C leave`, as the step
 allows. The banner and the checklist fit 80 by 24 with nothing open;
 when the words are open on a step with choices the screen is one row
