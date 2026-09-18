@@ -44,6 +44,7 @@ import { DEFAULT_IDLE } from "./pen/container.ts";
 import { DEFAULT_CPU_MS, Isolate } from "./pen/isolate.ts";
 import { type ContainerStarter, parseDuration, PenLease } from "./pen/lease.ts";
 import { type CellPasture, cellSystemPrompt } from "./prompt.ts";
+import { throughReset } from "./reset.ts";
 import { createCellSessionRepo } from "./storage/sqlite.ts";
 import { createCellHost } from "./wire/host.ts";
 import { ENDED_CLOSE_CODE, ENDED_REASON, WebSocketListener } from "./wire/listener.ts";
@@ -783,6 +784,8 @@ export class SessionCell extends DurableObject<Env> {
    * eviction can be asked again and finishes; a step that failed makes the
    * whole end fail after the rest ran, so the Worker keeps the row and the
    * dog asks again. Idempotent: a second end finds nothing at every step.
+   * A step that meets another object's reset (a redeploy's window) asks it
+   * again across it (issue #16).
    *
    * 1. The open turn is aborted, as `abort()` aborts it: pi cancels the
    *    tool, the env's kill path ends the command in the container and
@@ -799,7 +802,10 @@ export class SessionCell extends DurableObject<Env> {
    *    lease, if live, lets go first so its socket closes and its
    *    keep-alive stops.
    * 4. The browser is closed, by its kept id, never launched.
-   * 5. The storage is emptied: the alarm, then every table and key.
+   * 5. The storage is emptied: the alarm, then every table and key; only
+   *    when every step before finished, since it holds what the end asked
+   *    again needs, the browser's kept id among it (issue #16). A failed
+   *    end deletes the alarm alone.
    */
   async end(): Promise<EndReport> {
     const id = this.sessionId;
@@ -807,7 +813,9 @@ export class SessionCell extends DurableObject<Env> {
     const failures: string[] = [];
     const attempt = async (step: string, run: () => Promise<void>): Promise<void> => {
       try {
-        await run();
+        // A step that calls another object (the container, the browser) meets its reset in a redeploy's window and asks
+        // again across it (issue #16).
+        await throughReset(run);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         log(`${step} failed: ${message}`);
@@ -872,7 +880,13 @@ export class SessionCell extends DurableObject<Env> {
       if (kept !== undefined) log(`the browser session ${kept} was closed`);
     });
 
-    // 5. The storage.
+    // 5. The storage, only once everything before it finished (issue #16): emptied after a failed step, it would take the
+    // browser's kept id with it, and the end asked again could no longer close what this one left open.
+    // The alarm goes either way, so nothing resumes a sheep that is half ended.
+    if (failures.length > 0) {
+      await this.ctx.storage.deleteAlarm().catch(() => undefined);
+      throw new Error(`the end of ${id} did not finish: ${failures.join("; ")}; the storage is kept, so the end asked again finishes it`);
+    }
     await attempt("empty the storage", async () => {
       await this.ctx.storage.deleteAlarm();
       await this.ctx.storage.deleteAll();

@@ -77,6 +77,7 @@ import { hasEyes } from "./eyes/eyes.ts";
 import { NO_BUILD } from "./hill-words.ts";
 import { type FauxProgram, isFauxProgram } from "./models.ts";
 import { badPastureName, isPastureName, isSecretName } from "./pasture.ts";
+import { throughReset } from "./reset.ts";
 
 export { SessionCell } from "./cell.ts";
 export { Directory } from "./directory.ts";
@@ -510,8 +511,16 @@ const router = {
   },
 } satisfies ExportedHandler<Env>;
 
+/**
+ * The methods a route answers the same when asked twice, and whose request has no body to spend (issue #16): a reset met
+ * on one of these is asked again, the end included, which the cell finishes from where the reset cut it. A POST or a PUT
+ * is never asked again: a prompt reset mid-call may have landed, and that is the dog's to judge from its 500.
+ */
+const ASKED_AGAIN = new Set(["GET", "HEAD", "DELETE"]);
+
 export default {
   async fetch(request, env): Promise<Response> {
-    return stamped(await router.fetch(request, env));
+    const answer = ASKED_AGAIN.has(request.method) ? await throughReset(() => router.fetch(request, env)) : await router.fetch(request, env);
+    return stamped(answer);
   },
 } satisfies ExportedHandler<Env>;

@@ -357,6 +357,55 @@ describe("end phase 0: journey 1 in the cell's terms", () => {
   });
 });
 
+/** The platform's error for an object reset by a redeploy, as a call to that object throws it (issue #16). */
+function resetError(): Error {
+  return Object.assign(new Error("Durable Object reset because its code was updated."), { retryable: true });
+}
+
+describe("issue #16: an end in a redeploy's window", () => {
+  it("a destroy that meets the container's reset is asked again across it, and the end finishes", { timeout: 30_000 }, async () => {
+    await pastured();
+    const types = await sheep("reset-then-gone");
+    const destroy = types.stub.starter.destroy.bind(types.stub.starter);
+    let resets = 2;
+    types.stub.starter.destroy = async () => {
+      if (resets-- > 0) {
+        types.stub.destroys++;
+        throw resetError();
+      }
+      await destroy();
+    };
+    expect(await end(types.id)).toEqual({ ended: true, aborted: false });
+    expect(types.stub.destroys).toBe(3);
+    expect(await tablesOf(types.id)).toEqual([]);
+    await refusedEverywhere(types.id);
+  });
+
+  it("an end cut short keeps the storage and the row, deletes the alarm, and the end asked again finishes it", { timeout: 30_000 }, async () => {
+    await pastured();
+    const types = await sheep("cut-short");
+    const destroy = types.stub.starter.destroy.bind(types.stub.starter);
+    types.stub.starter.destroy = async () => {
+      types.stub.destroys++;
+      throw new Error("the container did not answer");
+    };
+    const cut = await api(`/s/${types.id}`, { method: "DELETE" });
+    expect(cut.status).toBe(500);
+    expect(await cut.text()).toContain("the storage is kept, so the end asked again finishes it");
+    // Asked once: an error that is not a reset is not asked again.
+    expect(types.stub.destroys).toBe(1);
+    // What the end asked again needs is still there, the row with it; nothing resumes the half-ended sheep.
+    expect((await tablesOf(types.id)).length).toBeGreaterThan(0);
+    expect(await alarmOf(types.id)).toBeNull();
+    expect(await ls()).toContain(types.id);
+
+    types.stub.starter.destroy = destroy;
+    expect(await end(types.id)).toEqual({ ended: true, aborted: false });
+    expect(await tablesOf(types.id)).toEqual([]);
+    await refusedEverywhere(types.id);
+  });
+});
+
 describe("end phase 0: journey 2, the eyes are closed with the sheep", () => {
   /** A sheep that looked once, and the browser session its look kept. */
   async function looked(name: string): Promise<{ id: string; kept: string }> {

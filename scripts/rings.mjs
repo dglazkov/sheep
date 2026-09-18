@@ -103,6 +103,7 @@ export const RINGS = {
     "packages/cell/test/pen.test.ts",
     "packages/cell/test/peek.test.ts",
     "packages/cell/test/repo-conformance.test.ts",
+    "packages/cell/test/reset.test.ts",
     "packages/cell/test/router.test.ts",
     "packages/cell/test/serve.test.ts",
     "packages/cell/test/setup.test.ts",
