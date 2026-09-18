@@ -1,5 +1,12 @@
 # sheep
 
+> **Frozen on 18 Sep 2026.** Sheep ran its own agents in Cloudflare Durable
+> Objects and Containers for six weeks, and taught more than it shipped. Its
+> station is taken down and nothing here is maintained.
+> [docs/code-red.md](docs/code-red.md) tells the last days. The work goes on,
+> smaller, in [isocannery](https://github.com/dglazkov/isocannery). Sheep, we
+> honor thee.
+
 Sheep is a repository for coding agents that herd coding agents. The one
 with the terminal is the **sheepdog**: a coding agent, Claude Code in this
 repo or pi on a laptop, working a goal a person gave it. The ones it herds

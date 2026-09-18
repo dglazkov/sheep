@@ -2,6 +2,14 @@
 
 Declared by the shepherd on 18 Sep 2026. Stands until they lift it. A session pointed at this file picks up here.
 
+## How it ended
+
+It ended the same day, with the project. That evening the shepherd walked the journey below once more with the station's log watched live. One mention took 7 min 19 s to answer: two setups of 140 s and 125 s, the #14 harness fault between them (its call site seen at last: the budget question to the Directory, asked through a stub the cell had held for minutes, thrown from inside the system prompt), a recovery that threw away a healthy container, and a second container gone after 270 s of a silent socket with no ping on it (#24). With none of that, the turn would still have been 2 min 40 s, on a quarter of a CPU where each `isocan` command took 8 to 16 s.
+
+The shepherd asked whether Durable Objects and Containers were the wrong ground for an agent at a person's pace, and chose not to find out by fixing further. Sheep is frozen at this commit. The station sheep-2 and the collie beside it were deleted, the open issues closed unfixed, and the work goes on as [isocannery](https://github.com/dglazkov/isocannery): a thin bridge from an isocan canvas to a managed agent someone else hosts. Its design carries these numbers, and five refusals that are sheep's real legacy.
+
+Everything below is as it stood on the afternoon of 18 Sep.
+
 ## The mode
 
 - **The shepherd decides, the agent writes.** Propose in a sentence, ask when a choice is theirs, do exactly that. No unattended phases.
