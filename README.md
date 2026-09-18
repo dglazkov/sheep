@@ -241,8 +241,9 @@ project by project: [`docs/projects/`](docs/projects/README.md).
 - Node 22 or newer, with corepack (ships with Node). The repo pins its pnpm
   version, so `corepack enable` is the only install.
 - git.
-- For a deployed home, a free [Cloudflare](https://dash.cloudflare.com/sign-up)
-  account. No domain needed; the Free plan includes SQLite Durable Objects.
+- For a deployed home, a [Cloudflare](https://dash.cloudflare.com/sign-up)
+  account on the Workers Paid plan (5 USD a month), which containers need;
+  `sheep setup` checks for it. No domain needed.
 - An Anthropic API key.
 
 #### Set up the repo
