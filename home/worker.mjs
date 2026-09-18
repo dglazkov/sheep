@@ -94223,6 +94223,27 @@ function createCellModels(env, hooks = {}) {
 }
 __name(createCellModels, "createCellModels");
 
+// src/reset.ts
+var RESET_DELAYS_MS = [250, 750, 1e3, 2e3];
+function isReset(error) {
+  if (!(error instanceof Error)) return false;
+  const flags = error;
+  if (flags.overloaded === true) return false;
+  return flags.durableObjectReset === true || flags.retryable === true || /reset because its code was updated/i.test(error.message);
+}
+__name(isReset, "isReset");
+async function throughReset(call, delays = RESET_DELAYS_MS) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await call();
+    } catch (error) {
+      if (attempt >= delays.length || !isReset(error)) throw error;
+      await new Promise((resolve2) => setTimeout(resolve2, delays[attempt]));
+    }
+  }
+}
+__name(throughReset, "throughReset");
+
 // ../../vendor/pi/packages/ai/src/models.ts
 var EXTENDED_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 function getSupportedThinkingLevels(model) {
@@ -125766,6 +125787,8 @@ var SessionCell = class extends DurableObject4 {
    * eviction can be asked again and finishes; a step that failed makes the
    * whole end fail after the rest ran, so the Worker keeps the row and the
    * dog asks again. Idempotent: a second end finds nothing at every step.
+   * A step that meets another object's reset (a redeploy's window) asks it
+   * again across it (issue #16).
    *
    * 1. The open turn is aborted, as `abort()` aborts it: pi cancels the
    *    tool, the env's kill path ends the command in the container and
@@ -125782,7 +125805,10 @@ var SessionCell = class extends DurableObject4 {
    *    lease, if live, lets go first so its socket closes and its
    *    keep-alive stops.
    * 4. The browser is closed, by its kept id, never launched.
-   * 5. The storage is emptied: the alarm, then every table and key.
+   * 5. The storage is emptied: the alarm, then every table and key; only
+   *    when every step before finished, since it holds what the end asked
+   *    again needs, the browser's kept id among it (issue #16). A failed
+   *    end deletes the alarm alone.
    */
   async end() {
     const id2 = this.sessionId;
@@ -125790,7 +125816,7 @@ var SessionCell = class extends DurableObject4 {
     const failures = [];
     const attempt = /* @__PURE__ */ __name(async (step, run) => {
       try {
-        await run();
+        await throughReset(run);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         log(`${step} failed: ${message}`);
@@ -125844,6 +125870,10 @@ var SessionCell = class extends DurableObject4 {
       await session.close();
       if (kept2 !== void 0) log(`the browser session ${kept2} was closed`);
     });
+    if (failures.length > 0) {
+      await this.ctx.storage.deleteAlarm().catch(() => void 0);
+      throw new Error(`the end of ${id2} did not finish: ${failures.join("; ")}; the storage is kept, so the end asked again finishes it`);
+    }
     await attempt("empty the storage", async () => {
       await this.ctx.storage.deleteAlarm();
       await this.ctx.storage.deleteAll();
@@ -126096,13 +126126,13 @@ __name(joinAnswer, "joinAnswer");
 var CHECKOUT_BUILD = { commit: "0.0.0-checkout", builtAt: null };
 function homeImage() {
   if (false) return null;
-  return true ? "docker.io/dglazkov2/sheep-pen@sha256:205fdf375f1d29467fe9db3716acd5b872f050ff5dddacba5fd89cb5269c6d37" : null;
+  return true ? "docker.io/dglazkov2/sheep-pen@sha256:9a7a4e0b96ad1fae6f04f0c27aa9aaeb8edccb1c514a678ff3dfa5dd250b5e7b" : null;
 }
 __name(homeImage, "homeImage");
 function homeBuild() {
   if (false) return CHECKOUT_BUILD;
   try {
-    const parsed = JSON.parse('{"commit":"32d334d","builtAt":"2026-09-18T01:59:20Z"}');
+    const parsed = JSON.parse('{"commit":"b92db0a","builtAt":"2026-09-18T02:43:44Z"}');
     if (typeof parsed.commit === "string" && parsed.commit !== "") return { commit: parsed.commit, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
   } catch {
   }
@@ -126269,9 +126299,11 @@ var router = {
     return new Response("not found", { status: 404 });
   }
 };
+var ASKED_AGAIN = /* @__PURE__ */ new Set(["GET", "HEAD", "DELETE"]);
 var index_default = {
   async fetch(request, env) {
-    return stamped(await router.fetch(request, env));
+    const answer = ASKED_AGAIN.has(request.method) ? await throughReset(() => router.fetch(request, env)) : await router.fetch(request, env);
+    return stamped(answer);
   }
 };
 export {
