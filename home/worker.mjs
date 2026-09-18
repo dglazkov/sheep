@@ -120942,6 +120942,25 @@ var birthProjector = /* @__PURE__ */ __name((entry) => {
   return [createCustomMessage(BIRTH_ENTRY, birthText(data), true, void 0, entry.timestamp)];
 }, "birthProjector");
 
+// src/cause.ts
+function describeError(error) {
+  const seen = /* @__PURE__ */ new Set();
+  const parts = [];
+  let current = error;
+  while (current !== void 0 && current !== null && !seen.has(current) && parts.length < 8) {
+    seen.add(current);
+    if (current instanceof Error) {
+      parts.push(`${current.name}: ${current.message}`);
+      current = current.cause;
+    } else {
+      parts.push(String(current));
+      break;
+    }
+  }
+  return parts.join(" <- ");
+}
+__name(describeError, "describeError");
+
 // src/pen/broker.ts
 var DEFAULT_GIT_HOST = "github.com";
 var GIT_USERNAME = "x-access-token";
@@ -125981,6 +126000,7 @@ var SessionCell = class extends DurableObject4 {
       }
       return new Response("not found", { status: 404 });
     } catch (error) {
+      console.error(`[cell ${this.sessionId}] ${route} failed: ${describeError(error)}`);
       const message = error instanceof Error ? error.message : String(error);
       return new Response(message, { status: 500 });
     }
@@ -126126,13 +126146,13 @@ __name(joinAnswer, "joinAnswer");
 var CHECKOUT_BUILD = { commit: "0.0.0-checkout", builtAt: null };
 function homeImage() {
   if (false) return null;
-  return true ? "docker.io/dglazkov2/sheep-pen@sha256:9a7a4e0b96ad1fae6f04f0c27aa9aaeb8edccb1c514a678ff3dfa5dd250b5e7b" : null;
+  return true ? "docker.io/dglazkov2/sheep-pen@sha256:9a25e8828c565eff88d1217ba5499a10443cf97730e9e9ee842d82757ee65760" : null;
 }
 __name(homeImage, "homeImage");
 function homeBuild() {
   if (false) return CHECKOUT_BUILD;
   try {
-    const parsed = JSON.parse('{"commit":"b92db0a","builtAt":"2026-09-18T02:43:44Z"}');
+    const parsed = JSON.parse('{"commit":"704dfa7","builtAt":"2026-09-18T15:56:10Z"}');
     if (typeof parsed.commit === "string" && parsed.commit !== "") return { commit: parsed.commit, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
   } catch {
   }
