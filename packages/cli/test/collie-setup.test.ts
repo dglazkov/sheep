@@ -533,13 +533,15 @@ describe("collie setup's refusals (journey 5 step 1), each deploying nothing", (
     nothingDeployed(w);
   });
 
-  it("no isocan identity here, or no isocan at all: refused at isocan with `isocan setup` named and the station named", { timeout: 60_000 }, async () => {
+  it("no isocan identity here, or no isocan at all: refused at isocan with the way to a name and the station named", { timeout: 60_000 }, async () => {
     const w = await world({ identity: null });
     const run = await w.collie(["setup", "--json"]);
     expect(run.code).toBe(2);
     const refusal = JSON.parse(run.stdout) as Json;
     expect(refusal).toMatchObject({ step: "isocan", needs: ["isocan"], sheep: { name: STATION.name }, isocan: null });
-    expect(refusal.refused).toContain("`isocan setup` names you");
+    // Not `isocan setup`: the shepherd has run it, and on a machine with no browser it names nobody (17 Sep 2026).
+    expect(refusal.refused).toContain("`isocan identity --home --name \"You\"` names one, or a pass minted as you does");
+    expect(refusal.refused).not.toContain("`isocan setup` names you");
     expect(refusal.refused).toContain(`the station ${STATION.name} at ${STATION.home} is found`);
 
     const bare = await world({ isocan: false });
@@ -792,10 +794,10 @@ describe("collie setup at a terminal (the stile's screen, 80 by 24)", () => {
     expect(exit.code).toBe(2);
     const frame = run.frame();
     expect(frame).toContain("  › isocan    finding this machine's isocan identity");
-    expect(frame).toContain("              ✗ no isocan identity on this machine\n                `isocan setup` names you, and the collie arrives as you\n    account\n    collie\n    next");
+    expect(frame).toContain("              ✗ no isocan identity on this machine\n                `isocan identity --home --name \"You\"` names one, or a pass\n                minted as you does, and the collie arrives as you\n    account\n    collie\n    next");
     const red = run.styledFrame().find((row) => row.text.includes("✗"))!;
     expect(red.cells[14]).toMatchObject({ ch: "✗", fgMode: "p256", fg: 167 });
-    expect(exit.stderr).toContain("collie: no isocan identity on this machine; `isocan setup` names you, and the collie arrives as you; the station blog at https://blog.fake.workers.dev is found and waits for it; nothing was deployed\n");
+    expect(exit.stderr).toContain("collie: no isocan identity on this machine; `isocan identity --home --name \"You\"` names one, or a pass minted as you does, and the collie arrives as you; the station blog at https://blog.fake.workers.dev is found and waits for it; nothing was deployed\n");
     expect(w.wrangler()).toEqual([]);
   });
 });

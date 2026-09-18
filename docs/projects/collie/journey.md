@@ -231,7 +231,10 @@ Acceptance criteria:
    **sheep** step with `sheep setup` named; with the kennel naming a
    local sheep home, refused there too: a Worker on Cloudflare cannot
    reach a laptop, and `collie local` is the rig for that. With no isocan
-   identity here, refused at **isocan** with `isocan setup` named.
+   identity here, refused at **isocan** with the two ways a terminal names
+   one: `isocan identity --home --name "You"`, or a pass minted as you
+   (never `isocan setup` alone, which on a machine with no browser cannot
+   name anybody).
 2. `collie new` in a directory bound to no canvas is refused with
    isocan's own sentence; `--canvas <ref>` names one. A canvas on the
    laptop's own daemon (`http://127.0.0.1:…`) is refused before any pass

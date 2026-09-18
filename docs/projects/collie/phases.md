@@ -327,6 +327,7 @@ never the shepherd's; the canvas it makes there is named
 - **2026-09-14 — The station faulted a first turn during a long setup** (`AgentHarness storage or invariant fault`); the collie narrated it, retried, and resumed the same sheep (sheep#14).
 - **2026-09-14 — Open: journey 3 step 1's "within a second".** On a hosted home a stopped rc's socket close does not reach it through Cloudflare's egress and Cloud Run's front end; off read 6397 ms. Waits on isocan#308.
 - **2026-09-14 — Open: journey 1 step 5's `isocan who`.** A replica daemon's roster does not see a hold placed at the home; the walk read the tray's route. Waits on isocan#306.
+- **2026-09-17 — The shepherd's first outside sitting, in a Codespace, stopped at the isocan step three times:** `isocan setup` crashed on a missing `xdg-open` after its report (isocan da81ea18 handles the spawn error and names `ISOCAN_BROWSER=none`); a pass that carried no identity left "name yourself here" with no browser to do it in (da81ea18 names `isocan identity --home --name "You"` and a pass minted as you); and the collie's refusal pointed back at `isocan setup`, which had been run and on such a machine names nobody (this commit: the refusal names the two ways, journey 5 step 1 says so). The loss itself did not reproduce: the app's "Bring your own agent" pass handed the identity over on the Mac and in the same Codespace on the same release (2fd1e9a). `collie setup` then deployed `sheep-collie` from the Codespace with `--json`.
 
 ---
 

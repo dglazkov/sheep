@@ -165,11 +165,11 @@ function stationName(config: Record<string, unknown>, home: string): string | nu
 async function readIdentity(): Promise<{ identity: IsocanIdentity | null; refused?: string; line?: string }> {
   try {
     const identity = await isocanIdentity();
-    const none = "no isocan identity on this machine; `isocan setup` names you, and the collie arrives as you";
+    const none = "no isocan identity on this machine; `isocan identity --home --name \"You\"` names one, or a pass minted as you does, and the collie arrives as you";
     return identity === null ? { identity, refused: none, line: none } : { identity };
   } catch (error) {
     if (error instanceof IsocanMissing) return { identity: null, refused: error.message, line: "no `isocan` on this machine's PATH; `isocan setup` installs it and names you" };
-    const said = `isocan could not say who you are here; ${error instanceof Error ? error.message : String(error)}; \`isocan setup\` names you`;
+    const said = `isocan could not say who you are here; ${error instanceof Error ? error.message : String(error)}; \`isocan identity --home --name "You"\` names one`;
     return { identity: null, refused: said, line: said };
   }
 }
@@ -198,7 +198,7 @@ export async function runCollieFlow(options: CollieFlowOptions): Promise<CollieS
   // 2. isocan. Read either way, so a refusal at either step names both sides.
   const read = await readIdentity();
   found.isocan = read.identity;
-  const identityClause = read.identity === null ? "and no isocan identity was found here either (`isocan setup` names you)" : `and ${read.identity.name}'s isocan identity is here, waiting for it`;
+  const identityClause = read.identity === null ? "and no isocan identity was found here either (`isocan identity --home --name \"You\"` names one, or a pass minted as you does)" : `and ${read.identity.name}'s isocan identity is here, waiting for it`;
   if (sheepRefused !== undefined) {
     driver.say("sheep", sheepRefused, "refused");
     throw new SetupRefusal("sheep", `${sheepRefused}; ${identityClause}; nothing was deployed`, read.identity === null ? ["sheep", "isocan"] : ["sheep"], found);
