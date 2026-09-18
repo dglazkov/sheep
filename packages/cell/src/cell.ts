@@ -30,6 +30,7 @@ import { Server } from "@earendil-works/pi-server";
 import type { SqliteSessionRepo } from "@earendil-works/pi-session-backend-sqlite-node/sqlite";
 import { DurableObject } from "cloudflare:workers";
 import { BIRTH_ENTRY, BIRTH_TAIL_BYTES, BIRTH_TAIL_LINES, BIRTH_TIMEOUT_S, type BirthData, type BirthRecord, birthCommand, birthProjector } from "./birth.ts";
+import { describeError } from "./cause.ts";
 import { SETUP_KEPT, SETUP_KEY_PREFIX, type SetupRecord, setupRecordKey, setupTail } from "./bleat.ts";
 import { type LaneState, taskOf } from "./directory.ts";
 import { CellExecutionEnv, type ContainerLineResult, type PeekResult, type SetupEnd, type SetupEvent, type SetupSecrets } from "./env/execution-env.ts";
@@ -1007,6 +1008,8 @@ export class SessionCell extends DurableObject<Env> {
       }
       return new Response("not found", { status: 404 });
     } catch (error) {
+      // The message alone hides a harness fault's cause (#20): the log line carries the chain, the answer the message.
+      console.error(`[cell ${this.sessionId}] ${route} failed: ${describeError(error)}`);
       const message = error instanceof Error ? error.message : String(error);
       return new Response(message, { status: 500 });
     }

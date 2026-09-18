@@ -33,6 +33,9 @@
   "vars": {
     "SHEEP_MODEL": "claude-sonnet-5"
   },
+  // #20: Workers Logs, every invocation kept, so a cell's fault and its cause (logged at the cell's catch-all) are readable after
+  // the fact in the dashboard, not only in a `wrangler tail` someone happened to be running. Repeated in `env.pen` below.
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
   // The top level is the Worker `sheep`: no container, so a home deployed from it is journey 6's. The `pen`
   // environment is the same Worker with a container beside each cell (`wrangler dev --env pen`,
   // `wrangler deploy --env pen`, the Worker `sheep-pen`). Bindings, vars, and containers are not
@@ -76,7 +79,8 @@
       "vars": {
         "SHEEP_MODEL": "claude-sonnet-5",
         "PEN_IDLE": "10m"
-      }
+      },
+      "observability": { "enabled": true, "head_sampling_rate": 1 }
     }
   }
 }
