@@ -60,11 +60,12 @@ jobs:
 
       - name: Build the fork's packages (vendor/pi)
         working-directory: vendor/pi
+        # `build:offline`, not `build`: pi-ai's `build` regenerates the model catalog from models.dev live, and a day the
+        # API lacks a provider deletes that provider's committed shard and breaks a hand-written import (18 Sep 2026,
+        # kimi-coding). The catalog is committed on the fork; the release builds from it.
         run: |
           npm ci --ignore-scripts
-          for p in chord tui telemetry ai agent session-backends/sqlite-node protocol client server coding-agent; do
-            (cd "packages/$p" && npm run build)
-          done
+          npm run build:offline
 
       - run: pnpm install --frozen-lockfile
 

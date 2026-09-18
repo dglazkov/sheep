@@ -1579,7 +1579,7 @@ class Ring {
    * the rig named, exit 2: a Worker on Cloudflare cannot reach a laptop.
    * The ring's world has no isocan identity (a fresh `HOME`, no `ISOCAN_*`
    * and no harness variable in the environment), so the refusal carries
-   * `isocan: null` and names `isocan setup` too. The fake account the
+   * `isocan: null` and names `isocan identity --home --name "You"` too. The fake account the
    * refusal must never reach is a server of the ring's own, counting every
    * request, named by the command's one seam for it, and wrangler's seam is
    * a script that writes a file when run: neither is asked, the kennel's
@@ -1635,7 +1635,7 @@ class Ring {
       this.fail("c2", command, { ...setup, stderr: `${setup.stderr}\nstdout is not one JSON object` });
     }
     const home = this.homes.get(this.blog)?.url ?? JSON.parse(configBefore).home;
-    const sentence = `the kennel's home is local, at ${home}; a Worker on Cloudflare cannot reach a laptop; \`collie local\` is the rig for a local home; and no isocan identity was found here either (\`isocan setup\` names you); nothing was deployed`;
+    const sentence = `the kennel's home is local, at ${home}; a Worker on Cloudflare cannot reach a laptop; \`collie local\` is the rig for a local home; and no isocan identity was found here either (\`isocan identity --home --name "You"\` names one, or a pass minted as you does); nothing was deployed`;
     const wrong = [];
     if (setup.code !== 2) wrong.push(`exit ${setup.code}, not 2`);
     if (refusal.refused !== sentence) wrong.push(`refused ${JSON.stringify(refusal.refused)}, not ${JSON.stringify(sentence)}`);
@@ -1648,7 +1648,7 @@ class Ring {
     if (readFileSync(config, "utf8") !== configBefore) wrong.push("blog's config changed");
     if (existsSync(join(this.kennel(this.blog), "collie"))) wrong.push("a collie/ was made in blog's kennel");
     if (wrong.length > 0) this.fail("c2", command, { ...setup, stderr: `${setup.stderr}\n${wrong.join("; ")}` });
-    this.ok("c2", command, `exit 2 at sheep, needs sheep and isocan: "the kennel's home is local, at ${home}; … \`collie local\` is the rig for a local home; and no isocan identity was found here either (\`isocan setup\` names you); nothing was deployed"; isocan null (${isocanOnPath === "" ? "no isocan on the ring's PATH" : `the ring's PATH has ${isocanOnPath}, and the fresh HOME no identity`}); the account asked nothing, wrangler never ran, blog's config unchanged, no collie/`);
+    this.ok("c2", command, `exit 2 at sheep, needs sheep and isocan: "the kennel's home is local, at ${home}; … \`collie local\` is the rig for a local home; and no isocan identity was found here either (\`isocan identity --home --name "You"\` names one, or a pass minted as you does); nothing was deployed"; isocan null (${isocanOnPath === "" ? "no isocan on the ring's PATH" : `the ring's PATH has ${isocanOnPath}, and the fresh HOME no identity`}); the account asked nothing, wrangler never ran, blog's config unchanged, no collie/`);
     this.unchecked.push("collie journey 1 step 3: the Worker deployed at the collie step; the package ring's kennel names its local home, so c2 is the refusal (the account ring's collie walk deploys it)");
   }
 
