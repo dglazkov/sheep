@@ -60,12 +60,12 @@ jobs:
 
       - name: Build the fork's packages (vendor/pi)
         working-directory: vendor/pi
-        # `build:offline`, not `build`: pi-ai's `build` regenerates the model catalog from models.dev live, and a day the
-        # API lacks a provider deletes that provider's committed shard and breaks a hand-written import (18 Sep 2026,
-        # kimi-coding). The catalog is committed on the fork; the release builds from it.
+        # pi-ai's `build` regenerates the model catalog from models.dev live: its `src/providers/data/` is gitignored
+        # upstream and only hydrated this way, so the release cannot build offline. The day models.dev renames a source
+        # the build breaks here (18 Sep 2026, kimi-coding), and the fix is upstream's, taken with /pi-bump.
         run: |
           npm ci --ignore-scripts
-          npm run build:offline
+          npm run build
 
       - run: pnpm install --frozen-lockfile
 
