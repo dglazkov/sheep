@@ -79,6 +79,7 @@ export const RINGS = {
     "packages/cell/test/bleat.test.ts",
     "packages/cell/test/broker.test.ts",
     "packages/cell/test/build.test.ts",
+    "packages/cell/test/cause.test.ts",
     "packages/cell/test/cell.test.ts",
     "packages/cell/test/checkout.test.ts",
     "packages/cell/test/earmark.test.ts",
